@@ -218,6 +218,7 @@ packages/runtime/src/
   workflow-engine/
   agent-tools/
   agent-adapters/
+  streams/
   source-registration/
   verified-webhook-ingest/
 ```
@@ -231,9 +232,11 @@ The exact folder names can change, but the boundary is fixed:
 - host namespace composes live host topology and command entrypoints;
 - source-registration owns provider/source registration layers for `wait_for`
   visibility without host-only observation glue;
-- waits, workflow-engine, tools, adapters, source registration, and verified
-  ingest are adjacent bounded contexts, not subfolders of the agent event
-  pipeline.
+- streams owns substrate-neutral runtime observation source schemas and stream
+  capability tags consumed by wait routers and future channel registries;
+- waits, workflow-engine, tools, adapters, streams, source registration, and
+  verified ingest are adjacent bounded contexts, not subfolders of the agent
+  event pipeline.
 
 This namespacing should not be done as part of the first host extraction PR.
 The first PR should reduce `host/index.ts`. A later namespace PR can move files
@@ -443,6 +446,7 @@ This inventory is the review checklist for the post-`#250` tree.
 | `sources/` | Live process/resource acquisition | Mostly target; env policy leaks to app consumers. | Imports runtime errors from `host/`. | Yes, via `host/` |
 | `codecs/` | Scoped protocol session providers and wire normalization | Target after Effect-native session layer refactor; event barrel compatibility should drop. | Imported by `events/index.ts`. | Yes, with `events/` |
 | `host/` | Host topology and command entrypoints | Mixed; source of most cycles. | Owns shared runtime errors today. | Yes |
+| `streams/` | Runtime observation source schemas and stream capability tags | Target substrate-neutral surface; not owned by durable wait tools. | Provides typed observation source selection for wait routers and future channel registry consumers. | No |
 | `waits/` | Durable coordination operator | Mixed; wait row authority belongs with wait bounded context. | Owns row schema/source registry/router. | No |
 | `agent-tools/` | Runtime tool schemas, MCP exposure, and lowering | Mixed; MCP host couples to host authority. | Host/tool composition overlap. | Yes, via `host/` |
 | `agent-adapters/` | Projections/adapters over codec sessions | Acceptable sibling surface. Keep out of durable runtime pipeline. | Adapter projection only. | No |

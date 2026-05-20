@@ -16,7 +16,7 @@ import type { ActiveRuntimeContextEngine } from "./runtime-context-engine-regist
 
 // TFIND-031 (Option Y, layer-composition-order fix): BOTH the workflow
 // body (`RuntimeContextWorkflowNativeLayer`) and the tool executor
-// (`RuntimeToolUseExecutorLive`) capture the durable-wait family via
+// (`RuntimeToolUseExecutorLive`) capture execution-scoped substrate via
 // `Effect.context<…>()`. The executor MUST stay `provideMerge`d into the
 // workflow chain — the workflow handler resolves `RuntimeToolUseExecutor`
 // from the context captured at layer-build time, so its output has to be
@@ -25,17 +25,11 @@ import type { ActiveRuntimeContextEngine } from "./runtime-context-engine-regist
 // can no longer resolve the executor at workflow-execution time → e.g.
 // `schedule_me` produces nothing).
 //
-// The only defect was that the executor's OWN `DurableWait*` RIn was
-// never discharged — it flowed out as an unsatisfiable support-layer RIn
-// (the layer required what it provided). Fix: provide the durable-wait
-// substrate INTO `RuntimeToolUseExecutorLive` too. This is the SAME
-// `HostRuntimeObservationSubstrateLive` reference provided into the
-// workflow body, so Effect Layer memoization builds it exactly once ⇒ the
-// workflow body, its wait-router, and the tool executor all resolve the
-// SAME materialized `DurableToolsTable` / wait store (SDD shared-store
-// invariant — recorder and waker cannot diverge). `DurableWait*` now
-// LEAVES RIn (discharged here, execution-scoped) while STAYING in ROut;
-// the public host contract is unchanged.
+// The executor's own observation-substrate RIn is discharged by providing
+// `HostRuntimeObservationSubstrateLive` into `RuntimeToolUseExecutorLive`
+// too. This is the SAME layer reference provided into the workflow body,
+// so Effect Layer memoization builds it exactly once; recorder and waker
+// cannot diverge. The public host contract is unchanged.
 export const runtimeContextWorkflowSupportLayer = (
   handle: ActiveRuntimeContextEngine,
   agentToolHost: AgentToolHostService,

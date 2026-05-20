@@ -25,6 +25,10 @@
       "types": "./src/agent-event-pipeline/authorities/runtime-output-public.ts",
       "default": "./src/agent-event-pipeline/authorities/runtime-output-public.ts"
     },
+    "./streams": {
+      "types": "./src/streams/index.ts",
+      "default": "./src/streams/index.ts"
+    },
     "./workflow-engine": {
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"

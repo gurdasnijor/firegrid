@@ -100,12 +100,11 @@ const toolCallWorkflowSupportLayer = (
 ) =>
   // TFIND-031 (Option Y): the ephemeral tool-call workflow body
   // (`toolUseToEffect` — `WaitFor.match`, child workflows) genuinely
-  // requires the `DurableWait*` family. Like `runtimeContextWorkflowSupportLayer`,
-  // this execution-scoped support layer must SELF-CONTAIN that substrate
-  // (provide the single shared `HostRuntimeObservationSubstrateLive` so
-  // `DurableWait*` LEAVES RIn while STAYING in ROut — one materialized
-  // store, recorder/waker cannot diverge; SDD structural proof). Omitting
-  // it only typechecked while `DurableTable.layer` leaked `any`; with
+  // requires the runtime observation substrate. Like
+  // `runtimeContextWorkflowSupportLayer`, this execution-scoped support
+  // layer must SELF-CONTAIN that substrate (one materialized store,
+  // recorder/waker cannot diverge; SDD structural proof). Omitting it
+  // only typechecked while `DurableTable.layer` leaked `any`; with
   // precise typing the real requirement must be discharged here, not
   // re-surfaced onto every MCP tool handler.
   ToolCallWorkflowLayer.pipe(
@@ -115,11 +114,10 @@ const toolCallWorkflowSupportLayer = (
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
   )
 
-// TFIND-031: includes the full host durable substrate
-// (`HostRuntimeContextExecutionEnv` adds the DurableWait* observation
-// tags + RuntimeHostConfig that tool handlers genuinely require). The
-// prior shorter list only typechecked because `DurableTable.layer`
-// leaked `any` and collapsed the handler requirements channel.
+// TFIND-031: includes the host runtime context that deferred tool
+// handlers genuinely require. The execution-scoped observation substrate
+// is provided inside the tool-call workflow support layer instead of
+// leaking onto every MCP tool handler.
 type ToolCallHostEnvironment =
   | RuntimeContextEngineRegistry
   | AgentToolHost

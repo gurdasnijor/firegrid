@@ -62,9 +62,13 @@ These are intentionally not agent event-pipeline stages:
 
 - `host/`: runtime host topology and command entrypoints
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.3`).
+- `streams/`: substrate-neutral runtime observation source schemas and
+  observation stream capability tags. Consumers such as wait routers and
+  future channel registries use this folder for typed stream selection without
+  depending on durable-tools ownership.
 - `durable-tools/`: durable coordination operator boundary — `WaitFor.match`,
-  typed `RuntimeWaitSource` selection, `RuntimeWaitStreams`, and the
-  wait-owned router. `wait_for` is the first durable tool
+  durable wait rows, and the wait-owned router. `wait_for` is the first
+  durable tool
   (`firegrid-typed-wait-source-redesign.CONTEXT.4`).
   `WaitFor.match` accepts an empty trigger as an any-row match. Combined with
   `timeoutMs: 0`, this is the discovery probe for an already-present row:

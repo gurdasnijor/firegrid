@@ -9,11 +9,11 @@ import {
   type RuntimeAgentOutputObservation,
   runtimeAgentOutputObservationFromRow,
 } from "../events/index.ts"
-import type { RuntimeWaitSource } from "../../durable-tools/internal/types.ts"
+import type { RuntimeObservationSource } from "../../streams/sources.ts"
 
 export type { RuntimeAgentOutputObservation } from "../events/index.ts"
 
-type AgentOutputAfterSource = Extract<RuntimeWaitSource, { readonly _tag: "AgentOutputAfter" }>
+type AgentOutputAfterSource = Extract<RuntimeObservationSource, { readonly _tag: "AgentOutputAfter" }>
 
 interface RuntimeAgentOutputAfterEventsService {
   readonly initial: (

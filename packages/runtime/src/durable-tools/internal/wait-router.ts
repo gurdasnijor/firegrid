@@ -42,7 +42,7 @@ import {
 import { rowOtelExternalSpan } from "@firegrid/protocol/otel"
 import type { ExternalSpan, SpanLink } from "effect/Tracer"
 import { encodeWaitKey, waitSpanAttributes } from "./observability.ts"
-import { RuntimeWaitStreams } from "./runtime-wait-streams.ts"
+import { RuntimeObservationStreams } from "../../streams/runtime-observation-streams.ts"
 
 // firegrid-row-otel-propagation.ROW_OTEL.2 — the wait router has two causal
 // predecessors. Parent = row-arrival; link = wait registrar. Either may be
@@ -118,7 +118,7 @@ const contextIdFromTrigger = (
  *
  * Select the concrete runtime observation stream for a persisted typed
  * wait. Adding a variant is one `Match.tag` arm plus one
- * `RuntimeWaitStreams` field. `AgentOutput` is routed to the
+ * `RuntimeObservationStreams` field. `AgentOutput` is routed to the
  * per-context output stream selected by the wait trigger's contextId
  * predicate (see `contextIdFromTrigger`); the trigger still does the
  * final row matching in `completeMatch`.
@@ -128,9 +128,9 @@ const streamForWait = (
 ): Effect.Effect<
   Stream.Stream<unknown, unknown>,
   never,
-  RuntimeWaitStreams
+  RuntimeObservationStreams
 > =>
-  Effect.map(RuntimeWaitStreams, (streams) =>
+  Effect.map(RuntimeObservationStreams, (streams) =>
     Match.value(wait.source).pipe(
       Match.tag("AgentOutput", () =>
         Option.match(contextIdFromTrigger(wait.trigger), {
@@ -336,7 +336,7 @@ const startRouter = Effect.gen(function*() {
   ) =>
     Effect.gen(function*() {
       if (wait.source._tag !== "AgentOutputAfter") return
-      const streams = yield* RuntimeWaitStreams
+      const streams = yield* RuntimeObservationStreams
       const row = yield* streams.initialAgentOutputAfter(wait.source)
       if (Option.isNone(row)) return
       yield* completeMatch(
@@ -420,7 +420,7 @@ type WaitRouterRequirements =
   | DurableWaitRowLookup
   | DurableWaitRows
   | DurableWaitRowUpsert
-  | RuntimeWaitStreams
+  | RuntimeObservationStreams
   | WorkflowEngine.WorkflowEngine
 
 /**
@@ -435,7 +435,7 @@ type WaitRouterRequirements =
  *
  * Scoped subscriber driver. It provides no public service; the `never` output
  * channel makes the wait-router role visible in the Effect type. Source
- * selection is a typed `Match.value` over `RuntimeWaitStreams`, not a string
+ * selection is a typed `Match.value` over `RuntimeObservationStreams`, not a string
  * registry lookup.
  */
 export const WaitRouterLive: Layer.Layer<

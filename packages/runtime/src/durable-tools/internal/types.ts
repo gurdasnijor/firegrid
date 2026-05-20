@@ -8,6 +8,14 @@
 
 import { Schema } from "effect"
 
+export {
+  AgentOutputObservationSourceSchema as AgentOutputWaitSourceSchema,
+  CallerFactObservationSourceSchema as CallerFactWaitSourceSchema,
+  RuntimeObservationSourceSchema as RuntimeWaitSourceSchema,
+  type RuntimeObservationSource as RuntimeWaitSource,
+  RuntimeRunObservationSourceSchema as RuntimeRunWaitSourceSchema,
+} from "../../streams/sources.ts"
+
 /**
  * firegrid-durable-tools.SUBSCRIPTION.4
  *
@@ -26,59 +34,6 @@ export type FieldEqualsPredicate = Schema.Schema.Type<
 export const FieldEqualsTriggerSchema = Schema.Array(FieldEqualsPredicateSchema)
 export type FieldEqualsTrigger = Schema.Schema.Type<
   typeof FieldEqualsTriggerSchema
->
-
-/**
- * firegrid-typed-wait-source-redesign.TYPED_SOURCES.1
- * firegrid-typed-wait-source-redesign.TYPED_SOURCES.3
- * firegrid-typed-wait-source-redesign.TYPED_SOURCES.6
- *
- * Schema-backed wait-source discriminator persisted on the wait row. The
- * variant selects which runtime observation stream the router observes; the
- * `FieldEqualsTrigger` value still decides which rows on that stream match.
- * First supported set is `AgentOutput` and `RuntimeRun` only; `RuntimeContext`
- * is deferred until a product flow needs context-state waiting.
- */
-export const AgentOutputWaitSourceSchema = Schema.Struct({
-  _tag: Schema.Literal("AgentOutput"),
-})
-
-const AgentOutputAfterWaitSourceSchema = Schema.Struct({
-  _tag: Schema.Literal("AgentOutputAfter"),
-  contextId: Schema.String,
-  activityAttempt: Schema.Number,
-  afterSequence: Schema.Number,
-})
-
-export const RuntimeRunWaitSourceSchema = Schema.Struct({
-  _tag: Schema.Literal("RuntimeRun"),
-})
-
-/**
- * firegrid-typed-wait-source-redesign.CONTEXT.3
- *
- * Caller-owned durable observation. `stream` is the app-chosen stable name
- * of a caller-owned durable fact stream; the host composition that knows
- * the app's collection binds the concrete stream behind this name through
- * the `CallerOwnedFactStreams` capability (TYPED_SOURCES.2). This is not a
- * runtime-authority internal and not a stringly registry for runtime-owned
- * sources (REJECTION.3 targets the runtime wait abstraction default; caller
- * facts are inherently app-named because the runtime cannot enumerate app
- * collections).
- */
-export const CallerFactWaitSourceSchema = Schema.Struct({
-  _tag: Schema.Literal("CallerFact"),
-  stream: Schema.String,
-})
-
-export const RuntimeWaitSourceSchema = Schema.Union(
-  AgentOutputWaitSourceSchema,
-  AgentOutputAfterWaitSourceSchema,
-  RuntimeRunWaitSourceSchema,
-  CallerFactWaitSourceSchema,
-)
-export type RuntimeWaitSource = Schema.Schema.Type<
-  typeof RuntimeWaitSourceSchema
 >
 
 /**

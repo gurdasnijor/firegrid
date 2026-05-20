@@ -3,8 +3,18 @@ import {
   hostOwnedStreamUrl,
 } from "@firegrid/protocol/launch"
 import { Effect, Layer } from "effect"
-import { DurableToolsWaitForLive } from "@firegrid/runtime/durable-tools"
+import {
+  type DurableWaitRows,
+  type DurableWaitRowLookup,
+  type DurableWaitRowUpsert,
+  DurableToolsWaitForLive,
+} from "@firegrid/runtime/durable-tools"
 import { RuntimeHostConfig } from "./config.ts"
+
+export type HostOwnedRuntimeObservationSubstrate =
+  | DurableWaitRows
+  | DurableWaitRowLookup
+  | DurableWaitRowUpsert
 
 export const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
   Effect.gen(function* () {
