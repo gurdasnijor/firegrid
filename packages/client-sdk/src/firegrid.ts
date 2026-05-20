@@ -14,6 +14,7 @@ import {
   PublicLaunchRuntimeIntentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  type RuntimeOutputTableService,
   local,
   makeRuntimeContextRequestRow,
   makeRuntimeStartRequestAck,
@@ -61,7 +62,7 @@ import {
   type SessionPermissionRespondInput,
 } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
-import { Clock, Context, Data, Duration, Effect, Layer, Option, Ref, Schema, Stream } from "effect"
+import { Clock, Context, Data, Duration, Effect, Exit, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
 import { projectionWait } from "./internal/projection-wait.ts"
 import { FiregridClientOperations } from "./operations.ts"
 
@@ -339,6 +340,18 @@ const outputLayerForContext = (
     ),
   )
 
+// tf-ivl6: per-contextId cache entry for getOutputService. Each
+// handle owns its own CloseableScope so the make-body finalizer can
+// tear down all materialized RuntimeOutputTable layers on service
+// shutdown. The cached service is the already-extracted
+// RuntimeOutputTableService (mirrors host-sdk's
+// RuntimeContextEngineRegistry, which caches the engine/table
+// services not the Context<any> the Layer builds into).
+interface OutputContextHandle {
+  readonly service: RuntimeOutputTableService
+  readonly scope: Scope.CloseableScope
+}
+
 const decodePublicLaunchRequest = (
   request: PublicLaunchRequest,
 ): Effect.Effect<PublicLaunchRequest, LaunchInputError> =>
@@ -457,6 +470,58 @@ const make = (config: ResolvedConfig) =>
   Effect.gen(function* () {
     const control = yield* RuntimeControlPlaneTable
 
+    // tf-ivl6 / tf-tw49 concern #1: per-contextId RuntimeOutputTable
+    // cache. Baseline trace showed 75 of 80 layer.acquire spans landing
+    // on firegrid.runtimeOutput with ~2.5x amplification per public
+    // client call (readSnapshot + waitForAgentOutputObservation each
+    // built a fresh layer on every invocation). Caching by contextId
+    // for the service lifetime collapses the per-call createStreamDB
+    // preload + open subscription onto a shared connection; per-call
+    // projectionWait / .query each still get their own sub-scope on
+    // top. Pattern mirrors RuntimeContextEngineRegistry (host-sdk).
+    const outputContextHandles = yield* Ref.make(
+      new Map<string, OutputContextHandle>(),
+    )
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        const current = yield* Ref.get(outputContextHandles)
+        yield* Effect.forEach(
+          current.values(),
+          handle => Scope.close(handle.scope, Exit.void),
+          { discard: true },
+        )
+        yield* Ref.set(outputContextHandles, new Map())
+      }))
+
+    const getOutputService = (
+      context: RuntimeContext,
+    ): Effect.Effect<RuntimeOutputTableService, PreloadError> =>
+      Effect.gen(function* () {
+        const cached0 = (yield* Ref.get(outputContextHandles)).get(context.contextId)
+        if (cached0 !== undefined) return cached0.service
+        const scope = yield* Scope.make()
+        const built = yield* Layer.buildWithScope(
+          outputLayerForContext(config, context),
+          scope,
+        ).pipe(
+          Effect.mapError(cause => new PreloadError({ cause })),
+        )
+        const service = Context.get(built, RuntimeOutputTable)
+        // Lost-race resolution: another fiber may have raced us. Adopt
+        // the winner's handle and tear down our orphan so the cache
+        // holds exactly one handle per contextId.
+        const adopted = yield* Ref.modify(outputContextHandles, m => {
+          const winner = m.get(context.contextId)
+          if (winner !== undefined) return [winner, m] as const
+          const handle: OutputContextHandle = { service, scope }
+          return [handle, new Map([...m, [context.contextId, handle]])] as const
+        })
+        if (adopted.scope !== scope) {
+          yield* Scope.close(scope, Exit.void)
+        }
+        return adopted.service
+      })
+
     /**
      * Resolve a context row from the namespace-scoped control plane.
      * Read paths use this once and then dispatch to host-owned
@@ -492,25 +557,22 @@ const make = (config: ResolvedConfig) =>
         // firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
         // Output is still read from the context-owned stream. Runtime
         // input delivery is workflow-deferred and host-owned; the
-          // client does not open the legacy durable input table.
-        const hostOwned = yield* Effect.gen(function* () {
-          const outputTable = yield* RuntimeOutputTable
-          const events = yield* outputTable.events.query((coll) =>
-            coll.toArray.filter(row => row.contextId === contextId))
-          const logs = yield* outputTable.logs.query((coll) =>
-            coll.toArray.filter(row => row.contextId === contextId))
-          return { events, logs }
-        }).pipe(
-          Effect.provide(outputLayerForContext(config, context)),
-          Effect.scoped,
-          Effect.mapError(cause => new PreloadError({ cause })),
-        )
+        // client does not open the legacy durable input table.
+        const outputTable = yield* getOutputService(context)
+        const events = yield* outputTable.events.query((coll) =>
+          coll.toArray.filter(row => row.contextId === contextId)).pipe(
+            Effect.mapError(cause => new PreloadError({ cause })),
+          )
+        const logs = yield* outputTable.logs.query((coll) =>
+          coll.toArray.filter(row => row.contextId === contextId)).pipe(
+            Effect.mapError(cause => new PreloadError({ cause })),
+          )
 
         return snapshotFromJournal(contextId, {
           context,
           runs,
-          events: hostOwned.events,
-          logs: hostOwned.logs,
+          events,
+          logs,
         })
       })
 
@@ -555,8 +617,8 @@ const make = (config: ResolvedConfig) =>
             cause: new Error(`runtime context ${contextId} not found`),
           })
         }
+        const output = yield* getOutputService(context)
         const run = Effect.gen(function* () {
-          const output = yield* RuntimeOutputTable
           let matched: RuntimeAgentOutputObservation | undefined
           yield* projectionWait(
             output.events.rows().pipe(Stream.filterMap(runtimeAgentOutputObservationFromRow)),
@@ -571,8 +633,6 @@ const make = (config: ResolvedConfig) =>
           )
           return Option.fromNullable(matched)
         }).pipe(
-          Effect.provide(outputLayerForContext(config, context)),
-          Effect.scoped,
           Effect.mapError(cause => new PreloadError({ cause })),
         )
         const awaited = input.timeoutMs === undefined
