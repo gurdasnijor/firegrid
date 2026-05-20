@@ -11,6 +11,7 @@ import {
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
 import {
+  appendRuntimeInputDeferred,
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
 } from "@firegrid/runtime/workflow-engine"
@@ -24,7 +25,6 @@ import { RuntimeHostConfig } from "./config.ts"
 import {
   runtimeContextWorkflowExecutionId,
 } from "./internal/runtime-context-helpers.ts"
-import { appendRuntimeInputDeferred } from "./runtime-input-deferred.ts"
 
 interface ActiveRuntimeContextExecution {
   readonly context: RuntimeContext
