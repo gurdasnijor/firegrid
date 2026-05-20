@@ -125,6 +125,14 @@ export const darkFactoryDriver: Effect.Effect<
       createdBy: "tiny-firegrid-simulation",
     })
 
+    // tf-s8y P0 spike: explicitly wait for the host reconciler to
+    // materialize the RuntimeContext row before sending the prompt.
+    // The original driver (with `runtimeContextMcp: { enabled: true }`)
+    // raced this implicitly and won; absent that marker the codec
+    // adapter path is faster so we lose the race. `whenReady` is the
+    // documented seam (firegrid-session-fact-client-surfaces.CLIENT_SESSION.6).
+    yield* session.whenReady
+
     // contextId is materialized — now we can construct the route-scoped
     // MCP URL and bake it into the cwd's .mcp.json. session.start()
     // below spawns the agent process which then reads .mcp.json from
