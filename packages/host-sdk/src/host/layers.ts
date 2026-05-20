@@ -54,9 +54,11 @@ import {
   RuntimeInputIntentDispatcherLive,
 } from "./runtime-context-engine-registry.ts"
 import {
-  ChannelRegistryLive,
   type ChannelRegistry,
 } from "./channel-registry.ts"
+import {
+  SessionSelfChannelRegistryLive,
+} from "./channels/session-self/index.ts"
 
 export class FiregridLocalProcess extends Context.Tag(
   "firegrid/host-sdk/FiregridLocalProcess",
@@ -304,7 +306,7 @@ export const FiregridRuntimeHostLive = (
   const session = currentHostSessionLayer(options)
   const namespaceScoped = namespaceScopedLayer(options)
   const hostScoped = hostScopedLayer(options)
-  const channelRegistry = ChannelRegistryLive(options.channels)
+  const channelRegistry = SessionSelfChannelRegistryLive(options.channels)
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
@@ -313,6 +315,7 @@ export const FiregridRuntimeHostLive = (
     RuntimeStartCapabilityLive,
     RuntimeControlRequestReconcilerLive,
     RuntimeControlRequestWorkflowEngineLive,
+    channelRegistry,
     ...(options.controlRequestReconciler === false
       ? []
       : [RuntimeControlRequestReconcilerDaemonLive]),
@@ -323,7 +326,6 @@ export const FiregridRuntimeHostLive = (
     Layer.provideMerge(RuntimeContextEngineRegistryLive),
     Layer.provideMerge(namespaceScoped),
     Layer.provideMerge(session),
-    Layer.provideMerge(channelRegistry),
     Layer.provideMerge(runtimeEnvResolverPolicyLayer(envPolicy)),
     // TFIND-048: single-owner, host-scoped late-bind channel for the
     // runtime-context MCP base URL. Present (defaulting to `None`) even
