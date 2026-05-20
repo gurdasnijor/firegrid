@@ -222,15 +222,27 @@ Empirical baseline for the substrate cleanup work is captured in Lane 1's `tf-9u
 
 ### Required substrate work BEFORE this SDD's Slice A starts
 
-1. **Shape A landing** — `AgentOutputAfter` waits fold inline into the runtime-context workflow body's `DurableDeferred.raceAll`. Removes `wait_router` as a long-running router for the runtime-output observation case. Tracked under `tf-slb` (P1, in-flight Lane 1).
+1. **Shape A NARROW landing (tf-qoyg)** — runtime-context workflow body's `waitForAgentOutput` is rewritten as `Stream.runHead(events.after(source))` inline. The wait-router / `WaitFor.match` / `DurableToolsTable.waits` upsert lifecycle / race-deferred / `engine.deferredDone` chain is no longer touched by this path. The wait identity is the **source itself** (typed `AgentOutputAfter(contextId, activityAttempt, afterSequence)`) — no separate name to track. **Crucially, this is NARROW**: the agent-tool `wait_for` path (`tool-use-to-effect.ts:216`) is unchanged and continues to use the generic machinery — that path needs dynamic-source + scalar-AND predicate + optional-timeout semantics which the inline `Stream.runHead` form structurally cannot express. Lane 1's tf-qoyg worktree carries the in-flight implementation.
 2. **Deferred-input rewrite landing** — coupled per the convergence doc. Currently has source plumbing in `runtime-context-engine-registry.ts:106-118 / :265-280 / :303-315` and `runtime-context-workflow-core.ts:178-184 / :236-270` but no TODO/FIXME marker in `runtime-context-workflow-core.ts` — empirical evidence is "in-flight not declared," not "planned but unstarted."
-3. **External-worker reattach-after-restart path empirically exercised** — tf-9ut explicitly did NOT exercise this. Before declaring Shape A complete, a sim that bounces the host process while a wait is pending must be added (the wait_store / durable wait index has to be load-bearing for that path).
+3. **External-worker reattach-after-restart path empirically exercised** — tf-9ut explicitly did NOT exercise this. The generic `WaitFor.match` / wait-router / wait-store path (still load-bearing for the agent-tool surface) needs a sim that bounces the host process while a wait is pending; this validates that the substrate it KEEPS (wait_store as a durable wait index) actually works for the case it's retained for.
 
-After (1)+(2)+(3) land, the substrate has ONE canonical wait path: workflow-body `DurableDeferred.raceAll` over the typed observation streams. Channel-typed `wait_for` then sits as a thin presentation wrapper over THAT single path — not a fourth one.
+After (1)+(2)+(3) land, the substrate has TWO **distinct** wait shapes, each cleanly scoped:
+
+- **Static-source observation**: inline `Stream.runHead(events.<source>(...))` over typed observation streams. Used by the workflow body (per tf-qoyg) and by future static channels like `time.*`, `state.changes(collection)`, `session.self.*`. No predicate, no timeout, no router.
+- **Dynamic-source predicate-eligible wait**: `WaitFor.match` + wait-router + durable wait store. Used by the agent-tool `wait_for` over caller-fact-style streams with scalar-AND predicates and optional timeouts. The full generic machinery is **correctly retained** for this case.
+
+Channel-typed `wait_for` then sits as a thin presentation wrapper over whichever of those two shapes the channel's host-side declaration selects. The agent sees ONE verb over typed channels; the substrate plurality (two shapes) is correctly hidden — and correctly scoped to where each is load-bearing. The "fewer ways to wait" simplification is real and specifically-shaped, not a global collapse.
 
 ### What this means for the body-plan migration's Slice A ordering
 
-The migration plan below is sequenced assuming the substrate prerequisites have landed. If the body-plan migration is started before substrate consolidation, the Slice A channel registry has to dual-route into both the old `wait_router` substrate and the new workflow-body inline path — defeating the simplification. **Don't start Slice A until tf-slb (Shape A) lands.**
+The migration plan below is sequenced assuming the substrate prerequisites have landed. The channel registry classifies each registered channel as **static-source** or **predicate-eligible** at registration time:
+
+- Static-source channels (`time.*`, `state.changes(c)`, `session.self.*`, `event(name)`-when-typed) → inline `Stream.runHead` over the typed observation stream. No name to track, no router.
+- Predicate-eligible channels (caller-fact streams used with agent-author-supplied scalar-AND predicates, `dm`/`approval`/`notification` triads) → generic `WaitFor.match` + wait-router. Wait identity stays in the wait store.
+
+The agent never sees which class a channel is — it calls `wait_for(channel, match?, timeoutMs?)` and the host-side registry routes appropriately. Tonight's dark-factory discovery gap dissolves naturally: most channels migrate to the static-source class (their schema is declarable at body-plan time), and only channels that genuinely need agent-author-supplied predicates use the predicate-eligible class.
+
+**Don't start Slice A until tf-qoyg (Shape A narrow) lands.** Slice A's channel-registry implementation would dual-route into both substrate paths if tf-qoyg's static-source-inline pattern wasn't already established as the substrate's canonical second wait shape.
 
 ## Migration Plan
 
