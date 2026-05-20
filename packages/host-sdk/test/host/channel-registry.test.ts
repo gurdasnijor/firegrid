@@ -1,19 +1,32 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Chunk, Effect, Either, Option, Schema, Stream } from "effect"
+import { Chunk, Effect, Either, Fiber, Option, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import type { HostId } from "@firegrid/protocol/launch"
+import {
+  local,
+  makeHostStreamPrefix,
+  normalizeRuntimeIntent,
+  RuntimeControlPlaneTable,
+  type HostId,
+} from "@firegrid/protocol/launch"
 import {
   ChannelRegistry,
   ChannelRegistryLive,
   FactoryEventsChannelTarget,
   FiregridRuntimeHostWithWorkflowLive,
+  SessionSelfCheckpointChannelTarget,
+  SessionSelfLifecycleChannelTarget,
   UnknownChannelTarget,
   makeCallableChannel,
   makeChannelRegistry,
   makeChannelTarget,
   makeEfferentChannel,
   makeFactoryEventsChannel,
+  type SessionSelfCheckpointEvent,
+  type SessionSelfLifecycleEvent,
 } from "../../src/host/index.ts"
+import {
+  RuntimeContextEngineRegistry,
+} from "../../src/host/runtime-context-engine-registry.ts"
 
 const FactoryEventRowSchema = Schema.Struct({
   eventType: Schema.String,
@@ -172,6 +185,142 @@ describe("ChannelRegistry", () => {
     })
     expect(result.text).not.toContain("CallerFact")
     expect(result.text).not.toContain("stream")
+  })
+
+  it("firegrid-agent-body-plan.SESSION_SELF.1 firegrid-agent-body-plan.SESSION_SELF.2 firegrid-agent-body-plan.SESSION_SELF.3 registers session.self lifecycle and checkpoint channels without substrate metadata", async () => {
+    expect(baseUrl).toBeDefined()
+    const durableStreamsBaseUrl = baseUrl ?? ""
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const namespace = `session-self-channel-${crypto.randomUUID()}`
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
+
+    const observed = await Effect.runPromise(
+      Effect.gen(function* () {
+        const control = yield* RuntimeControlPlaneTable
+        const registry = yield* ChannelRegistry
+        const engineRegistry = yield* RuntimeContextEngineRegistry
+        const lifecycleMetadata = Option.getOrThrow(
+          registry.getMetadata(SessionSelfLifecycleChannelTarget),
+        )
+        const checkpointMetadata = Option.getOrThrow(
+          registry.getMetadata(SessionSelfCheckpointChannelTarget),
+        )
+        const lifecycle = yield* registry.require(SessionSelfLifecycleChannelTarget)
+        const checkpoint = yield* registry.require(SessionSelfCheckpointChannelTarget)
+        if (lifecycle.direction !== "afferent" || checkpoint.direction !== "afferent") {
+          return yield* Effect.fail(new Error("session.self channels must be afferent"))
+        }
+        const lifecycleStream = lifecycle.binding.stream as Stream.Stream<
+          SessionSelfLifecycleEvent,
+          unknown,
+          never
+        >
+        const checkpointStream = checkpoint.binding.stream as Stream.Stream<
+          SessionSelfCheckpointEvent,
+          unknown,
+          never
+        >
+        const lifecycleFiber = yield* lifecycleStream.pipe(
+          Stream.filter(event =>
+            event.event.contextId === contextId &&
+            event.event.status === "started",
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+          Effect.fork,
+        )
+        const runtime = normalizeRuntimeIntent(local.jsonl({
+          argv: [
+            process.execPath,
+            "--input-type=module",
+            "-e",
+            "console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'ready'}]}}))",
+          ],
+        }))
+        const context = {
+          contextId,
+          createdAt: new Date().toISOString(),
+          runtime,
+          host: {
+            hostId,
+            streamPrefix,
+            boundAtMs: Date.now(),
+          },
+        }
+        yield* control.contexts.upsert(context)
+        const handle = yield* engineRegistry.claimActive(context)
+        const checkpointFiber = yield* checkpointStream.pipe(
+          Stream.filter(event =>
+            event.contextId === contextId &&
+            event._tag === "Execution" &&
+            event.workflowName === "firegrid.runtime-context",
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+          Effect.fork,
+        )
+        yield* handle.table.executions.upsert({
+          executionId: `session-self-checkpoint:${contextId}`,
+          workflowName: "firegrid.runtime-context",
+          payload: { contextId },
+          interrupted: false,
+          suspended: true,
+        })
+        yield* control.runs.upsert({
+          runEventId: {
+            contextId,
+            activityAttempt: 1,
+            status: "started",
+          },
+          contextId,
+          activityAttempt: 1,
+          provider: "local-process",
+          status: "started",
+          at: new Date().toISOString(),
+        })
+        const lifecycleEvent = yield* Fiber.join(lifecycleFiber)
+        const checkpointEvent = yield* Fiber.join(checkpointFiber)
+        return {
+          lifecycleDirection: lifecycleMetadata.direction,
+          checkpointDirection: checkpointMetadata.direction,
+          lifecycleText: JSON.stringify(lifecycleMetadata),
+          checkpointText: JSON.stringify(checkpointMetadata),
+          lifecycleEvent,
+          checkpointEvent,
+        }
+      }).pipe(
+        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+          durableStreamsBaseUrl,
+          namespace,
+          hostId,
+          controlRequestReconciler: false,
+        })),
+        Effect.scoped,
+      ),
+    )
+
+    expect(observed.lifecycleDirection).toBe("afferent")
+    expect(observed.checkpointDirection).toBe("afferent")
+    expect(observed.lifecycleEvent).toMatchObject({
+      channel: "session.self.lifecycle",
+      event: {
+        contextId,
+        status: "started",
+      },
+    })
+    expect(observed.checkpointEvent).toMatchObject({
+      _tag: "Execution",
+      channel: "session.self.checkpoint",
+      contextId,
+      workflowName: "firegrid.runtime-context",
+    })
+    expect(observed.lifecycleText).not.toContain("firegrid.runtime_context.workflow")
+    expect(observed.lifecycleText).not.toContain("WorkflowEngineTable")
+    expect(observed.lifecycleText).not.toContain("stream")
+    expect(observed.checkpointText).not.toContain("firegrid.runtime_context.workflow")
+    expect(observed.checkpointText).not.toContain("WorkflowEngineTable")
+    expect(observed.checkpointText).not.toContain("stream")
   })
 
   it("firegrid-agent-body-plan.SLICE_BOUNDARY.1 provides the registry as an additive host layer", async () => {
