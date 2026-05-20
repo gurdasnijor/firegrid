@@ -19,8 +19,8 @@ in the host workflow/session owner rather than in runtime subscriber fibers.
 Subscriber shape:
 
 ```ts
-Layer.Layer<never, WaitRouterError,
-  SourceCollections | DurableWaitIntentRows | DurableWaitCompletionUpsert
+Layer.Layer<never, DriverError,
+  RuntimeAgentOutputEvents | RuntimeRunAppendAndGet
 >
 ```
 
@@ -33,8 +33,8 @@ Long-running drivers that provide no public service can also be modeled as
 scoped layers:
 
 ```ts
-Layer.Layer<never, WaitRouterError,
-  SourceCollections | DurableWaitIntentRows | DurableWaitCompletionUpsert
+Layer.Layer<never, DriverError,
+  RuntimeAgentOutputEvents | RuntimeRunAppendAndGet
 >
 ```
 

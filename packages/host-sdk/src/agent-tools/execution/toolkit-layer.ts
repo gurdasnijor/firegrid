@@ -59,9 +59,9 @@ const TOOL_USE_ID_PREFIX = "mcp"
 // `WorkflowEngine.WorkflowInstance`
 // ---------------------------------------------------------------------------
 //
-// `@effect/workflow`'s `DurableClock.sleep` (and therefore the `sleep` arm,
-// `WaitFor.match`, and any child workflow execution in `toolUseToEffect`)
-// requires the `WorkflowInstance` service in its `R` channel, and
+// `@effect/workflow`'s `DurableClock.sleep` (and therefore the `sleep` arm
+// and any child workflow execution in `toolUseToEffect`) requires the
+// `WorkflowInstance` service in its `R` channel, and
 // `WorkflowInstance` is only produced inside a registered workflow body
 // (`Workflow.toLayer(...)`). This ephemeral per-call workflow exists
 // solely to satisfy that requirement.
@@ -99,8 +99,8 @@ const toolCallWorkflowSupportLayer = (
   agentToolHost: AgentToolHost["Type"],
 ) =>
   // TFIND-031 (Option Y): the ephemeral tool-call workflow body
-  // (`toolUseToEffect` — `WaitFor.match`, child workflows) genuinely
-  // requires the runtime observation substrate. Like
+  // (`toolUseToEffect` — child workflows) genuinely requires the runtime
+  // observation substrate. Like
   // `runtimeContextWorkflowSupportLayer`, this execution-scoped support
   // layer must SELF-CONTAIN that substrate (one materialized store,
   // recorder/waker cannot diverge; SDD structural proof). Omitting it

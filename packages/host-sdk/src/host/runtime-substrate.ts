@@ -13,6 +13,7 @@ import {
   type RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
+import { RuntimeObservationStreamsLive } from "@firegrid/runtime/streams"
 import { RuntimeToolUseExecutor } from "@firegrid/runtime/tool-executor"
 import {
   toolUseToEffect,
@@ -22,10 +23,6 @@ import {
   toolExecutionFailed,
 } from "../agent-tools/bindings/tool-error.ts"
 import { type AgentToolHost } from "../agent-tools/execution/tool-host.ts"
-import {
-  HostOwnedDurableToolsWaitForLive,
-  type HostOwnedRuntimeObservationSubstrate,
-} from "./host-owned-durable-tools.ts"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
 } from "./per-context-runtime-output.ts"
@@ -48,13 +45,8 @@ export type HostRuntimeContextExecutionEnv =
   | RuntimeHostConfig
 
 // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.2
-// firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
-// firegrid-typed-wait-source-redesign.REJECTION.2
 // Shared host runtime observation substrate used by workflow support layers.
-// The current wait router consumes the typed observation tags directly
-// and requires the current WorkflowEngine so matched observations can wake
-// suspended workflow deferreds; there is no source-name registration layer.
-export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForLive.pipe(
+export const HostRuntimeObservationSubstrateLive = RuntimeObservationStreamsLive.pipe(
   Layer.provideMerge(Layer.mergeAll(
     RuntimeAgentOutputEventsLayer,
     PerContextRuntimeAgentOutputAfterEventsLive,
@@ -65,7 +57,9 @@ export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForL
   }),
 )
 
-type HostRuntimeObservationSubstrateEnv = HostOwnedRuntimeObservationSubstrate
+type HostRuntimeObservationSubstrateEnv = Layer.Layer.Success<
+  typeof HostRuntimeObservationSubstrateLive
+>
 
 // TFIND-031 (Option Y, execution-scoped): the workflow-body capture
 // seam (`RuntimeContextWorkflowNativeLayer`) is built *inside*

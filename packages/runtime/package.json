@@ -33,10 +33,6 @@
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"
     },
-    "./durable-tools": {
-      "types": "./src/durable-tools/index.ts",
-      "default": "./src/durable-tools/index.ts"
-    },
     "./events": {
       "types": "./src/agent-event-pipeline/events/index.ts",
       "default": "./src/agent-event-pipeline/events/index.ts"
