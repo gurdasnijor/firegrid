@@ -25,6 +25,7 @@ import type {
   TinyFiregridHostEnv,
   TinyFiregridSimulation,
 } from "../types.ts"
+import { makeHeartbeat } from "./heartbeat.ts"
 import { annotateSide } from "./side.ts"
 import { TelemetryLive, type TelemetryDestination } from "./telemetry.ts"
 
@@ -110,6 +111,11 @@ interface RunOptions {
   // primary artifact; console is an opt-in debugging aid that's noisy
   // enough to drown the actual signal during a real run.
   readonly console: boolean
+  // tf-ewo: --watch flag opts the heartbeat processor into per-event
+  // emission (compact one-line-per-span to stderr) in addition to the
+  // periodic digest. Default false — heartbeat-only is the right shape
+  // for automated lanes / CI; per-event is for interactive debugging.
+  readonly watch: boolean
 }
 
 // Only update the latest-pointer if the run produced at least one span.
@@ -162,10 +168,24 @@ export const runSimulation = (
       ? { _tag: "console" }
       : { _tag: "file", filePath: tracePath }
 
+    // Heartbeat only fires when destination is file. OTLP + console
+    // already have their own activity signal (remote backend / stdout
+    // spam); heartbeat exists specifically to make the invisible-file
+    // path observable. `makeHeartbeat` owns the Queue + Refs + ticker
+    // fiber + finalizer in its own scope; the runner just takes the
+    // processor handle and forwards it to TelemetryLive.
+    const heartbeat = destination._tag === "file"
+      ? yield* makeHeartbeat({
+        minInterval: Duration.seconds(2),
+        maxInterval: Duration.seconds(10),
+        perEvent: options.watch,
+      })
+      : undefined
     const telemetry = TelemetryLive(simulation, runId, {
       namespace,
       durableStreamsBaseUrl: baseUrl,
       destination,
+      heartbeatProcessor: heartbeat?.processor,
     })
     const hostEnv: TinyFiregridHostEnv = {
       simulationId: simulation.id,
