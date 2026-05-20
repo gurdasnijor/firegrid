@@ -14,7 +14,7 @@ import {
   type RuntimeEventRow,
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
-import { Effect, Fiber, Layer, Ref, Schema, Stream } from "effect"
+import { Effect, Fiber, Layer, Option, Ref, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeControlPlaneRecorderLive,
@@ -29,6 +29,7 @@ import {
 } from "@firegrid/runtime/tool-executor"
 import {
   encodeRuntimeAgentOutputEnvelope,
+  runtimeAgentOutputObservationFromRow,
   type AgentInputEvent,
 } from "@firegrid/runtime/events"
 import { DurableToolsTable, DurableToolsWaitForLive, WaitFor } from "@firegrid/runtime/durable-tools"
@@ -39,7 +40,10 @@ import {
   type RuntimeContextSessionCommand,
 } from "../../src/host/runtime-context-workflow-core.ts"
 import { WorkflowEngine } from "@effect/workflow"
-import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
+import {
+  DurableStreamsWorkflowEngine,
+  WorkflowEngineTable,
+} from "@firegrid/runtime/workflow-engine"
 import {
   FiregridRuntimeHostWithWorkflowLive,
 } from "../../src/host/layers.ts"
@@ -104,15 +108,33 @@ const hostConfigLayer = (namespace: string) =>
 // surface explicit without changing production code.
 const testHostWideRuntimeAgentOutputAfterEventsLive = Layer.effect(
   RuntimeAgentOutputAfterEvents,
-  Effect.map(RuntimeAgentOutputEvents, agentOutput =>
-    RuntimeAgentOutputAfterEvents.of({
+  Effect.gen(function*() {
+    const agentOutput = yield* RuntimeAgentOutputEvents
+    const table = yield* RuntimeOutputTable
+    return RuntimeAgentOutputAfterEvents.of({
       initial: source =>
-        Stream.runHead(agentOutput.pipe(
-          Stream.filter((row) =>
-            row.contextId === source.contextId &&
-            row.activityAttempt === source.activityAttempt &&
-            row.sequence > source.afterSequence),
-        )),
+        table.events.query((coll) => {
+          let selected = undefined as
+            | ReturnType<typeof runtimeAgentOutputObservationFromRow>
+            | undefined
+          for (const candidate of coll.toArray) {
+            const decoded = runtimeAgentOutputObservationFromRow(candidate)
+            if (
+              decoded._tag === "None" ||
+              decoded.value.contextId !== source.contextId ||
+              decoded.value.activityAttempt !== source.activityAttempt ||
+              decoded.value.sequence <= source.afterSequence
+            ) continue
+            if (
+              selected === undefined ||
+              selected._tag === "None" ||
+              decoded.value.sequence < selected.value.sequence
+            ) {
+              selected = decoded
+            }
+          }
+          return selected?._tag === "Some" ? selected.value : undefined
+        }).pipe(Effect.map(Option.fromNullable)),
       after: source =>
         agentOutput.pipe(
           Stream.filter((row) =>
@@ -122,7 +144,8 @@ const testHostWideRuntimeAgentOutputAfterEventsLive = Layer.effect(
         ),
       forContext: contextId =>
         agentOutput.pipe(Stream.filter(row => row.contextId === contextId)),
-    })),
+    })
+  }),
 ).pipe(Layer.provide(RuntimeAgentOutputEventsLayer))
 
 const outputRow = (input: {
@@ -207,6 +230,23 @@ const waitUntilWorkflowStarted = (
     }
     return yield* Effect.fail(new Error(
       `workflow body did not record a started run row: ${contextId}/${activityAttempt}`,
+    ))
+  })
+
+const waitUntilActivityCompleted = (
+  activityName: string,
+) =>
+  Effect.gen(function*() {
+    const table = yield* WorkflowEngineTable
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const rows = yield* table.activities.query((coll) =>
+        coll.toArray.filter(row =>
+          row.activityName.startsWith(activityName) && row.result !== undefined))
+      if (rows.length > 0) return rows[0]!
+      yield* Effect.sleep("25 millis")
+    }
+    return yield* Effect.fail(new Error(
+      `workflow activity did not complete: ${activityName}`,
     ))
   })
 
@@ -796,6 +836,128 @@ describe("workflow-native runtime-context core", () => {
     expect(result).toMatchObject({ contextId, activityAttempt: 1, exitCode: 0 })
     expect(beforeRestart.emissions).toEqual([`tool-${contextId}-1-tool-once`])
     expect(afterRestart.emissions).toEqual([])
+  })
+
+  it("preserves pending permission correlation state across scoped workflow replay", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `path-x-permission-replay-${crypto.randomUUID()}`
+    const hostId = "host-a" as HostId
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
+    const waitUrl = streamUrl(`${namespace}.host-a.waits`)
+    const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
+    const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
+    const beforeRestart: Array<RuntimeContextSessionCommand> = []
+    const afterRestart: Array<RuntimeContextSessionCommand> = []
+
+    const sessionLayer = (sent: Array<RuntimeContextSessionCommand>) =>
+      RuntimeContextWorkflowSession.layer({
+        startOrAttach: (context, activityAttempt) =>
+          Effect.succeed(startedEvidence(context.contextId, activityAttempt)),
+        send: (context, activityAttempt, command) =>
+          Effect.sync(() => {
+            sent.push(command)
+            return acceptedCommand(context.contextId, activityAttempt, command)
+          }),
+      })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const control = yield* RuntimeControlPlaneTable
+          const output = yield* RuntimeOutputTable
+          yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
+          yield* output.events.upsert(outputRow({
+            contextId,
+            activityAttempt: 1,
+            sequence: 0,
+            event: {
+              _tag: "PermissionRequest",
+              permissionRequestId: "permission-replay-1",
+              toolUseId: "tool-permission-replay",
+              options: [{
+                optionId: "allow",
+                kind: "allow_once",
+                name: "Allow once",
+              }],
+            },
+          }))
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
+          yield* waitUntilActivityCompleted(
+            `firegrid.runtime-context.state.${contextId}.1.output.0.after.-1.-1`,
+          )
+        }).pipe(
+          Effect.provide(runtimeContextWorkflowTestLayer({
+            namespace,
+            hostId,
+            workflowUrl,
+            waitUrl,
+            controlUrl,
+            outputUrl,
+            sessionLayer: sessionLayer(beforeRestart),
+            workerId: "permission-replay-before",
+          })),
+        ),
+      ),
+    )
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const output = yield* RuntimeOutputTable
+          const context = seededRuntimeContext({ namespace, hostId, contextId })
+          yield* appendRuntimeInputDeferred({
+            contextId,
+            inputId: "input-permission-replay-1",
+            kind: "required_action_result",
+            authoredBy: "client",
+            payload: {
+              _tag: "PermissionResponse",
+              permissionRequestId: "permission-replay-1",
+              decision: { _tag: "Allow", optionId: "allow" },
+            },
+            idempotencyKey: "input-permission-replay-1",
+          }, context)
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
+          yield* waitUntilActivityCompleted(
+            `firegrid.runtime-context.state.${contextId}.1.input.0`,
+          )
+          if (afterRestart.length === 0) {
+            return yield* Effect.fail(new Error("permission response was not sent after replay"))
+          }
+          yield* output.events.upsert(outputRow({
+            contextId,
+            activityAttempt: 1,
+            sequence: 1,
+            event: { _tag: "Terminated", exitCode: 0 },
+          }))
+          return yield* executeNativeRuntimeContext(contextId)
+        }).pipe(
+          Effect.provide(runtimeContextWorkflowTestLayer({
+            namespace,
+            hostId,
+            workflowUrl,
+            waitUrl,
+            controlUrl,
+            outputUrl,
+            sessionLayer: sessionLayer(afterRestart),
+            workerId: "permission-replay-after",
+          })),
+        ),
+      ),
+    )
+
+    expect(result).toMatchObject({ contextId, activityAttempt: 1, exitCode: 0 })
+    expect(beforeRestart).toEqual([])
+    expect(afterRestart).toHaveLength(1)
+    expect(afterRestart[0]).toMatchObject({
+      _tag: "AgentInput",
+      commandId: `runtime-input-${contextId}-input-permission-replay-1`,
+      event: {
+        _tag: "PermissionResponse",
+        permissionRequestId: "permission-replay-1",
+      },
+    })
   })
 
   it("workflow-native runtime-context core skips runtime-output log gaps while waiting for ToolUse output", async () => {

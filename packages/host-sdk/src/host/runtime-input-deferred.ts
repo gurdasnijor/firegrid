@@ -91,8 +91,8 @@ export const appendRuntimeInputDeferred = (
   request: RuntimeIngressRequest,
   context: RuntimeContext,
   // Optional trace context propagated from the originating intent row. The
-  // sequencer copies it onto the sequenced ingress row so the reactive_loop
-  // input handler can parent back to the client.prompt producer span.
+  // sequencer copies it onto the sequenced ingress row so workflow input
+  // handling can parent back to the client.prompt producer span.
   intentOtel?: RowOtelContext,
 ): Effect.Effect<
   RuntimeIngressInputRow,

@@ -14,6 +14,7 @@ import {
 } from "@firegrid/protocol/launch"
 import { type RuntimeHostConfig } from "./config.ts"
 import {
+  type RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import { RuntimeToolUseExecutor } from "@firegrid/runtime/tool-executor"
@@ -48,6 +49,7 @@ type RuntimeToolUseExecutorHostEnvironment =
 export type HostRuntimeContextExecutionEnv =
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
+  | RuntimeAgentOutputAfterEvents
   | CurrentHostSession
   | RuntimeHostConfig
 
