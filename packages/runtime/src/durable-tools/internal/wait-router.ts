@@ -211,12 +211,22 @@ const completeMatch = (
       ...current.value,
       status: "completed",
     })
-    yield* emitSpanEvent("wait.satisfied", {
+    const resumeAttributes = {
       "firegrid.workflow.execution_id": wait.waitKey.executionId,
       "firegrid.wait.name": wait.waitKey.name,
       "firegrid.wait.row_id": waitRowId(wait.waitKey),
       "firegrid.wait.source": wait.source._tag,
       "firegrid.wait.elapsed_ms": Math.max(0, completedAtMs - current.value.createdAtMs),
+    }
+    yield* emitSpanEvent("wait.satisfied", resumeAttributes)
+    // SDD_FIREGRID_AGENT_BODY_PLAN §Slice E (acceptance criterion 7):
+    // Canonical Fireline record `fireline.agent.resumed` is emitted
+    // additively alongside the substrate-shaped `wait.satisfied` event.
+    // Both names carry the same payload; consumers may migrate to the
+    // canonical name without losing the substrate name.
+    yield* emitSpanEvent("fireline.agent.resumed", {
+      ...resumeAttributes,
+      "firegrid.fireline.operation": "wait_for",
     })
   }).pipe(
     Effect.withSpan("firegrid.durable_tools.wait_router.complete_match", {

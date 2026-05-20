@@ -308,13 +308,23 @@ const matchImpl = <A = unknown>(
     // the row's persisted createdAtMs.
     const registeredRow = yield* upsertActiveWait(options.name, baseRow, waitLookup, waitUpsert)
     const registeredAtMs = yield* Clock.currentTimeMillis
-    yield* emitSpanEvent("wait.registered", {
+    const suspendAttributes = {
       "firegrid.workflow.execution_id": registeredRow.executionId,
       "firegrid.wait.name": registeredRow.waitKey.name,
       "firegrid.wait.row_id": waitRowId(registeredRow.waitKey),
       "firegrid.wait.source": registeredRow.source._tag,
       "firegrid.wait.status": registeredRow.status,
       "firegrid.wait.elapsed_ms": Math.max(0, registeredAtMs - registeredRow.createdAtMs),
+    }
+    yield* emitSpanEvent("wait.registered", suspendAttributes)
+    // SDD_FIREGRID_AGENT_BODY_PLAN §Slice E (acceptance criterion 7):
+    // Canonical Fireline record `fireline.agent.suspended` is emitted
+    // additively alongside the substrate-shaped `wait.registered` event.
+    // Both names carry the same payload; consumers may migrate to the
+    // canonical name without losing the substrate name.
+    yield* emitSpanEvent("fireline.agent.suspended", {
+      ...suspendAttributes,
+      "firegrid.fireline.operation": "wait_for",
     })
     const matchDeferred = matchDeferredFor(deferredName)
     return options.timeoutMs === undefined
