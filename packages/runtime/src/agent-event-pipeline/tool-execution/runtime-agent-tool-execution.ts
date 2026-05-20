@@ -1,7 +1,13 @@
 import { DurableClock, type WorkflowEngine } from "@effect/workflow"
 import type {
+  CallToolInput,
+  CallToolOutput,
+  SendToolInput,
+  SendToolOutput,
   SleepToolInput,
   SleepToolOutput,
+  WaitForAnyToolInput,
+  WaitForAnyToolOutput,
   WaitForToolInput,
   WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
@@ -28,6 +34,33 @@ export interface RuntimeWaitForToolExecutionParams
   readonly input: WaitForToolInput
   readonly source: RuntimeObservationSource
   readonly trigger: FieldEqualsTrigger
+}
+
+export interface RuntimeWaitForAnyDescriptorExecution {
+  readonly winnerIndex: number
+  readonly channel: string
+  readonly wait: Effect.Effect<unknown, unknown, never>
+}
+
+export interface RuntimeWaitForAnyToolExecutionParams
+  extends RuntimeToolExecutionContext
+{
+  readonly input: WaitForAnyToolInput
+  readonly waits: ReadonlyArray<RuntimeWaitForAnyDescriptorExecution>
+}
+
+export interface RuntimeSendToolExecutionParams
+  extends RuntimeToolExecutionContext
+{
+  readonly input: SendToolInput
+  readonly append: Effect.Effect<void, unknown, never>
+}
+
+export interface RuntimeCallToolExecutionParams
+  extends RuntimeToolExecutionContext
+{
+  readonly input: CallToolInput
+  readonly call: Effect.Effect<CallToolOutput, unknown, never>
 }
 
 export type RuntimeAgentToolExecutionError =
@@ -69,6 +102,15 @@ export interface RuntimeAgentToolExecutionService {
     | WorkflowEngine.WorkflowEngine
     | WorkflowEngine.WorkflowInstance
   >
+  readonly waitForAny: (
+    params: RuntimeWaitForAnyToolExecutionParams,
+  ) => Effect.Effect<WaitForAnyToolOutput, RuntimeAgentToolExecutionError>
+  readonly send: (
+    params: RuntimeSendToolExecutionParams,
+  ) => Effect.Effect<SendToolOutput, RuntimeAgentToolExecutionError>
+  readonly call: (
+    params: RuntimeCallToolExecutionParams,
+  ) => Effect.Effect<CallToolOutput, RuntimeAgentToolExecutionError>
 }
 
 const waitForTimeoutPayload = (
@@ -87,6 +129,41 @@ const waitForWorkflowOutput = (
     case "Timeout":
       return { matched: false, timedOut: true }
   }
+}
+
+const toolExecutionFailed = (
+  cause: unknown,
+): RuntimeAgentToolExecutionError => ({
+  _tag: "ToolExecutionFailed",
+  cause,
+})
+
+const waitForAnyDescriptorOutput = (
+  descriptor: RuntimeWaitForAnyDescriptorExecution,
+): Effect.Effect<WaitForAnyToolOutput, RuntimeAgentToolExecutionError> =>
+  descriptor.wait.pipe(
+    Effect.map(result => ({
+      winnerIndex: descriptor.winnerIndex,
+      channel: descriptor.channel,
+      result,
+    })),
+    Effect.mapError(toolExecutionFailed),
+  )
+
+const waitForAny = (
+  params: RuntimeWaitForAnyToolExecutionParams,
+): Effect.Effect<WaitForAnyToolOutput, RuntimeAgentToolExecutionError> => {
+  const raced = Effect.raceAll(
+    params.waits.map(waitForAnyDescriptorOutput),
+  )
+  if (params.input.timeoutMs === undefined) return raced
+  return raced.pipe(
+    Effect.timeoutTo({
+      duration: Duration.millis(params.input.timeoutMs),
+      onSuccess: output => output,
+      onTimeout: (): WaitForAnyToolOutput => ({ timedOut: true }),
+    }),
+  )
 }
 
 // firegrid-host-sdk.PACKAGE_GRAPH.6
@@ -108,10 +185,17 @@ export const makeRuntimeAgentToolExecutionService =
       }).pipe(
         Effect.provide(WaitForWorkflowLayer),
         Effect.map(waitForWorkflowOutput),
-        Effect.mapError((cause): RuntimeAgentToolExecutionError => ({
-          _tag: "ToolExecutionFailed",
-          cause,
-        })),
+        Effect.mapError(toolExecutionFailed),
+      ),
+    waitForAny,
+    send: ({ input, append }) =>
+      append.pipe(
+        Effect.as<SendToolOutput>({ sent: true, channel: input.channel }),
+        Effect.mapError(toolExecutionFailed),
+      ),
+    call: ({ call }) =>
+      call.pipe(
+        Effect.mapError(toolExecutionFailed),
       ),
   })
 
