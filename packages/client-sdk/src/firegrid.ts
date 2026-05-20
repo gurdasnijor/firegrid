@@ -159,6 +159,7 @@ export interface FiregridSessionPermissionsClient {
 export interface FiregridSessionHandle {
   readonly sessionId: FiregridSessionId
   readonly contextId: string
+  readonly whenReady: Effect.Effect<void, PreloadError>
   readonly prompt: (
     request: SessionHandlePromptInput,
   ) => Effect.Effect<RuntimeInputIntentRow, PromptInputError | AppendError>
@@ -625,6 +626,16 @@ const make = (config: ResolvedConfig) =>
         })
       })
 
+    const waitUntilContextReady = (
+      contextId: string,
+    ): Effect.Effect<void, PreloadError> =>
+      control.contexts.rows().pipe(
+        Stream.filter(context => context.contextId === contextId),
+        Stream.runHead,
+        Effect.asVoid,
+        Effect.mapError(cause => new PreloadError({ cause })),
+      )
+
     const appendRuntimeInputIntent = (
       request: RuntimeIngressRequest,
     ): Effect.Effect<RuntimeInputIntentRow, AppendError> =>
@@ -779,6 +790,11 @@ const make = (config: ResolvedConfig) =>
       // firegrid-session-fact-client-surfaces.CLIENT_SESSION.4
       sessionId,
       contextId: sessionId,
+      // firegrid-session-fact-client-surfaces.CLIENT_SESSION.6
+      whenReady: withClientSpan("firegrid.client.session.when_ready", {
+        "firegrid.session.id": sessionId,
+        "firegrid.context.id": sessionId,
+      }, waitUntilContextReady(sessionId)),
       prompt: request =>
         withClientSpan("firegrid.client.session.prompt", {
           "firegrid.session.id": sessionId,
