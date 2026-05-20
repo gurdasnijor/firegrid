@@ -231,11 +231,10 @@ const runtimeHostAgentToolHostService = (captured: {
         status: "running" as const,
       }
     }).pipe(
-      // TFIND-031: discharge the host durable substrate the deferred
-      // child-context workflow genuinely needs (RuntimeControlPlaneTable
-      // / RuntimeOutputTable / DurableWait* / RuntimeHostConfig /
-      // CurrentHostSession). Always satisfied at runtime by the composed
-      // host layer; `any` previously hid the requirement.
+      // TFIND-031: discharge the host runtime context the deferred
+      // child-context workflow genuinely needs. Always satisfied at
+      // runtime by the composed host layer; `any` previously hid the
+      // requirement.
       Effect.provide(captured.hostContext),
       Effect.mapError(cause => toolExecutionFailed(toolUseId, "session_new", cause)),
       Effect.withSpan("firegrid.host.agent_tool.session_new", {

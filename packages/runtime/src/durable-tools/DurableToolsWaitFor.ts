@@ -9,7 +9,7 @@
  *  - firegrid-durable-tools.PUBLIC_SURFACE.5 — wait/completion rows stay
  *    runtime-only; this module is not re-exported from @firegrid/client
  *  - firegrid-typed-wait-source-redesign.WAIT_ROUTER.1 — the router consumes
- *    `RuntimeWaitStreams`; the runtime-owned observation tags it needs remain
+ *    `RuntimeObservationStreams`; the runtime-owned observation tags it needs remain
  *    requirements satisfied by the host substrate
  */
 
@@ -19,7 +19,7 @@ import {
   type DurableToolsTableOptions,
   durableToolsTableLayerOptions,
 } from "./internal/table.ts"
-import { RuntimeWaitStreamsLive } from "./internal/runtime-wait-streams.ts"
+import { RuntimeObservationStreamsLive } from "../streams/runtime-observation-streams.ts"
 import { WaitRouterLive } from "./internal/wait-router.ts"
 import { DurableWaitStoreLive } from "./internal/durable-wait-store.ts"
 
@@ -32,7 +32,7 @@ export type DurableToolsWaitForLayerOptions = DurableToolsTableOptions
  *
  * Requirements (R) — `WorkflowEngine.WorkflowEngine` plus the runtime
  * observation tags (`RuntimeAgentOutputEvents`, `RuntimeRuns`) consumed by
- * `RuntimeWaitStreamsLive` must be provided by the runtime host alongside
+ * `RuntimeObservationStreamsLive` must be provided by the runtime host alongside
  * this layer.
  */
 export const DurableToolsWaitForLive = (
@@ -44,7 +44,7 @@ export const DurableToolsWaitForLive = (
   const durableToolsCapabilities = DurableWaitStoreLive
   const routerLive = WaitRouterLive.pipe(
     Layer.provide(durableToolsCapabilities),
-    Layer.provide(RuntimeWaitStreamsLive),
+    Layer.provide(RuntimeObservationStreamsLive),
   )
   return routerLive.pipe(
     Layer.provideMerge(durableToolsCapabilities),

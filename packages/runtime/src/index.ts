@@ -23,6 +23,19 @@ export {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
 } from "./agent-event-pipeline/authorities/runtime-output-public.ts"
+export {
+  AgentOutputAfterObservationSourceSchema,
+  AgentOutputObservationSourceSchema,
+  CallerFactObservationSourceSchema,
+  CallerOwnedFactStreams,
+  type CallerOwnedFactStreamsService,
+  RuntimeObservationSourceSchema,
+  type RuntimeObservationSource,
+  RuntimeObservationStreams,
+  RuntimeObservationStreamsLive,
+  type RuntimeObservationStreamsService,
+  RuntimeRunObservationSourceSchema,
+} from "./streams/index.ts"
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
 export {
@@ -37,36 +50,6 @@ export {
   type EffectAiSandboxConfig,
   type EffectAiSandboxProviderHelper,
 } from "./agent-event-pipeline/sources/sandbox/effect-ai.ts"
-export {
-  DurableWaitRows,
-  DurableWaitRowLookup,
-  DurableWaitRowUpsert,
-  DurableWaitStoreLive,
-  DurableToolsTable,
-  type DurableToolsTableOptions,
-  type DurableToolsTableService,
-  type DurableWaitRowLookupService,
-  type DurableWaitRowUpsertService,
-  DurableToolsWaitForLive,
-  type DurableToolsWaitForLayerOptions,
-  evaluateFieldEquals,
-  FieldEqualsPredicateSchema,
-  FieldEqualsTriggerSchema,
-  type FieldEqualsPredicate,
-  type FieldEqualsTrigger,
-  type RuntimeWaitSource,
-  RuntimeWaitSourceSchema,
-  WaitFor,
-  type WaitForOptions,
-  type WaitForOutcome,
-  WaitForError,
-  type WaitKey,
-  WaitKeyEncoded,
-  WaitKeySchema,
-  type WaitRow,
-  type WaitStatus,
-  WaitStatusSchema,
-} from "./durable-tools/index.ts"
 export {
   AcpCapabilities,
   AcpSessionLive,

@@ -209,7 +209,7 @@ const namespaceScopedLayer = (
 // written per-context by `PerContextRuntimeOutputWriter`
 // (`{prefix}.runtimeOutput.context.{contextId}`), so nothing writes
 // this stream. It exists only to satisfy a *structural* dependency:
-// `RuntimeWaitStreamsLive` resolves `RuntimeAgentOutputEvents`
+// `RuntimeObservationStreamsLive` resolves `RuntimeAgentOutputEvents`
 // (`RuntimeAgentOutputEventsLayer` → ambient `RuntimeOutputTable`) as a
 // hard requirement, and the wait router's now-dead host-wide
 // `agentOutput` fallback reads it. The live `AgentOutput` path is
