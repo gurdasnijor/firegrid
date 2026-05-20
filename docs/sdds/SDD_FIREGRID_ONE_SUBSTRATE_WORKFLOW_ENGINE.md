@@ -25,6 +25,16 @@ The divergence is the complexity spiral. Every overlapping subsystem accumulates
 
 **Resolve the divergence: there is one substrate, the workflow engine.** "Durable wait" is expressed as a workflow execution on that engine. No bridge. No second runtime. No bespoke wait-store. The agent-tool `wait_for` becomes a workflow whose body uses `DurableDeferred.raceAll` over an Activity-that-does-Stream.runHead and a DurableClock.sleep — primitives the engine already has.
 
+### Why this works specifically because the engine is stream-backed
+
+This SDD's shape is **not portable to `ClusterWorkflowEngine`**. The load-bearing property is that `DurableStreamsWorkflowEngine`'s engine-state and the application's stream-state are the same thing — durable streams. The left branch (runtime-context body as a stream-fold) only composes with engine replay because re-folding the stream IS re-running the body; nothing else needs to be replayed.
+
+On a cluster-sharded engine where state is sharded entity messages, the body would have to "smuggle" stream state in as an external substrate — exactly the divergence this SDD eliminates. The right branch (`WaitForWorkflow` using Activity + Stream.runHead + DurableClock + DurableDeferred.raceAll) IS portable across engines, but it would have to live alongside a separate stream substrate on cluster-backed engines.
+
+The fact that `Workflows.layerDurableStreams` was authored as a sibling to `ClusterWorkflowEngine` is what unlocks this collapse. Without it, you get option-3 ("emit to an external durable log from inside an Activity") — workable but bridge-y. With it, you get the one-substrate shape this SDD describes.
+
+This is a Firegrid-specific affordance, not a `@effect/workflow` shape — worth being honest about up front.
+
 ## The converged shape
 
 ### Agent-tool `wait_for` — a workflow execution
@@ -135,9 +145,52 @@ This is a real test contract change, but Lane 1's halt doc shows the helper is ~
 - The engine itself stays unchanged.
 - Permission flow stays — but the workflow body now consumes permission-response rows from its input stream as ordinary events, not via a separate `awaitPermissionResponseInput` deferred-poll path.
 
+## The source-as-offset principle
+
+`Stream.runHead`'s starting offset is **not separately captured or persisted**. It's encoded in the source identity itself. Today's `RuntimeWaitStreams.agentOutputAfter` source is `{_tag: "AgentOutputAfter", contextId, activityAttempt, afterSequence}` — the `afterSequence` is part of the source TYPE, not a runtime cursor. CallerFact sources scope by contextId predicate. The stream subscription is `subscribeChanges({includeInitialState: true})` reading from the table beginning every time.
+
+Replay determinism follows from:
+
+1. **Same source + same trigger** = same set of matching rows in the durable table
+2. **Append-only durable table** = no deletions that shift the head row
+3. `Stream.runHead` over `Stream.filter(trigger)` returns the FIRST matching row deterministically
+
+Concretely: the Activity re-runs on restart (if no result row was written), re-subscribes from table beginning, trigger predicate filters, returns the same first match. "Gap" rows that arrived between Activity start and crash don't change the answer — the first match was earlier than the gap by construction.
+
+"From now onwards" semantics belong at the **trigger-design layer**, not the substrate. If a channel author wants "next event from now," the trigger predicate must encode it (e.g., `sequence > N` with N fixed at workflow-start, or `acceptedAt > T`). The substrate does not owe a separate offset machinery; the trigger is the right place for it. For the runtime-context body, `afterSequence` IS that filter, baked into the source.
+
+This is the load-bearing property the collapse rests on — the same property `WaitFor.match` + wait-router rely on today.
+
+## `raceAll` losing-branch crash-coverage — inherited, not new
+
+The race form (`DurableDeferred.raceAll([matchSide, timeoutSide])`) is **identical to the existing `wait-for.ts:386-410` usage**. Whatever crash-coverage state PR #315's reconcile work ratified (or whatever residual gaps remain) carries forward unchanged. The collapse doesn't close any open raceAll gaps, but it also doesn't open new ones.
+
+What does change positively: the losing-branch failure modes are cleaner. Under the collapse:
+- If the Activity (match-side) wins, the DurableClock wakeup remains scheduled, fires later, no-ops because the race is already resolved.
+- If the DurableClock (timeout-side) wins, the Activity remains running, completes whenever, return value discarded because the race is already resolved.
+
+No wait-router fiber lifecycle to reason about. No wait-row status-flip ceremony. No dispatch-time re-check. The race-deferred itself owns the resolution; losing branches are just no-ops at completion.
+
+If PR #315's residual gaps remain open, they're a separate TFIND; orthogonal to this SDD.
+
+## Nested workflow vs inlined `DurableDeferred` — deliberate choice with named tradeoff
+
+`WaitForWorkflow` is a nested workflow execution (each agent-tool `wait_for` call → its own `engine.execute(WaitForWorkflow, ...)`) rather than an inlined `DurableDeferred.raceAll` inside the parent runtime-context body. The peer-review-style tradeoff:
+
+- **Inlined**: cheaper (no engine round-trip per wait_for). Couples wait state to parent's replay history.
+- **Nested**: clean execution boundary (own ID, own replay scope, own observability). Adds engine round-trip per wait_for.
+
+This SDD picks **nested**, deliberately, for three reasons specific to Firegrid:
+
+1. The parent body (runtime-context body) is itself a stream-fold under this SDD. Interleaving engine-deferred state into a stream-fold's replay reintroduces the substrate divergence we're collapsing. Inlining would defeat the SDD's core premise.
+2. Each wait_for has independent logical identity — cancellation, status query, observability, and the agent's own reasoning about in-flight waits all benefit from each being a first-class execution.
+3. wait_for invocations are infrequent relative to runtime-context body iterations (per-tool-call vs per-row). The round-trip cost is bounded and acceptable.
+
+The cost is real but named. Future profiling could surface it; if so, the alternative (inlined in a NON-stream-fold parent body) would be a different architectural era anyway.
+
 ## Open questions
 
-1. **`Stream.runHead` inside an Activity body — durability semantics.** On restart with no result row written: the Activity re-runs; the source subscription replays via `subscribeChanges({includeInitialState:true})`; the same first row (if it had arrived) is returned deterministically. On restart with a result row written: engine replays the recorded result without re-execution. Both paths are existing engine behavior. CONFIRM via the restart-replay sim in §6 above.
+1. **Verify the source-as-offset principle holds for all current `wait_for` callers via the restart-replay sim** (acceptance #6 above). Specifically: a crash during the WaitForWorkflow Activity's subscribe-and-runHead must reproduce the same matched row on resume. This is theoretical-from-source today; the sim confirms it empirically.
 2. **Predicate-evaluation parent-link semantics.** Today `wait-router.ts:completeMatchSpanOptions` carries the row's `_otel` as parent of the completion span. Under the converged shape, the Activity's span IS the consumer of the row; the parent-link is naturally the Activity's invocation span. Check that the row-otel propagation comments in `wait-router.ts:38-63` translate cleanly into the Activity body's span attributes.
 3. **Wait observability under the converged shape.** Today's wait-row writes ARE the host-visible "which waits are active" surface. Under the converged shape, that becomes "which `wait_for` workflows are currently executing on the engine." The engine has entity-introspection (per `ClusterWorkflowEngine.ts`); equivalent must exist on `DurableStreamsWorkflowEngine`. Audit + extend if needed.
 4. **Permission-flow consumption by the runtime-context body.** Today: `awaitPermissionResponseInput` deferred-polls. Under converged shape: the input stream zip naturally surfaces permission-response rows alongside prompts and tool-results; the per-event handler branches on `_tag`. Verify this composes correctly with the existing `RuntimeContextWorkflowSession.send` semantics.
