@@ -14,7 +14,7 @@
  * fieldEquals predicate evaluated in-Activity by `matchesTrigger` below.
  *
  * The workflow's *engine* dispatches it (via `engine.execute(WaitForWorkflow, ...)`)
- * from the sim's MCP `wait_for` tool handler. There is no `WaitFor.match`,
+ * from the sim's MCP `wait_for` tool handler. There is no legacy wait router,
  * no wait-router, no durable wait row, and no `firegrid.durable_tools.wait_router.*`
  * span on this path — that is the load-bearing acceptance criterion.
  */
@@ -145,4 +145,3 @@ export const WaitForWorkflowLayer = WaitForWorkflow.toLayer(({
     }),
   )
 })
-

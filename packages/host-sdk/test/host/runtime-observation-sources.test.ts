@@ -1,4 +1,3 @@
-import { Workflow } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   CurrentHostSession,
@@ -14,7 +13,10 @@ import {
   encodeRuntimeAgentOutputEnvelope,
   type AgentOutputEvent,
 } from "@firegrid/runtime/events"
-import { WaitFor, type WaitForOptions } from "@firegrid/runtime/durable-tools"
+import {
+  WaitForWorkflow,
+  WaitForWorkflowLayer,
+} from "@firegrid/runtime/workflows"
 import {
   FiregridRuntimeHostWithWorkflowLive,
 } from "../../src/host/index.ts"
@@ -22,11 +24,10 @@ import {
   DurableStreamsWorkflowEngine,
 } from "@firegrid/runtime/workflow-engine"
 import {
-  HostRuntimeObservationSubstrateLive,
+  HostRuntimeObservationStreamsLive,
 } from "../../src/host/runtime-substrate.ts"
 
 // Typed runtime wait sources. firegrid-typed-wait-source-redesign.TYPED_SOURCES.6
-const AGENT_OUTPUT_SOURCE = { _tag: "AgentOutput" } as const
 const RUNTIME_RUN_SOURCE = { _tag: "RuntimeRun" } as const
 
 let server: DurableStreamTestServer | undefined
@@ -42,9 +43,6 @@ afterEach(async () => {
   server = undefined
   baseUrl = undefined
 })
-
-const waitForOrDie = <A>(options: WaitForOptions<A>) =>
-  WaitFor.match<A>(options).pipe(Effect.orDie)
 
 const runWith = <A, E>(
   layer: Layer.Layer<never, unknown, never>,
@@ -82,11 +80,10 @@ const workflowEngineLayer = (input: {
 const agentOutputRaw = (event: AgentOutputEvent): string =>
   encodeRuntimeAgentOutputEnvelope(event)
 
-const PermissionObservationSchema = Schema.Struct({
+const PermissionObservationSchema = Schema.TaggedStruct("PermissionRequest", {
   contextId: Schema.String,
   activityAttempt: Schema.Number,
   sequence: Schema.Number,
-  _tag: Schema.Literal("PermissionRequest"),
   permissionRequestId: Schema.String,
   toolUseId: Schema.String,
   event: Schema.Unknown,
@@ -120,35 +117,8 @@ describe("runtime-host wait_for source registrations", () => {
     const hostId = `host_${crypto.randomUUID()}` as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
 
-    const Wf = Workflow.make({
-      name: "runtime-observation-permission",
-      payload: Schema.Struct({
-        id: Schema.String,
-        contextId: Schema.String,
-        permissionRequestId: Schema.String,
-      }),
-      success: PermissionObservationSchema,
-      idempotencyKey: p => p.id,
-    })
-
-    const workflowLayer = Wf.toLayer(payload =>
-      Effect.gen(function* () {
-        const outcome = yield* waitForOrDie({
-          name: "permission-request",
-          source: AGENT_OUTPUT_SOURCE,
-          trigger: [
-            { path: ["contextId"], equals: payload.contextId },
-            { path: ["_tag"], equals: "PermissionRequest" },
-            { path: ["permissionRequestId"], equals: payload.permissionRequestId },
-          ],
-          resultSchema: PermissionObservationSchema,
-        })
-        if (outcome._tag !== "Match") throw new Error("expected Match")
-        return outcome.row
-      }))
-
-    const layer = workflowLayer.pipe(
-      Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+    const layer = WaitForWorkflowLayer.pipe(
+      Layer.provideMerge(HostRuntimeObservationStreamsLive),
       Layer.provideMerge(workflowEngineLayer({ namespace, contextId })),
       Layer.provideMerge(hostLayer({ namespace, hostId })),
     ) as Layer.Layer<never, unknown, never>
@@ -157,10 +127,19 @@ describe("runtime-host wait_for source registrations", () => {
       layer,
       Effect.gen(function* () {
         const session = yield* CurrentHostSession
-        const fiber = yield* Effect.fork(Wf.execute({
-          id: "permission-wait",
-          contextId,
-          permissionRequestId: "permission-1",
+        const fiber = yield* Effect.fork(WaitForWorkflow.execute({
+          executionKey: `runtime-observation-permission:${contextId}`,
+          source: {
+            _tag: "AgentOutputAfter",
+            contextId,
+            activityAttempt: 1,
+            afterSequence: -1,
+          },
+          trigger: [
+            { path: ["contextId"], equals: contextId },
+            { path: ["_tag"], equals: "PermissionRequest" },
+            { path: ["permissionRequestId"], equals: "permission-1" },
+          ],
         }))
         yield* Effect.sleep("50 millis")
         // Production write path: the per-context output stream the real
@@ -203,7 +182,9 @@ describe("runtime-host wait_for source registrations", () => {
           })),
           Effect.scoped,
         )
-        return yield* Fiber.join(fiber)
+        const outcome = yield* Fiber.join(fiber)
+        if (outcome._tag !== "Match") throw new Error("expected Match")
+        return yield* Schema.decodeUnknown(PermissionObservationSchema)(outcome.raw)
       }),
     )
 
@@ -221,30 +202,8 @@ describe("runtime-host wait_for source registrations", () => {
     const hostId = `host_${crypto.randomUUID()}` as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
 
-    const Wf = Workflow.make({
-      name: "runtime-observation-terminal-run",
-      payload: Schema.Struct({ id: Schema.String, contextId: Schema.String }),
-      success: RuntimeExitedRowSchema,
-      idempotencyKey: p => p.id,
-    })
-
-    const workflowLayer = Wf.toLayer(payload =>
-      Effect.gen(function* () {
-        const outcome = yield* waitForOrDie({
-          name: "runtime-exited",
-          source: RUNTIME_RUN_SOURCE,
-          trigger: [
-            { path: ["contextId"], equals: payload.contextId },
-            { path: ["status"], equals: "exited" },
-          ],
-          resultSchema: RuntimeExitedRowSchema,
-        })
-        if (outcome._tag !== "Match") throw new Error("expected Match")
-        return outcome.row
-      }))
-
-    const layer = workflowLayer.pipe(
-      Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+    const layer = WaitForWorkflowLayer.pipe(
+      Layer.provideMerge(HostRuntimeObservationStreamsLive),
       Layer.provideMerge(workflowEngineLayer({ namespace, contextId })),
       Layer.provideMerge(hostLayer({ namespace, hostId })),
     ) as Layer.Layer<never, unknown, never>
@@ -253,9 +212,13 @@ describe("runtime-host wait_for source registrations", () => {
       layer,
       Effect.gen(function* () {
         const controlPlane = yield* RuntimeControlPlaneTable
-        const fiber = yield* Effect.fork(Wf.execute({
-          id: "runtime-exited-wait",
-          contextId,
+        const fiber = yield* Effect.fork(WaitForWorkflow.execute({
+          executionKey: `runtime-observation-run:${contextId}`,
+          source: RUNTIME_RUN_SOURCE,
+          trigger: [
+            { path: ["contextId"], equals: contextId },
+            { path: ["status"], equals: "exited" },
+          ],
         }))
         yield* Effect.sleep("50 millis")
         yield* controlPlane.runs.upsert({
@@ -271,7 +234,9 @@ describe("runtime-host wait_for source registrations", () => {
           at: new Date().toISOString(),
           exitCode: 0,
         })
-        return yield* Fiber.join(fiber)
+        const outcome = yield* Fiber.join(fiber)
+        if (outcome._tag !== "Match") throw new Error("expected Match")
+        return yield* Schema.decodeUnknown(RuntimeExitedRowSchema)(outcome.raw)
       }),
     )
 

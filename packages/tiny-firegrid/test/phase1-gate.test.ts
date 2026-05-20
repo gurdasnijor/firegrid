@@ -51,7 +51,7 @@ describe("Phase 1 workflow-core-paths gate", () => {
     expect(report.failures).toEqual([])
   })
 
-  it("firegrid-workflow-driven-runtime.VALIDATION.10 rejects legacy durable-tools wait-router spans", () => {
+  it("firegrid-workflow-driven-runtime.VALIDATION.10 rejects legacy wait-router spans", () => {
     const report = analyzePhase1WorkflowCoreGate([
       ...passingTrace(),
       span("firegrid.durable_tools.wait_router.complete_match"),

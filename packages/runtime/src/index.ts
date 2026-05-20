@@ -41,6 +41,8 @@ export {
   ToolCallWorkflowPayloadSchema,
   WaitForWorkflow,
   WaitForWorkflowLayer,
+  FieldEqualsPredicateSchema,
+  FieldEqualsTriggerSchema,
   WaitForWorkflowMatchOutcomeSchema,
   WaitForWorkflowOutcomeSchema,
   WaitForWorkflowPayloadSchema,
@@ -61,8 +63,11 @@ export {
   type RuntimeExitEvidence,
   type StartRuntimeResult,
   type ToolCallWorkflowPayload,
+  type FieldEqualsPredicate,
+  type FieldEqualsTrigger,
   type WaitForWorkflowOutcome,
   type WaitForWorkflowPayload,
+  evaluateFieldEquals,
 } from "./workflow-engine/workflows/index.ts"
 export {
   AgentOutputAfterObservationSourceSchema,

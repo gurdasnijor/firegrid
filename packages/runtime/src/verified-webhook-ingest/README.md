@@ -127,37 +127,38 @@ manager, credential store, product-specific router, or generic webhook service.
 It also keeps provider-specific verification quirks and response policies out of
 the Firegrid substrate.
 
-## WaitFor Observation
+## Workflow Observation
 
-The fact row shape is ready for existing durable-tools observation. A runtime
-composition can register the table collection with `SourceCollections`:
+The fact row shape is ready for workflow-engine observation. A runtime
+composition can expose the table collection through `CallerOwnedFactStreams`:
 
 ```ts
-const sources = yield* SourceCollections
 const table = yield* VerifiedWebhookFactTable
-yield* sources.register(
-  sourceCollectionStreamHandle(
-    "firegrid.verifiedWebhook.verifiedWebhookFacts",
-    table.verifiedWebhookFacts.rows(),
-  ),
-)
+const streams = CallerOwnedFactStreams.of({
+  streamFor: stream =>
+    stream === "firegrid.verifiedWebhook.verifiedWebhookFacts"
+      ? table.verifiedWebhookFacts.rows()
+      : Stream.empty,
+})
 ```
 
 Workflow code can then wait on scalar fields:
 
 ```ts
-yield* WaitFor.match({
-  name: "linear-issue-updated",
-  source: "firegrid.verifiedWebhook.verifiedWebhookFacts",
+yield* WaitForWorkflow.execute({
+  executionKey: "linear-issue-updated",
+  source: {
+    _tag: "CallerFact",
+    stream: "firegrid.verifiedWebhook.verifiedWebhookFacts",
+  },
   trigger: [
     { path: ["source"], equals: "linear-demo" },
     { path: ["eventType"], equals: "Issue.updated" },
     { path: ["externalEntityKey"], equals: "issue:LIN-123" },
   ],
-  resultSchema: VerifiedWebhookFactSchema,
 })
 ```
 
 The current tracer proves durable fact creation. The next proof can compose
-`SourceCollections` and `WaitFor.match` around the same table without changing
-the ingest boundary.
+`CallerOwnedFactStreams` and `WaitForWorkflow` around the same table without
+changing the ingest boundary.

@@ -98,7 +98,7 @@ import type {
 import {
   evaluateFieldEquals,
   type FieldEqualsTrigger,
-} from "@firegrid/runtime/durable-tools"
+} from "@firegrid/runtime/workflows"
 import { AgentToolHost } from "./tool-host.ts"
 import {
   ChannelInventory,

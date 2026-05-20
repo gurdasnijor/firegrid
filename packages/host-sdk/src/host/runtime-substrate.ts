@@ -32,10 +32,6 @@ import {
 } from "../agent-tools/bindings/tool-error.ts"
 import { type AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import {
-  HostOwnedDurableToolsWaitForLive,
-  type HostOwnedRuntimeObservationSubstrate,
-} from "./host-owned-durable-tools.ts"
-import {
   PerContextRuntimeAgentOutputAfterEventsLive,
 } from "./per-context-runtime-output.ts"
 
@@ -60,19 +56,15 @@ export type HostRuntimeContextExecutionEnv =
 // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
 // firegrid-typed-wait-source-redesign.REJECTION.2
 // Shared host runtime observation substrate used by workflow support layers.
-// The current wait router consumes the typed observation tags directly
-// and requires the current WorkflowEngine so matched observations can wake
-// suspended workflow deferreds; there is no source-name registration layer.
-export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForLive.pipe(
+// Runtime-owned workflows consume typed observation tags directly; host-sdk
+// installs the host-backed providers at the composition boundary.
+export const HostRuntimeObservationSubstrateLive = PerContextRuntimeAgentOutputAfterEventsLive.pipe(
   Layer.provideMerge(RuntimeAgentOutputEventsLayer),
-  Layer.provideMerge(PerContextRuntimeAgentOutputAfterEventsLive),
   Layer.provideMerge(RuntimeControlPlaneRecorderLive),
   Layer.withSpan("firegrid.host.runtime_substrate.observation.layer", {
     kind: "internal",
   }),
 )
-
-type HostRuntimeObservationSubstrateEnv = HostOwnedRuntimeObservationSubstrate
 
 export const HostRuntimeObservationStreamsLive = RuntimeObservationStreamsLive.pipe(
   Layer.provideMerge(HostRuntimeObservationSubstrateLive),
@@ -89,11 +81,9 @@ export const HostRuntimeObservationStreamsLive = RuntimeObservationStreamsLive.p
 // the public host runtime context; wait-store services are not ambient on
 // `FiregridRuntimeHostWithWorkflowLive`.
 export type RuntimeContextWorkflowExecutionEnv =
-  | HostRuntimeContextExecutionEnv
-  | HostRuntimeObservationSubstrateEnv
+  HostRuntimeContextExecutionEnv
 
 type RuntimeToolUseExecutorExecutionEnv =
-  | HostRuntimeObservationSubstrateEnv
   | AgentToolHost
   | ChannelInventory
   | RuntimeAgentToolExecution

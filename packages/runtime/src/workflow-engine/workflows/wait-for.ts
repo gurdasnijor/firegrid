@@ -7,7 +7,7 @@ import {
   evaluateFieldEquals,
   FieldEqualsTriggerSchema,
   type FieldEqualsTrigger,
-} from "../../durable-tools/internal/types.ts"
+} from "./field-equals.ts"
 import {
   RuntimeObservationSourceSchema,
   RuntimeObservationStreams,

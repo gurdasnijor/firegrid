@@ -6,11 +6,13 @@ import type {
   WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
 import { Context, Duration, Effect, Layer } from "effect"
-import type { FieldEqualsTrigger } from "../../durable-tools/internal/types.ts"
 import type {
   RuntimeObservationSource,
   RuntimeObservationStreams,
 } from "../../streams/index.ts"
+import type {
+  FieldEqualsTrigger,
+} from "../../workflow-engine/workflows/field-equals.ts"
 import {
   WaitForWorkflow,
   WaitForWorkflowLayer,

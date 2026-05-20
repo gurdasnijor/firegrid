@@ -13,6 +13,13 @@ export {
   type RuntimeControlRequestDispatchOutcome,
 } from "./runtime-control-request.ts"
 export {
+  evaluateFieldEquals,
+  FieldEqualsPredicateSchema,
+  FieldEqualsTriggerSchema,
+  type FieldEqualsPredicate,
+  type FieldEqualsTrigger,
+} from "./field-equals.ts"
+export {
   WaitForWorkflow,
   WaitForWorkflowLayer,
   WaitForWorkflowMatchOutcomeSchema,

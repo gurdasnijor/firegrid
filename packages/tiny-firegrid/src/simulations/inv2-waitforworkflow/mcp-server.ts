@@ -5,22 +5,19 @@
  *
  * Why this exists for INV-2:
  *   The production agent-tool `wait_for` handler (host-sdk
- *   `tool-use-to-effect.ts → runWaitForTool`) lowers onto `WaitFor.match`,
- *   which writes a durable wait row and is resolved by the wait-router
- *   (emitting `firegrid.durable_tools.wait_router.complete_match` spans).
+ *   `tool-use-to-effect.ts`) now lowers onto `WaitForWorkflow.execute`.
  *
  *   INV-2 validates that the engine can handle the racing match/timeout
- *   shape natively (Activity + DurableClock.sleep arbitrated by
- *   DurableDeferred.raceAll) — i.e. without the wait-router substrate.
+ *   shape natively (Activity + DurableClock.sleep) — i.e. without the
+ *   retired wait-router substrate.
  *   Acceptance (c) is "NO `…wait_router.complete_match` spans" on the
  *   sim's trace.
  *
  *   The sim driver wires the agent (`claude-agent-acp`) to this MCP server
  *   via `mcpServers: [{ name, server: { type: "url", url } }]` on the
  *   runtime config, AND sets `runtimeContextMcp.enabled: false` so the
- *   production runtime-context MCP server (with its production `wait_for`)
- *   is NOT injected by the codec. The agent therefore only sees THIS
- *   `wait_for`.
+ *   production runtime-context MCP server is NOT injected by the codec. The
+ *   agent therefore only sees THIS `wait_for`.
  */
 
 import { McpServer, Tool, Toolkit } from "@effect/ai"
