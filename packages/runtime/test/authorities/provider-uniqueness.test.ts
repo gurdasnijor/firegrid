@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest"
 import {
-  DurableWaitCompletionRowLookup,
-  DurableWaitCompletionRowUpsert,
   DurableWaitRows,
   DurableWaitRowLookup,
   DurableWaitRowUpsert,
@@ -72,16 +70,12 @@ const providerEntries = [
     provider: DurableWaitStoreLive,
     backingTable: "DurableToolsTable.waits",
   },
-  {
-    capability: DurableWaitCompletionRowLookup,
-    provider: DurableWaitStoreLive,
-    backingTable: "DurableToolsTable.completions",
-  },
-  {
-    capability: DurableWaitCompletionRowUpsert,
-    provider: DurableWaitStoreLive,
-    backingTable: "DurableToolsTable.completions",
-  },
+  // Shape C Step 2 + Step 3 (docs/research/durable-tools-vs-workflow-engine-convergence.md):
+  // the `DurableToolsTable.completions` backing table is gone — match/timeout
+  // arbitration is `DurableDeferred.raceAll`'s race deferred, idempotent
+  // first-writer-wins via `engine.deferredDone`. The previously-tested
+  // `DurableWaitCompletionRow{Lookup,Upsert}` capability tags + their provider
+  // entries were deleted with the table.
 ] as const satisfies readonly TestProviderEntry[]
 
 const canonicalCapabilityTags = [
@@ -94,8 +88,6 @@ const canonicalCapabilityTags = [
   DurableWaitRowLookup,
   DurableWaitRowUpsert,
   DurableWaitRows,
-  DurableWaitCompletionRowLookup,
-  DurableWaitCompletionRowUpsert,
 ] as const
 
 describe("runtime durable capability provider uniqueness", () => {

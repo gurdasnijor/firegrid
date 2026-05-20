@@ -1,5 +1,6 @@
 /**
- * Durable-tools runtime-private DurableTable: `waits` and `completions`.
+ * Durable-tools runtime-private DurableTable: minimal pending-wait index
+ * (`waits` only — `completions` was deleted under Shape C Step 3).
  *
  * Implements:
  *  - firegrid-durable-tools.RUNTIME_BOUNDARY.1 — once per runtime-host scope
@@ -13,6 +14,15 @@
  *    re-check
  *  - firegrid-durable-tools.BOUNDARIES.9 — single declaration; no client
  *    duplicate
+ *
+ * Shape C (Step 2 + Step 3, see docs/research/durable-tools-vs-workflow-engine-convergence.md):
+ * the `completions` table is gone. Match/timeout arbitration is `DurableDeferred.raceAll`'s
+ * race deferred + idempotent `engine.deferredDone`; the `completions` reads were a
+ * redundant second mechanism. The remaining `waits` table is the minimal pending-wait
+ * index the external (non-workflow-driven) router needs to rediscover work after a host
+ * restart (doc lines 54-59). It records `status: "active" | "completed" | "timed_out"
+ * | "retired"` because the lifecycle re-check at the dispatch boundary
+ * (firegrid-durable-tools.LIFECYCLE.2) uses it to skip retired/completed waits.
  */
 
 import { Effect, Option, Schema } from "effect"
@@ -27,7 +37,6 @@ import { type WaitKey, WaitKeyEncoded } from "./keys.ts"
 import {
   FieldEqualsTriggerSchema,
   RuntimeWaitSourceSchema,
-  WaitOutcomeKindSchema,
   WaitStatusSchema,
 } from "./types.ts"
 
@@ -66,38 +75,8 @@ const WaitRowSchema = Schema.Struct({
 })
 export type WaitRow = Schema.Schema.Type<typeof WaitRowSchema>
 
-/**
- * Match/timeout arbitration record for live operation.
- *
- * `completeMatch` (match side) and `writeTimeoutCompletion` (timeout side)
- * read this table to enforce that exactly one of match/timeout writes a
- * completion; `matchedRowPayload` is the raw row from the source collection
- * (call-site Schema decoding happens in `wait_for`, not here). The
- * crash-recovery reconciler that previously also walked this table was
- * deleted — idempotent `deferredDone` + durable replay sources made it
- * redundant.
- *
- * This table is going away under Shape C: once match/timeout arbitration
- * moves onto `DurableDeferred.raceAll`, nothing reads `completions` and the
- * whole table is deleted. Do not add fields or lifecycle here — see
- * docs/research/durable-tools-vs-workflow-engine-convergence.md.
- *
- * firegrid-durable-tools.WAIT_FOR.7
- * firegrid-durable-tools.SUBSCRIPTION.3
- */
-const WaitCompletionRowSchema = Schema.Struct({
-  waitKey: WaitKeyEncoded.pipe(DurableTable.primaryKey),
-  outcome: WaitOutcomeKindSchema,
-  matchedRowPayload: Schema.optional(Schema.Unknown),
-  completedAtMs: Schema.Number,
-})
-export type WaitCompletionRow = Schema.Schema.Type<
-  typeof WaitCompletionRowSchema
->
-
 const durableToolsSchemas = {
   waits: WaitRowSchema,
-  completions: WaitCompletionRowSchema,
 } as const
 
 export class DurableToolsTable extends DurableTable(

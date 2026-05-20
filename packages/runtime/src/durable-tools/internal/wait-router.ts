@@ -6,9 +6,8 @@
  *  - firegrid-durable-tools.SUBSCRIPTION.1 — `subscribeChanges(..., { includeInitialState: true })`
  *    drives a single match-evaluation code path for initial state + live changes
  *  - firegrid-durable-tools.SUBSCRIPTION.2 — no snapshot-then-subscribe
- *  - firegrid-durable-tools.SUBSCRIPTION.3 — write a completion row with the
- *    raw matched-row payload; resolve the workflow-engine deferred with that
- *    raw payload
+ *  - firegrid-durable-tools.SUBSCRIPTION.3 — resolve the workflow-engine deferred
+ *    with the raw matched-row payload (Shape C: no completion-row write)
  *  - firegrid-durable-tools.SUBSCRIPTION.7 — composed as a scoped runtime worker
  *  - firegrid-durable-tools.LIFECYCLE.2/3/5 — per-dispatch wait re-check;
  *    retired waits never dispatch; source-fiber leakage is tolerated
@@ -17,6 +16,16 @@
  *  - firegrid-durable-tools.BOUNDARIES.3 — discovery channel is
  *    `subscribeChanges`, not `Effect.sleep` polling
  *  - firegrid-durable-tools.EFFECT_IDIOMS.2 — `Clock.currentTimeMillis`
+ *
+ * Shape C Step 2 + Step 3 (docs/research/durable-tools-vs-workflow-engine-convergence.md):
+ * the match/timeout arbitration moved onto `DurableDeferred.raceAll`'s race
+ * deferred. `completeMatch` no longer writes a `WaitCompletionRow` and no
+ * longer reads completions to preempt the timeout — both were a redundant
+ * second mechanism given idempotent `engine.deferredDone`. The `completions`
+ * table is gone. The router still writes `waits.status: "completed"` after
+ * `deferredDone` because the lifecycle re-check
+ * (firegrid-durable-tools.LIFECYCLE.2) reads that status to skip
+ * already-resolved waits at the dispatch boundary.
  */
 
 import { WorkflowEngine } from "@effect/workflow"
@@ -63,8 +72,6 @@ const completeMatchSpanOptions = (
 }
 import { type WaitRow } from "./table.ts"
 import {
-  DurableWaitCompletionRowLookup,
-  DurableWaitCompletionRowUpsert,
   DurableWaitRowLookup,
   DurableWaitRows,
   DurableWaitRowUpsert,
@@ -156,8 +163,6 @@ const completeMatch = (
   row: unknown,
   waitLookup: DurableWaitRowLookup["Type"],
   waitUpsert: DurableWaitRowUpsert["Type"],
-  completionLookup: DurableWaitCompletionRowLookup["Type"],
-  completionUpsert: DurableWaitCompletionRowUpsert["Type"],
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
   Effect.gen(function*() {
@@ -176,39 +181,21 @@ const completeMatch = (
     })
     if (!matched) return
 
-    // firegrid-durable-tools.TIMEOUT.3 — if a timeout completion was already
-    // written for this wait, skip; the timeout path will resolve the
-    // workflow's deferred. The final guarantee that exactly one of match /
-    // timeout resolves the workflow is `engine.deferredDone`'s Option.isNone
-    // guard, which makes the second deferredDone call a no-op.
-    const existingCompletion = yield* completionLookup.find(wait.waitKey)
-    if (
-      Option.isSome(existingCompletion) &&
-      existingCompletion.value.outcome === "timeout"
-    ) {
-      return
-    }
-
     const completedAtMs = yield* Clock.currentTimeMillis
-    yield* completionUpsert.upsert({
-      waitKey: wait.waitKey,
-      outcome: "match",
-      matchedRowPayload: row,
-      completedAtMs,
-    })
     // firegrid-durable-tools.WAIT_FOR.7
     //
     // ORDER IS LOAD-BEARING. `engine.deferredDone` must fire BEFORE the
     // `status: "completed"` write. This guarantees the invariant
     //   status === "completed"  ⟹  deferredDone has already fired.
     //
-    // The crash-recovery reconciler was deleted (the redundant
-    // completed-but-not-notified gap (b) it bridged is now unreachable):
-    // if a crash lands between the completion-row write and this
-    // deferredDone, the wait row is still `active`, so on restart the
-    // router re-attaches it, the durable source replays via
-    // includeInitialState, completeMatch re-derives the deterministic
-    // match, and idempotent deferredDone makes the re-fire a no-op.
+    // Shape C: there is no completion-row write between these two; the
+    // race-vs-timeout arbitration is the `DurableDeferred.raceAll` race
+    // deferred in `wait-for.ts` (idempotent first-writer-wins, finding #1
+    // of the convergence doc). If a crash lands between this `deferredDone`
+    // and the status flip, on restart the wait row is still `active`,
+    // the router re-attaches it, the durable source replays via
+    // includeInitialState, `completeMatch` re-derives the deterministic
+    // match, and idempotent `deferredDone` makes the re-fire a no-op.
     // See docs/research/durable-tools-vs-workflow-engine-convergence.md
     // and test/workflow-engine/deferred-done-idempotency.test.ts.
     yield* engine.deferredDone(
@@ -257,8 +244,6 @@ const attachWaitToSource = (
   source: Stream.Stream<unknown, unknown>,
   waitLookup: DurableWaitRowLookup["Type"],
   waitUpsert: DurableWaitRowUpsert["Type"],
-  completionLookup: DurableWaitCompletionRowLookup["Type"],
-  completionUpsert: DurableWaitCompletionRowUpsert["Type"],
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
   Effect.gen(function*() {
@@ -273,8 +258,6 @@ const attachWaitToSource = (
           row,
           waitLookup,
           waitUpsert,
-          completionLookup,
-          completionUpsert,
           engine,
         ).pipe(
           Effect.catchAll((cause) =>
@@ -309,8 +292,6 @@ const startRouter = Effect.gen(function*() {
   const waitLookup = yield* DurableWaitRowLookup
   const waitUpsert = yield* DurableWaitRowUpsert
   const waitRows = yield* DurableWaitRows
-  const completionLookup = yield* DurableWaitCompletionRowLookup
-  const completionUpsert = yield* DurableWaitCompletionRowUpsert
 
   // firegrid-durable-tools.WAIT_FOR.7
   //
@@ -337,8 +318,6 @@ const startRouter = Effect.gen(function*() {
         row.value,
         waitLookup,
         waitUpsert,
-        completionLookup,
-        completionUpsert,
         engine,
       )
     }).pipe(
@@ -385,8 +364,6 @@ const startRouter = Effect.gen(function*() {
               source,
               waitLookup,
               waitUpsert,
-              completionLookup,
-              completionUpsert,
               engine,
             )
           }),
@@ -405,8 +382,6 @@ const startRouter = Effect.gen(function*() {
 )
 
 type WaitRouterRequirements =
-  | DurableWaitCompletionRowLookup
-  | DurableWaitCompletionRowUpsert
   | DurableWaitRowLookup
   | DurableWaitRows
   | DurableWaitRowUpsert

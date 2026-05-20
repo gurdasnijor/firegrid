@@ -94,8 +94,12 @@ export const WaitStatusSchema = Schema.Literal(
 )
 export type WaitStatus = Schema.Schema.Type<typeof WaitStatusSchema>
 
-export const WaitOutcomeKindSchema = Schema.Literal("match", "timeout")
-export type WaitOutcomeKind = Schema.Schema.Type<typeof WaitOutcomeKindSchema>
+// `WaitOutcomeKindSchema` was deleted with the `WaitCompletionRow` schema
+// under Shape C Step 3 (docs/research/durable-tools-vs-workflow-engine-convergence.md):
+// the durable completion artifact it tagged is gone — match/timeout
+// arbitration is now `DurableDeferred.raceAll`'s race deferred.
+// `WaitForOutcome` (below) is the only remaining public surface for the
+// match/timeout discrimination.
 
 /**
  * Public discriminated outcome returned by `WaitFor.match`.
