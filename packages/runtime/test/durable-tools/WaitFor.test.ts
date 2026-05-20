@@ -14,7 +14,7 @@
 
 import { Workflow } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
+import { Effect, Exit, Fiber, Layer, Schema, Stream, Tracer } from "effect"
 import { DurableTable } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
@@ -267,6 +267,149 @@ describe("durable-tools wait_for", () => {
     expect(result.status).toBe("submitted")
     expect(result.text).toBe("hello")
     expect(resumes).toBeGreaterThanOrEqual(1)
+  })
+
+  it("tf-v1q2 SDD_FIREGRID_AGENT_BODY_PLAN §Slice E emits fireline.agent.suspended / fireline.agent.resumed additively alongside wait.registered / wait.satisfied", async () => {
+    const streams = makeStreams("fireline-aliases")
+    type CapturedEvent = {
+      readonly spanName: string
+      readonly eventName: string
+      readonly attributes: Readonly<Record<string, unknown>>
+    }
+    const captured: Array<CapturedEvent> = []
+    const capturingTracer: Tracer.Tracer = {
+      [Tracer.TracerTypeId]: Tracer.TracerTypeId,
+      span: (name, parent, context, links, startTime, kind) => {
+        const span: Tracer.Span = {
+          _tag: "Span",
+          name,
+          spanId: `cap-${Math.random().toString(36).slice(2, 10)}`,
+          traceId: "cap-trace",
+          parent,
+          context,
+          status: { _tag: "Started", startTime },
+          attributes: new Map(),
+          links,
+          sampled: true,
+          kind,
+          end: () => {},
+          attribute: () => {},
+          event: (eventName, _startTime, attributes) => {
+            captured.push({
+              spanName: name,
+              eventName,
+              attributes: attributes ?? {},
+            })
+          },
+          addLinks: () => {},
+        }
+        return span
+      },
+      context: (f) => f(),
+    }
+    const capturingTracerLayer = Layer.setTracer(capturingTracer)
+
+    const Wf = Workflow.make({
+      name: "wait-for-fireline-aliases",
+      payload: Schema.Struct({ id: Schema.String, requestId: Schema.String }),
+      success: TestRowResultSchema,
+      idempotencyKey: (p) => p.id,
+    })
+    const workflowLayer = Wf.toLayer((payload) =>
+      Effect.gen(function*() {
+        const outcome = yield* waitForOrDie<TestRow>({
+          name: "fireline-aliases",
+          source: RUNTIME_RUN_SOURCE,
+          trigger: [{ path: ["requestId"], equals: payload.requestId }],
+          resultSchema: TestRowResultSchema,
+        })
+        if (outcome._tag !== "Match") throw new Error("expected Match")
+        return outcome.row
+      }))
+
+    const layer = buildLayer(streams, workflowLayer).pipe(
+      Layer.provideMerge(capturingTracerLayer),
+    )
+
+    const program = Effect.gen(function*() {
+      yield* registerTestSource
+      const source = yield* TestSourceTable
+      const fiber = yield* Effect.fork(
+        Wf.execute({ id: "fireline-1", requestId: "req-fireline" }),
+      )
+      yield* sleep(50)
+      yield* source.rows.upsert({
+        id: "match-fireline",
+        requestId: "req-fireline",
+        status: "submitted",
+        text: "alias-test",
+      })
+      return yield* Fiber.join(fiber)
+    })
+
+    const result = await runWith(layer, program)
+    expect(result.id).toBe("match-fireline")
+
+    // Suspension pair: both substrate (`wait.registered`) and canonical
+    // Fireline (`fireline.agent.suspended`) names fire on the wait_for.match
+    // span. Workflow replay may emit each multiple times — the load-bearing
+    // invariant is that BOTH names appear at least once.
+    const suspended = captured.filter(
+      (e) =>
+        e.eventName === "wait.registered" ||
+        e.eventName === "fireline.agent.suspended",
+    )
+    const uniqueSuspendedNames = Array.from(
+      new Set(suspended.map((e) => e.eventName)),
+    ).sort()
+    expect(uniqueSuspendedNames).toEqual([
+      "fireline.agent.suspended",
+      "wait.registered",
+    ])
+    const registeredEvent = suspended.find(
+      (e) => e.eventName === "wait.registered",
+    )
+    const suspendedEvent = suspended.find(
+      (e) => e.eventName === "fireline.agent.suspended",
+    )
+    expect(registeredEvent?.attributes["firegrid.wait.name"]).toBe(
+      "fireline-aliases",
+    )
+    expect(suspendedEvent?.attributes["firegrid.wait.name"]).toBe(
+      "fireline-aliases",
+    )
+    expect(suspendedEvent?.attributes["firegrid.fireline.operation"]).toBe(
+      "wait_for",
+    )
+
+    // Resumption pair: same invariant on the wait_router.complete_match span.
+    const resumed = captured.filter(
+      (e) =>
+        e.eventName === "wait.satisfied" ||
+        e.eventName === "fireline.agent.resumed",
+    )
+    const uniqueResumedNames = Array.from(
+      new Set(resumed.map((e) => e.eventName)),
+    ).sort()
+    expect(uniqueResumedNames).toEqual([
+      "fireline.agent.resumed",
+      "wait.satisfied",
+    ])
+    const satisfiedEvent = resumed.find(
+      (e) => e.eventName === "wait.satisfied",
+    )
+    const resumedEvent = resumed.find(
+      (e) => e.eventName === "fireline.agent.resumed",
+    )
+    expect(satisfiedEvent?.attributes["firegrid.wait.name"]).toBe(
+      "fireline-aliases",
+    )
+    expect(resumedEvent?.attributes["firegrid.wait.name"]).toBe(
+      "fireline-aliases",
+    )
+    expect(resumedEvent?.attributes["firegrid.fireline.operation"]).toBe(
+      "wait_for",
+    )
   })
 
   it("firegrid-durable-tools.WAIT_FOR.6, SUBSCRIPTION.1 resumes after restart when the source row appears between runs", async () => {
