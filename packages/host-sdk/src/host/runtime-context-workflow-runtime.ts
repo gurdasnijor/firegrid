@@ -19,7 +19,7 @@ import {
   mapRuntimeContextError,
   type RuntimeContextError,
 } from "@firegrid/runtime/errors"
-import { Context, Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect"
+import { Context, Effect, Exit, Layer, Option, Ref, Scope, Stream, type Tracer } from "effect"
 import { RuntimeHostConfig } from "./config.ts"
 import {
   runtimeContextWorkflowExecutionId,
@@ -53,7 +53,7 @@ interface RuntimeContextWorkflowRuntimeService {
     A,
     E | RuntimeContextError,
     | Exclude<R, WorkflowEngine.WorkflowEngine>
-    | Exclude<Exclude<RLayer, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>
+    | Exclude<Exclude<Exclude<Exclude<RLayer, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>, Tracer.ParentSpan>, Tracer.ParentSpan>
   >
   readonly deregister: (contextId: string) => Effect.Effect<void>
 }
@@ -117,7 +117,7 @@ const supportLayerWithHostEngine = <R>(
 ): Layer.Layer<
   never,
   unknown,
-  Exclude<Exclude<R, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>
+  Exclude<Exclude<Exclude<R, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>, Tracer.ParentSpan>
 > =>
   layer.pipe(
     Layer.provideMerge(Layer.succeed(WorkflowEngine.WorkflowEngine, handle.engine)),
@@ -125,7 +125,7 @@ const supportLayerWithHostEngine = <R>(
   ) as Layer.Layer<
     never,
     unknown,
-    Exclude<Exclude<R, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>
+    Exclude<Exclude<Exclude<R, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>, Tracer.ParentSpan>
   >
 
 const deregisterActiveExecution = (
@@ -223,7 +223,7 @@ export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
     ): Effect.Effect<
       void,
       RuntimeContextError,
-      Exclude<Exclude<RLayer, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>
+      Exclude<Exclude<Exclude<Exclude<RLayer, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>, Tracer.ParentSpan>, Tracer.ParentSpan>
     > =>
       workflowSupportLock.withPermits(1)(
         Effect.gen(function*() {

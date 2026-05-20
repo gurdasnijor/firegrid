@@ -152,7 +152,7 @@ export const makeWorkflowEngine = (
         Effect.map(row => Option.getOrUndefined(row)?.interrupted === true),
       ))
 
-    const resume = (executionId: string) =>
+    const resume: (executionId: string) => Effect.Effect<void> = (executionId) =>
       Effect.gen(function*() {
         const row = yield* orDieTable(table.executions.get(executionId).pipe(
           Effect.map(Option.getOrUndefined),
@@ -202,6 +202,9 @@ export const makeWorkflowEngine = (
                 suspended: result._tag === "Suspended", ...(result._tag === "Suspended" && result.cause !== undefined ? { cause: result.cause } : {}),
                 ...(finalResult !== undefined ? { finalResult } : {}),
               }))
+              if (result._tag === "Complete" && latest.parentExecutionId !== undefined) {
+                yield* resume(latest.parentExecutionId).pipe(Effect.forkIn(engineScope))
+              }
             }),
           ),
           Effect.forkIn(entry.scope),

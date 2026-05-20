@@ -45,6 +45,7 @@ import {
 } from "../../src/agent-tools/execution/tool-host.ts"
 import { toolExecutionFailed } from "../../src/agent-tools/bindings/tool-error.ts"
 import { toolUseToEffect } from "../../src/agent-tools/execution/tool-use-to-effect.ts"
+import { WaitForChannelWorkflowLayer } from "../../src/agent-tools/execution/wait-for-workflow.ts"
 
 // ---------------------------------------------------------------------------
 // Server lifecycle
@@ -210,6 +211,7 @@ const buildLayer = (
   channels: Iterable<ChannelRegistration> = [],
 ) =>
   RunToolWorkflowLayer.pipe(
+    Layer.provideMerge(WaitForChannelWorkflowLayer),
     Layer.provideMerge(hostLayer),
     Layer.provideMerge(TestChannelRegistryLive(channels)),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({

@@ -4,6 +4,26 @@
 
 `GREEN-new-shape-replay-after-tf-gyxc`
 
+## Lane 2 Production-Shape Addendum
+
+The original evidence below is historical proof for the INV-2
+`DurableDeferred.raceAll + DurableClock.sleep` shape after tf-gyxc. Phase-1
+Lane 2 later changed production `wait_for` to the Activity-contained bridge
+documented in
+`docs/research/tf-xw0w-phase1-lane2-waitforworkflow-cutover.FINDING.md`.
+
+The `phase1-lane6-new-shape-replay` smoke now imports the production
+`WaitForWorkflow` and asserts production semantics:
+
+- already-written-after-restart completes as Match
+- live-after-restart completes as Match
+- timeout-after-restart completes as Timeout with eventual-fire semantics
+
+For the production bridge, timeout is per Activity attempt, not an absolute
+durable deadline; a host bounce can extend the effective timeout. The old
+`deadline_preserved = true` assertion applies only to the historical INV-2
+trace below.
+
 The exact INV-2 `WaitForWorkflow` body shape now survives a scoped engine
 bounce while the `Activity(Stream.runHead(...))` side is suspended:
 

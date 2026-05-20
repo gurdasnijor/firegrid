@@ -6,7 +6,8 @@ Last amended: 2026-05-20 (Lane 2 / tf-xw0w second-rail confirmation)
 Owner: Firegrid Runtime / Workflow Engine
 Empirical origins:
 - tf-vnc8 Phase-1 Lane 1 (PR #471, commit b31174a73) — Stream.merge case
-- tf-xw0w Phase-1 Lane 2 (engine-runtime patches under tf-xw0w) — `DurableDeferred.raceAll` case
+- tf-xw0w Phase-1 Lane 2 — `DurableDeferred.raceAll` failure case and
+  race-inside-Activity production bridge
 
 ## The Rule
 
@@ -33,7 +34,7 @@ machinery** to work correctly. `ClusterWorkflowEngine` has that machinery
 unless additional engine work fills the gap. Portable workflow bodies should
 not rely on them.
 
-## Canonical Working Pattern
+## Canonical Working Pattern A: Sequential Peek/Await
 
 Lane 1 (tf-vnc8) landed the production runtime-context body using a sequential
 peek/await state machine. The pattern is the canonical shape for "wait on
@@ -90,6 +91,36 @@ iteration.
 
 The combined pattern: **peek both sides non-blockingly; process whichever has
 progress; suspend on one side only if neither has progress.**
+
+## Canonical Working Pattern B: Race-Inside-Activity
+
+When a workflow body needs "wait on N sources" semantics and
+`streamWaitAny` is not yet available, put the race inside an Activity body:
+
+```ts
+const matchOrTimeoutActivity = Activity.make({
+  execute: Effect.race(
+    Stream.runHead(filteredSource).pipe(Effect.map(/* Match */)),
+    Effect.sleep(Duration.millis(timeoutMs)).pipe(Effect.as(/* Timeout */)),
+  ),
+})
+
+const body = () => matchOrTimeoutActivity
+```
+
+Activities are opaque to the workflow body's suspension model. Internal
+forking, racing, streaming, and sleeping inside an Activity do not violate the
+single-suspension rule because the body sees only one `Activity.execute`
+suspension point.
+
+Tradeoff: `Effect.sleep` inside the Activity is in-memory. Across host scope
+close, the Activity restarts from scratch with a fresh timer. Effective timeout
+duration is **per Activity attempt**, not an absolute durable deadline; under a
+bounce or repeated bounces the total wait can exceed the original `timeoutMs`.
+This pattern is acceptable when eventual timeout is the requirement and exact
+deadline preservation is deferred to `streamWaitAny`.
+
+Empirical origin: tf-xw0w Phase-1 Lane 2 (`WaitForWorkflow` cutover).
 
 ## First Failure Case: `Stream.merge` Inside The Body
 
@@ -172,19 +203,13 @@ coordination machinery**:
   been interrupted-as-suspends so the engine knows which ones to re-execute
   on resume.
 
-`DurableStreamsWorkflowEngine` doesn't have these. Lane 2's patches are
-retrofitting cluster-equivalent machinery one piece at a time:
-
-- PR #470's recycle invariant ≈ partial RPC-FiberId-discriminator (uses a
-  durable `interrupted` flag + a new in-memory `recycling` Ref as the
-  discriminator)
-- Lane 2's force-interrupt-on-deferred-done patch ≈ partial active-deferred
-  resume flow (forces fiber termination when external deferred resolves,
-  so resume can re-execute)
-
-Both patches keep working only because they're closing a specific gap. The
-underlying body shape (`raceAll` inside the body) keeps surfacing more
-gaps because the rule above is being violated structurally.
+`DurableStreamsWorkflowEngine` doesn't have this full cluster-equivalent
+machinery. PR #470's recycle invariant fixed scope-close classification, but
+Lane 2's same-generation timeout probe showed that adding targeted runtime
+patches for `raceAll` would still be compensating for a structurally invalid
+body shape. Production Lane 2 therefore moved the race inside one Activity
+instead of shipping discriminator or force-interrupt patches for body-level
+`raceAll`.
 
 ## Why This Is NOT The Engine-Recycle Bug
 
@@ -243,17 +268,16 @@ The engine internally:
 **Decision-trigger status (escalated 2026-05-20)**: with Lane 2 confirming
 the same composition leak at a second combinator, `streamWaitAny` has moved
 from "P1 design bead" to **load-bearing follow-up for Lane 2's eventual
-cleanup**. Lane 2's engine patches keep working in the short term, but the
-target end state is `WaitForWorkflow` lowered onto `streamWaitAny` — at
-which point the patches become unnecessary or scope down dramatically.
+cleanup**. Lane 2's Activity-contained bridge works in the short term, but
+the target end state is `WaitForWorkflow` lowered onto `streamWaitAny` so
+timeout semantics can return to a durable absolute deadline.
 
 Until `streamWaitAny` lands:
 - Lane 1's peek/await state machine pattern is the canonical workaround for
   multi-source coordination
-- Lane 2's engine patches keep `DurableDeferred.raceAll` working in the
-  durable-streams engine
-- New workflow bodies should prefer the peek/await pattern over `raceAll`
-  where possible
+- Lane 2's production `wait_for` bridge uses Pattern B: race-inside-Activity
+- New workflow bodies should prefer Pattern A or Pattern B over body-level
+  `raceAll`
 
 ## Combinators To Avoid In Workflow Bodies
 
@@ -327,8 +351,8 @@ body runs on, but PR reviews should flag them and require either:
 - Engine recycle invariant (PR #470, distinct from this rule):
   `packages/runtime/src/workflow-engine/internal/engine-runtime.ts`
   commit `1ca9e4696` (tf-gyxc)
-- Lane 2 engine-runtime patches (recycling Ref + force-interrupt-on-deferred-done):
-  `packages/runtime/src/workflow-engine/internal/engine-runtime.ts` tf-xw0w branch
+- Lane 2 production Activity-contained bridge:
+  `packages/host-sdk/src/agent-tools/execution/wait-for-workflow.ts`
 - Forward-looking primitive:
   `docs/sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md` §
   Candidate Primitives §2 `streamWaitAny`
@@ -353,15 +377,15 @@ workflow-body authoring constraint, not engine-recycle contingency-triggers.
 
 **Actions outstanding:**
 
-1. **Lane 2's engine patches** ship as-is for tactical unblock. They
-   correctly compensate for the missing cluster-engine machinery in the
-   durable-streams adapter.
+1. **Lane 2's production bridge** ships as race-inside-Activity. Timeout is
+   per Activity attempt, not an absolute durable deadline; a host bounce can
+   extend the effective wait.
 2. **`streamWaitAny` engine primitive** is escalated to load-bearing
    follow-up. Per engine-primitives SDD; Lane 2's findings are the
    second-rail confirmation that the primitive is needed structurally, not
    just as optimization.
 3. **`WaitForWorkflow` migration** to `streamWaitAny` (once available)
-   becomes the long-term cleanup that retires Lane 2's engine patches.
+   becomes the long-term cleanup that restores durable deadline semantics.
 4. **tf-0mt5 contingency anchor** should record: contingency-trigger #1 did
    **not** fire on either case; both shapes were structurally incompatible
    with the engine model from the start.

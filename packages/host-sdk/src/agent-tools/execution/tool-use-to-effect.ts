@@ -101,6 +101,11 @@ import {
   type EgressChannel,
 } from "../../host/channel-registry.ts"
 import {
+  WaitForChannel,
+  waitForWorkflowExecutionId,
+  type WaitForChannelError,
+} from "./wait-for-workflow.ts"
+import {
   toolErrorResult,
   toolExecutionFailed,
   toolInvalidInputFromParseError,
@@ -263,14 +268,13 @@ const runSleepTool = (
   }).pipe(Effect.as<SleepToolOutput>({ slept: true }))
 
 const runWaitForTool = (
+  ctx: ToolLoweringContext,
   toolUseId: string,
   input: WaitForToolInput,
 ): Effect.Effect<
   WaitForToolOutput,
   ToolError,
-  | WorkflowEngine.WorkflowEngine
-  | WorkflowEngine.WorkflowInstance
-  | ChannelRegistry
+  WaitForChannel
 > => {
   // `match` is typed `Record<string, unknown>` because schema-level
   // scalar refinement would prevent codecs from publishing the JSON shape
@@ -290,58 +294,47 @@ const runWaitForTool = (
     })
   }
 
-  const timeout: WaitForToolOutput = { matched: false, timedOut: true }
-  const waitForChannel = Effect.gen(function*() {
-    const registry = yield* ChannelRegistry
-    const registration = yield* registry.require(input.channel).pipe(
-      Effect.mapError((): ToolError => ({
-        _tag: "ToolInvalidInput",
-        toolUseId,
-        name: "wait_for",
-        reason: `unknown channel: ${input.channel}`,
-      })),
-    )
-    if (registration.direction !== "ingress") {
-      return yield* Effect.fail({
-        _tag: "ToolInvalidInput" as const,
-        toolUseId,
-        name: "wait_for",
-        reason: `wait_for requires an ingress channel: ${input.channel}`,
-      })
-    }
-    const channel = registration as IngressChannel
-    const match = Stream.runHead(
-      channel.binding.stream.pipe(
-        Stream.filter((row) => evaluateFieldEquals(adapted.trigger, row)),
-      ),
-    ).pipe(
-      Effect.map(Option.match({
-        onNone: (): WaitForToolOutput => timeout,
-        onSome: (row): WaitForToolOutput => ({ matched: true, event: row }),
-      })),
-      Effect.mapError((cause) =>
-        toolExecutionFailed(toolUseId, "wait_for", cause),
-      ),
-    )
+  return Effect.gen(function* () {
     // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.3
     // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.4
     // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.5
-    //
-    // This is the channel-resolution scaffold for tf-dlaa. The production
-    // substrate handoff to `WaitForWorkflow.execute` is blocked on tf-xw0w;
-    // until that lands, the registry binding drives the same typed stream
-    // surface directly so the public tool contract can be validated.
-    return input.timeoutMs === undefined
-      ? yield* match
-      : yield* match.pipe(
-        Effect.timeoutTo({
-          duration: Duration.millis(input.timeoutMs === 0 ? 1 : input.timeoutMs),
-          onTimeout: () => timeout,
-          onSuccess: (result) => result,
-        }),
-      )
+    const executionId = waitForWorkflowExecutionId(ctx.contextId, toolUseId)
+    const waitForChannel = yield* WaitForChannel
+    return yield* waitForChannel.waitFor({
+      executionId,
+      channel: input.channel,
+      trigger: adapted.trigger,
+      ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+    }).pipe(
+      Effect.mapError((cause) =>
+        waitForChannelToolError(toolUseId, cause),
+      ),
+    )
   })
-  return waitForChannel
+}
+
+const waitForChannelToolError = (
+  toolUseId: string,
+  cause: WaitForChannelError,
+): ToolError => {
+  switch (cause._tag) {
+    case "UnknownChannel":
+      return {
+        _tag: "ToolInvalidInput",
+        toolUseId,
+        name: "wait_for",
+        reason: `unknown channel: ${cause.channel}`,
+      }
+    case "WrongDirection":
+      return {
+        _tag: "ToolInvalidInput",
+        toolUseId,
+        name: "wait_for",
+        reason: `wait_for requires an ingress channel: ${cause.channel}`,
+      }
+    case "WorkflowFailed":
+      return toolExecutionFailed(toolUseId, "wait_for", cause.cause)
+  }
 }
 
 const appendEgressPayload = <S extends Schema.Schema.Any>(
@@ -762,6 +755,7 @@ type ToolEnvironment =
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
   | ChannelRegistry
+  | WaitForChannel
   | AgentToolHost
 
 /**
@@ -850,7 +844,7 @@ export const toolUseToEffect = (
       )
     case "wait_for":
       return dispatchTool(event, "wait_for", WaitForToolInputSchema, (input) =>
-        runWaitForTool(event.part.id, input),
+        runWaitForTool(ctx, event.part.id, input),
       )
     case "send":
       return dispatchTool(event, "send", SendToolInputSchema, (input) =>

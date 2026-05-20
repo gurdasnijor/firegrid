@@ -6,6 +6,9 @@ import {
   type AgentToolHostService,
 } from "../agent-tools/execution/tool-host.ts"
 import {
+  WaitForChannelWorkflowLayer,
+} from "../agent-tools/execution/wait-for-workflow.ts"
+import {
   RuntimeContextWorkflowNativeLayer,
 } from "./runtime-context-workflow-core.ts"
 import {
@@ -31,6 +34,12 @@ import type { ChannelRegistry } from "./channel-registry.ts"
 // too. This is the SAME layer reference provided into the workflow body,
 // so Effect Layer memoization builds it exactly once; recorder and waker
 // cannot diverge. The public host contract is unchanged.
+const runtimeToolUseExecutorSupportLayer =
+  RuntimeToolUseExecutorLive.pipe(
+    Layer.provideMerge(WaitForChannelWorkflowLayer),
+    Layer.provide(HostRuntimeObservationSubstrateLive),
+  )
+
 export const runtimeContextWorkflowSupportLayer = (
   contextId: string,
   agentToolHost: AgentToolHostService,
@@ -44,12 +53,9 @@ export const runtimeContextWorkflowSupportLayer = (
 > =>
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer still leaks any through substrate layers; the declared Layer R channel is the intended capability boundary.
   RuntimeContextWorkflowNativeLayer.pipe(
+    Layer.provideMerge(WaitForChannelWorkflowLayer),
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
-    Layer.provideMerge(
-      RuntimeToolUseExecutorLive.pipe(
-        Layer.provide(HostRuntimeObservationSubstrateLive),
-      ),
-    ),
+    Layer.provideMerge(runtimeToolUseExecutorSupportLayer),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
     Layer.withSpan("firegrid.host.runtime_context.workflow_support.layer", {
       kind: "internal",

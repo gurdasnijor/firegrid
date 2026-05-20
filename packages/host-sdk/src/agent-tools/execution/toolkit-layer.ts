@@ -31,6 +31,7 @@ import {
 } from "../bindings/tools.ts"
 import { AgentToolHost } from "./tool-host.ts"
 import { toolUseToEffect } from "./tool-use-to-effect.ts"
+import { WaitForChannelWorkflowLayer } from "./wait-for-workflow.ts"
 import {
   RuntimeContextWorkflowRuntime,
 } from "../../host/runtime-context-workflow-runtime.ts"
@@ -43,9 +44,8 @@ const TOOL_USE_ID_PREFIX = "mcp"
 // `WorkflowEngine.WorkflowInstance`
 // ---------------------------------------------------------------------------
 //
-// `@effect/workflow`'s `DurableClock.sleep` (and therefore the `sleep` arm,
-// `WaitFor.match`, and any child workflow execution in `toolUseToEffect`)
-// requires the `WorkflowInstance` service in its `R` channel, and
+// `@effect/workflow`'s `DurableClock.sleep` and nested workflow execution
+// require the `WorkflowInstance` service in their `R` channel, and
 // `WorkflowInstance` is only produced inside a registered workflow body
 // (`Workflow.toLayer(...)`). This ephemeral per-call workflow exists
 // solely to satisfy that requirement.
@@ -99,6 +99,7 @@ const toolCallWorkflowSupportLayer = (
   // re-surfaced onto every MCP tool handler.
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer still leaks any through substrate layers; the declared Layer R channel is the intended capability boundary.
   ToolCallWorkflowLayer.pipe(
+    Layer.provideMerge(WaitForChannelWorkflowLayer),
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
   )

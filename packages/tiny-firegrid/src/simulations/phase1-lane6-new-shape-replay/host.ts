@@ -1,18 +1,20 @@
 import {
-  CallerOwnedFactStreams,
+  ChannelRegistry,
   durableStreamUrl,
   type FiregridHost,
+  makeChannelRegistry,
+  makeIngressChannel,
 } from "@firegrid/host-sdk"
+import type { WaitForToolOutput } from "@firegrid/protocol/agent-tools"
 import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
   type WorkflowActivityClaimRow,
   type WorkflowActivityRow,
-  type WorkflowClockWakeupRow,
   type WorkflowDeferredRow,
   type WorkflowExecutionRow,
 } from "@firegrid/runtime/workflow-engine"
-import { Cause, Clock, Duration, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
+import { Cause, Clock, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import {
   DurableTable,
   type DurableTableLayerOptions,
@@ -21,8 +23,7 @@ import type { TinyFiregridHostEnv } from "../../types.ts"
 import {
   WaitForWorkflow,
   WaitForWorkflowLayer,
-  type WaitForWorkflowOutcome,
-} from "../inv2-waitforworkflow/wait-for-workflow.ts"
+} from "../../../../host-sdk/src/agent-tools/execution/wait-for-workflow.ts"
 
 const factStream = "phase1-lane6.new-shape-replay.facts"
 const eventType = "phase1.lane6.match"
@@ -50,7 +51,7 @@ interface ScenarioVerdict {
   readonly activityClaimWorkerId: string
   readonly activityResultWritten: boolean
   readonly raceDeferredWritten: boolean
-  readonly timeoutClockDeadlinePreserved?: boolean
+  readonly timeoutEventuallyFired?: boolean
 }
 
 interface ProbeResult {
@@ -71,7 +72,6 @@ interface Streams {
 interface Gen1Suspension {
   readonly executionId: string
   readonly activityClaim: WorkflowActivityClaimRow
-  readonly clockWakeup: WorkflowClockWakeupRow
 }
 
 /* eslint-disable local/no-module-durable-cache -- simulation-local host/driver handshake; all replay state under test lives in Durable Streams. */
@@ -97,12 +97,17 @@ const tableOptions = (streamUrl: string): DurableTableLayerOptions => ({
 const factLayer = (streams: Streams) =>
   Phase1Lane6FactTable.layer(tableOptions(streams.facts))
 
-const callerFactsLayer = (streams: Streams) =>
+const channelRegistryLayer = (streams: Streams) =>
   Layer.effect(
-    CallerOwnedFactStreams,
+    ChannelRegistry,
     Effect.map(Phase1Lane6FactTable, (table) => ({
-      streamFor: (stream: string) =>
-        stream === factStream ? table.facts.rows() : Stream.empty,
+      ...makeChannelRegistry([
+        makeIngressChannel({
+          target: factStream,
+          schema: FactRowSchema,
+          stream: table.facts.rows(),
+        }),
+      ]),
     })),
   ).pipe(Layer.provide(factLayer(streams)))
 
@@ -114,7 +119,7 @@ const generationLayer = (
   _generation: 1 | 2,
 ): Layer.Layer<never, unknown, never> =>
   WaitForWorkflowLayer.pipe(
-    Layer.provideMerge(callerFactsLayer(streams)),
+    Layer.provideMerge(channelRegistryLayer(streams)),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflow,
       workerId: stableWorkerId,
@@ -143,23 +148,20 @@ const payloadFor = (
   scenario: string,
   timeoutMs: number,
 ) => ({
-  executionKey: `phase1-lane6:${scenario}`,
-  stream: factStream,
-  whereFields: {
-    scenario,
-    eventType,
-  },
+  executionId: `phase1-lane6:${scenario}`,
+  channel: factStream,
+  trigger: [
+    { path: ["scenario"], equals: scenario },
+    { path: ["eventType"], equals: eventType },
+  ],
   timeoutMs,
 })
 
 const activityNameFor = (scenario: string): string =>
-  `wait-for-workflow.match/${payloadFor(scenario, 1).executionKey}`
-
-const clockNameFor = (scenario: string): string =>
-  `wait-for-workflow.timeout/${payloadFor(scenario, 1).executionKey}`
+  `wait-for-workflow.match_or_timeout/${payloadFor(scenario, 1).executionId}`
 
 const raceDeferredNameFor = (scenario: string): string =>
-  `raceAll/wait-for-workflow.race/${payloadFor(scenario, 1).executionKey}`
+  `raceAll/wait-for-workflow.race/${payloadFor(scenario, 1).executionId}`
 
 const factFor = (
   scenario: string,
@@ -224,16 +226,6 @@ const inspectDeferreds = (
     }).pipe(Effect.provide(workflowTableLayer(streams))),
   )
 
-const inspectClockWakeups = (
-  streams: Streams,
-): Effect.Effect<ReadonlyArray<WorkflowClockWakeupRow>, unknown> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const table = yield* WorkflowEngineTable
-      return yield* table.clockWakeups.query((coll) => coll.toArray)
-    }).pipe(Effect.provide(workflowTableLayer(streams))),
-  )
-
 const waitUntil = <A>(
   label: string,
   poll: Effect.Effect<A, unknown>,
@@ -270,16 +262,6 @@ const findActivityClaim = (
     row.activityName === activityNameFor(scenario),
   )
 
-const findClockWakeup = (
-  rows: ReadonlyArray<WorkflowClockWakeupRow>,
-  executionId: string,
-  scenario: string,
-): WorkflowClockWakeupRow | undefined =>
-  rows.find((row) =>
-    row.executionId === executionId &&
-    row.clockName === clockNameFor(scenario),
-  )
-
 const waitForGen1Suspension = (
   streams: Streams,
   scenario: string,
@@ -291,15 +273,9 @@ const waitForGen1Suspension = (
       inspectActivityClaims(streams),
       (rows) => findActivityClaim(rows, executionId, scenario) !== undefined,
     )
-    const clocks = yield* waitUntil(
-      `pending clock for ${scenario}`,
-      inspectClockWakeups(streams),
-      (rows) => findClockWakeup(rows, executionId, scenario)?.status === "pending",
-    )
     return {
       executionId,
       activityClaim: findActivityClaim(claims, executionId, scenario)!,
-      clockWakeup: findClockWakeup(clocks, executionId, scenario)!,
     }
   })
 
@@ -373,7 +349,7 @@ const completeMatchInGen2 = (
       ? matchValue(outcomeExit.value)
       : undefined
     const replayCompleted = Exit.isSuccess(outcomeExit) &&
-      outcomeExit.value._tag === "Match" &&
+      outcomeExit.value.matched === true &&
       value === row.value &&
       finalExecution?.executionId === executionId
     const verdict: ScenarioVerdict = {
@@ -383,7 +359,7 @@ const completeMatchInGen2 = (
       generation2WorkerId: stableWorkerId,
       replayCompleted,
       ...(Exit.isSuccess(outcomeExit)
-        ? { outcome: outcomeExit.value._tag }
+        ? { outcome: outcomeKind(outcomeExit.value) }
         : { failureMessage: Cause.pretty(outcomeExit.cause) }),
       activityClaimWorkerId: gen1.activityClaim.workerId,
       activityResultWritten: activities.some((activity) =>
@@ -415,10 +391,7 @@ const runTimeoutAfterRestart = (
     const payload = payloadFor(scenario, timeoutMs)
     const executionId = yield* WaitForWorkflow.executionId(payload)
     const gen1 = yield* startAndBounceGen1(streams, scenario, timeoutMs)
-    const nowMs = yield* Clock.currentTimeMillis
-    yield* Effect.sleep(
-      Duration.millis(Math.max(0, gen1.clockWakeup.deadlineMs - nowMs + 75)),
-    )
+    const gen2StartedAtMs = yield* Clock.currentTimeMillis
     const outcomeExit = yield* withGeneration(
       streams,
       2,
@@ -431,24 +404,25 @@ const runTimeoutAfterRestart = (
         Effect.exit,
       ),
     )
+    const gen2CompletedAtMs = yield* Clock.currentTimeMillis
     const finalExecution = findExecution(yield* inspectExecutions(streams), executionId)
     const activities = yield* inspectActivities(streams)
     const deferreds = yield* inspectDeferreds(streams)
-    const gen2Clock = findClockWakeup(
-      yield* inspectClockWakeups(streams),
-      executionId,
-      scenario,
-    )
+    const timeoutEventuallyFired = Exit.isSuccess(outcomeExit) &&
+      outcomeExit.value.matched === false &&
+      outcomeExit.value.timedOut === true &&
+      gen2CompletedAtMs - gen2StartedAtMs >= timeoutMs
     return {
       scenario,
       executionId,
       generation1WorkerId: stableWorkerId,
       generation2WorkerId: stableWorkerId,
       replayCompleted: Exit.isSuccess(outcomeExit) &&
-        outcomeExit.value._tag === "Timeout" &&
+        outcomeExit.value.matched === false &&
+        outcomeExit.value.timedOut === true &&
         finalExecution?.executionId === executionId,
       ...(Exit.isSuccess(outcomeExit)
-        ? { outcome: outcomeExit.value._tag }
+        ? { outcome: outcomeKind(outcomeExit.value) }
         : { failureMessage: Cause.pretty(outcomeExit.cause) }),
       activityClaimWorkerId: gen1.activityClaim.workerId,
       activityResultWritten: activities.some((activity) =>
@@ -459,8 +433,7 @@ const runTimeoutAfterRestart = (
         deferred.executionId === executionId &&
         deferred.deferredName === raceDeferredNameFor(scenario),
       ),
-      timeoutClockDeadlinePreserved:
-        gen2Clock?.deadlineMs === gen1.clockWakeup.deadlineMs,
+      timeoutEventuallyFired,
     }
   }).pipe(
     Effect.withSpan("firegrid.phase1.lane6.timeout_after_restart", {
@@ -469,22 +442,25 @@ const runTimeoutAfterRestart = (
   )
 
 const matchValue = (
-  outcome: WaitForWorkflowOutcome,
+  outcome: WaitForToolOutput,
 ): string | undefined => {
-  if (outcome._tag !== "Match") return undefined
-  const raw = outcome.raw
-  return typeof raw === "object" && raw !== null && "value" in raw &&
-    typeof raw.value === "string"
-    ? raw.value
+  if (!outcome.matched) return undefined
+  const event = outcome.event
+  return typeof event === "object" && event !== null && "value" in event &&
+    typeof event.value === "string"
+    ? event.value
     : undefined
 }
+
+const outcomeKind = (outcome: WaitForToolOutput): "Match" | "Timeout" =>
+  outcome.matched ? "Match" : "Timeout"
 
 const assertScenarioGreen = (
   verdict: ScenarioVerdict,
   expected: {
     readonly outcome: "Match" | "Timeout"
     readonly value?: string
-    readonly deadlinePreserved?: true
+    readonly timeoutEventuallyFired?: true
   },
 ): Effect.Effect<void, Error> => {
   if (!verdict.replayCompleted) {
@@ -508,9 +484,9 @@ const assertScenarioGreen = (
       ),
     )
   }
-  if (expected.deadlinePreserved === true && verdict.timeoutClockDeadlinePreserved !== true) {
+  if (expected.timeoutEventuallyFired === true && verdict.timeoutEventuallyFired !== true) {
     return Effect.fail(
-      new Error(`${verdict.scenario} did not preserve timeout clock deadline`),
+      new Error(`${verdict.scenario} did not eventually fire timeout after restart`),
     )
   }
   return Effect.void
@@ -530,7 +506,7 @@ const assertProbeGreen = (
     }),
     assertScenarioGreen(result.timeoutAfterRestart, {
       outcome: "Timeout",
-      deadlinePreserved: true,
+      timeoutEventuallyFired: true,
     }),
   ]).pipe(Effect.as(result))
 
@@ -578,8 +554,8 @@ const runProbe = (
         timeoutAfterRestart.replayCompleted,
       "firegrid.phase1.lane6.timeout_after_restart.outcome":
         timeoutAfterRestart.outcome ?? "",
-      "firegrid.phase1.lane6.timeout_after_restart.deadline_preserved":
-        timeoutAfterRestart.timeoutClockDeadlinePreserved === true,
+      "firegrid.phase1.lane6.timeout_after_restart.eventually_fired":
+        timeoutAfterRestart.timeoutEventuallyFired === true,
     })
     return result
   }).pipe(
