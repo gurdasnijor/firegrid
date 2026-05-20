@@ -2,9 +2,7 @@ import {
   Firegrid,
   local,
 } from "@firegrid/client-sdk/firegrid"
-import { Clock, Effect, Schedule } from "effect"
-
-/* eslint-disable local/no-fixed-polling -- firegrid-observability.TINY_FIREGRID_SIMULATIONS.1 public-client simulation retry backoff. */
+import { Clock, Effect } from "effect"
 
 interface CodexAcpToolCallSimulationResult {
   readonly sawReady: boolean
@@ -55,17 +53,11 @@ export const codexAcpToolCallDriver: Effect.Effect<
       createdBy: "tiny-firegrid-simulation",
     })
 
+    yield* session.whenReady
     yield* session.prompt({
       payload: promptForToolCall,
       idempotencyKey: "codex-acp-tool-calls:turn-1",
-    }).pipe(
-      Effect.retry(
-        Schedule.intersect(
-          Schedule.spaced("1000 millis"),
-          Schedule.recurs(60),
-        ),
-      ),
-    )
+    })
     yield* session.start()
 
     const deadline = (yield* Clock.currentTimeMillis) + 260_000
@@ -83,14 +75,7 @@ export const codexAcpToolCallDriver: Effect.Effect<
       const next = yield* session.wait.forAgentOutput({
         ...(afterSequence === undefined ? {} : { afterSequence }),
         timeoutMs: 15_000,
-      }).pipe(
-        Effect.retry(
-          Schedule.intersect(
-            Schedule.spaced("1000 millis"),
-            Schedule.recurs(5),
-          ),
-        ),
-      )
+      })
       if (!next.matched) continue
       const observation = next.output
       afterSequence = observation.sequence

@@ -62,6 +62,7 @@ import {
 } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
 import { Clock, Context, Data, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import { projectionWait } from "./internal/projection-wait.ts"
 import { FiregridClientOperations } from "./operations.ts"
 
 export type {
@@ -159,6 +160,7 @@ export interface FiregridSessionPermissionsClient {
 export interface FiregridSessionHandle {
   readonly sessionId: FiregridSessionId
   readonly contextId: string
+  readonly whenReady: Effect.Effect<void, PreloadError>
   readonly prompt: (
     request: SessionHandlePromptInput,
   ) => Effect.Effect<RuntimeInputIntentRow, PromptInputError | AppendError>
@@ -555,18 +557,19 @@ const make = (config: ResolvedConfig) =>
         }
         const run = Effect.gen(function* () {
           const output = yield* RuntimeOutputTable
-          return yield* Stream.runHead(
-            output.events.rows().pipe(
-              Stream.mapError(cause => new PreloadError({ cause })),
-              Stream.filterMap(runtimeAgentOutputObservationFromRow),
-              Stream.filter(observation =>
-                observation.contextId === contextId &&
+          let matched: RuntimeAgentOutputObservation | undefined
+          yield* projectionWait(
+            output.events.rows().pipe(Stream.filterMap(runtimeAgentOutputObservationFromRow)),
+            observation => {
+              const isMatch = observation.contextId === contextId &&
                 (input.afterSequence === undefined ||
                   observation.sequence > input.afterSequence) &&
-                predicate(observation),
-              ),
-            ),
+                predicate(observation)
+              if (isMatch) matched = observation
+              return isMatch
+            },
           )
+          return Option.fromNullable(matched)
         }).pipe(
           Effect.provide(outputLayerForContext(config, context)),
           Effect.scoped,
@@ -624,6 +627,16 @@ const make = (config: ResolvedConfig) =>
           },
         })
       })
+
+    const waitUntilContextReady = (
+      contextId: string,
+    ): Effect.Effect<void, PreloadError> =>
+      projectionWait(
+        control.contexts.rows(),
+        context => context.contextId === contextId,
+      ).pipe(
+        Effect.mapError(cause => new PreloadError({ cause })),
+      )
 
     const appendRuntimeInputIntent = (
       request: RuntimeIngressRequest,
@@ -779,6 +792,12 @@ const make = (config: ResolvedConfig) =>
       // firegrid-session-fact-client-surfaces.CLIENT_SESSION.4
       sessionId,
       contextId: sessionId,
+      // firegrid-session-fact-client-surfaces.CLIENT_SESSION.6
+      whenReady: withClientSpan("firegrid.client.session.when_ready", {
+        "firegrid.session.id": sessionId,
+        "firegrid.context.id": sessionId,
+        "firegrid.wait.bucket": "projection",
+      }, waitUntilContextReady(sessionId)),
       prompt: request =>
         withClientSpan("firegrid.client.session.prompt", {
           "firegrid.session.id": sessionId,
@@ -805,9 +824,17 @@ const make = (config: ResolvedConfig) =>
       snapshot: () => readSnapshot(sessionId),
       wait: {
         forAgentOutput: request =>
-          waitForAgentOutput(sessionId, request),
+          withClientSpan("firegrid.client.session.wait.for_agent_output", {
+            "firegrid.session.id": sessionId,
+            "firegrid.context.id": sessionId,
+            "firegrid.wait.bucket": "projection",
+          }, waitForAgentOutput(sessionId, request)),
         forPermissionRequest: request =>
-          waitForPermissionRequest(sessionId, request),
+          withClientSpan("firegrid.client.session.wait.for_permission_request", {
+            "firegrid.session.id": sessionId,
+            "firegrid.context.id": sessionId,
+            "firegrid.wait.bucket": "projection",
+          }, waitForPermissionRequest(sessionId, request)),
       },
       permissions: {
         respond: request =>

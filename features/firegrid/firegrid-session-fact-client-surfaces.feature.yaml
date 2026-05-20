@@ -17,6 +17,8 @@ components:
       3: The attached handle decodes inputs through protocol-owned schemas and keeps packages/client runtime-source-free.
       4: createOrLoad exposes sessionId as the public handle identity while preserving contextId as a compatibility alias until existing callers migrate.
       5: Literate session helper APIs hide host-owned stream routing and table selection while remaining thin schema-backed projections over durable RuntimeContext, RuntimeOutput, runtime run rows, and client control intents; only the owning host/workflow converts accepted intents into runtime input state.
+      6: Session handles expose a readiness Effect that completes from durable RuntimeContext projection state before prompt appends, without fixed-delay polling or retry schedules.
+      6-1: whenReady is an ephemeral client projection wait, distinct from durable agent-tool wait_for rows and workflow internal suspension deferreds.
 
   RUNTIME_OBSERVATION:
     requirements:

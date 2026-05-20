@@ -349,6 +349,38 @@ describe("Firegrid session facade", () => {
     expect(stored).toMatchObject(result.intent)
   })
 
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6 firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-1 whenReady completes from RuntimeContext projection state before prompt append", async () => {
+    const fixture = makeFixture()
+
+    const result = await runWithClient(
+      fixture,
+      Effect.gen(function* () {
+        const firegrid = yield* Firegrid
+        const session = yield* firegrid.sessions.createOrLoad({
+          externalKey: { source: "linear", id: "LIN-ready" },
+          runtime: runtimeConfig(),
+        })
+        const ready = yield* session.whenReady.pipe(Effect.fork)
+        yield* Effect.sleep("50 millis")
+        yield* materializeContextRequest(fixture.hostSession, session.contextId)
+        const readyExit = yield* ready.await
+        const intent = yield* session.prompt({
+          payload: { text: "ready turn" },
+          idempotencyKey: "ready-turn",
+        })
+        return { contextId: session.contextId, intent, readyExit }
+      }),
+    )
+    const stored = await readRuntimeInputIntent(fixture.hostSession, result.intent.intentId)
+
+    expect(result.readyExit._tag).toBe("Success")
+    expect(stored).toMatchObject({
+      contextId: result.contextId,
+      payload: { text: "ready turn" },
+      idempotencyKey: "ready-turn",
+    })
+  })
+
   it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.2 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.3 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.6 includes normalized agentOutputs in snapshot and waits for the next one", async () => {
     const fixture = makeFixture()
 
