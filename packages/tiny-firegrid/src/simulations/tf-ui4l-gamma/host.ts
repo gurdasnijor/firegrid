@@ -182,9 +182,9 @@ const FindActivityGamma = Activity.make({
     // See tf-ui4l-baseline host's note on getOrThrow.
     const final = Option.getOrThrow(finalOpt)
     if (!final.found) {
-      throw new Error(
+      return yield* Effect.fail(new Error(
         "tf-ui4l-gamma: fold reached end-of-stream without state.found=true",
-      )
+      ))
     }
     return final
   }).pipe(
@@ -248,9 +248,11 @@ export const tfUi4lGammaHost = (
   const seed = Layer.scopedDiscard(
     Effect.gen(function*() {
       const tables = yield* TfUi4lGammaTables
-      for (const row of seedRows(FACT_CORRELATION_ID)) {
-        yield* tables.facts.insertOrGet(row)
-      }
+      yield* Effect.forEach(
+        seedRows(FACT_CORRELATION_ID),
+        row => tables.facts.insertOrGet(row),
+        { discard: true },
+      )
     }).pipe(
       Effect.withSpan("firegrid.tf_ui4l_gamma.host.seed_facts", {
         kind: "internal",

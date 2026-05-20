@@ -225,9 +225,11 @@ export const tfUi4lBetaHost = (
   const seed = Layer.scopedDiscard(
     Effect.gen(function*() {
       const tables = yield* TfUi4lBetaTables
-      for (const row of seedRows(FACT_CORRELATION_ID)) {
-        yield* tables.facts.insertOrGet(row)
-      }
+      yield* Effect.forEach(
+        seedRows(FACT_CORRELATION_ID),
+        row => tables.facts.insertOrGet(row),
+        { discard: true },
+      )
     }).pipe(
       Effect.withSpan("firegrid.tf_ui4l_beta.host.seed_facts", {
         kind: "internal",
