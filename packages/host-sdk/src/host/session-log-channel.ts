@@ -6,9 +6,9 @@ import { Schema } from "effect"
 import type { Effect } from "effect"
 import {
   makeChannelTarget,
-  makeEfferentChannel,
+  makeEgressChannel,
   type ChannelTarget,
-  type EfferentChannel,
+  type EgressChannel,
 } from "./channel-registry.ts"
 
 export const SessionLogChannelTarget = makeChannelTarget("session.log")
@@ -25,7 +25,7 @@ export const SessionLogRowSchema = Schema.Struct({
 })
 export type SessionLogRow = Schema.Schema.Type<typeof SessionLogRowSchema>
 
-export type SessionLogChannel = EfferentChannel<typeof SessionLogRowSchema> & {
+export type SessionLogChannel = EgressChannel<typeof SessionLogRowSchema> & {
   readonly kind: "session.log"
   readonly storage: "durable-table"
 }
@@ -38,7 +38,7 @@ export const sessionLogChannel = (
     ) => Effect.Effect<void, unknown, never>
   },
 ): SessionLogChannel => {
-  const channel = makeEfferentChannel({
+  const channel = makeEgressChannel({
     target: options.target ?? SessionLogChannelTarget,
     schema: SessionLogRowSchema,
     // firegrid-agent-body-plan.SESSION_LOG.3

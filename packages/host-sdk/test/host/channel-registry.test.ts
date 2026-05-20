@@ -19,7 +19,7 @@ import {
   makeCallableChannel,
   makeChannelRegistry,
   makeChannelTarget,
-  makeEfferentChannel,
+  makeEgressChannel,
   makeFactoryEventsChannel,
   type SessionSelfCheckpointEvent,
   type SessionSelfLifecycleEvent,
@@ -78,7 +78,7 @@ describe("ChannelRegistry", () => {
         schema: FactoryEventRowSchema,
         stream: Stream.succeed(factoryEvent),
       }),
-      makeEfferentChannel({
+      makeEgressChannel({
         target: "notification.operator",
         schema: NotifySchema,
         append: payload =>
@@ -96,8 +96,8 @@ describe("ChannelRegistry", () => {
 
     const metadata = registry.metadata()
     expect(metadata.map(entry => entry.direction)).toEqual([
-      "afferent",
-      "efferent",
+      "ingress",
+      "egress",
       "call",
     ])
     for (const entry of metadata) {
@@ -107,8 +107,8 @@ describe("ChannelRegistry", () => {
     const factoryRegistration = await Effect.runPromise(
       registry.require(FactoryEventsChannelTarget),
     )
-    expect(factoryRegistration.direction).toBe("afferent")
-    if (factoryRegistration.direction !== "afferent") {
+    expect(factoryRegistration.direction).toBe("ingress")
+    if (factoryRegistration.direction !== "ingress") {
       return
     }
     const rows = await Effect.runPromise(
@@ -121,8 +121,8 @@ describe("ChannelRegistry", () => {
     const notify = await Effect.runPromise(
       registry.require("notification.operator"),
     )
-    expect(notify.direction).toBe("efferent")
-    if (notify.direction !== "efferent") {
+    expect(notify.direction).toBe("egress")
+    if (notify.direction !== "egress") {
       return
     }
     await Effect.runPromise(notify.binding.append({ message: "ready" }))
@@ -180,7 +180,7 @@ describe("ChannelRegistry", () => {
     )
 
     expect(result).toMatchObject({
-      direction: "afferent",
+      direction: "ingress",
       target: "factory.events",
     })
     expect(result.text).not.toContain("CallerFact")
@@ -208,8 +208,8 @@ describe("ChannelRegistry", () => {
         )
         const lifecycle = yield* registry.require(SessionSelfLifecycleChannelTarget)
         const checkpoint = yield* registry.require(SessionSelfCheckpointChannelTarget)
-        if (lifecycle.direction !== "afferent" || checkpoint.direction !== "afferent") {
-          return yield* Effect.fail(new Error("session.self channels must be afferent"))
+        if (lifecycle.direction !== "ingress" || checkpoint.direction !== "ingress") {
+          return yield* Effect.fail(new Error("session.self channels must be ingress"))
         }
         const lifecycleStream = lifecycle.binding.stream as Stream.Stream<
           SessionSelfLifecycleEvent,
@@ -300,8 +300,8 @@ describe("ChannelRegistry", () => {
       ),
     )
 
-    expect(observed.lifecycleDirection).toBe("afferent")
-    expect(observed.checkpointDirection).toBe("afferent")
+    expect(observed.lifecycleDirection).toBe("ingress")
+    expect(observed.checkpointDirection).toBe("ingress")
     expect(observed.lifecycleEvent).toMatchObject({
       channel: "session.self.lifecycle",
       event: {

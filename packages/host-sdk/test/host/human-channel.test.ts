@@ -19,7 +19,7 @@ const message = (
 })
 
 describe("human channels", () => {
-  it("firegrid-agent-body-plan.HUMAN_CHANNELS.1 firegrid-agent-body-plan.HUMAN_CHANNELS.3 firegrid-agent-body-plan.HUMAN_CHANNELS.4 registers dm(handle) as paired afferent/efferent bindings at one opaque target", async () => {
+  it("firegrid-agent-body-plan.HUMAN_CHANNELS.1 firegrid-agent-body-plan.HUMAN_CHANNELS.3 firegrid-agent-body-plan.HUMAN_CHANNELS.4 registers dm(handle) as paired ingress/egress bindings at one opaque target", async () => {
     const sent: Array<Schema.Schema.Type<typeof HumanMessageSchema>> = []
     const inbound = message("operator", "hello")
     const dm = dmChannel({
@@ -34,8 +34,8 @@ describe("human channels", () => {
 
     expect(dm.target).toBe("dm.operator")
     expect(metadata.map(entry => [entry.target, entry.direction])).toEqual([
-      ["dm.operator", "afferent"],
-      ["dm.operator", "efferent"],
+      ["dm.operator", "ingress"],
+      ["dm.operator", "egress"],
     ])
     for (const entry of metadata) {
       expect("binding" in entry).toBe(false)
@@ -43,21 +43,21 @@ describe("human channels", () => {
       expect(JSON.stringify(entry)).not.toContain("provider")
     }
 
-    const afferent = dm.registrations[0]
+    const ingress = dm.registrations[0]
     const observed = await Effect.runPromise(
-      Stream.runCollect(afferent.binding.stream).pipe(
+      Stream.runCollect(ingress.binding.stream).pipe(
         Effect.map(Chunk.toReadonlyArray),
       ),
     )
     expect(observed).toEqual([inbound])
 
-    const efferent = dm.registrations[1]
-    await Effect.runPromise(efferent.binding.append(message("operator", "reply")))
+    const egress = dm.registrations[1]
+    await Effect.runPromise(egress.binding.append(message("operator", "reply")))
     expect(sent).toEqual([message("operator", "reply")])
-    expect(Option.getOrThrow(registry.getMetadata("dm.operator")).direction).toBe("afferent")
+    expect(Option.getOrThrow(registry.getMetadata("dm.operator")).direction).toBe("ingress")
   })
 
-  it("firegrid-agent-body-plan.HUMAN_CHANNELS.2 firegrid-agent-body-plan.HUMAN_CHANNELS.3 firegrid-agent-body-plan.HUMAN_CHANNELS.4 registers notification(handle) as paired afferent/efferent bindings at one opaque target", async () => {
+  it("firegrid-agent-body-plan.HUMAN_CHANNELS.2 firegrid-agent-body-plan.HUMAN_CHANNELS.3 firegrid-agent-body-plan.HUMAN_CHANNELS.4 registers notification(handle) as paired ingress/egress bindings at one opaque target", async () => {
     const sent: Array<Schema.Schema.Type<typeof HumanMessageSchema>> = []
     const receipt = message("operator", "read")
     const notification = notificationChannel({
@@ -71,16 +71,16 @@ describe("human channels", () => {
 
     expect(notification.target).toBe("notification.operator")
     expect(registry.metadata().map(entry => [entry.target, entry.direction])).toEqual([
-      ["notification.operator", "afferent"],
-      ["notification.operator", "efferent"],
+      ["notification.operator", "ingress"],
+      ["notification.operator", "egress"],
     ])
     await Effect.runPromise(
-      notification.efferent.binding.append(message("operator", "build complete")),
+      notification.egress.binding.append(message("operator", "build complete")),
     )
     expect(sent).toEqual([message("operator", "build complete")])
 
     const observed = await Effect.runPromise(
-      Stream.runCollect(notification.afferent.binding.stream).pipe(
+      Stream.runCollect(notification.ingress.binding.stream).pipe(
         Effect.map(Chunk.toReadonlyArray),
       ),
     )
@@ -105,10 +105,10 @@ describe("human channels", () => {
       "notification.operator",
     )
     expect(registrations.map(channel => [channel.target, channel.direction])).toEqual([
-      ["dm.operator", "afferent"],
-      ["dm.operator", "efferent"],
-      ["notification.operator", "afferent"],
-      ["notification.operator", "efferent"],
+      ["dm.operator", "ingress"],
+      ["dm.operator", "egress"],
+      ["notification.operator", "ingress"],
+      ["notification.operator", "egress"],
     ])
   })
 })

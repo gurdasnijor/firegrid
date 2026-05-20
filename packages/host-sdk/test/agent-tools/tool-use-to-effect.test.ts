@@ -32,10 +32,10 @@ import type { AgentOutputEvent, ToolResultEvent } from "@firegrid/runtime/events
 import { AgentToolCallPartSchema, ToolResultEventSchema } from "@firegrid/runtime/events"
 import {
   ChannelRegistry,
-  makeAfferentChannel,
+  makeIngressChannel,
   makeCallableChannel,
   makeChannelRegistry,
-  makeEfferentChannel,
+  makeEgressChannel,
   type ChannelRegistration,
 } from "../../src/host/index.ts"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
@@ -184,7 +184,7 @@ const TestChannelRegistryLive = (
   Effect.gen(function* () {
     const table = yield* TestSourceTable
     return makeChannelRegistry([
-      makeAfferentChannel({
+      makeIngressChannel({
         target: TEST_EVENTS_CHANNEL,
         schema: TestSourceRowSchema,
         stream: table.rows.rows(),
@@ -460,10 +460,10 @@ const WaitForAnyRowSchema = Schema.Struct({
 })
 
 describe("toolUseToEffect — Slice D channel verb arms", () => {
-  it("firegrid-agent-body-plan.SLICE_D_VERBS.2 appends decoded payloads only through efferent channels", async () => {
+  it("firegrid-agent-body-plan.SLICE_D_VERBS.2 appends decoded payloads only through egress channels", async () => {
     const streams = makeStreams("send")
     const appended: Array<SendPayload> = []
-    const channel = makeEfferentChannel({
+    const channel = makeEgressChannel({
       target: "events.out",
       schema: SendPayloadSchema,
       append: payload =>
@@ -491,9 +491,9 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
     expect(appended).toEqual([{ id: "event-1", message: "ready" }])
   })
 
-  it("firegrid-agent-body-plan.SLICE_BOUNDARY.4 rejects send on an afferent channel", async () => {
+  it("firegrid-agent-body-plan.SLICE_BOUNDARY.4 rejects send on an ingress channel", async () => {
     const streams = makeStreams("send-wrong-direction")
-    const channel = makeAfferentChannel({
+    const channel = makeIngressChannel({
       target: "state.in",
       schema: WaitForAnyRowSchema,
       stream: Stream.empty,
@@ -546,14 +546,14 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
     expect(observed).toEqual({ prompt: "approve" })
   })
 
-  it("firegrid-agent-body-plan.SLICE_D_VERBS.4 races afferent descriptors and returns the first winner", async () => {
+  it("firegrid-agent-body-plan.SLICE_D_VERBS.4 races ingress descriptors and returns the first winner", async () => {
     const streams = makeStreams("wait-for-any")
-    const slow = makeAfferentChannel({
+    const slow = makeIngressChannel({
       target: "state.slow",
       schema: WaitForAnyRowSchema,
       stream: Stream.never,
     })
-    const fast = makeAfferentChannel({
+    const fast = makeIngressChannel({
       target: "state.fast",
       schema: WaitForAnyRowSchema,
       stream: Stream.make({ id: "row-fast", status: "ready" }),

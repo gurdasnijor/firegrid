@@ -53,7 +53,7 @@ const runWithTable = <A, E>(
   )
 
 describe("session.log channel", () => {
-  it("firegrid-agent-body-plan.SESSION_LOG.1 firegrid-agent-body-plan.SESSION_LOG.2 firegrid-agent-body-plan.SESSION_LOG.3 firegrid-agent-body-plan.SESSION_LOG.4 registers an efferent-only durable session log channel", async () => {
+  it("firegrid-agent-body-plan.SESSION_LOG.1 firegrid-agent-body-plan.SESSION_LOG.2 firegrid-agent-body-plan.SESSION_LOG.3 firegrid-agent-body-plan.SESSION_LOG.4 registers an egress-only durable session log channel", async () => {
     const program = Effect.gen(function* () {
       const table = yield* SessionLogTestTable
       const channel = sessionLogChannelFromCollection({
@@ -68,9 +68,9 @@ describe("session.log channel", () => {
       expect(channel.target).toBe("session.log")
       expect(channel.kind).toBe("session.log")
       expect(channel.storage).toBe("durable-table")
-      expect(registered.direction).toBe("efferent")
-      expect(metadata.direction).toBe("efferent")
-      if (metadata.direction !== "efferent") {
+      expect(registered.direction).toBe("egress")
+      expect(metadata.direction).toBe("egress")
+      if (metadata.direction !== "egress") {
         return
       }
       expect(metadata.schema).toBe(SessionLogRowSchema)

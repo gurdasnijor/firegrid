@@ -453,7 +453,7 @@ Work:
 
 - Add host-side channel registry.
 - Register opaque channel ids with:
-  - direction: afferent / efferent / call
+  - direction: ingress / egress / call
   - schema metadata
   - substrate binding to typed stream or append target
 - First required channel: `factory.events`.

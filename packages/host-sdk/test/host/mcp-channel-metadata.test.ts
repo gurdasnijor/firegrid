@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import {
   makeBidirectionalChannel,
   makeCallableChannel,
-  makeEfferentChannel,
+  makeEgressChannel,
   makeFactoryEventsChannel,
   makeChannelRegistry,
 } from "../../src/host/channel-registry.ts"
@@ -40,7 +40,7 @@ describe("runtime-context MCP channel metadata", () => {
         schema: FactoryEventRowSchema,
         stream: Stream.empty,
       }),
-      makeEfferentChannel({
+      makeEgressChannel({
         target: "notification.operator",
         schema: NotifySchema,
         append: () => Effect.void,
@@ -62,8 +62,8 @@ describe("runtime-context MCP channel metadata", () => {
     const inventory = runtimeContextMcpChannelInventory(registry.metadata())
 
     expect(inventory.map(entry => [entry.name, entry.direction])).toEqual([
-      ["factory.events", "afferent"],
-      ["notification.operator", "efferent"],
+      ["factory.events", "ingress"],
+      ["notification.operator", "egress"],
       ["event.plan.ready", "bidirectional"],
       ["approval.operator", "call"],
     ])
@@ -110,7 +110,7 @@ describe("runtime-context MCP channel metadata", () => {
 
     expect(tool).toBeDefined()
     expect(tool?.description).toContain("Registered Firegrid channels")
-    expect(tool?.description).toContain("factory.events (afferent)")
+    expect(tool?.description).toContain("factory.events (ingress)")
     expect(isRecord(tool?.inputSchema)).toBe(true)
     if (!isRecord(tool?.inputSchema)) {
       return
@@ -126,7 +126,7 @@ describe("runtime-context MCP channel metadata", () => {
       return
     }
     expect(firstEntry.name).toBe("factory.events")
-    expect(firstEntry.direction).toBe("afferent")
+    expect(firstEntry.direction).toBe("ingress")
     expect(isRecord(firstEntry.schema)).toBe(true)
     if (!isRecord(firstEntry.schema)) {
       return

@@ -7,10 +7,10 @@ components:
   CHANNEL_REGISTRY:
     requirements:
       1: Host SDK exposes an opaque ChannelTarget string token schema for agent-facing channel addresses.
-      2: Host SDK exposes a ChannelRegistry service that registers channel targets with afferent, efferent, or call direction metadata.
+      2: Host SDK exposes a ChannelRegistry service that registers channel targets with ingress, egress, or call direction metadata.
       3: Channel registry metadata exposes the channel schema shape needed by downstream tool metadata without exposing substrate bindings.
-      4: Channel registrations bind afferent channels to typed streams, efferent channels to append targets, and call channels to request-response handlers.
-      5: The factory.events channel can be registered through host composition as an afferent channel without exposing CallerFact or stream names to agent-visible metadata.
+      4: Channel registrations bind ingress channels to typed streams, egress channels to append targets, and call channels to request-response handlers.
+      5: The factory.events channel can be registered through host composition as an ingress channel without exposing CallerFact or stream names to agent-visible metadata.
   MCP_CHANNEL_METADATA:
     requirements:
       1: Runtime-context MCP tools/list metadata exposes the registered channel inventory with channel name, direction, and schema information.
@@ -19,14 +19,14 @@ components:
 
   SESSION_SELF:
     requirements:
-      1: Host SDK registers session.self.lifecycle as an afferent static-source channel with a declared lifecycle event schema.
-      2: Host SDK registers session.self.checkpoint as an afferent static-source channel with a declared workflow checkpoint event schema.
+      1: Host SDK registers session.self.lifecycle as an ingress static-source channel with a declared lifecycle event schema.
+      2: Host SDK registers session.self.checkpoint as an ingress static-source channel with a declared workflow checkpoint event schema.
       3: Session self channel metadata exposes schema and direction without exposing workflow-engine table, stream, or span substrate details.
 
   STATE_CHANGES:
     requirements:
       1: Host code can declare a `state.changes` channel with an opaque channel target for a DurableTable collection.
-      2: A `state.changes` channel is afferent and static-source, so agents can read it but cannot append through it.
+      2: A `state.changes` channel is ingress and static-source, so agents can read it but cannot append through it.
       3: The channel registration exposes the caller-declared collection row schema as metadata.
       4: The channel registration reads through the existing DurableTable rows stream for that collection.
       5: Channel consumers can wait on the opaque channel target without knowing the underlying DurableTable name or durable stream name.
@@ -40,8 +40,8 @@ components:
 
   HUMAN_CHANNELS:
     requirements:
-      1: Host code can declare a `dm(handle)` channel as paired afferent and efferent registrations at the same opaque channel target.
-      2: Host code can declare a `notification(handle)` channel as paired afferent and efferent registrations at the same opaque channel target.
+      1: Host code can declare a `dm(handle)` channel as paired ingress and egress registrations at the same opaque channel target.
+      2: Host code can declare a `notification(handle)` channel as paired ingress and egress registrations at the same opaque channel target.
       3: Human channel schemas are substrate-neutral message envelopes that do not expose provider or MCP transport details.
       4: Human channel bindings are supplied at host composition time as incoming streams plus outgoing append targets.
 
@@ -49,27 +49,27 @@ components:
     requirements:
       1: The wait_for agent-tool input schema accepts channel, optional match, and optional timeoutMs fields.
       2: The wait_for agent-tool input schema does not expose source, source._tag, or stream fields.
-      3: wait_for resolves its channel field through the host ChannelRegistry and only accepts afferent channel registrations.
+      3: wait_for resolves its channel field through the host ChannelRegistry and only accepts ingress channel registrations.
       4: wait_for accepts an omitted match as a channel discovery request and accepts timeoutMs:0 as an immediate discovery bound.
       5: wait_for returns matched channel rows as matched:true event payloads and timeout results as matched:false timedOut:true.
   SLICE_D_VERBS:
     requirements:
       1: FiregridAgentToolkit exposes send, call, and wait_for_any as agent-facing tools.
-      2: The send tool resolves only efferent channels and appends a payload decoded by the registered channel schema.
+      2: The send tool resolves only egress channels and appends a payload decoded by the registered channel schema.
       3: The call tool resolves call channel registrations and dispatches requests decoded by the registered request schema, while preserving the approval channel fallback.
-      4: The wait_for_any tool resolves only afferent channels, races the descriptors, and returns the first winner index, channel, and result.
+      4: The wait_for_any tool resolves only ingress channels, races the descriptors, and returns the first winner index, channel, and result.
 
   SESSION_LOG:
     requirements:
-      1: "Host code can declare `session.log` as an efferent-only channel registration."
+      1: "Host code can declare `session.log` as an egress-only channel registration."
       2: "The `session.log` schema carries a durable log row with context id, message, and optional payload metadata."
       3: "The `session.log` binding persists rows through a DurableTable collection supplied by host composition."
-      4: "`session.log` exposes no afferent/read binding to the agent surface."
+      4: "`session.log` exposes no ingress/read binding to the agent surface."
 
   EVENT_CHANNEL:
     requirements:
       1: Host code can declare an `event(name)` channel with an opaque channel target.
-      2: An `event(name)` channel exposes both afferent and efferent bindings for the same channel target.
+      2: An `event(name)` channel exposes both ingress and egress bindings for the same channel target.
       3: The channel registration exposes the caller-declared event schema as metadata.
       4: The channel registration can classify event observations as static-source and predicate-eligible.
       5: The channel registration reads and appends through the host-owned CallerFact stream binding without exposing the CallerFact stream name to agents.
@@ -81,4 +81,4 @@ constraints:
       2: Phase 2 Slice C.3 wraps DurableTable rows without redesigning DurableTable rows or subscribe primitives.
       3: Phase 2 Lane 2 changes the wait_for channel-addressed tool surface but does not publish channel inventory metadata through MCP tools/list.
       4: Phase 2 Slice C.2 adds event channel bindings without implementing the agent-facing send, call, wait_for, or wait_for_any verbs.
-      5: Slice D verb lowering is direction-specific: send accepts efferent channel bindings, call accepts call channel bindings before approval fallback, and wait_for_any accepts afferent channel bindings.
+      5: "Slice D verb lowering is direction-specific: send accepts egress channel bindings, call accepts call channel bindings before approval fallback, and wait_for_any accepts ingress channel bindings."

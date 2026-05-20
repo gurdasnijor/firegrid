@@ -1,13 +1,13 @@
 import { Schema } from "effect"
 import type { Effect, Stream } from "effect"
 import {
-  makeAfferentChannel,
+  makeIngressChannel,
   makeChannelTarget,
-  makeEfferentChannel,
-  type AfferentChannel,
+  makeEgressChannel,
+  type IngressChannel,
   type ChannelRegistration,
   type ChannelTarget,
-  type EfferentChannel,
+  type EgressChannel,
 } from "./channel-registry.ts"
 
 const HumanHandleSchema = Schema.String.pipe(Schema.minLength(1))
@@ -28,11 +28,11 @@ export interface HumanChannelPair<S extends Schema.Schema.Any> {
   readonly kind: HumanChannelKind
   readonly handle: string
   readonly target: ChannelTarget
-  readonly afferent: AfferentChannel<S>
-  readonly efferent: EfferentChannel<S>
+  readonly ingress: IngressChannel<S>
+  readonly egress: EgressChannel<S>
   readonly registrations: readonly [
-    AfferentChannel<S>,
-    EfferentChannel<S>,
+    IngressChannel<S>,
+    EgressChannel<S>,
   ]
 }
 
@@ -59,12 +59,12 @@ export const humanChannelPair = <S extends Schema.Schema.Any>(
     : typeof options.target === "string"
     ? makeChannelTarget(options.target)
     : options.target
-  const afferent = makeAfferentChannel({
+  const ingress = makeIngressChannel({
     target,
     schema: options.schema,
     stream: options.incoming,
   })
-  const efferent = makeEfferentChannel({
+  const egress = makeEgressChannel({
     target,
     schema: options.schema,
     append: options.send,
@@ -73,9 +73,9 @@ export const humanChannelPair = <S extends Schema.Schema.Any>(
     kind: options.kind,
     handle: options.handle,
     target,
-    afferent,
-    efferent,
-    registrations: [afferent, efferent],
+    ingress,
+    egress,
+    registrations: [ingress, egress],
   }
 }
 

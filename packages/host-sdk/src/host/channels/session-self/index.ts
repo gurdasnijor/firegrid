@@ -12,7 +12,7 @@ import type {
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
 import {
   ChannelRegistry,
-  makeAfferentChannel,
+  makeIngressChannel,
   makeChannelRegistry,
   makeChannelTarget,
   type ChannelRegistration,
@@ -296,7 +296,7 @@ export const makeSessionSelfChannels = (
   },
 ): ReadonlyArray<ChannelRegistration> => [
   // firegrid-agent-body-plan.SESSION_SELF.1
-  makeAfferentChannel({
+  makeIngressChannel({
     target: SessionSelfLifecycleChannelTarget,
     schema: SessionSelfLifecycleEventSchema,
     stream: options.control.runs.rows().pipe(
@@ -307,7 +307,7 @@ export const makeSessionSelfChannels = (
     ),
   }),
   // firegrid-agent-body-plan.SESSION_SELF.2
-  makeAfferentChannel({
+  makeIngressChannel({
     target: SessionSelfCheckpointChannelTarget,
     schema: SessionSelfCheckpointEventSchema,
     stream: checkpointStream(options.engineRegistry),
