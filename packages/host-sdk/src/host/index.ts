@@ -83,6 +83,11 @@ export {
   type HostProjectionObserverOptions,
 } from "./projection-observer.ts"
 export {
+  stateChangesChannel,
+  stateChangesChannelFromCollection,
+  type StateChangesChannel,
+} from "./state-changes-channel.ts"
+export {
   RuntimeControlRequestReconciler,
   RuntimeControlRequestReconcilerDaemonLive,
   RuntimeControlRequestReconcilerLive,
