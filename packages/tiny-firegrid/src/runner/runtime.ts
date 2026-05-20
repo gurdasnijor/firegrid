@@ -25,6 +25,7 @@ import type {
   TinyFiregridHostEnv,
   TinyFiregridSimulation,
 } from "../types.ts"
+import { HeartbeatProcessor } from "./heartbeat-processor.ts"
 import { annotateSide } from "./side.ts"
 import { TelemetryLive, type TelemetryDestination } from "./telemetry.ts"
 
@@ -110,6 +111,11 @@ interface RunOptions {
   // primary artifact; console is an opt-in debugging aid that's noisy
   // enough to drown the actual signal during a real run.
   readonly console: boolean
+  // tf-ewo: --watch flag opts the heartbeat processor into per-event
+  // emission (compact one-line-per-span to stderr) in addition to the
+  // periodic digest. Default false — heartbeat-only is the right shape
+  // for automated lanes / CI; per-event is for interactive debugging.
+  readonly watch: boolean
 }
 
 // Only update the latest-pointer if the run produced at least one span.
@@ -162,11 +168,29 @@ export const runSimulation = (
       ? { _tag: "console" }
       : { _tag: "file", filePath: tracePath }
 
+    // Heartbeat only fires when destination is file. OTLP + console
+    // already have their own activity signal (remote backend / stdout
+    // spam); heartbeat exists specifically to make the invisible-file
+    // path observable. Constructed here (not inside telemetry.ts) so the
+    // runner holds the reference and can drive the ticker fiber via
+    // Effect.sleep — Effect ownership of scheduling, no JS timers.
+    const heartbeat = destination._tag === "file"
+      ? new HeartbeatProcessor({ perEvent: options.watch })
+      : undefined
     const telemetry = TelemetryLive(simulation, runId, {
       namespace,
       durableStreamsBaseUrl: baseUrl,
       destination,
+      heartbeat,
     })
+    if (heartbeat !== undefined) {
+      yield* Effect.gen(function*() {
+        while (true) {
+          yield* Effect.sleep(Duration.millis(heartbeat.intervalMs()))
+          heartbeat.emitDigest()
+        }
+      }).pipe(Effect.forkScoped, Effect.asVoid)
+    }
     const hostEnv: TinyFiregridHostEnv = {
       simulationId: simulation.id,
       runId,

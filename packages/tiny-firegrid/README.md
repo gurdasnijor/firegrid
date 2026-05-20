@@ -60,6 +60,47 @@ The trace destination is overridable:
 | `--console` flag passed to `simulate:run` | `ConsoleSpanExporter` to stdout (noisy; debugging aid) |
 | default | `.simulate/runs/<runId>/trace.jsonl` |
 
+## Watching a run in real time
+
+While a run is writing its trace.jsonl, an **adaptive heartbeat** prints to
+stderr so you can tell at a glance whether the simulation is alive, slow, or
+stalled:
+
+```
+[00:02] spans=27 (+27)  sides={host=20,sdk=6,driver=1}  last=firegrid.client.session.create_or_load +1.9s
+[00:04] spans=27 (+0)   sides={host=20,sdk=6,driver=1}  last=firegrid.client.session.create_or_load +3.9s
+[00:08] spans=69 (+42)  sides={host=45,sdk=23,driver=1}  last=firegrid.durable_table.layer.acquire +2.9s
+[00:10] spans=69 (+0)   sides={...}  last=firegrid.durable_table.layer.acquire +4.9s  ⚠ idle 4s
+```
+
+Fields, left to right: `elapsed`, total `spans` (delta since last tick),
+side breakdown, most-recent span name + time since. The `⚠ idle Ns` marker
+appears when no spans have arrived for ≥2× the current interval — converts
+"is it stalled?" into "no, last activity was `acp.session_update`, the agent
+is in an LLM round-trip."
+
+The interval **adapts**: starts at 2s, doubles on consecutive idle ticks up
+to 10s, resets to 2s when activity arrives. Fast runs get one or two ticks
+and exit; LLM-bound runs settle into the 10s rhythm. Bounded volume keeps
+the signal readable in cmux-dispatch / CI log contexts where unbounded
+per-span output would be noise.
+
+Pass `--watch` to also emit a compact one-line summary per completed span
+(in addition to the heartbeat) — useful for interactive debugging:
+
+```bash
+pnpm --filter @firegrid/tiny-firegrid simulate:run codex-acp-tool-calls --watch
+```
+
+The heartbeat fires only when the destination is the JSONL file. Under
+`--console` or `OTEL_EXPORTER_OTLP_ENDPOINT`, the existing channels (stdout
+spans / remote backend) already provide an activity signal.
+
+For a richer streaming-tree view of a run as it happens, point any
+OTLP-aware tool — e.g. [`otel-tui`](https://github.com/ymtdzzz/otel-tui) —
+at the trace file. The heartbeat is the bounded summary; otel-tui is the
+full live tree.
+
 Every run is emitted under one `firegrid.simulation.run` root span. The runner
 wraps the host and driver in `firegrid.side.host` and `firegrid.side.driver`
 subtrees and propagates `firegrid.side` as a span attribute to every descendant
