@@ -4,6 +4,7 @@ import {
 } from "@firegrid/client-sdk/firegrid"
 import { Effect, Ref } from "effect"
 import type * as Scope from "effect/Scope"
+import { randomUUID } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 
@@ -27,11 +28,15 @@ const promptForFactoryLoop = [
 // (a) exist and (b) be distinct per run so configuration files don't
 // leak across runs or pollute the repo root.
 const makeAgentCwd = (): string => {
+  // Random suffix instead of Date.now() — the sim driver doesn't have an
+  // Effect context here to read `Clock.currentTimeMillis` from, and the
+  // dir name only needs uniqueness per run (not chronological ordering).
+  // `firegrid-no-date-now` semgrep rule.
   const dir = join(
     globalThis.process.cwd(),
     ".simulate",
     "agent-cwd",
-    `dark-factory-${Date.now()}`,
+    `dark-factory-${randomUUID()}`,
   )
   mkdirSync(dir, { recursive: true })
   return dir
