@@ -47,6 +47,13 @@ components:
       4: wait_for accepts an omitted match as a channel discovery request and accepts timeoutMs:0 as an immediate discovery bound.
       5: wait_for returns matched channel rows as matched:true event payloads and timeout results as matched:false timedOut:true.
 
+  SESSION_LOG:
+    requirements:
+      1: "Host code can declare `session.log` as an efferent-only channel registration."
+      2: "The `session.log` schema carries a durable log row with context id, message, and optional payload metadata."
+      3: "The `session.log` binding persists rows through a DurableTable collection supplied by host composition."
+      4: "`session.log` exposes no afferent/read binding to the agent surface."
+
 constraints:
   SLICE_BOUNDARY:
     requirements:
