@@ -253,6 +253,75 @@ Memory entries (loaded in future sessions via MEMORY.md):
 - `feedback_calibrated_progress_reporting` — distinguish wire-mentions from completed calls; treat user "kinda works?" as re-look signal
 - `feedback_walkback_names_the_old_models_failure_mode` — when a reframe makes your prior proposal wrong, name what was wrong before substituting
 
+## Wave-1 sim findings — empirical validation results
+
+The 6-investigation dispatch (step 32 of the arc) ran during session end. Three of four Wave-1 investigations reported before sign-off. Findings:
+
+### INV-1 / tf-zuom (PR #459) — Stream.zipLatest runtime-context body — ✅ GREEN
+
+Two prompt turns through claude-agent-acp with the converged body shape (`Stream.zipLatest(inputs, outputs).runForEach(handle)` replacing the native `runtime-context-workflow-core.ts:reactive_loop`). No Fiber.join hang. No per-row `wait_for.upsert_active` spans. **Load-bearing non-result**: tf-qoyg's Fiber.join hang was a TEST-PATTERN artifact (specifically `executeNativeRuntimeContext({discard:true}) + Fiber.join`), not a body-shape problem. The converged body works correctly in production-shaped execution (`simulate:run` path). Step 1 of `tf-auuv`'s 6-PR sequencing (`waitUntilWorkflowStarted` test-helper promotion) is empirically the right path.
+
+### INV-2 / tf-2kel — WaitForWorkflow nested execution — ✅ GREEN across (a)/(b)/(c)/(d)
+
+The SDD's central claim ("no engine API additions needed") is empirically validated. Real claude-agent-acp + real MCP `wait_for` tool calls + real Durable Streams test server. Engine handles `DurableDeferred.raceAll([Activity(Stream.runHead), DurableClock.sleep])` natively. `Activity.make` cleanly hosts long-blocking `Stream.runHead` (one `activity.execute` span per execution, no retry-storm). 356 `complete_match` spans observed but ALL on `AgentOutputAfter` (production `session.wait.forAgentOutput`); ZERO on `CallerFact` (the `wait_for` tool path). Production wait-router never touched.
+
+Outstanding nuance (Path A follow-up): Lane 2's WorkflowEngine capture-and-re-provide pattern should be vetted against layer-composition per the canonical `@effect/workflow` test pattern at `WorkflowEngine.test.ts:94` (`Effect.provideService(WorkflowEngine.WorkflowEngine, ...)` at the call site). Functionally equivalent R-discharge, but layer-composition is the production-aligned shape. Non-blocking.
+
+### INV-4 / tf-r3mo — Channel registry + opaque ChannelTarget — IN FLIGHT at sign-off
+
+Lowest architectural risk (mechanical refactor); expected GREEN. Status to be confirmed in next session via PR check.
+
+### INV-5 / tf-tg8q (PR #460) — Cross-agent event(name) choreography — ⚠️ MIXED with **load-bearing substrate find**
+
+Mechanism works: single-agent `emit_event` MCP call landed in the durable stream as expected. But the multi-agent variant surfaced a **real substrate gap** that source-reading + existing-trace inspection would never have found.
+
+**The gap**: `RuntimeControlRequestReconciler` (`control-request-reconciler.ts:539-543`) processes startRequests via `Effect.forEach(...)` with default `concurrency: 1`. Combined with `claimAndRunRuntimeContextWorkflow` (`commands.ts:83-100`) blocking until the workflow terminates, **only ONE long-lived agent context can be active at a time per host**. The first context's `claimAndRun` blocks forever (ACP agents don't terminate on prompt completion); the second context's engine never activates.
+
+**Why it was invisible**: every prior sim ran a single context per host. The corpus of existing traces had zero load on the multi-context concurrent activation path. INV-5 is the FIRST sim that exercises this path, and the gap surfaced on the first concurrent attempt.
+
+**Why the fix is structurally aligned with the SDDs**: stream-native VO contract — per-context workflow is a VO keyed by contextId. Single-writer-per-key means "same contextId, one at a time," NOT "different contextIds, one across the host." Today's serial `Effect.forEach` enforces single-writer-across-all-keys, which is stronger than VO semantics require. The fix lifts the concurrency restriction to honor the VO contract that's already implicit in the architecture.
+
+**Three closure paths** (cited in Lane 5's FINDING):
+1. Raise concurrency on `Effect.forEach` to `"unbounded"`. Smallest change.
+2. Fork-and-forget `claimAndRun` (`Effect.forkScoped`); reconciler proceeds immediately.
+3. Stream-based dispatcher — start-request rows on a durable stream; multiple workers consume concurrently. Most architecturally clean; biggest change.
+
+Option 1 is the smallest first move. Option 3 is where the architecture lands if you continue the stream-native VO direction.
+
+## What the Wave-1 outcomes prove about the SDDs
+
+Three structural propositions validated empirically:
+
+| Proposition | Validated by | Status |
+|---|---|---|
+| Stream-fold body works as runtime-context workflow body | INV-1 | ✅ |
+| Workflow engine has all primitives needed for `WaitForWorkflow` | INV-2 | ✅ |
+| Native MCP path + permission auto-approver reaches honest-halt | tf-h1gm (mid-session) | ✅ |
+| `durable-tools/` is deletable in full once the agent-tool path is rewritten | INV-1 + INV-2 jointly | ✅ |
+| Stream-native VO multi-key concurrency works at the engine layer | (would have been INV-2 if tested; engine handles concurrent executions per test corpus) | ✅ |
+| **Stream-native VO multi-key concurrency works at the HOST layer** | INV-5 | ❌ — gap found, fix-tracked |
+
+The one-substrate SDD's central architectural claims survive empirical validation. INV-5's gap is **additive**: a new substrate prerequisite, not a contradiction. The SDDs' direction holds; one more prerequisite gets bead-tracked.
+
+## Net bead state at sign-off
+
+P0 active:
+- `tf-auuv` — Implement `SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE` (6-PR sequencing); blocked-by the reconcile-concurrency fix bead (newly added per Wave-1 INV-5 finding).
+
+P1 active:
+- New reconcile-concurrency fix bead (to be opened by coordinator from the operationalization dispatch) — blocks `tf-fmwg` (Slice C.2).
+- `tf-lawq` — Body-plan Slice A (ChannelRegistry + opaque ChannelTarget); blocked-by `tf-auuv`.
+- `tf-o38e` — Body-plan Slice B (lift empty-predicate gate); independent, tonight-eligible.
+- `tf-gnp1` / `tf-fmwg` / `tf-bhv9` / `tf-v8i4` / `tf-ynd4` — body-plan Slice C/D beads; blocked-by `tf-lawq`.
+
+P2 active:
+- `tf-mybr` / `tf-xl6k` — body-plan Slice C.5/C.6.
+- `tf-v1q2` — Slice E canonical record names; independent.
+
+Closed during session: `tf-3ek` (FINDING merged), `tf-s8y` (spike landed verdict), `tf-h1gm` (FINDING on PR #446), `tf-zkwg` (superseded by SDD), `tf-alca` (superseded by SDD), `tf-qoyg` (closed via (C) WIDEN — superseded by one-substrate SDD).
+
+Reported during session but PR status TBD: `tf-zuom` (INV-1 PR #459), `tf-2kel` (INV-2), `tf-tg8q` (INV-5 PR #460), `tf-r3mo` (INV-4 in flight), `tf-ui4l` (INV-6 design doc, build pending OLA gates → answered in session).
+
 ## How to resume from here
 
 If you're a future session inheriting this state:
