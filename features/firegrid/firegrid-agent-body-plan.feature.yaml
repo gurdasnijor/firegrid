@@ -36,7 +36,7 @@ components:
       1: The agent tool surface exposes a `call` operation addressed by an opaque approval channel target.
       2: The approval call request carries a permission decision plus optional timeout, sequence, and idempotency controls.
       3: The host approval adapter waits for a matching PermissionRequest on the current runtime context and responds by appending a PermissionResponse intent.
-      4: Approval call targets outside the approval channel family are rejected until generic callable-channel dispatch is implemented.
+      4: Approval call targets outside the approval channel family are rejected when no registered callable-channel dispatch exists.
 
   HUMAN_CHANNELS:
     requirements:
@@ -52,6 +52,12 @@ components:
       3: wait_for resolves its channel field through the host ChannelRegistry and only accepts afferent channel registrations.
       4: wait_for accepts an omitted match as a channel discovery request and accepts timeoutMs:0 as an immediate discovery bound.
       5: wait_for returns matched channel rows as matched:true event payloads and timeout results as matched:false timedOut:true.
+  SLICE_D_VERBS:
+    requirements:
+      1: FiregridAgentToolkit exposes send, call, and wait_for_any as agent-facing tools.
+      2: The send tool resolves only efferent channels and appends a payload decoded by the registered channel schema.
+      3: The call tool resolves call channel registrations and dispatches requests decoded by the registered request schema, while preserving the approval channel fallback.
+      4: The wait_for_any tool resolves only afferent channels, races the descriptors, and returns the first winner index, channel, and result.
 
   SESSION_LOG:
     requirements:
@@ -75,3 +81,4 @@ constraints:
       2: Phase 2 Slice C.3 wraps DurableTable rows without redesigning DurableTable rows or subscribe primitives.
       3: Phase 2 Lane 2 changes the wait_for channel-addressed tool surface but does not publish channel inventory metadata through MCP tools/list.
       4: Phase 2 Slice C.2 adds event channel bindings without implementing the agent-facing send, call, wait_for, or wait_for_any verbs.
+      5: Slice D verb lowering is direction-specific: send accepts efferent channel bindings, call accepts call channel bindings before approval fallback, and wait_for_any accepts afferent channel bindings.

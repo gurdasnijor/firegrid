@@ -32,9 +32,11 @@
 import { DurableClock, type WorkflowEngine } from "@effect/workflow"
 import { Prompt } from "@effect/ai"
 import {
+  ApprovalCallRequestSchema,
   CallToolInputSchema,
   ExecuteToolInputSchema,
   ScheduleMeToolInputSchema,
+  SendToolInputSchema,
   SessionCancelToolInputSchema,
   SessionCloseToolInputSchema,
   SessionNewToolInputSchema,
@@ -42,12 +44,15 @@ import {
   SleepToolInputSchema,
   SpawnAllToolInputSchema,
   SpawnToolInputSchema,
+  WaitForAnyToolInputSchema,
   WaitForToolInputSchema,
   type CallToolInput,
   type CallToolOutput,
   type ExecuteToolInput,
   type ScheduleMeToolInput,
   type ScheduleMeToolOutput,
+  type SendToolInput,
+  type SendToolOutput,
   type SessionCancelToolInput,
   type SessionCancelToolOutput,
   type SessionCloseToolInput,
@@ -63,6 +68,9 @@ import {
   type SpawnAllToolOutput,
   type SpawnToolInput,
   type SpawnToolOutput,
+  type WaitForAnyDescriptor,
+  type WaitForAnyToolInput,
+  type WaitForAnyToolOutput,
   type WaitForToolInput,
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
@@ -87,6 +95,10 @@ import { AgentToolHost } from "./tool-host.ts"
 import {
   ChannelRegistry,
   type AfferentChannel,
+  type CallableChannel,
+  type ChannelDirection,
+  type ChannelRegistration,
+  type EfferentChannel,
 } from "../../host/channel-registry.ts"
 import {
   toolErrorResult,
@@ -99,6 +111,7 @@ import {
 
 type ToolUseEvent = Extract<AgentOutputEvent, { _tag: "ToolUse" }>
 type ToolResultEvent = Extract<AgentInputEvent, { _tag: "ToolResult" }>
+type RuntimeChannelSchema = Schema.Schema<unknown, unknown, never>
 
 export interface ToolLoweringContext {
   /** Parent runtime-context id; used to derive deterministic child ids. */
@@ -145,6 +158,83 @@ const waitQueryToTrigger = (
   if (failures.length > 0) return { _tag: "NonScalar", failures }
   return { _tag: "Ok", trigger }
 }
+
+const describeTriggerFailures = (
+  failures: ReadonlyArray<EventQueryAdapterFailure>,
+): string =>
+  failures
+    .map((f) => `${f.key}=${describeNonScalarValue(f.value)}`)
+    .join(", ")
+
+const directionInvalid = (
+  toolUseId: string,
+  name: string,
+  channel: string,
+  expected: ChannelRegistration["direction"],
+  actual: ChannelRegistration["direction"],
+): ToolError => ({
+  _tag: "ToolInvalidInput",
+  toolUseId,
+  name,
+  reason:
+    `${name} requires a ${expected} channel; channel '${channel}' is ${actual}.`,
+})
+
+const unknownChannelInvalid = (
+  toolUseId: string,
+  name: string,
+  channel: string,
+  cause: unknown,
+): ToolError => ({
+  _tag: "ToolInvalidInput",
+  toolUseId,
+  name,
+  reason: `Unknown channel '${channel}': ${String(cause)}`,
+})
+
+const requireChannelDirection = <Direction extends ChannelDirection>(
+  toolUseId: string,
+  name: string,
+  channel: string,
+  expected: Direction,
+): Effect.Effect<
+  Extract<ChannelRegistration, { readonly direction: Direction }>,
+  ToolError,
+  ChannelRegistry
+> =>
+  Effect.gen(function* () {
+    const registry = yield* ChannelRegistry
+    const registration = yield* registry.require(channel).pipe(
+      Effect.mapError(cause =>
+        unknownChannelInvalid(toolUseId, name, channel, cause)),
+    )
+    if (registration.direction !== expected) {
+      return yield* Effect.fail(directionInvalid(
+        toolUseId,
+        name,
+        channel,
+        expected,
+        registration.direction,
+      ))
+    }
+    return registration as Extract<
+      ChannelRegistration,
+      { readonly direction: Direction }
+    >
+  })
+
+const decodeChannelValue = <S extends Schema.Schema.Any>(
+  toolUseId: string,
+  name: string,
+  schema: S,
+  value: unknown,
+): Effect.Effect<unknown, ToolError, never> =>
+  Schema.decodeUnknown(
+    schema as unknown as RuntimeChannelSchema,
+  )(value).pipe(
+    Effect.mapError(cause =>
+      toolInvalidInputFromParseError(toolUseId, name, cause)),
+  )
 
 // ---------------------------------------------------------------------------
 // Per-arm runners
@@ -252,6 +342,145 @@ const runWaitForTool = (
       )
   })
   return waitForChannel
+}
+
+const appendEfferentPayload = <S extends Schema.Schema.Any>(
+  channel: EfferentChannel<S>,
+  payload: Schema.Schema.Type<S>,
+): Effect.Effect<void, unknown, never> => channel.binding.append(payload)
+
+const callCallableChannel = <
+  Request extends Schema.Schema.Any,
+  Response extends Schema.Schema.Any,
+>(
+  channel: CallableChannel<Request, Response>,
+  request: Schema.Schema.Type<Request>,
+): Effect.Effect<Schema.Schema.Type<Response>, unknown, never> =>
+  channel.binding.call(request)
+
+const waitForAfferentChannel = <S extends Schema.Schema.Any>(
+  channel: AfferentChannel<S>,
+  trigger: FieldEqualsTrigger,
+): Effect.Effect<Schema.Schema.Type<S>, unknown, never> =>
+  channel.binding.stream.pipe(
+    Stream.filter((row) =>
+      trigger.length === 0 ? true : evaluateFieldEquals(trigger, row),
+    ),
+    Stream.runHead,
+    Effect.flatMap(Option.match({
+      onNone: () => Effect.never,
+      onSome: row => Effect.succeed(row),
+    })),
+  )
+
+const runSendTool = (
+  toolUseId: string,
+  input: SendToolInput,
+): Effect.Effect<SendToolOutput, ToolError, ChannelRegistry> =>
+  Effect.gen(function* () {
+    const channel = (yield* requireChannelDirection(
+      toolUseId,
+      "send",
+      input.channel,
+      "efferent",
+    )) as unknown as EfferentChannel<RuntimeChannelSchema>
+    const payload = yield* decodeChannelValue(
+      toolUseId,
+      "send",
+      channel.schema,
+      input.payload,
+    )
+    // firegrid-agent-body-plan.SLICE_D_VERBS.2
+    // firegrid-agent-body-plan.SLICE_BOUNDARY.4
+    yield* appendEfferentPayload(channel, payload).pipe(
+      Effect.mapError(cause => toolExecutionFailed(toolUseId, "send", cause)),
+    )
+    return { sent: true, channel: input.channel }
+  })
+
+const runRegisteredCallChannel = (
+  toolUseId: string,
+  input: CallToolInput,
+): Effect.Effect<CallToolOutput, ToolError, ChannelRegistry> =>
+  Effect.gen(function* () {
+    const channel = (yield* requireChannelDirection(
+      toolUseId,
+      "call",
+      input.channel,
+      "call",
+    )) as unknown as CallableChannel<
+        RuntimeChannelSchema,
+        RuntimeChannelSchema
+      >
+    const request = yield* decodeChannelValue(
+      toolUseId,
+      "call",
+      channel.requestSchema,
+      input.request,
+    )
+    // firegrid-agent-body-plan.SLICE_D_VERBS.3
+    // firegrid-agent-body-plan.SLICE_BOUNDARY.4
+    return yield* callCallableChannel(channel, request).pipe(
+      Effect.mapError(cause => toolExecutionFailed(toolUseId, "call", cause)),
+    )
+  })
+
+const waitForAnyDescriptorToEffect = (
+  toolUseId: string,
+  descriptor: WaitForAnyDescriptor,
+  winnerIndex: number,
+): Effect.Effect<
+  WaitForAnyToolOutput,
+  ToolError,
+  ChannelRegistry
+> =>
+  Effect.gen(function* () {
+    const channel = (yield* requireChannelDirection(
+      toolUseId,
+      "wait_for_any",
+      descriptor.channel,
+      "afferent",
+    )) as unknown as AfferentChannel<RuntimeChannelSchema>
+    const adapted = waitQueryToTrigger(descriptor.match)
+    if (adapted._tag === "NonScalar") {
+      return yield* Effect.fail({
+        _tag: "ToolInvalidInput" as const,
+        toolUseId,
+        name: "wait_for_any",
+        reason:
+          `wait_for_any match values must be string, number, or boolean (got non-scalar: ${describeTriggerFailures(adapted.failures)})`,
+      })
+    }
+    const result = yield* waitForAfferentChannel(channel, adapted.trigger).pipe(
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, "wait_for_any", cause)),
+    )
+    return {
+      winnerIndex,
+      channel: descriptor.channel,
+      result,
+    }
+  })
+
+const runWaitForAnyTool = (
+  toolUseId: string,
+  input: WaitForAnyToolInput,
+): Effect.Effect<WaitForAnyToolOutput, ToolError, ChannelRegistry> => {
+  // firegrid-agent-body-plan.SLICE_D_VERBS.4
+  // firegrid-agent-body-plan.SLICE_BOUNDARY.4
+  const raced = Effect.raceAll(
+    input.channels.map((descriptor, index) =>
+      waitForAnyDescriptorToEffect(toolUseId, descriptor, index),
+    ),
+  )
+  if (input.timeoutMs === undefined) return raced
+  return raced.pipe(
+    Effect.timeoutTo({
+      duration: Duration.millis(input.timeoutMs),
+      onSuccess: output => output,
+      onTimeout: (): WaitForAnyToolOutput => ({ timedOut: true }),
+    }),
+  )
 }
 
 const runSpawnTool = (
@@ -484,8 +713,22 @@ const runCallTool = (
   ctx: ToolLoweringContext,
   toolUseId: string,
   input: CallToolInput,
-): Effect.Effect<CallToolOutput, ToolError, AgentToolHost> =>
-  Effect.gen(function*() {
+): Effect.Effect<CallToolOutput, ToolError, AgentToolHost | ChannelRegistry> =>
+  Effect.gen(function* () {
+    const registry = yield* ChannelRegistry
+    const registered = registry.get(input.channel)
+    if (Option.isSome(registered)) {
+      if (registered.value.direction !== "call") {
+        return yield* Effect.fail(directionInvalid(
+          toolUseId,
+          "call",
+          input.channel,
+          "call",
+          registered.value.direction,
+        ))
+      }
+      return yield* runRegisteredCallChannel(toolUseId, input)
+    }
     const host = yield* AgentToolHost
     // firegrid-agent-body-plan.APPROVAL_CALL.4
     if (!input.channel.startsWith("approval.")) {
@@ -494,14 +737,20 @@ const runCallTool = (
         toolUseId,
         name: "call",
         reason:
-          "call currently supports approval.* channel targets only in this slice.",
+          "call requires a registered call channel or an approval.* fallback channel.",
       })
     }
+    const request = yield* Schema.decodeUnknown(ApprovalCallRequestSchema)(
+      input.request,
+    ).pipe(
+      Effect.mapError(cause =>
+        toolInvalidInputFromParseError(toolUseId, "call", cause)),
+    )
     return yield* host.callApprovalChannel({
       toolUseId,
       contextId: ctx.contextId,
       channel: input.channel,
-      request: input.request,
+      request,
     })
   })
 
@@ -602,6 +851,17 @@ export const toolUseToEffect = (
     case "wait_for":
       return dispatchTool(event, "wait_for", WaitForToolInputSchema, (input) =>
         runWaitForTool(event.part.id, input),
+      )
+    case "send":
+      return dispatchTool(event, "send", SendToolInputSchema, (input) =>
+        runSendTool(event.part.id, input),
+      )
+    case "wait_for_any":
+      return dispatchTool(
+        event,
+        "wait_for_any",
+        WaitForAnyToolInputSchema,
+        (input) => runWaitForAnyTool(event.part.id, input),
       )
     case "spawn":
       return dispatchTool(event, "spawn", SpawnToolInputSchema, (input) =>

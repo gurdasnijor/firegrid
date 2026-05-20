@@ -11,26 +11,7 @@
 
 import { IdGenerator, Prompt } from "@effect/ai"
 import { Workflow, WorkflowEngine } from "@effect/workflow"
-import {
-  type CallToolInput,
-  type CallToolOutput,
-  type ExecuteToolOutput,
-  type ExecuteToolInput,
-  type ScheduleMeToolInput,
-  type ScheduleMeToolOutput,
-  type SessionCancelToolInput,
-  type SessionCancelToolOutput,
-  type SessionCloseToolInput,
-  type SessionCloseToolOutput,
-  type SessionNewToolInput,
-  type SessionNewToolOutput,
-  type SessionPromptToolInput,
-  type SessionPromptToolOutput,
-  type SleepToolInput,
-  type SleepToolOutput,
-  type WaitForToolInput,
-  type WaitForToolOutput,
-} from "@firegrid/protocol/agent-tools"
+import type * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
   provideRuntimeContext,
 } from "@firegrid/protocol/launch"
@@ -229,19 +210,27 @@ const extractToolFailure = (content: unknown): FiregridMcpToolFailure => {
  */
 export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
   Effect.map(Effect.context<ToolCallHostEnvironment>(), captured => ({
-    sleep: (params: SleepToolInput) => handleTool<SleepToolOutput>(captured, "sleep", params),
-    wait_for: (params: WaitForToolInput) => handleTool<WaitForToolOutput>(captured, "wait_for", params),
-    session_new: (params: SessionNewToolInput) =>
-      handleTool<SessionNewToolOutput>(captured, "session_new", params),
-    session_prompt: (params: SessionPromptToolInput) =>
-      handleTool<SessionPromptToolOutput>(captured, "session_prompt", params),
-    session_cancel: (params: SessionCancelToolInput) =>
-      handleTool<SessionCancelToolOutput>(captured, "session_cancel", params),
-    session_close: (params: SessionCloseToolInput) =>
-      handleTool<SessionCloseToolOutput>(captured, "session_close", params),
-    schedule_me: (params: ScheduleMeToolInput) =>
-      handleTool<ScheduleMeToolOutput>(captured, "schedule_me", params),
-    execute: (params: ExecuteToolInput) => handleTool<ExecuteToolOutput>(captured, "execute", params),
-    call: (params: CallToolInput) => handleTool<CallToolOutput>(captured, "call", params),
+    sleep: (params: AgentToolSchemas.SleepToolInput) =>
+      handleTool<AgentToolSchemas.SleepToolOutput>(captured, "sleep", params),
+    wait_for: (params: AgentToolSchemas.WaitForToolInput) =>
+      handleTool<AgentToolSchemas.WaitForToolOutput>(captured, "wait_for", params),
+    send: (params: AgentToolSchemas.SendToolInput) =>
+      handleTool<AgentToolSchemas.SendToolOutput>(captured, "send", params),
+    call: (params: AgentToolSchemas.CallToolInput) =>
+      handleTool<AgentToolSchemas.CallToolOutput>(captured, "call", params),
+    wait_for_any: (params: AgentToolSchemas.WaitForAnyToolInput) =>
+      handleTool<AgentToolSchemas.WaitForAnyToolOutput>(captured, "wait_for_any", params),
+    session_new: (params: AgentToolSchemas.SessionNewToolInput) =>
+      handleTool<AgentToolSchemas.SessionNewToolOutput>(captured, "session_new", params),
+    session_prompt: (params: AgentToolSchemas.SessionPromptToolInput) =>
+      handleTool<AgentToolSchemas.SessionPromptToolOutput>(captured, "session_prompt", params),
+    session_cancel: (params: AgentToolSchemas.SessionCancelToolInput) =>
+      handleTool<AgentToolSchemas.SessionCancelToolOutput>(captured, "session_cancel", params),
+    session_close: (params: AgentToolSchemas.SessionCloseToolInput) =>
+      handleTool<AgentToolSchemas.SessionCloseToolOutput>(captured, "session_close", params),
+    schedule_me: (params: AgentToolSchemas.ScheduleMeToolInput) =>
+      handleTool<AgentToolSchemas.ScheduleMeToolOutput>(captured, "schedule_me", params),
+    execute: (params: AgentToolSchemas.ExecuteToolInput) =>
+      handleTool<AgentToolSchemas.ExecuteToolOutput>(captured, "execute", params),
   })),
 ).pipe(Layer.annotateSpans("firegrid.side", "agent-tools"))

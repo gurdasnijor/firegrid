@@ -146,6 +146,110 @@ export const WaitForToolOutputSchema = Schema.Union(
 export type WaitForToolOutput = Schema.Schema.Type<typeof WaitForToolOutputSchema>
 
 // ---------------------------------------------------------------------------
+// send / wait_for_any
+// ---------------------------------------------------------------------------
+
+export const ChannelToolTargetSchema = Schema.String.pipe(
+  Schema.minLength(1),
+  Schema.annotations({
+    title: "Channel target",
+    description: "Opaque host-declared channel name.",
+  }),
+).annotations({
+  identifier: "firegrid.agentTool.channelTarget",
+  title: "Agent tool channel target",
+})
+export type ChannelToolTarget = Schema.Schema.Type<typeof ChannelToolTargetSchema>
+
+export const SendToolInputSchema = Schema.Struct({
+  channel: ChannelToolTargetSchema,
+  payload: Schema.Unknown,
+}).annotations({
+  identifier: "firegrid.agentTool.send.input",
+  title: "Send tool input",
+  description: "Append a payload to an efferent channel.",
+  examples: [
+    {
+      channel: "factory.events",
+      payload: { eventType: "ready", payload: { ok: true } },
+    },
+  ],
+  ...firegridProjection({
+    operationId: "channel.send",
+    toolName: "send",
+  }),
+})
+export type SendToolInput = Schema.Schema.Type<typeof SendToolInputSchema>
+
+export const SendToolOutputSchema = Schema.Struct({
+  sent: Schema.Literal(true),
+  channel: ChannelToolTargetSchema,
+}).annotations({
+  identifier: "firegrid.agentTool.send.output",
+  title: "Send tool output",
+})
+export type SendToolOutput = Schema.Schema.Type<typeof SendToolOutputSchema>
+
+export const WaitForAnyMatchSchema = Schema.Record({
+  key: Schema.String,
+  value: Schema.Unknown,
+}).annotations({
+  identifier: "firegrid.agentTool.waitForAny.match",
+  title: "Wait-for-any match",
+  description: "Field-equality predicates applied to one afferent channel row.",
+})
+export type WaitForAnyMatch = Schema.Schema.Type<typeof WaitForAnyMatchSchema>
+
+export const WaitForAnyDescriptorSchema = Schema.Struct({
+  channel: ChannelToolTargetSchema,
+  match: Schema.optional(WaitForAnyMatchSchema),
+}).annotations({
+  identifier: "firegrid.agentTool.waitForAny.descriptor",
+  title: "Wait-for-any channel descriptor",
+})
+export type WaitForAnyDescriptor = Schema.Schema.Type<typeof WaitForAnyDescriptorSchema>
+
+export const WaitForAnyToolInputSchema = Schema.Struct({
+  channels: Schema.Array(WaitForAnyDescriptorSchema).pipe(Schema.minItems(1)),
+  timeoutMs: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
+  ),
+}).annotations({
+  identifier: "firegrid.agentTool.waitForAny.input",
+  title: "Wait-for-any tool input",
+  description: "Race waits over multiple afferent channel descriptors.",
+  examples: [
+    {
+      channels: [
+        { channel: "state.changes", match: { status: "ready" } },
+        { channel: "factory.events", match: { eventType: "approved" } },
+      ],
+      timeoutMs: 30_000,
+    },
+  ],
+  ...firegridProjection({
+    operationId: "channel.waitForAny",
+    toolName: "wait_for_any",
+  }),
+})
+export type WaitForAnyToolInput = Schema.Schema.Type<typeof WaitForAnyToolInputSchema>
+
+export const WaitForAnyToolOutputSchema = Schema.Union(
+  Schema.Struct({
+    winnerIndex: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
+    channel: ChannelToolTargetSchema,
+    result: Schema.Unknown,
+  }),
+  Schema.Struct({
+    timedOut: Schema.Literal(true),
+  }),
+).annotations({
+  identifier: "firegrid.agentTool.waitForAny.output",
+  title: "Wait-for-any tool output",
+})
+export type WaitForAnyToolOutput = Schema.Schema.Type<typeof WaitForAnyToolOutputSchema>
+
+// ---------------------------------------------------------------------------
 // spawn / spawn_all
 // ---------------------------------------------------------------------------
 
@@ -676,13 +780,13 @@ export type ApprovalCallOutput = Schema.Schema.Type<
 >
 
 export const CallToolInputSchema = Schema.Struct({
-  channel: ApprovalCallNonEmptyStringSchema,
-  request: ApprovalCallRequestSchema,
+  channel: ChannelToolTargetSchema,
+  request: Schema.Unknown,
 }).annotations({
   identifier: "firegrid.agentTool.call.input",
   title: "Call tool input",
   description:
-    "Invoke a callable channel. This slice wires approval.* targets to the permission request/response substrate.",
+    "Invoke a callable channel. Registered call channels decode requests with their channel schema; approval.* targets keep the permission request/response fallback.",
   examples: [
     {
       channel: "approval.operator",
@@ -696,15 +800,19 @@ export const CallToolInputSchema = Schema.Struct({
 })
 export type CallToolInput = Schema.Schema.Type<typeof CallToolInputSchema>
 
-export const CallToolOutputSchema = ApprovalCallOutputSchema.annotations({
+export const CallToolOutputSchema = Schema.Unknown.annotations({
   identifier: "firegrid.agentTool.call.output",
   title: "Call tool output",
+  description:
+    "Call-channel response payload. Approval fallback returns the ApprovalCallOutput shape.",
 })
 export type CallToolOutput = Schema.Schema.Type<typeof CallToolOutputSchema>
 
 export const FiregridAgentToolOperations = {
   sleep: defineFiregridOperation(SleepToolInputSchema, SleepToolOutputSchema),
   waitFor: defineFiregridOperation(WaitForToolInputSchema, WaitForToolOutputSchema),
+  send: defineFiregridOperation(SendToolInputSchema, SendToolOutputSchema),
+  waitForAny: defineFiregridOperation(WaitForAnyToolInputSchema, WaitForAnyToolOutputSchema),
   spawn: defineFiregridOperation(SpawnToolInputSchema, SpawnToolOutputSchema),
   spawnAll: defineFiregridOperation(SpawnAllToolInputSchema, SpawnAllToolOutputSchema),
   sessionCreate: defineFiregridOperation(SessionNewToolInputSchema, SessionNewToolOutputSchema),

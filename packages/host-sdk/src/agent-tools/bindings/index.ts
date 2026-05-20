@@ -28,6 +28,7 @@ export {
   FiregridAgentToolkit,
   FiregridMcpToolFailureSchema,
   ScheduleMeTool,
+  SendTool,
   SessionCancelTool,
   SessionCloseTool,
   SessionNewTool,
@@ -35,6 +36,7 @@ export {
   SleepTool,
   SpawnAllTool,
   SpawnTool,
+  WaitForAnyTool,
   WaitForTool,
   type FiregridMcpToolFailure,
 } from "./tools.ts"
