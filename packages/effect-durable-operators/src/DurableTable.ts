@@ -66,6 +66,7 @@ import type {
 } from "@tanstack/db"
 import { DurableStream } from "effect-durable-streams"
 import {
+  type Brand,
   Context,
   Effect,
   Layer,
@@ -75,6 +76,22 @@ import {
   Stream,
 } from "effect"
 import { DurableTableError } from "./Errors.ts"
+
+/**
+ * A `Stream` that has gone through a `DurableTable.rows()` — i.e., is
+ * replay-then-tail over a durable projection. Consumers that semantically
+ * require this property (single-shot projectionWait, continuous projection
+ * observers) declare it explicitly in their signatures.
+ *
+ * Structurally `ProjectionStream<A, E, R>` is a `Stream.Stream<A, E, R>` with
+ * an Effect `Brand` intersection, so a `ProjectionStream` is assignable
+ * anywhere a `Stream.Stream` is expected; the brand is erased at runtime.
+ * The brand marks the SOURCE only — derived streams produced by Stream
+ * combinators (filter, filterMap, map, …) return raw `Stream.Stream` and
+ * lose the brand.
+ */
+export type ProjectionStream<A, E = never, R = never> =
+  Stream.Stream<A, E, R> & Brand.Brand<"effect-durable-operators/ProjectionStream">
 
 const primaryKeyAnnotationId = Symbol.for(
   "effect-durable-operators/DurableTable/primaryKey",
@@ -145,7 +162,7 @@ export interface CollectionFacade<Row extends object, Key> {
    * effect-durable-operators.TABLE.28
    * effect-durable-operators.TABLE.28-1
    */
-  readonly rows: () => Stream.Stream<Row, DurableTableError>
+  readonly rows: () => ProjectionStream<Row, DurableTableError>
   readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
   /**
    * Row-level insert-or-read by primary key.
@@ -769,7 +786,7 @@ const makeFacade = <Row extends object, Key>(options: {
   )
   return {
     collection: readableCollection,
-    rows: () =>
+    rows: (): ProjectionStream<Row, DurableTableError> =>
       Stream.async<Row, DurableTableError>((emit) => {
         let unsubscribe: (() => void) | undefined
         try {
@@ -799,7 +816,7 @@ const makeFacade = <Row extends object, Key>(options: {
             "firegrid.durable_table.durable_type": collection.durableType,
           },
         }),
-      ),
+      ) as ProjectionStream<Row, DurableTableError>,
     insert: (row) =>
       runAction(
         tableName,
