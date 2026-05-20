@@ -22,11 +22,11 @@ finishing the canonical-doc convergence and driving Firegrid to private beta.
    onboarding-discoverability surface for next-team reading. Until then, follow
    the original paths in references below; cannon/ adds discoverability without
    moving the originals.
-3. **`01-COORDINATOR_HANDOFF_canonical_convergence.md`** — operational handoff
+4. **`01-COORDINATOR_HANDOFF_canonical_convergence.md`** — operational handoff
    from the overnight wave coordinator (34 PRs, ~93% convergence). Captures
    the full PR table, verified invariants, lane disposition, references, and
    lessons-learned. Read end-to-end.
-4. **`02-GARY_ARCHITECTURE_ASSESSMENT.md`** — gary's architectural scorecard
+5. **`02-GARY_ARCHITECTURE_ASSESSMENT.md`** — gary's architectural scorecard
    + decisions. **Decision-grade companion** to the coordinator handoff:
    names the 8-file carveout list as the finish-line scoreboard, enumerates
    private-beta acceptable/unacceptable gaps, frames the 3-phase sequencing to
@@ -35,7 +35,16 @@ finishing the canonical-doc convergence and driving Firegrid to private beta.
    which demote batch delegation to **P2 optional ergonomics**. Repeated
    `session_new` calls are sufficient unless evidence proves a batch primitive
    is needed.
-5. **`03-GARY_NEXT_SESSION_HANDOFF.md`** — gary's tactical next-session
+6. **`02b-COMPANION_ARCHITECTURE_ASSESSMENT.md`** — original architect's
+   companion validation. It independently verifies the load-bearing claims in
+   02, adds the surface-hygiene convergence dimension, and names beta gates for
+   public exports, methodology/examples, telemetry, and schema evolution.
+7. **`architecture/00-README.md`** — consolidated planning folder that folds
+   02 + 02b into dispatchable cross-cutting concerns: convergence scoreboard,
+   surface hygiene gates, projection contracts, runtime boundary workstreams,
+   simulation/observability, and next-wave sequencing. Coordinators should route
+   from this folder rather than re-reading 02/02b as competing plans.
+8. **`03-GARY_NEXT_SESSION_HANDOFF.md`** — gary's tactical next-session
    playbook. "If asked what now, answer this." Dispatch shape recommendation,
    useful commands, watchpoints. Shorter than the assessment; reads as the
    action layer above it.
@@ -62,8 +71,10 @@ Then also read:
 ## What this packet is for
 
 Firegrid is **~90-93% converged** on the canonical host-sdk/runtime boundary.
-The remaining work is **gap closure around known seams**, not architectural
-discovery. This packet primes the next 3-lane team to:
+Surface hygiene is closer to **75-80% converged** because public exports,
+examples, package READMEs, simulation methodology, and span names still expose
+or teach old seams. The remaining work is **gap closure around known seams**,
+not architectural discovery. This packet primes the next 3-lane team to:
 
 1. **Ratchet the 8-file carveout list** in `.dependency-cruiser.cjs` →
    `currentHostSdkSubstrateDebt` down to zero (or one-named-shim-with-no-behavior).
@@ -73,6 +84,9 @@ discovery. This packet primes the next 3-lane team to:
 3. `session_new_all` is **P2 optional ergonomics, NOT a private-beta blocker**
    (per Gurdas correction post-#529 cannon update). Use repeated `session_new`
    calls; only build a batch primitive if evidence shows it's needed.
+4. **Run a surface hygiene pass before widening beta-facing examples**:
+   export-barrel audit, methodology/example sweep, span-name baseline, schema
+   evolution rule, and single-source operation catalog cleanup.
 
 ## Finish-line scoreboard
 

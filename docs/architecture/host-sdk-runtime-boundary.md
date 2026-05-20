@@ -39,13 +39,17 @@ channels as the application/agent-facing firewall inside the binding layer.
   no runtime execution, no MCP server, no workflow engine
 
 bindings
-  @firegrid/host-sdk
-    host composition facade, channel capability composition, MCP / Effect-AI
-    tool binding, local host topology entrypoints
   @firegrid/client-sdk
     browser/app-safe client binding over protocol schemas
+  @firegrid/agent-tools
+    MCP / Effect-AI tool binding over protocol schemas
   future @firegrid/cli
     CLI binding over protocol schemas
+  future @firegrid/rest / @firegrid/grpc / @firegrid/jsonrpc
+    transport bindings over protocol schemas
+  @firegrid/host-sdk
+    host composition facade, channel capability composition, local host
+    topology entrypoints, and wiring of selected projection adapters
 
 @firegrid/runtime
   execution substrate: workflow engine integration, workflow definitions,
@@ -83,14 +87,46 @@ substrate migration, not the final agent-facing surface. That makes workflow
 execution infrastructure lower-tier than host SDK application code.
 
 The schema-projection SDD supplies the package graph: protocol owns the schema
-catalog; host-sdk, client-sdk, and CLI are bindings; runtime owns execution.
-That is stronger than "channels and above = host-sdk" by itself. Channels are
-the semantic cut, but package placement is determined by whether a module is a
-schema, binding, or execution substrate.
+catalog; client-sdk, agent-tool/MCP, CLI, REST, gRPC, and JSON-RPC packages are
+environment-specific projections; runtime owns execution. `host-sdk` is the
+host composition package that wires runtime capabilities and selected
+projection adapters, not the projection package for every surface. That is
+stronger than "channels and above = host-sdk" by itself. Channels are the
+semantic cut, but package placement is determined by whether a module is a
+schema, projection binding, host composition entrypoint, or execution
+substrate.
 
 The engine-native primitives SDD names the post-cutover direction: collapsing
 polling loops, registries, and hand-rolled coordination into workflow-engine
 services. That is runtime substrate work even when host composition starts it.
+
+## Composition Boundary Rule
+
+The shortest path out of the current ambiguity is to make `host-sdk` a
+composition boundary, not a substrate owner.
+
+Under this rule, `host-sdk` may compose ordinary Effect `Layer`s and
+application/deployment resources, but the things being composed should be
+semantic resources or projection bindings that can be lowered into the runtime
+substrate. It should not assemble workflow engines, durable table facades,
+deferred-row drivers, runtime observation providers, or control-plane dispatch
+loops directly.
+
+That gives a concrete decision test:
+
+- If the module defines a semantic binding, channel, MCP/tool projection, host
+  config DTO, or public host Layer entrypoint, it can live in `host-sdk`.
+- If the module owns durable execution, workflow-engine lifecycle, table/stream
+  authority, replay behavior, runtime output/session adapters, or control-plane
+  dispatch, it belongs below the line in `runtime`.
+- If a host binding needs runtime behavior, it should require a runtime-owned
+  capability tag and provide a host-specific implementation at composition time.
+  It should not import and assemble runtime substrate internals itself.
+
+This is why files such as `runtime-substrate.ts` are confusing: they make
+`host-sdk` both the composition boundary and the lower-tier substrate assembler.
+As that knot is split, most placement decisions become mechanical: host-sdk
+keeps the binding/projection Layer; runtime owns the live machinery underneath.
 
 ## Package Roles
 
@@ -187,6 +223,66 @@ schemas and explicitly supplied transport/capability services. It must not call
 workflow handles, runtime host modules, adapter sessions, or durable table
 facades directly.
 
+### Projection Packages
+
+The convergence target is one package per environment/surface projection:
+
+- `@firegrid/client-sdk`: browser/edge/app-safe TypeScript client projection;
+- `@firegrid/agent-tools` or equivalent: MCP/agent-host and Effect AI tool
+  projection;
+- `@firegrid/cli`: terminal/Node CLI projection;
+- future `@firegrid/rest`, `@firegrid/grpc`, and `@firegrid/jsonrpc`: server
+  transport projections.
+
+Projection packages may own transport glue, runtime/environment dependencies,
+surface-specific names/help, auth/config parsing, serialization, and ergonomic
+wrappers. They must not own independent operation schemas, independent
+observation schemas, workflow handles as public API, durable-table details as
+public API, or copied operation catalogs.
+
+Dependency guardrails should enforce:
+
+```text
+projection package -> @firegrid/protocol
+projection package -/-> another projection package
+projection package -/-> @firegrid/runtime
+@firegrid/runtime -> @firegrid/protocol
+@firegrid/runtime -/-> projection packages
+```
+
+Server-side projection packages that need to execute work should be composed by
+an owning host/runtime surface, not become runtime substrate packages
+themselves.
+
+## Single Interaction Pattern
+
+All client, agent, CLI, REST, gRPC, JSON-RPC, and host-author surfaces should
+follow one interaction pattern:
+
+```text
+protocol operation / observation / channel contract
+  -> environment projection package
+  -> transport or runtime-owned capability tag
+  -> runtime authority / workflow / adapter
+  -> durable streams substrate
+```
+
+The durable streams substrate may still be the backing transport for a local
+client or host process, but it should be hidden behind one of two shapes:
+
+- a projection transport implementation owned by the projection package; or
+- a runtime-owned capability tag provided by host composition.
+
+The public surface should not expose `DurableTable` facades, workflow handles,
+stream URLs, table names, deferred-row names, execution ids, or runtime
+observation resolver tags as the way users interact with Firegrid. Those are
+lower-tier coordinates.
+
+This rule also constrains tests and simulations. A simulation driver intended
+to model an end user should use the same projection package a user would use.
+Host-side simulation code may compose Layers, but should not normalize private
+substrate helpers into public import paths.
+
 ## Answers To The Open Questions
 
 ### 1. Is "channels and above = host-sdk; below channel Layer = runtime" right?
@@ -197,14 +293,17 @@ The stronger rule is:
 
 ```text
 protocol schemas = protocol
-binding surfaces and host composition = host-sdk / client-sdk / CLI
+binding surfaces = client-sdk / agent-tools / CLI / REST / gRPC / JSON-RPC
+host composition = host-sdk
 execution substrate behind channel capabilities = runtime
 ```
 
 Channels are the semantic firewall between application/agent code and runtime
-substrate. They are not the only package boundary. Agent-tool binding, client
-binding, and CLI binding are peers over protocol schemas; runtime is below all
-of them.
+substrate. They are not the only package boundary. Agent-tool/MCP, client, CLI,
+REST, gRPC, and JSON-RPC bindings are peer projections over protocol schemas;
+runtime is below all of them. Host-sdk composes runtime and selected projection
+adapters for a local host, but should not define the contracts those projections
+expose.
 
 ### 2. Is `packages/protocol` a third package in the firewall picture?
 
@@ -213,7 +312,8 @@ picture is:
 
 ```text
 protocol schema catalog
-  -> bindings: host-sdk agent tools / client-sdk / CLI
+  -> bindings: client-sdk / agent-tools / CLI / REST / gRPC / JSON-RPC
+  -> host composition: host-sdk
   -> execution: runtime
 ```
 
@@ -285,6 +385,10 @@ through protocol. If it is a capability implementation, keep it runtime.
 | Channel Layers such as `LinearWebhookLive`, `session.self.lifecycle`, `state.changes(collection)` | split | Channel contract/metadata schema in protocol when stable; channel binding Layer in host-sdk or app integration; substrate providers in runtime. |
 | `channel-registry.ts` | replace with binding edge only | `tf-kddg` should delete central registry architecture. Use per-channel `Context.Tag` + Layer composition. Any string lookup is only the MCP/protocol adapter from agent-supplied `channel: string` to the typed capability. |
 | `tool-use-to-effect.ts` | split | Decode and `ToolResult` adaptation may remain host-sdk binding. Validated operation execution should move to runtime execution services, especially arms that use workflow engine, durable streams, or provider adapters. |
+| `runtime-substrate.ts` | split/move below | Current host-sdk knot for runtime authorities, observation streams, workflow support, and tool execution. Runtime should own the provider/capability seams; host-sdk should compose top-level host bindings and stop exporting substrate assembly. |
+| `agent-tools/execution/toolkit-layer.ts` | split | MCP/Effect-AI toolkit projection belongs in host-sdk. Its workflow/tool execution support should depend on runtime-owned capability tags, not import `host/runtime-substrate.ts`. |
+| `runtime/authorities/*` | runtime | Narrow Effect capability providers over durable table families. This is substrate, not public API; export tags/layers and prevent table facades from leaking upward. |
+| `runtime/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts` | move within runtime | Defines a runtime tool-execution service tag, not a subscriber driver. It should live under tool-execution/workflow seams; `subscribers/` should remain scoped observation drivers. |
 | MCP server / Effect AI toolkit | host-sdk | This is host binding and route exposure. It projects protocol schemas into MCP/Effect AI surfaces. |
 | Session-handle / client facade helpers | client-sdk + protocol | Client SDK owns app-safe methods. Protocol owns schemas and normalized observations. Runtime supplies capabilities, never direct client imports. |
 | Durable Streams substrate access | runtime | Provider internals touch tables/streams. Host SDK consumes narrow tags or channel bindings; client SDK consumes protocol-safe transport/read capabilities. |

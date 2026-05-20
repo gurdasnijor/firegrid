@@ -57,9 +57,94 @@ The package-level shape is:
 | Host/agent binding | `@firegrid/host-sdk` | Protocol operations to Effect AI `Tool`/`Toolkit`, route-scoped MCP exposure, host Layers, provider/webhook/agent adapter installation, and host-authority operation execution. |
 | Client binding | `@firegrid/client-sdk` | Protocol operations to browser/app-safe TypeScript session APIs, snapshots, typed waits, and permission response helpers. |
 | CLI binding | `@firegrid/cli` | Protocol operations to `@effect/cli` commands, flags, help, examples, local defaults, and Node-only process entrypoints. |
+| Future transport bindings | app or adapter packages | Protocol operations to REST, gRPC, JSON-RPC, or other transport shapes. These adapters validate protocol schemas and delegate to client/host/runtime capabilities; they do not clone schemas or introduce a graph DSL. |
 
 `@firegrid/runtime` is not a binding package. It owns the execution substrate
 that bindings call into through explicit services and protocol schemas.
+
+## Package-Boundary Convergence Target
+
+Projection constraints should be enforced at package boundaries, not only by
+review convention. The target graph is:
+
+```text
+@firegrid/protocol
+  -> @firegrid/client-sdk
+  -> @firegrid/agent-tools        # or equivalent MCP/agent projection package
+  -> @firegrid/cli
+  -> @firegrid/rest               # future
+  -> @firegrid/grpc               # future
+  -> @firegrid/jsonrpc            # future
+  -> @firegrid/runtime
+```
+
+Projection packages are runtime/environment-specific adapters:
+
+- `@firegrid/client-sdk`: browser/edge/app-safe client runtime;
+- `@firegrid/agent-tools`: MCP/agent host runtime and Effect AI tool binding;
+- `@firegrid/cli`: terminal/Node runtime;
+- `@firegrid/rest`: HTTP server runtime;
+- `@firegrid/grpc`: gRPC server runtime;
+- `@firegrid/jsonrpc`: JSON-RPC server/runtime.
+
+Each projection package may own transport glue, runtime/environment
+dependencies, surface-specific names, auth/config parsing, help text,
+serialization/deserialization, and ergonomic wrappers. It must not own
+independent operation schemas, independent observation schemas, workflow
+handles as public API, durable-table details as public API, or copied operation
+catalogs.
+
+The dependency rules are:
+
+```text
+projection package -> @firegrid/protocol
+projection package -/-> another projection package
+projection package -/-> @firegrid/runtime
+@firegrid/runtime -> @firegrid/protocol
+@firegrid/runtime -/-> projection packages
+```
+
+Server-side packages that need to execute work should depend on runtime through
+explicit host/runtime composition packages, not by making the projection package
+itself a runtime substrate owner. `@firegrid/host-sdk` is therefore not "the
+projection package for everything"; it should be the host composition package
+that wires runtime capabilities and selected projection adapters. Client,
+agent, CLI, REST, gRPC, and JSON-RPC contracts must still project from protocol
+rather than from host-sdk.
+
+All projected surfaces should use one substrate interaction pattern:
+
+```text
+protocol operation / observation / channel contract
+  -> environment projection package
+  -> transport or runtime-owned capability tag
+  -> runtime authority / workflow / adapter
+  -> durable streams substrate
+```
+
+Durable Streams may be a backing transport for local client or host processes,
+but direct `DurableTable` facades, stream URLs, workflow handles, deferred row
+names, execution ids, table names, and runtime observation resolver tags are
+not the public projection semantics. They belong inside runtime authorities,
+host/runtime composition internals, or a named projection transport
+implementation.
+
+Convergence acceptance:
+
+- `defineFiregridOperation(...)` or its replacement catalog grouping exists only
+  under `@firegrid/protocol`.
+- `@firegrid/client-sdk`, agent-tool, CLI, REST, gRPC, and JSON-RPC packages
+  import or re-export protocol operation entries; they do not define their own
+  operation catalogs.
+- normalized observation schemas and observation source names are exported from
+  protocol; runtime packages resolve streams, but do not define public
+  observation contracts.
+- projection packages do not expose durable table facades or workflow/runtime
+  coordinates as the caller-facing way to launch, prompt, wait, observe, or use
+  channels.
+- dependency guardrails reject projection-package imports from runtime and
+  cross-projection imports except package-barrel compatibility shims explicitly
+  scheduled for deletion.
 
 ## Shape
 
