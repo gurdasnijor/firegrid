@@ -24,6 +24,20 @@ export {
   RuntimeAgentOutputEventsLayer,
 } from "./agent-event-pipeline/authorities/runtime-output-public.ts"
 export {
+  RuntimeContextProvisionWorkflow,
+  RuntimeContextProvisionWorkflowPayload,
+  RuntimeControlRequestClaimedOutcomeSchema,
+  RuntimeControlRequestDispatchOutcomeSchema,
+  RuntimeControlRequestDoneOutcomeSchema,
+  RuntimeLifecycleWorkflow,
+  RuntimeLifecycleWorkflowPayload,
+  RuntimeStartWorkflow,
+  RuntimeStartWorkflowPayload,
+  runtimeControlRequestWorkflowExecutionId,
+  runtimeControlRequestWorkflowStreamUrl,
+  type RuntimeControlRequestDispatchOutcome,
+} from "./workflow-engine/workflows/index.ts"
+export {
   AgentOutputAfterObservationSourceSchema,
   AgentOutputObservationSourceSchema,
   CallerFactObservationSourceSchema,

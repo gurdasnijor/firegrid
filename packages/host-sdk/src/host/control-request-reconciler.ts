@@ -5,10 +5,6 @@ import {
   makeRuntimeControlRequestCompletionRow,
   normalizeRuntimeIntent,
   RuntimeControlRequestCompletionRowSchema,
-  RuntimeContextRequestRowSchema,
-  RuntimeLifecycleRequestRowSchema,
-  RuntimeStartRequestRowSchema,
-  runtimeContextWorkflowStreamUrl,
   type RuntimeContextRequestRow,
   type RuntimeControlRequestCompletionRow,
   type RuntimeControlRequestKind,
@@ -17,9 +13,17 @@ import {
   type RuntimeOutputTable,
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
-import { Activity, Workflow, WorkflowEngine } from "@effect/workflow"
+import { Activity, WorkflowEngine } from "@effect/workflow"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
-import { Cause, Clock, Context, Duration, Effect, Layer, Option, Schema, Stream, type Scope } from "effect"
+import {
+  RuntimeContextProvisionWorkflow,
+  RuntimeLifecycleWorkflow,
+  RuntimeStartWorkflow,
+  runtimeControlRequestWorkflowExecutionId,
+  runtimeControlRequestWorkflowStreamUrl,
+  type RuntimeControlRequestDispatchOutcome,
+} from "@firegrid/runtime/workflows"
+import { Cause, Clock, Context, Duration, Effect, Layer, Option, Stream, type Scope } from "effect"
 import { withRowOtelParent } from "@firegrid/protocol/otel"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { startRuntime } from "./commands.ts"
@@ -211,76 +215,6 @@ const abandon = (
       },
     }),
   )
-
-const RuntimeContextProvisionWorkflowPayload = Schema.Struct({
-  request: RuntimeContextRequestRowSchema,
-  abandonAfterMs: Schema.Number,
-})
-
-const RuntimeStartWorkflowPayload = Schema.Struct({
-  request: RuntimeStartRequestRowSchema,
-  abandonAfterMs: Schema.Number,
-})
-
-const RuntimeLifecycleWorkflowPayload = Schema.Struct({
-  request: RuntimeLifecycleRequestRowSchema,
-  abandonAfterMs: Schema.Number,
-})
-
-const RuntimeControlRequestClaimedOutcomeSchema = Schema.Struct({
-  _tag: Schema.Literal("Claimed"),
-  hostId: Schema.String,
-})
-
-const RuntimeControlRequestDoneOutcomeSchema = Schema.Struct({
-  _tag: Schema.Literal("Done"),
-})
-
-const RuntimeControlRequestDispatchOutcomeSchema = Schema.Union(
-  RuntimeControlRequestClaimedOutcomeSchema,
-  RuntimeControlRequestDoneOutcomeSchema,
-)
-type RuntimeControlRequestDispatchOutcome = Schema.Schema.Type<
-  typeof RuntimeControlRequestDispatchOutcomeSchema
->
-
-export const RuntimeContextProvisionWorkflow = Workflow.make({
-  name: "firegrid.runtime-control.context-provision",
-  payload: RuntimeContextProvisionWorkflowPayload,
-  success: RuntimeControlRequestCompletionRowSchema,
-  error: Schema.Never,
-  idempotencyKey: ({ request }) => runtimeControlRequestWorkflowExecutionId("context", request.requestId),
-})
-
-export const RuntimeStartWorkflow = Workflow.make({
-  name: "firegrid.runtime-control.start",
-  payload: RuntimeStartWorkflowPayload,
-  success: RuntimeControlRequestDispatchOutcomeSchema,
-  error: Schema.Never,
-  idempotencyKey: ({ request }) => runtimeControlRequestWorkflowExecutionId("start", request.requestId),
-})
-
-export const RuntimeLifecycleWorkflow = Workflow.make({
-  name: "firegrid.runtime-control.lifecycle",
-  payload: RuntimeLifecycleWorkflowPayload,
-  success: RuntimeControlRequestDispatchOutcomeSchema,
-  error: Schema.Never,
-  idempotencyKey: ({ request }) =>
-    runtimeControlRequestWorkflowExecutionId(request.lifecycle, request.requestId),
-})
-
-export const runtimeControlRequestWorkflowExecutionId = (
-  requestKind: RuntimeControlRequestKind,
-  requestId: string,
-): string => `runtime-control:${requestKind}:${requestId}`
-
-export const runtimeControlRequestWorkflowStreamUrl = (input: {
-  readonly baseUrl: string
-  readonly namespace: string
-}): string => runtimeContextWorkflowStreamUrl({
-  ...input,
-  contextId: "__control_requests__",
-})
 
 type RuntimeControlRequestWorkflowExecutionEnv =
   | CurrentHostSession

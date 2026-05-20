@@ -33,6 +33,10 @@
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"
     },
+    "./workflows": {
+      "types": "./src/workflow-engine/workflows/index.ts",
+      "default": "./src/workflow-engine/workflows/index.ts"
+    },
     "./durable-tools": {
       "types": "./src/durable-tools/index.ts",
       "default": "./src/durable-tools/index.ts"
