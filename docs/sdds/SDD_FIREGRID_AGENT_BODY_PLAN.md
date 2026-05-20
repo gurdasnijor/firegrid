@@ -254,6 +254,53 @@ Substrate (hidden from agent):
 
 The agent never sees the bottom layer. The substrate is **how channels stay durable**, not what the agent reasons about.
 
+## Channels Over Durable Operators
+
+The strongest version of the channel abstraction is generic over the typed
+durable operator it hides. A channel can be parameterized by the row/event type
+of a `DurableTable` collection or any equivalent projection stream:
+
+```ts
+type Channel<Row> = IngressChannel<Row> | EgressChannel<Row> | CallableChannel<any, Row>
+type LinearWebhookChannel = IngressChannel<LinearWebhook>
+```
+
+`packages/effect-durable-operators/src/DurableTable.ts` already exposes the
+right substrate shape: `CollectionFacade<Row>.rows()` returns a branded
+`ProjectionStream<Row>` — current rows plus live non-deleted row changes. That
+is exactly an ingress channel's hidden transport. Host composition can provide:
+
+```ts
+const LinearWebhookEvents = Channel.ingress<LinearWebhook>({
+  name: "linear.webhook",
+  schema: LinearWebhookSchema,
+  source: LinearWebhookTable.events.rows,
+})
+```
+
+The agent sees only:
+
+```ts
+wait_for("linear.webhook", {
+  match: { action: "issue.created" },
+  timeoutMs: 30_000,
+})
+```
+
+It does not see `DurableTable`, `ProjectionStream`, collection names,
+subscriptions, CDC mechanics, primary keys, workflow execution ids, or the
+engine service. The channel binding owns those details.
+
+This generalizes beyond webhooks:
+
+- `Channel<LinearWebhook>` exposes inbound webhooks.
+- `Channel<RuntimeAgentOutputObservation>` exposes session output.
+- `Channel<RuntimeRun>` exposes lifecycle state.
+- `Channel<MyDomainEvent>` exposes any app-owned durable table row stream.
+
+So channels are not a parallel data model. They are the typed semantic façade
+over Firegrid's existing durable operators and stream-backed workflow substrate.
+
 ## Substrate prerequisites (this SDD presents on top of a simplified substrate)
 
 This SDD is a **presentation-layer reframing**, not a substrate redesign. The migration only delivers its promised "fewer ways to wait for things" simplification IF the substrate underneath has been consolidated first. Otherwise channel-typed `wait_for` becomes a fourth wait surface alongside the existing `wait_router` / `DurableToolsTable` / workflow-engine-deferred trio — adding indirection rather than removing it.

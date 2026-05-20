@@ -44,6 +44,12 @@ wait_for(channel)
   -> workflow / engine primitive executes durable wait
 ```
 
+That channel Layer can be generic over existing durable operators. For example,
+`Channel<LinearWebhook>` can hide a `DurableTable` collection's
+`ProjectionStream<LinearWebhook>` and expose inbound Linear webhook events to
+`wait_for("linear.webhook", ...)` without leaking table names, CDC
+subscriptions, or workflow handles.
+
 ### Why this works specifically because the engine is stream-backed
 
 This SDD's shape is **not portable to `ClusterWorkflowEngine`**. The load-bearing property is that `DurableStreamsWorkflowEngine`'s engine-state and the application's stream-state are the same thing — durable streams. The left branch (runtime-context body as a stream-fold) only composes with engine replay because re-folding the stream IS re-running the body; nothing else needs to be replayed.
