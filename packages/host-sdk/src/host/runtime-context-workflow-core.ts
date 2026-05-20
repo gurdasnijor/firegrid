@@ -15,10 +15,16 @@ import {
   Cause,
   Effect,
   Layer,
+  Option,
   Predicate,
   Schema,
+  Stream,
 } from "effect"
-import { WaitFor } from "@firegrid/runtime/durable-tools"
+// `WaitFor` import dropped under tf-qoyg Shape A narrow — this file no
+// longer calls `WaitFor.match`. The agent-tool path
+// (`tool-use-to-effect.ts`) still uses it for the dynamic-source +
+// predicate semantics that path requires.
+import { RuntimeAgentOutputAfterEvents } from "@firegrid/runtime/runtime-output"
 import type { RuntimeContextWorkflowExecutionEnv } from "./runtime-substrate.ts"
 import {
   AgentInputEventSchema,
@@ -164,11 +170,12 @@ const sendSessionActivity = (
     ),
   })
 
-const outputWaitName = (
-  contextId: string,
-  activityAttempt: number,
-  afterSequence: number,
-) => `runtime-context/${contextId}/output-after/${activityAttempt}/${afterSequence}`
+// `outputWaitName` (the per-(contextId, attempt, sequence) wait-key
+// derivation that fed `WaitFor.match`'s `name` field) was deleted under
+// tf-qoyg Shape A narrow — this file no longer registers a durable wait
+// for AgentOutputAfter; the wait identity is encoded by the source
+// (contextId/attempt/afterSequence) on the subscription itself, with no
+// separate name to track.
 
 const inputWaitName = (
   contextId: string,
@@ -185,20 +192,78 @@ export const runtimeInputDeferredFor = (
     success: RuntimeIngressInputRowSchema,
   })
 
+// tf-qoyg Shape A narrow (docs/research/durable-tools-vs-workflow-engine-convergence.md
+// Shape A; refs tf-9ut empirical finding):
+//
+// The runtime-context workflow body's "next agent-output chunk" wait is
+// already perfectly isolated by `(contextId, activityAttempt, afterSequence)`
+// at the SOURCE — there is no dynamic predicate work for the wait_router to
+// do, no cross-wait coordination to arbitrate, and no timeout to race. The
+// generic `WaitFor.match` → `wait-router` → `DurableDeferred` → completion
+// machinery exists for `tool-use-to-effect.ts`'s `wait_for` agent tool
+// (dynamic source + scalar-AND predicate + optional timeout) — NOT for
+// this path.
+//
+// Shape A inline: subscribe directly to `RuntimeAgentOutputAfterEvents.after`
+// (the same per-context durable Stream the router would have subscribed to)
+// and take its head. `after(source)` is a durable replay stream
+// (`subscribeChanges({ includeInitialState: true })`) that emits every
+// matching row from the start of the table + live tail — `Stream.runHead`
+// returns the first matching observation deterministically across restart
+// (the workflow body re-runs on resume, re-subscribes, the replay redelivers
+// the same first row).
+//
+// What this path NO LONGER touches: `WaitFor.match`, the wait-router's
+// per-wait forked subscription fiber, `DurableToolsTable.waits`
+// upsert/status-flip lifecycle, the `wait_for/<name>/race` durable race
+// deferred, `engine.deferredDone` on a match deferred. The agent-tool path
+// at `tool-use-to-effect.ts:216` is unchanged — it still goes through
+// `WaitFor.match` and the generic machinery, which is correct for its
+// dynamic-source + predicate-evaluation needs.
+//
+// Trigger semantics preserved: the prior call used `trigger: []` (the
+// universal "next row after sequence" predicate). `Stream.runHead` over
+// `after(source)` matches exactly that — first row from the source-filtered
+// live tail.
 const waitForAgentOutput = (
   context: RuntimeContext,
   activityAttempt: number,
   afterSequence: number,
-) =>
-  WaitFor.match<RuntimeAgentOutputObservation>({
-    name: outputWaitName(context.contextId, activityAttempt, afterSequence),
-    source: {
-      _tag: "AgentOutputAfter",
+): Effect.Effect<
+  RuntimeAgentOutputObservation,
+  RuntimeContextError,
+  RuntimeAgentOutputAfterEvents
+> =>
+  Effect.gen(function*() {
+    const events = yield* RuntimeAgentOutputAfterEvents
+    const source = {
+      _tag: "AgentOutputAfter" as const,
       contextId: context.contextId,
       activityAttempt,
       afterSequence,
-    },
-    trigger: [],
+    }
+    const head = yield* Stream.runHead(events.after(source)).pipe(
+      Effect.mapError(cause =>
+        asRuntimeContextError(
+          "runtime-context.output.wait",
+          "failed reading runtime-context output stream",
+          context.contextId,
+          cause,
+        )),
+    )
+    if (Option.isNone(head)) {
+      // Unreachable in practice — `after(source)` is a live-tail replay
+      // stream that does not naturally complete (it stays open for new
+      // rows). We surface it as a typed error rather than `Effect.die` so
+      // the workflow's existing failure pathway records the cause
+      // durably.
+      return yield* asRuntimeContextError(
+        "runtime-context.output.wait",
+        "runtime-context output stream completed without emitting a row",
+        context.contextId,
+      )
+    }
+    return head.value
   }).pipe(
     Effect.withSpan("firegrid.runtime_context.workflow.output.wait", {
       kind: "internal",
@@ -210,28 +275,20 @@ const waitForAgentOutput = (
     }),
   )
 
+// tf-qoyg Shape A narrow: now collapsed — `waitForAgentOutput` returns the
+// observation directly (no `Match | Timeout` discriminator), so the
+// previous error-mapping + outcome-tag branching becomes a no-op pass-
+// through. Kept as a named function so call sites stay symmetric with
+// other helpers in this file.
 const nextAgentOutput = (
   context: RuntimeContext,
   activityAttempt: number,
   afterSequence: number,
-): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError, unknown> =>
-  waitForAgentOutput(context, activityAttempt, afterSequence).pipe(
-    Effect.mapError(cause =>
-      asRuntimeContextError(
-        "runtime-context.output.wait",
-        "failed waiting for runtime-context output",
-        context.contextId,
-        cause,
-      )),
-    Effect.flatMap((result): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError> =>
-      result._tag === "Timeout"
-        ? asRuntimeContextError(
-          "runtime-context.wait.timeout",
-          "runtime-context output wait timed out unexpectedly",
-          context.contextId,
-        )
-        : Effect.succeed(result.row)),
-  )
+): Effect.Effect<
+  RuntimeAgentOutputObservation,
+  RuntimeContextError,
+  RuntimeAgentOutputAfterEvents
+> => waitForAgentOutput(context, activityAttempt, afterSequence)
 
 const completedRuntimeInput = (
   context: RuntimeContext,

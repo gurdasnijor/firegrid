@@ -14,12 +14,14 @@ import {
   type RuntimeEventRow,
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
-import { Effect, Fiber, Layer, Ref, Schema } from "effect"
+import { Effect, Fiber, Layer, Option, Ref, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeControlPlaneRecorderLive,
 } from "@firegrid/runtime/control-plane"
 import {
+  RuntimeAgentOutputAfterEvents,
+  RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import {
@@ -96,6 +98,43 @@ const hostConfigLayer = (namespace: string) =>
     namespace,
   })
 
+// tf-qoyg Shape A narrow: test-only adapter providing
+// `RuntimeAgentOutputAfterEvents` from the HOST-WIDE `RuntimeAgentOutputEvents`
+// stream (with source filters), so this hand-rolled test layer's existing
+// host-wide write pattern (`RuntimeOutputTable.layer({ streamOptions: { url:
+// outputUrl } })` writes to the host-wide URL; tests append events through
+// that surface) keeps working under Shape A. The production
+// `PerContextRuntimeAgentOutputAfterEventsLive` reads from a per-context
+// URL built from `RuntimeHostConfig.streamPrefix` + contextId; this test
+// layer instead routes the workflow body's `events.after(source)`
+// subscription to the same host-wide stream the test writes to. Functionally
+// equivalent for this test surface; ONLY for hand-rolled-test composition,
+// not the production host wiring. Provided with `RuntimeAgentOutputEventsLayer`
+// inward so the adapter's RIn shrinks to `RuntimeOutputTable` (satisfied by
+// the test layer chain).
+const testHostWideRuntimeAgentOutputAfterEventsLive = Layer.effect(
+  RuntimeAgentOutputAfterEvents,
+  Effect.map(RuntimeAgentOutputEvents, agentOutput =>
+    RuntimeAgentOutputAfterEvents.of({
+      initial: source =>
+        Stream.runHead(agentOutput.pipe(
+          Stream.filter((row) =>
+            row.contextId === source.contextId &&
+            row.activityAttempt === source.activityAttempt &&
+            row.sequence > source.afterSequence),
+        )),
+      after: source =>
+        agentOutput.pipe(
+          Stream.filter((row) =>
+            row.contextId === source.contextId &&
+            row.activityAttempt === source.activityAttempt &&
+            row.sequence > source.afterSequence),
+        ),
+      forContext: contextId =>
+        agentOutput.pipe(Stream.filter(row => row.contextId === contextId)),
+    })),
+).pipe(Layer.provide(RuntimeAgentOutputEventsLayer))
+
 const outputRow = (input: {
   readonly contextId: string
   readonly activityAttempt: number
@@ -143,6 +182,10 @@ const agentOutputAfterWaitName = (
   afterSequence: number,
 ) => `runtime-context/${contextId}/output-after/${activityAttempt}/${afterSequence}`
 
+// Sync helper for tests that use a CUSTOM workflow which still calls
+// `WaitFor.match` directly (e.g. the "live writes" test below — verifying
+// the generic wait-router path, NOT the production runtime-context
+// workflow). Under that path a `WaitRow` IS still written.
 const waitUntilActiveWait = (
   name: string,
 ) =>
@@ -156,6 +199,37 @@ const waitUntilActiveWait = (
       yield* Effect.sleep("25 millis")
     }
     return yield* Effect.fail(new Error(`wait row did not become active: ${name}`))
+  })
+
+// tf-qoyg Shape A narrow: the PRODUCTION workflow body no longer
+// registers a `WaitRow` for the AgentOutputAfter wait — it subscribes
+// directly to `RuntimeAgentOutputAfterEvents.after(source)`. The
+// previous test sync point (poll for a wait row with status="active")
+// has no equivalent observable artifact under Shape A. The closest
+// pre-await side-effect that is still durable + observable is the
+// workflow body's `writeRunStarted` write to the
+// `RuntimeControlPlaneTable.runs` table — it happens immediately on
+// workflow body entry, before any agent-output observation, so polling
+// for the `started` run row gives an equivalent "workflow body has
+// started running" gate.
+const waitUntilWorkflowStarted = (
+  contextId: string,
+  activityAttempt: number,
+) =>
+  Effect.gen(function*() {
+    const control = yield* RuntimeControlPlaneTable
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const rows = yield* control.runs.query((coll) =>
+        coll.toArray.filter(row =>
+          row.contextId === contextId &&
+          row.activityAttempt === activityAttempt &&
+          row.status === "started"))
+      if (rows.length > 0) return rows[0]!
+      yield* Effect.sleep("25 millis")
+    }
+    return yield* Effect.fail(new Error(
+      `workflow body did not record a started run row: ${contextId}/${activityAttempt}`,
+    ))
   })
 
 const startedEvidence = (
@@ -269,6 +343,16 @@ const runtimeContextWorkflowTestLayer = (input: {
     Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: input.waitUrl })),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(RuntimeAgentOutputEventsLayer),
+    // tf-qoyg Shape A narrow: the production workflow body subscribes
+    // directly to `RuntimeAgentOutputAfterEvents.after` for the
+    // AgentOutputAfter path. The production `PerContextRuntimeAgentOutputAfterEventsLive`
+    // observes a PER-CONTEXT durable stream (URL suffixed by contextId),
+    // but this hand-rolled test layer writes events to the HOST-WIDE
+    // `RuntimeOutputTable` (`input.outputUrl`). Adapt the host-wide
+    // `RuntimeAgentOutputEvents` stream with the same source-filter the
+    // old `RuntimeWaitStreams.agentOutputAfter` `onNone` branch used —
+    // this keeps the test's existing host-wide write pattern working.
+    Layer.provideMerge(testHostWideRuntimeAgentOutputAfterEventsLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: input.workflowUrl,
       ...(input.workerId === undefined ? {} : { workerId: input.workerId }),
@@ -484,7 +568,7 @@ describe("workflow-native runtime-context core", () => {
           const output = yield* RuntimeOutputTable
           yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
+          yield* waitUntilWorkflowStarted(contextId, 1)
           yield* executeNativeRuntimeContext(contextId, { discard: true })
           yield* output.events.upsert(outputRow({
             contextId,
@@ -519,7 +603,7 @@ describe("workflow-native runtime-context core", () => {
           const control = yield* RuntimeControlPlaneTable
           yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
+          yield* waitUntilWorkflowStarted(contextId, 1)
         }).pipe(
           Effect.provide(runtimeContextWorkflowTestLayer({
             namespace,
@@ -620,7 +704,7 @@ describe("workflow-native runtime-context core", () => {
           const context = seededRuntimeContext({ namespace, hostId, contextId })
           yield* control.contexts.upsert(context)
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
+          yield* waitUntilWorkflowStarted(contextId, 1)
           yield* appendRuntimeInputDeferred({
             contextId,
             inputId: "input-prompt-1",
@@ -674,7 +758,7 @@ describe("workflow-native runtime-context core", () => {
           const output = yield* RuntimeOutputTable
           yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
+          yield* waitUntilWorkflowStarted(contextId, 1)
           yield* output.events.upsert(outputRow({
             contextId,
             activityAttempt: 1,
@@ -690,7 +774,23 @@ describe("workflow-native runtime-context core", () => {
             },
           }))
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, 0))
+          // tf-qoyg Shape A narrow: the prior `waitUntilActiveWait(.../0)`
+          // gated on the workflow having advanced past consuming the ToolUse
+          // event at seq=0 (the wait at after_seq=0 was the "now waiting for
+          // next output" durable artifact). Under Shape A narrow no such
+          // wait row is written. The equivalent observable side-effect is
+          // the workflow body having SENT a ToolResult via session.send —
+          // the test's `beforeRestart.emissions` accumulator captures that
+          // (see `reconstructableSessionLayer`).
+          yield* Effect.gen(function*() {
+            for (let attempt = 0; attempt < 40; attempt += 1) {
+              if (beforeRestart.emissions.length >= 1) return
+              yield* Effect.sleep("25 millis")
+            }
+            return yield* Effect.fail(new Error(
+              `workflow body did not emit ToolResult before restart: ${contextId}`,
+            ))
+          })
         }).pipe(
           Effect.provide(runtimeContextWorkflowTestLayer({
             namespace,
@@ -779,6 +879,11 @@ describe("workflow-native runtime-context core", () => {
       Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: waitUrl })),
       Layer.provideMerge(RuntimeControlPlaneRecorderLive),
       Layer.provideMerge(RuntimeAgentOutputEventsLayer),
+      // tf-qoyg Shape A narrow — production workflow body subscribes
+      // directly to RuntimeAgentOutputAfterEvents; harness adapts the
+      // host-wide RuntimeAgentOutputEvents stream so the test's existing
+      // host-wide write pattern keeps working (see `testHostWideRuntimeAgentOutputAfterEventsLive`).
+      Layer.provideMerge(testHostWideRuntimeAgentOutputAfterEventsLive),
       Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
       Layer.provideMerge(RuntimeControlPlaneTable.layer({
         streamOptions: { url: controlUrl, contentType: "application/json" },

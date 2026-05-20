@@ -14,6 +14,7 @@ import {
 } from "@firegrid/protocol/launch"
 import { type RuntimeHostConfig } from "./config.ts"
 import {
+  type RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import { RuntimeToolUseExecutor } from "@firegrid/runtime/tool-executor"
@@ -63,6 +64,13 @@ export type RuntimeContextWorkflowExecutionEnv =
   | HostRuntimeContextExecutionEnv
   | DurableWaitRowLookup
   | DurableWaitRowUpsert
+  // tf-qoyg Shape A narrow: the runtime-context workflow body subscribes
+  // directly to per-context AgentOutputAfter observations (replacing the
+  // generic WaitFor.match → wait-router → DurableDeferred plumbing for THIS
+  // path only). The agent-tool `wait_for` surface (tool-use-to-effect.ts)
+  // still routes through WaitFor.match — that path's dynamic source +
+  // scalar-AND predicate requires the generic machinery.
+  | RuntimeAgentOutputAfterEvents
 
 // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.2
 // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
