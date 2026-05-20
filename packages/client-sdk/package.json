@@ -16,6 +16,10 @@
     "./operations": {
       "types": "./src/operations.ts",
       "default": "./src/operations.ts"
+    },
+    "./permission-auto-approve": {
+      "types": "./src/permission-auto-approve.ts",
+      "default": "./src/permission-auto-approve.ts"
     }
   },
   "files": [

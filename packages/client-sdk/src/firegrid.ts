@@ -65,6 +65,11 @@ import type { DurableTableHeaders } from "@firegrid/protocol"
 import { Clock, Context, Data, Duration, Effect, Exit, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
 import { projectionWait } from "./internal/projection-wait.ts"
 import { FiregridClientOperations } from "./operations.ts"
+import {
+  autoApproveSessionPermissions,
+  type PermissionAutoApproveOptions,
+  type PermissionAutoApprovePolicy,
+} from "./permission-auto-approve.ts"
 
 export type {
   AgentOutputEvent,
@@ -156,6 +161,10 @@ export interface FiregridSessionPermissionsClient {
     PermissionRespondOutput,
     LaunchInputError | AppendError
   >
+  readonly autoApprove: <E = never, R = never>(
+    policy: PermissionAutoApprovePolicy<E, R>,
+    options?: PermissionAutoApproveOptions,
+  ) => Effect.Effect<void, never, Scope.Scope | R>
 }
 
 export interface FiregridSessionHandle {
@@ -879,6 +888,35 @@ const make = (config: ResolvedConfig) =>
             }
             return result
           }))
+        const waitClient: FiregridSessionWaitClient = {
+          forAgentOutput,
+          forPermissionRequest: request =>
+            withClientSpan("firegrid.client.session.wait.for_permission_request", {
+              "firegrid.session.id": sessionId,
+              "firegrid.context.id": sessionId,
+              "firegrid.wait.bucket": "projection",
+            }, waitForPermissionRequest(sessionId, request)),
+        }
+        const respond = (
+          request: SessionPermissionRespondInput,
+        ): Effect.Effect<
+          PermissionRespondOutput,
+          LaunchInputError | AppendError
+        > =>
+          Effect.gen(function* () {
+            const decoded = yield* decodeSessionPermissionRespondInput(request)
+            return yield* appendDecodedPermissionResponseIntent(
+              permissionResponseInput(sessionId, decoded),
+            )
+          })
+        const permissionsClient: FiregridSessionPermissionsClient = {
+          respond,
+          autoApprove: (policy, options) =>
+            autoApproveSessionPermissions({
+              wait: waitClient,
+              permissions: { respond },
+            }, policy, options),
+        }
         return {
           // firegrid-session-fact-client-surfaces.SESSION_IDENTITY.1
           // firegrid-session-fact-client-surfaces.CLIENT_SESSION.4
@@ -914,24 +952,8 @@ const make = (config: ResolvedConfig) =>
               "firegrid.context.id": sessionId,
             }, appendRuntimeStartRequest(sessionId)),
           snapshot: () => readSnapshot(sessionId),
-          wait: {
-            forAgentOutput,
-            forPermissionRequest: request =>
-              withClientSpan("firegrid.client.session.wait.for_permission_request", {
-                "firegrid.session.id": sessionId,
-                "firegrid.context.id": sessionId,
-                "firegrid.wait.bucket": "projection",
-              }, waitForPermissionRequest(sessionId, request)),
-          },
-          permissions: {
-            respond: request =>
-              Effect.gen(function* () {
-                const decoded = yield* decodeSessionPermissionRespondInput(request)
-                return yield* appendDecodedPermissionResponseIntent(
-                  permissionResponseInput(sessionId, decoded),
-                )
-              }),
-          },
+          wait: waitClient,
+          permissions: permissionsClient,
         }
       })
 
