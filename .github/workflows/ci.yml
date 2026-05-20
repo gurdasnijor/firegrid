@@ -36,7 +36,7 @@ env:
 # version bumps touch one file rather than every job.
 #
 # Gating jobs:
-#   lint              — eslint + dead-code + dup + effect-quality
+#   lint              — eslint + dead-code + dup + effect-quality + ast-grep
 #   semgrep           — semgrep --test fixtures + production semgrep scan
 #   typecheck         — pnpm --recursive typecheck
 #   effect-diagnostics — effect-language-service diagnostics
@@ -69,6 +69,9 @@ jobs:
 
       - name: Check Effect-quality metric ratchet
         run: pnpm run lint:effect-quality
+
+      - name: Check ast-grep style guardrails
+        run: pnpm run lint:ast-grep
 
   semgrep:
     name: Semgrep

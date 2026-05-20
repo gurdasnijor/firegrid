@@ -35,6 +35,7 @@
     "lint:dup:baseline": "node scripts/jscpd-update-baseline.mjs",
     "lint:effect-quality": "node scripts/effect-quality-metrics-check.mjs",
     "lint:effect-quality:baseline": "node scripts/effect-quality-metrics-baseline.mjs",
+    "lint:ast-grep": "sg scan --config tooling/ast-grep/sgconfig.yml --filter hrtime-number-arithmetic --error=hrtime-number-arithmetic packages apps",
     "lint:semgrep": "node scripts/semgrep-check-baseline.mjs",
     "lint:semgrep:report": "semgrep --config .semgrep.yml packages apps",
     "lint:semgrep:test": "semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts",
@@ -53,7 +54,7 @@
     "analysis:leaf": "bash tooling/analysis/run-leaf-inventory.sh",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run test",
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:ast-grep && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run test",
     "toy:coverage:check": "bash scripts/tiny-config-prod-coverage.sh --check"
   },
   "devDependencies": {

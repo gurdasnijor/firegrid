@@ -32,6 +32,9 @@ pnpm --filter @firegrid/tiny-firegrid simulate:run codex-acp-tool-calls
 # History (what have I run?)
 pnpm --filter @firegrid/tiny-firegrid simulate:runs
 
+# Post-hoc perf summary for a past run
+pnpm --filter @firegrid/tiny-firegrid simulate:perf 2026-05-19T23-10-46-560Z__codex-acp-tool-calls
+
 # Render a past run's trace as a markdown tree (defaults to the latest run)
 pnpm --filter @firegrid/tiny-firegrid simulate:show
 pnpm --filter @firegrid/tiny-firegrid simulate:show 2026-05-19T23-10-46-560Z__codex-acp-tool-calls
@@ -49,6 +52,9 @@ everything else is derived from it.
 
 - `simulate:show <runId?>` renders a parent/child span tree with elapsed times
   and a `firegrid.side` annotation per node.
+- `simulate:perf <runId>` prints top spans by self-time, HTTP route rolls,
+  and idle gaps. Pass `--finding-draft` to emit idle-gap finding-source draft
+  material to stderr without mutating findings files.
 - `simulate:runs` lists run directories that contain a `trace.jsonl`.
 - The most recent run is also pointed at by `.simulate/latest.json`.
 
@@ -106,6 +112,15 @@ wraps the host and driver in `firegrid.side.host` and `firegrid.side.driver`
 subtrees and propagates `firegrid.side` as a span attribute to every descendant
 span (via `Effect.annotateSpans`), so the side dimension survives below the
 wrappers and can be used as a filter on any span in the run.
+
+## Runner internals
+
+Trace readers should use `src/runner/trace.ts` instead of re-parsing
+`trace.jsonl` ad hoc. `SpanRecord` captures the JSONL span shape,
+`nsFromHrTime`, `startNs`, `endNs`, and `durationNs` keep OpenTelemetry
+hrtime arithmetic in bigint space, and `resolveRunDir` / `readTraceSpans`
+provide the shared run lookup and parse path used by `simulate:show` and
+`simulate:perf`.
 
 ## Methodology
 

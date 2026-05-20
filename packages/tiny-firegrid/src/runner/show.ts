@@ -1,55 +1,24 @@
-import { Console, Data, Effect } from "effect"
-import { readFile, readdir, stat } from "node:fs/promises"
+import { Console, Effect } from "effect"
+import { readdir } from "node:fs/promises"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
-
-const simulateRoot = path.resolve(
-  fileURLToPath(new URL("../../.simulate/", import.meta.url)),
-)
-const runsRoot = path.join(simulateRoot, "runs")
-const latestPath = path.join(simulateRoot, "latest.json")
-
-class NoRunsFound extends Data.TaggedClass("NoRunsFound")<{
-  readonly runsRoot: string
-}> {}
-
-class RunNotFound extends Data.TaggedClass("RunNotFound")<{
-  readonly runId: string
-  readonly runsRoot: string
-}> {}
-
-class TraceFileMissing extends Data.TaggedClass("TraceFileMissing")<{
-  readonly runDir: string
-}> {}
+import {
+  compareNs,
+  durationNs,
+  hasTraceJsonl,
+  readTraceSpans,
+  resolveRunDir,
+  runsRoot,
+  startNs,
+  type SpanRecord,
+  nsToMs,
+} from "./trace.ts"
 
 // Spans as written by the file exporter in runner/telemetry.ts. We keep
 // the parse permissive — missing optional fields are tolerated — so a
 // partially-written trace (run still in progress, crash mid-batch) still
 // renders something useful.
-interface SpanRecord {
-  readonly name: string
-  readonly traceId: string
-  readonly spanId: string
-  readonly parentSpanId?: string
-  readonly kind: number
-  readonly startTime: readonly [number, number]
-  readonly endTime: readonly [number, number]
-  readonly duration: readonly [number, number]
-  readonly status: { readonly code: number; readonly message?: string }
-  readonly attributes: Record<string, unknown>
-  readonly events?: ReadonlyArray<{
-    readonly name: string
-    readonly time: readonly [number, number]
-    readonly attributes?: Record<string, unknown>
-  }>
-  readonly resource: Record<string, unknown>
-}
-
-const startNs = (s: SpanRecord): number =>
-  s.startTime[0] * 1e9 + s.startTime[1]
-
 const durationMs = (s: SpanRecord): number =>
-  s.duration[0] * 1000 + s.duration[1] / 1e6
+  nsToMs(durationNs(s))
 
 // Span names embedded with IDs (the high-cardinality ones host-sdk emits
 // today) are collapsed at the head so the tree stays readable. The id
@@ -94,7 +63,7 @@ const buildTree = (spans: ReadonlyArray<SpanRecord>): string => {
     arr.push(span)
     byParent.set(parentKey, arr)
   })
-  byParent.forEach(arr => arr.sort((a, b) => startNs(a) - startNs(b)))
+  byParent.forEach(arr => arr.sort((a, b) => compareNs(startNs(a), startNs(b))))
   const out: Array<string> = []
   const walk = (span: SpanRecord, depth: number): void => {
     out.push(formatLine(span, depth))
@@ -129,69 +98,10 @@ const summary = (spans: ReadonlyArray<SpanRecord>): string => {
     .join("  ")
 }
 
-const resolveRunDir = (runId: string | undefined) =>
-  Effect.gen(function*() {
-    if (runId !== undefined) {
-      const candidate = path.join(runsRoot, runId)
-      const exists = yield* Effect.promise(() =>
-        stat(candidate).then(() => true, () => false),
-      )
-      if (!exists) {
-        return yield* Effect.fail(new RunNotFound({ runId, runsRoot }))
-      }
-      return candidate
-    }
-    // No id: prefer the on-disk latest.json pointer; if missing, fall back
-    // to the most-recent runs/ entry (chronological-prefix runIds make
-    // sorting trivial).
-    const latest = yield* Effect.promise(() =>
-      readFile(latestPath, "utf8").then(
-        text => JSON.parse(text) as { readonly runDir?: string },
-        () => undefined,
-      ),
-    )
-    // Follow latest.json only if its target actually has a trace.jsonl —
-    // an interrupted/failed run can leave a populated latest pointing at
-    // an empty runDir, and following that would TraceFileMissing for the
-    // user. Fall through to the directory walk in that case.
-    if (latest?.runDir !== undefined) {
-      const hasTrace = yield* Effect.promise(() =>
-        stat(path.join(latest.runDir!, "trace.jsonl")).then(() => true, () => false),
-      )
-      if (hasTrace) return latest.runDir
-    }
-    // Most-recent run that actually has a `trace.jsonl`. Skip legacy
-    // folders (pre-#426 runner) without erroring — they're archival.
-    const entries = yield* Effect.promise(() =>
-      readdir(runsRoot, { withFileTypes: true }).then(
-        e => e.filter(d => d.isDirectory()).map(d => d.name).sort(),
-        () => [],
-      ),
-    )
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const candidate = path.join(runsRoot, entries[i]!)
-      const hasTrace = yield* Effect.promise(() =>
-        stat(path.join(candidate, "trace.jsonl")).then(() => true, () => false),
-      )
-      if (hasTrace) return candidate
-    }
-    return yield* Effect.fail(new NoRunsFound({ runsRoot }))
-  })
-
 export const showRun = (runId: string | undefined) =>
   Effect.gen(function*() {
     const runDir = yield* resolveRunDir(runId)
-    const tracePath = path.join(runDir, "trace.jsonl")
-    const text = yield* Effect.promise(() =>
-      readFile(tracePath, "utf8").catch(() => undefined),
-    )
-    if (text === undefined) {
-      return yield* Effect.fail(new TraceFileMissing({ runDir }))
-    }
-    const spans = text
-      .split("\n")
-      .filter(line => line.length > 0)
-      .map(line => JSON.parse(line) as SpanRecord)
+    const spans = yield* readTraceSpans(runDir)
     yield* Console.log(`run: ${path.basename(runDir)}`)
     yield* Console.log(`dir: ${runDir}`)
     yield* Console.log(summary(spans))
@@ -203,9 +113,6 @@ export const showRun = (runId: string | undefined) =>
 // the pre-#426 runner (run.json + trace.md + duckdb/) are filtered out
 // silently — they're on disk for archival inspection but `simulate show`
 // can't read them. Filtering here keeps the listing honest.
-const hasTraceJsonl = (dir: string): Promise<boolean> =>
-  stat(path.join(runsRoot, dir, "trace.jsonl")).then(() => true, () => false)
-
 export const listRuns = Effect.gen(function*() {
   const entries = yield* Effect.promise(() =>
     readdir(runsRoot, { withFileTypes: true }).catch(() => []),
@@ -216,7 +123,10 @@ export const listRuns = Effect.gen(function*() {
     .sort()
   const dirs = yield* Effect.promise(async () => {
     const checks = await Promise.all(
-      candidates.map(async dir => ({ dir, ok: await hasTraceJsonl(dir) })),
+      candidates.map(async dir => ({
+        dir,
+        ok: await hasTraceJsonl(path.join(runsRoot, dir)),
+      })),
     )
     return checks.filter(c => c.ok).map(c => c.dir)
   })
