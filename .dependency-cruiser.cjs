@@ -20,7 +20,6 @@ const currentHostSdkSubstrateDebt = [
   "^packages/host-sdk/src/agent-tools/execution/tool-use-to-effect\\.ts$",
   "^packages/host-sdk/src/agent-tools/execution/toolkit-layer\\.ts$",
   "^packages/host-sdk/src/host/control-request-reconciler\\.ts$",
-  "^packages/host-sdk/src/host/index\\.ts$",
   "^packages/host-sdk/src/host/internal/runtime-context-helpers\\.ts$",
   "^packages/host-sdk/src/host/runtime-context-workflow-core\\.ts$",
   "^packages/host-sdk/src/host/runtime-context-workflow-runtime\\.ts$",
