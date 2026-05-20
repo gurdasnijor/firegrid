@@ -184,16 +184,16 @@ The doc's typed-verb constraint must be carried into Firegrid's type system. The
 ```ts
 type ChannelDirection = "ingress" | "egress" | "call"
 
-interface IngressChannel<Schema> {
+interface IngressChannel<Row> {
   readonly direction: "ingress"
   readonly id: string                 // opaque to agent; host-registered
-  readonly schema: SchemaTag<Schema>  // declared at body-plan time
+  readonly schema: SchemaTag<Row>     // row type the agent can observe
 }
 
-interface EgressChannel<Schema> {
+interface EgressChannel<Req> {
   readonly direction: "egress"
   readonly id: string
-  readonly schema: SchemaTag<Schema>  // payload type the agent emits
+  readonly schema: SchemaTag<Req>     // payload type the agent emits
 }
 
 interface CallableChannel<Req, Resp> {
@@ -203,20 +203,20 @@ interface CallableChannel<Req, Resp> {
   readonly responseSchema: SchemaTag<Resp>
 }
 
-type ChannelTarget =
-  | IngressChannel<any>
-  | EgressChannel<any>
-  | CallableChannel<any, any>
+type Channel<Req = never, Res = never> =
+  | IngressChannel<Res>
+  | EgressChannel<Req>
+  | CallableChannel<Req, Res>
 
 // The verb signatures enforce direction:
-declare function wait_for<Schema>(
-  channel: IngressChannel<Schema>,
-  options?: { match?: Partial<Schema>; timeoutMs?: number },
-): Effect<WaitOutcome<Schema>>
+declare function wait_for<Req, Res>(
+  channel: IngressChannel<Res> | CallableChannel<Req, Res>,
+  options?: { match?: ChannelMatch<Res>; timeoutMs?: number },
+): Effect<WaitOutcome<Res>>
 
-declare function send<Schema>(
-  channel: EgressChannel<Schema>,
-  payload: Schema,
+declare function send<Req, Res>(
+  channel: EgressChannel<Req> | CallableChannel<Req, Res>,
+  payload: Req,
 ): Effect<{ ok: true }>
 
 declare function call<Req, Resp>(
@@ -226,6 +226,12 @@ declare function call<Req, Resp>(
 ```
 
 The compile-time enforcement means `send(state.changes(...), ...)` is rejected at the type level (state writes go through the dedicated `memory()` middleware path per the doc); `wait_for(notification, ...)` is rejected (notifications are egress-only); `call(time.elapsed, ...)` is rejected (time isn't callable).
+
+There is no separate `channel.peek(...)` operation. Immediate observation is
+the existing verb shape: `wait_for(channel, {match, timeoutMs: 0})`. Body
+authors who need Pattern A peek/await behavior operate below the channel layer
+with engine/body primitives; the agent-facing channel surface stays the fixed
+`wait_for` / `send` / `call` verb set.
 
 ## What this is, in one diagram (Firegrid-specific)
 
@@ -257,26 +263,34 @@ The agent never sees the bottom layer. The substrate is **how channels stay dura
 ## Channels Over Durable Operators
 
 The strongest version of the channel abstraction is generic over the typed
-durable operator it hides. A channel can be parameterized by the row/event type
-of a `DurableTable` collection or any equivalent projection stream:
+durable operator it hides. A channel can be parameterized by the request and
+response row/event types of a `DurableTable` collection or any equivalent
+projection stream:
 
 ```ts
-type Channel<Row> = IngressChannel<Row> | EgressChannel<Row> | CallableChannel<any, Row>
 type LinearWebhookChannel = IngressChannel<LinearWebhook>
+type ApprovalChannel = CallableChannel<ApprovalRequest, ApprovalResponse>
 ```
 
 `packages/effect-durable-operators/src/DurableTable.ts` already exposes the
 right substrate shape: `CollectionFacade<Row>.rows()` returns a branded
 `ProjectionStream<Row>` — current rows plus live non-deleted row changes. That
-is exactly an ingress channel's hidden transport. Host composition can provide:
+is exactly an ingress channel's hidden transport. The channel source is a lazy
+factory, not a pre-materialized subscription, so host composition can provide
+the binding without opening the stream until the hidden substrate needs it:
 
 ```ts
 const LinearWebhookEvents = Channel.ingress<LinearWebhook>({
   name: "linear.webhook",
   schema: LinearWebhookSchema,
-  source: LinearWebhookTable.events.rows,
+  source: () => LinearWebhookTable.events.rows(),
 })
 ```
+
+The channel's schema is normally the same Schema instance used by the durable
+table row definition. When the agent-facing channel is a projection, the
+channel schema is a derived projection schema. It should not be a duplicated
+parallel validator that can drift from the durable row shape.
 
 The agent sees only:
 
@@ -287,9 +301,35 @@ wait_for("linear.webhook", {
 })
 ```
 
+At the SDK/channel-binding layer, `match` lowers to Effect's `Predicate<Row>`
+vocabulary, aligned with the engine-native primitives SDD:
+`Predicate.and`, `Predicate.or`, `Predicate.struct`, and Firegrid-owned
+predicate factories that attach optional engine optimization hints. At the MCP
+wire edge, the agent sends serializable JSON match input such as
+`{action: "issue.created"}`; the channel binding decodes that input against the
+channel schema and compiles it into the hidden `Predicate<Row>`. The predicate
+contract is the same as `streamWait` / `streamWaitAny`: deterministic row
+inspection only, no wall-clock, random, I/O, or mutable closure state.
+
 It does not see `DurableTable`, `ProjectionStream`, collection names,
 subscriptions, CDC mechanics, primary keys, workflow execution ids, or the
 engine service. The channel binding owns those details.
+
+Egress is the symmetric shape: the agent emits a typed payload, while the
+channel binding owns the durable append/upsert mechanics:
+
+```ts
+const ToolResultEvents = Channel.egress<ToolResult>({
+  name: "tool.result",
+  schema: ToolResultSchema,
+  sink: (row) => ToolResultTable.events.upsert(row),
+})
+
+send("tool.result", {
+  toolUseId: "...",
+  result: {...},
+})
+```
 
 This generalizes beyond webhooks:
 
@@ -300,61 +340,115 @@ This generalizes beyond webhooks:
 
 So channels are not a parallel data model. They are the typed semantic façade
 over Firegrid's existing durable operators and stream-backed workflow substrate.
+Combinators such as `Channel.union(a, b)` and `Channel.map(c, fn)` are natural
+future additions, but they are intentionally deferred until the first concrete
+consumer needs them.
 
-## Substrate prerequisites (this SDD presents on top of a simplified substrate)
+## Current Substrate Bridge
 
-This SDD is a **presentation-layer reframing**, not a substrate redesign. The migration only delivers its promised "fewer ways to wait for things" simplification IF the substrate underneath has been consolidated first. Otherwise channel-typed `wait_for` becomes a fourth wait surface alongside the existing `wait_router` / `DurableToolsTable` / workflow-engine-deferred trio — adding indirection rather than removing it.
+This SDD is a **presentation-layer reframing**, not a substrate redesign. It
+assumes the one-substrate work is collapsing the old `durable-tools`
+wait-router into the workflow engine before channels become the agent-facing
+surface. The current Phase 1 bridge is PR #489 / `tf-xw0w`:
 
-Empirical baseline for the substrate cleanup work is captured in Lane 1's `tf-9ut` finding: `docs/research/tf-9ut-workflow-core-paths-empirical-finding.md` (on worktree `tf-qoyg-s6-shape-a-narrow-agentoutputafter`). Key facts that this SDD operates against:
+```text
+wait_for(source/query)
+  -> WaitForWorkflow
+  -> Activity-internal match-or-timeout race
+```
 
-- **Both `WaitFor.match` call sites fire from a single sim.** The runtime-context workflow body's `waitForAgentOutput` path AND the agent-tool `wait_for` lowering path both run live in one trace (146 `runtime_context.workflow.output.wait` spans + 2 CallerFact `wait_for.match` spans). Either path's refactor can be empirically validated by one sim.
-- **The orphan-parent observability bug is fixed by #445.** On current-main, raw `complete_match` is 0/125 orphaned, completion-only `complete_match` is 0/18 orphaned. The pre-#445 halt-trace numbers (`108/119 raw orphaned`, `6/14 completion-only orphaned`) are **stale baseline evidence** and must not be used as Shape A motivation.
-- **`complete_match` count is candidate evaluation pressure, not completion count.** Only `complete_match` spans that emit a `wait.satisfied` event are actual wait completions (125 candidates → 18 satisfied in the sim). Body-plan SDD success criteria must use the satisfied-only baseline; raw `complete_match` orphan ratio is misleading.
-- **Shape A footprint is mechanically bounded at the runtime-context call site.** The non-tool `AgentOutputAfter` wait currently routed through `WaitFor.match` would fold inline at `waitForAgentOutput` / `nextAgentOutput` / `runReactiveLoop` in `runtime-context-workflow-core.ts:188-234`. The agent-tool `wait_for` surface (`tool-use-to-effect.ts:190-241`) is separate and remains dynamic-source + scalar-AND predicate + optional timeout — *that's the surface this SDD's Slice A operates against*.
-- **Shape A is coupled to the deferred-input rewrite** per `docs/research/durable-tools-vs-workflow-engine-convergence.md:83-89`. The convergence doc says Shape A "should ride with the deferred-input rewrite." Body-plan SDD's substrate dependency therefore includes both.
+That bridge is intentionally pre-channel. It preserves the current
+`RuntimeWaitSource` / scalar `whereFields` input shape while deleting the old
+`WaitFor.match` wait-router path. Phase 2 then replaces the visible
+`source/query` payload with:
 
-### Required substrate work BEFORE this SDD's Slice A starts
+```text
+wait_for(channel, match?, timeoutMs?)
+  -> Layer-provided channel binding
+  -> WaitForWorkflow or engine-native streamWait / streamWaitAny
+```
 
-**The substrate prerequisite is broader than Shape A alone.** Lane 1's tf-qoyg attempt empirically established that the in-sim Shape A refactor (inline `Stream.runHead`) breaks the workflow engine's `executeNativeRuntimeContext({discard:true})` path because the body no longer calls `Workflow.suspend(instance)` — the engine's `Fiber.join` hangs on a stream-blocked fiber that never yields. The convergence doc's "Shape A should ride with the deferred-input rewrite" passage names this; tf-qoyg's halt operationalized it. See `docs/handoffs/HANDOFF_tf-qoyg_shape-a-narrow.md`.
+### What changed from the older Shape A plan
 
-The prerequisite is now a single coherent substrate rewrite covered by `SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`:
+Older drafts of this SDD described two substrate wait shapes:
 
-1. **Workflow body deferred-input + static-source-wait rewrite** — designs the engine-integration contract so the runtime-context workflow body can use static-source `Stream.runHead`-based waits AND the engine's `discard: true` execute-and-join path can recognize them as legitimate yields. Coupled to the deferred-input rewrite that's already partially in flight (source plumbing exists in `runtime-context-engine-registry.ts` + `runtime-context-workflow-core.ts`; no project-plan marker). The engine-contract gap and the deferred-input rewrite share the same engine-integration site and should be designed together.
-2. **External-worker reattach-after-restart path empirically exercised** — tf-9ut explicitly did NOT exercise this. The substrate retained for shape #2 (the generic `WaitFor.match` + wait-router + wait-store machinery, for the agent-tool surface) needs a sim that bounces the host process while a wait is pending. Also: under the new shape #1 contract, the restart-replay semantics (snapshot-first re-subscribe + idempotency of matched-and-acted-on rows from prior incarnation) needs explicit exercise.
+- static-source inline `Stream.runHead`;
+- dynamic-source `WaitFor.match` + wait-router.
 
-After (1)+(2) land, the substrate has TWO **distinct** wait shapes, each cleanly scoped:
+That framing is stale. The current cutover direction is:
 
-- **Static-source observation**: inline `Stream.runHead(events.<source>(...))` over typed observation streams. Used by the workflow body (per tf-qoyg) and by future static channels like `time.*`, `state.changes(collection)`, `session.self.*`. No predicate, no timeout, no router.
-- **Dynamic-source predicate-eligible wait**: `WaitFor.match` + wait-router + durable wait store. Used by the agent-tool `wait_for` over caller-fact-style streams with scalar-AND predicates and optional timeouts. The full generic machinery is **correctly retained** for this case.
+- runtime-context body: explicit state-machine driver over materialized
+  input/output events, with one coherent suspension point;
+- agent-tool `wait_for`: `WaitForWorkflow`, currently implemented as a
+  race-inside-Activity bridge;
+- future channel surface: Layer-provided channel bindings over durable
+  operators, workflow primitives, or engine-native waits.
 
-Channel-typed `wait_for` then sits as a thin presentation wrapper over whichever of those two shapes the channel's host-side declaration selects. The agent sees ONE verb over typed channels; the substrate plurality (two shapes) is correctly hidden — and correctly scoped to where each is load-bearing. The "fewer ways to wait" simplification is real and specifically-shaped, not a global collapse.
+Do not reintroduce `WaitFor.match`, wait-router rows, or durable-tools wait
+store semantics as the Phase 2 channel implementation.
+
+### Race-Inside-Activity bridge caveat
+
+PR #489 uses the race-inside-Activity pattern because body-side
+`DurableDeferred.raceAll([Stream.runHead, DurableClock.sleep])` does not fit the
+workflow body's single-suspension-point model. The Activity is the single
+suspension point; its internals can race the durable stream read against an
+in-memory timeout.
+
+The tradeoff is tracked as `tf-wunq`: timeout is per Activity attempt, not an
+absolute durable deadline. If the host or engine recycles while a `wait_for`
+timeout is in flight, the Activity retries and starts a fresh `Effect.sleep`.
+This can extend the effective timeout across bounces. It is a bounded
+liveness/SLA concession, not correctness corruption:
+
+- matching rows still come from durable streams;
+- replay is not poisoned by interrupted race deferreds;
+- same-generation match and timeout behavior remain valid;
+- repeated bounces can delay timeout until one generation stays alive long
+  enough.
+
+The final channel implementation should migrate this bridge to engine-native
+`streamWait` / `streamWaitAny` with persisted absolute deadlines when that
+primitive exists. Until then, the bridge is acceptable only if PRs and findings
+cite the `tf-wunq` caveat explicitly.
 
 ### What this means for the body-plan migration's Slice A ordering
 
-The migration plan below is sequenced assuming the substrate prerequisites have landed. The channel Layer classifies each provided channel binding as **static-source** or **predicate-eligible** at composition time:
+The migration plan below is sequenced after the Phase 1 one-substrate cutover
+has landed far enough that `durable-tools` is no longer the backing wait
+surface. Slice A should not build a new channel façade over the old wait-router.
 
-- Static-source channels (`time.*`, `state.changes(c)`, `session.self.*`, `event(name)`-when-typed) → inline `Stream.runHead` over the typed observation stream. No name to track, no router.
-- Predicate-eligible channels (caller-fact streams used with agent-author-supplied scalar-AND predicates, `dm`/`approval`/`notification` triads) → generic `WaitFor.match` + wait-router. Wait identity stays in the wait store.
+The channel Layer classifies each provided binding by capability at composition
+time:
 
-The agent never sees which class a channel is — it calls `wait_for(channel, match?, timeoutMs?)` and the host-provided channel binding routes appropriately. Tonight's dark-factory discovery gap dissolves naturally: most channels migrate to the static-source class (their schema is declarable at body-plan time), and only channels that genuinely need agent-author-supplied predicates use the predicate-eligible class.
+- ingress channels backed by durable operators use typed projection streams
+  such as `CollectionFacade<Row>.rows()`;
+- call channels pair an egress request binding with an ingress response binding;
+- eventual multi-source waits lower to engine-native `streamWaitAny`, not
+  body-side concurrent stream combinators.
 
-**Don't start Slice A until `SDD_FIREGRID_WORKFLOW_BODY_DEFERRED_INPUT_REWRITE` lands.** Slice A's channel-layer implementation would dual-route into both substrate paths if shape #1's engine-contract wasn't already established as the substrate's canonical second wait shape — and tf-qoyg empirically demonstrated that the inline-`Stream.runHead` form structurally cannot satisfy the engine's `discard:true` contract without engine-side changes.
+The agent never sees which substrate backs a channel. It calls
+`wait_for(channel, match?, timeoutMs?)`; the Layer-provided binding chooses the
+hidden transport.
 
 ## Migration Plan
 
-The migration is staged so each slice is independently shippable and falsifiable. Slice A is gated on the substrate prerequisites above; Slices B-E can land in parallel with Slice A once it starts.
+The migration is staged so each slice is independently shippable and falsifiable.
+Slice A is gated on the Phase 1 one-substrate cutover, especially PR #489's
+`WaitForWorkflow` bridge. Slices B-D can land in parallel with Slice A once it
+starts.
 
-### Slice A — Substrate refactor: opaque `ChannelTarget` for `wait_for`
+### Slice A — Opaque `ChannelTarget` for `wait_for`
 
 **What changes:** `wait_for`'s tool input becomes `{channel: ChannelTarget, match?, timeoutMs?}` where `ChannelTarget` is an opaque token string. The host composes a **channel Layer** that provides named ingress/egress/call capabilities (current `source: {_tag: "CallerFact", stream}` becomes an internal binding, not an agent-visible arg shape).
 
 **Affected files:**
 
-- `packages/runtime/src/durable-tools/internal/types.ts` — `WaitForToolInput` schema rewrite (replace `source: SourceSchema` with `channel: ChannelTargetSchema`).
-- `packages/runtime/src/durable-tools/internal/wait-for.ts` — translate `ChannelTarget` → substrate source at handler entry; rest of the file is unchanged.
+- `packages/protocol/src/agent-tools/schema.ts` — `WaitForToolInput` schema rewrite (replace `source` / `waitQuery` exposure with `channel`, optional `match`, optional `timeoutMs`).
+- `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts` — resolve `ChannelTarget` through the Layer-provided channel binding, then call `WaitForWorkflow` or an engine-native wait primitive.
 - host-side channel Layer / binding manifest — `name → IngressChannel | EgressChannel | CallableChannel`. Channels are provided at host startup through Effect Layer composition; only the MCP protocol edge needs a name lookup to decode tool input.
-- `packages/host-sdk/src/host/agent-tools/bindings/tools.ts` — toolkit binding for `wait_for` updated to publish typed channel options based on registered inventory.
-- `packages/runtime/test/durable-tools/...` — update test fixtures.
+- `packages/host-sdk/src/agent-tools/bindings/tools.ts` — toolkit binding for `wait_for` updated to publish typed channel options.
+- focused host-sdk/protocol tests — update fixtures to assert the agent-visible schema no longer contains `source`, `source._tag`, `stream`, or workflow/engine coordinates.
 
 **Backwards compatibility:** the current `source: {_tag: "CallerFact", stream}` shape is internal only after this slice; agents never see it again. No external API is broken — only the agent-tool input shape changes, which Firegrid owns.
 
@@ -366,8 +460,8 @@ The migration is staged so each slice is independently shippable and falsifiable
 
 **Affected files:**
 
-- `packages/runtime/src/durable-tools/internal/wait-for.ts` — remove empty-predicate guard; document semantic.
-- `packages/runtime/src/durable-tools/internal/wait-router.ts` — confirm `includeInitialState: true` already covers snapshot-first semantics (it does, per `wait-router.ts:6-8`); annotate accordingly.
+- channel binding implementation for the affected ingress channel.
+- `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts` or the future engine-native wait primitive — implement immediate snapshot / latest-or-none semantics without reintroducing wait-router rows.
 
 **Acceptance:** in dark-factory, `wait_for(channel: "factory.events")` with no match and `timeoutMs: 0` returns the seeded trigger fact's row (because the channel has history) — closing the discovery gap tonight's agent surfaced without any new verb.
 
@@ -398,7 +492,7 @@ Once Slice A lands (channels are first-class typed handles), the new verbs are m
 - `packages/host-sdk/src/agent-tools/bindings/tools.ts` — add `send`, `call`, `wait_for_any` toolkit entries.
 - `packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts` — handler wiring (each composes existing substrate primitives).
 - `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts` — dispatch case adds.
-- `packages/protocol/src/durable-tools/schema.ts` — `SendToolInputSchema`, `CallToolInputSchema`, `WaitForAnyToolInputSchema`.
+- `packages/protocol/src/agent-tools/schema.ts` — `SendToolInputSchema`, `CallToolInputSchema`, `WaitForAnyToolInputSchema`.
 
 **Acceptance:** the dark-factory sim can be re-driven with the driver's `forkAutoApprovePermissions` removed, because the agent now calls `call(approval(...), ...)` and the human-channel handler routes through the registered approval channel. Tonight's ~70 lines of driver glue dissolves into channel registration.
 
@@ -409,7 +503,9 @@ Align with Fireline's `{operation}.suspended` / `{operation}.resumed` record con
 - (a) Get renamed to `fireline.agent.suspended` with `operation: "wait_for"` (breaking but spec-aligning), OR
 - (b) Add the canonical names alongside existing names (additive; both are emitted).
 
-Recommendation: (b) initially for migration safety; (a) once consumers are migrated. Both options are mechanical seam-level edits in `wait-router.ts` + `wait-for.ts`.
+Recommendation: defer this until after `durable-tools` deletion. The canonical
+records should be emitted from the workflow/engine/channel boundary, not by
+reviving wait-router emit sites.
 
 ## What this is NOT
 
@@ -431,7 +527,7 @@ Recommendation: (b) initially for migration safety; (a) once consumers are migra
 
 ## Open questions
 
-1. **Channel composition is a host-startup concern.** Today's tiny-firegrid host (e.g., `dark-factory/host.ts`) declares MCP server URLs and seeds facts. Should channel Layer composition sit alongside that, or move into a separate host composition step? Recommend: it goes alongside, since channel inventory IS the body plan. **Resolved-by-Shape-A note:** once `wait_router` folds inline into the workflow body, the channel binding's substrate side becomes "tell the workflow body which observation streams to race over" — a single Layer-provided configuration site rather than a registry-plus-router split.
+1. **Channel composition is a host-startup concern.** Today's tiny-firegrid host (e.g., `dark-factory/host.ts`) declares MCP server URLs and seeds facts. Should channel Layer composition sit alongside that, or move into a separate host composition step? Recommend: it goes alongside, since channel inventory IS the body plan. The binding's substrate side should be a single Layer-provided configuration site, not a registry-plus-router split.
 2. **How does `event(name)` schema get declared?** A typed channel needs a schema. Either: (a) channels are registered with an explicit Effect Schema; (b) channels are registered with a JSON Schema; (c) typed via the `DurableTable` row type when backed by a collection. Recommend (c) where possible, (a) for hand-declared events.
 3. **`spawn` is "synaptic, not channel" per the doc.** Should `spawn` remain a verb that doesn't go through the channel layer, or should there be a `peer(name)` channel? Recommend: stays as a verb (matching the doc), but a `peer.lifecycle(child_id)` *ingress* channel exists so the parent can `wait_for_any([peer.lifecycle(c1), peer.lifecycle(c2)])` for fastest-child semantics.
 4. **Permission-channel routing**: today the ACP permission gate triggers a runtime workflow that awaits a `PermissionResponse` row. After the migration, that wiring is "the substrate side of the `approval` channel." Confirm this aligns with `SDD_PERMISSION_CODEC_AUTHORITY.md`'s invariants.
@@ -440,9 +536,9 @@ Recommendation: (b) initially for migration safety; (a) once consumers are migra
 
 ## Cross-references
 
-- `tf-9ut` empirical finding (`docs/research/tf-9ut-workflow-core-paths-empirical-finding.md` on worktree `tf-qoyg-s6-shape-a-narrow-agentoutputafter`) — substrate baseline this SDD operates against. Establishes that #445 fixed the orphan-parent observability bug, that both `WaitFor.match` paths exercise from a single sim, and that Shape A footprint is mechanically bounded at the runtime-context call site.
-- `tf-slb` (P1, in-flight, Lane 1) — Shape A collapse of `wait_router` into workflow-body `DurableDeferred.raceAll`. Direct prerequisite for this SDD's Slice A.
-- `docs/research/durable-tools-vs-workflow-engine-convergence.md:83-89` — convergence doc; couples Shape A to the deferred-input rewrite.
+- PR #489 / `tf-xw0w` — current Phase 1 `wait_for(source/query) -> WaitForWorkflow` bridge. Pre-channel substrate cutover; carries the race-inside-Activity timeout caveat.
+- `tf-wunq` — known P2 issue for PR #489's bridge: timeout restarts per Activity attempt across engine recycle until `streamWait` / `streamWaitAny` provides persisted absolute deadlines.
+- `docs/research/workflow-body-single-suspension-rule.md` — authoring rule that explains why body-side concurrent stream/race combinators are not the channel implementation strategy.
 - `SDD_CHOREOGRAPHY_FACADE.md` — overlapping scope; this SDD extends the choreography facade into the explicit body-plan / channels-as-nervous-system framing.
 - `SDD_FIREGRID_TYPED_WAIT_SOURCE_REDESIGN.md` — the prior typed-wait-source work; this SDD subsumes it by replacing typed source taxonomy with channel Layer bindings.
 - `SDD_FIREGRID_RUNTIME_AGENT_EVENT_PIPELINE.md` — the agent-event pipeline this SDD's channels read from / write to.
