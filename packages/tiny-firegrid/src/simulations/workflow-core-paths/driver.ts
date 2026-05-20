@@ -129,7 +129,7 @@ export const workflowCorePathsDriver: Effect.Effect<
     if (event._tag === "TurnComplete") sawTurnComplete = true
   }
 
-  return {
+  const result = {
     sessionId: session.contextId,
     observedToolNames: [...observedToolNames].sort(),
     sawWaitForCall,
@@ -139,6 +139,20 @@ export const workflowCorePathsDriver: Effect.Effect<
     sawTurnComplete,
     resultText,
   }
-})
+  yield* Effect.annotateCurrentSpan({
+    "firegrid.workflow_core_paths.session_id": result.sessionId,
+    "firegrid.workflow_core_paths.saw_wait_for_call": result.sawWaitForCall,
+    "firegrid.workflow_core_paths.saw_permission_request": result.sawPermissionRequest,
+    "firegrid.workflow_core_paths.permission_allowed": result.permissionAllowed,
+    "firegrid.workflow_core_paths.saw_result_marker": result.sawResultMarker,
+    "firegrid.workflow_core_paths.saw_turn_complete": result.sawTurnComplete,
+    "firegrid.workflow_core_paths.observed_tool_names": result.observedToolNames.join(","),
+  })
+  return result
+}).pipe(
+  Effect.withSpan("firegrid.workflow_core_paths.driver", {
+    kind: "client",
+  }),
+)
 
 /* eslint-enable local/no-fixed-polling */

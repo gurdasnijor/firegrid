@@ -5,6 +5,7 @@ import {
   listSimulations,
   selectedSimulation,
 } from "./runner/list.ts"
+import { showPhase1WorkflowCoreGate } from "./runner/phase1-gate.ts"
 import { runSimulation } from "./runner/runtime.ts"
 import { showPerf } from "./runner/perf.ts"
 import { listRuns, showRun } from "./runner/show.ts"
@@ -109,8 +110,20 @@ const perfCommand = Command.make(
     }),
 )
 
+const phase1GateCommand = Command.make(
+  "gate",
+  { simulationId: simulationIdArg, runId: runIdArg },
+  ({ simulationId, runId }) =>
+    simulationId === "workflow-core-paths"
+      ? showPhase1WorkflowCoreGate(runId._tag === "Some" ? runId.value : undefined)
+      : Effect.fail(new Error(
+        `unsupported gate simulation: ${simulationId}; expected workflow-core-paths`,
+      )),
+)
+
 const command = Command.make("simulate").pipe(
   Command.withSubcommands([
+    phase1GateCommand,
     listCommand,
     perfCommand,
     runCommand,

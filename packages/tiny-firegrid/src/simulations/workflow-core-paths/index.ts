@@ -5,7 +5,7 @@ import { workflowCorePathsHost } from "./host.ts"
 export default defineSimulation({
   id: "workflow-core-paths",
   description:
-    "Exercises runtime-context agent-output waits plus the wait_for agent-tool lowering against one pre-seeded caller-owned fact, producing trace evidence for workflow-core wait-router decisions.",
+    "Phase-1 substrate acceptance: drives wait_for against a pre-seeded caller-owned fact and leaves trace evidence for the workflow-native runtime/tool path.",
   host: workflowCorePathsHost,
   driver: workflowCorePathsDriver,
 })
