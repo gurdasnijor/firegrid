@@ -32,6 +32,12 @@ export {
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "./operations.ts"
+export {
+  autoApproveSessionPermissions,
+  type PermissionAutoApproveOptions,
+  type PermissionAutoApprovePolicy,
+  type PermissionAutoApproveSession,
+} from "./permission-auto-approve.ts"
 export type {
   PublicPromptRequest,
   RuntimeInputIntentRow,

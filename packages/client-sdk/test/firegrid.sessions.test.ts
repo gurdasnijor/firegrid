@@ -22,7 +22,8 @@ import {
   inputIdForRuntimeIngressRequest,
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Stream } from "effect"
+import type * as Scope from "effect/Scope"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { TestStreamServer } from "../../effect-durable-operators/test/harness.ts"
 import {
@@ -100,7 +101,7 @@ const runWithClient = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    Firegrid | RuntimeControlPlaneTable
+    Firegrid | RuntimeControlPlaneTable | Scope.Scope
   >,
 ): Promise<A> =>
   Effect.runPromise(
@@ -196,6 +197,32 @@ const readRuntimeInputIntent = (
     })),
     Effect.scoped,
   ))
+}
+
+const waitForRuntimeInputIntent = (
+  hostSession: HostSessionRow,
+  intentId: string,
+): Effect.Effect<RuntimeInputIntentRow, unknown, never> => {
+  if (baseUrl === undefined) throw new Error("server not started")
+  return Effect.gen(function*() {
+    const table = yield* RuntimeControlPlaneTable
+    const row = yield* table.inputIntents.rows().pipe(
+      Stream.filter(intent => intent.intentId === intentId),
+      Stream.runHead,
+    )
+    return Option.getOrThrow(row)
+  }).pipe(
+    Effect.provide(RuntimeControlPlaneTable.layer({
+      streamOptions: {
+        url: runtimeControlPlaneStreamUrl({
+          baseUrl,
+          namespace: namespaceFromHostSession(hostSession),
+        }),
+        contentType: "application/json",
+      },
+    })),
+    Effect.scoped,
+  )
 }
 
 describe("Firegrid session facade", () => {
@@ -580,6 +607,116 @@ describe("Firegrid session facade", () => {
         decision: { _tag: "Allow", optionId: "allow" },
       },
       idempotencyKey: `permission-response:${result.contextId}:permission-1`,
+    })
+  })
+
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.7 autoApprove allow policy responds to PermissionRequest observations", async () => {
+    const fixture = makeFixture()
+
+    const result = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        const session = yield* firegrid.sessions.createOrLoad({
+          externalKey: { source: "linear", id: "LIN-auto-allow" },
+          runtime: runtimeConfig(),
+        })
+        yield* materializeContextRequest(fixture.hostSession, session.contextId)
+        yield* session.permissions.autoApprove("allow", { timeoutMs: 2_000 })
+        yield* appendAgentOutput(
+          fixture.hostSession,
+          session.contextId,
+          20,
+          {
+            _tag: "PermissionRequest",
+            permissionRequestId: "permission-auto-allow",
+            toolUseId: "tool-auto-allow",
+            options: [
+              { optionId: "allow", kind: "allow_once", name: "Allow" },
+            ],
+          },
+        )
+        const expectedIntentId = inputIdForRuntimeIngressRequest({
+          contextId: session.contextId,
+          kind: "required_action_result",
+          authoredBy: "client",
+          payload: {
+            _tag: "PermissionResponse",
+            permissionRequestId: "permission-auto-allow",
+            decision: { _tag: "Allow" },
+          },
+          idempotencyKey: `permission-response:${session.contextId}:permission-auto-allow`,
+        })
+        const intent = yield* waitForRuntimeInputIntent(fixture.hostSession, expectedIntentId)
+        return { contextId: session.contextId, intent }
+      }),
+    )
+
+    expect(result.intent).toMatchObject({
+      contextId: result.contextId,
+      kind: "required_action_result",
+      payload: {
+        _tag: "PermissionResponse",
+        permissionRequestId: "permission-auto-allow",
+        decision: { _tag: "Allow" },
+      },
+    })
+  })
+
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.7 autoApprove predicate policy can deny selected PermissionRequests", async () => {
+    const fixture = makeFixture()
+
+    const result = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        const session = yield* firegrid.sessions.createOrLoad({
+          externalKey: { source: "linear", id: "LIN-auto-predicate" },
+          runtime: runtimeConfig(),
+        })
+        yield* materializeContextRequest(fixture.hostSession, session.contextId)
+        yield* session.permissions.autoApprove(request =>
+          Effect.succeed({
+            _tag: "Deny" as const,
+            reason: `blocked:${request.toolUseId}`,
+          }), { timeoutMs: 2_000 })
+        yield* appendAgentOutput(
+          fixture.hostSession,
+          session.contextId,
+          30,
+          {
+            _tag: "PermissionRequest",
+            permissionRequestId: "permission-auto-deny",
+            toolUseId: "tool-auto-deny",
+            options: [
+              { optionId: "deny", kind: "reject_once", name: "Deny" },
+            ],
+          },
+        )
+        const expectedIntentId = inputIdForRuntimeIngressRequest({
+          contextId: session.contextId,
+          kind: "required_action_result",
+          authoredBy: "client",
+          payload: {
+            _tag: "PermissionResponse",
+            permissionRequestId: "permission-auto-deny",
+            decision: { _tag: "Deny", reason: "blocked:tool-auto-deny" },
+          },
+          idempotencyKey: `permission-response:${session.contextId}:permission-auto-deny`,
+        })
+        const intent = yield* waitForRuntimeInputIntent(fixture.hostSession, expectedIntentId)
+        return { contextId: session.contextId, intent }
+      }),
+    )
+
+    expect(result.intent).toMatchObject({
+      contextId: result.contextId,
+      kind: "required_action_result",
+      payload: {
+        _tag: "PermissionResponse",
+        permissionRequestId: "permission-auto-deny",
+        decision: { _tag: "Deny", reason: "blocked:tool-auto-deny" },
+      },
     })
   })
 
