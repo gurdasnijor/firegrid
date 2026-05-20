@@ -15,7 +15,14 @@ import {
   type DurableTableService,
 } from "effect-durable-operators"
 import { Schema } from "effect"
+import {
+  VerifiedWebhookFactFields,
+  VerifiedWebhookFactSchema,
+  type VerifiedWebhookFact,
+} from "@firegrid/protocol/verified-webhook"
 import { VerifiedWebhookFactKeyEncoded } from "./keys.ts"
+
+export { VerifiedWebhookFactSchema, type VerifiedWebhookFact }
 
 export interface VerifiedWebhookFactTableOptions {
   readonly streamUrl: string
@@ -24,26 +31,13 @@ export interface VerifiedWebhookFactTableOptions {
   readonly txTimeoutMs?: number
 }
 
-export const VerifiedWebhookFactSchema = Schema.Struct({
+const VerifiedWebhookFactTableRowSchema = Schema.Struct({
+  ...VerifiedWebhookFactFields,
   factKey: VerifiedWebhookFactKeyEncoded.pipe(DurableTable.primaryKey),
-  source: Schema.String,
-  externalEventKey: Schema.String,
-  externalEntityKey: Schema.optional(Schema.String),
-  eventType: Schema.String,
-  receivedAt: Schema.String,
-  verifiedAt: Schema.String,
-  signatureScheme: Schema.String,
-  payloadSha256: Schema.String,
-  selectedHeaders: Schema.Record({
-    key: Schema.String,
-    value: Schema.String,
-  }),
-  payload: Schema.Unknown,
 })
-export type VerifiedWebhookFact = Schema.Schema.Type<typeof VerifiedWebhookFactSchema>
 
 const verifiedWebhookFactSchemas = {
-  verifiedWebhookFacts: VerifiedWebhookFactSchema,
+  verifiedWebhookFacts: VerifiedWebhookFactTableRowSchema,
 } as const
 
 export class VerifiedWebhookFactTable extends DurableTable(
