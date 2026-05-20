@@ -1,0 +1,16 @@
+# firegrid-remediation-hardening.STATIC_QUALITY.14
+id: hrtime-number-arithmetic
+language: typescript
+severity: info
+rule:
+  any:
+    - pattern: $X.startTime[0] * $$$
+    - pattern: $X.endTime[0] * $$$
+    - pattern: $X.duration[0] * $$$
+message: "hrtime tuple arithmetic in number space — use nsFromHrTime / startNs / endNs (precision loss above ~26h)"
+note: >
+  OpenTelemetry hrtime tuples [seconds, nanos] need bigint arithmetic to
+  preserve precision. The runner's trace.ts helpers (startNs, endNs,
+  durationNs, nsFromHrTime) do this correctly. Direct Number() math on
+  index [0] loses precision past ~2^53 nanoseconds (~26 hours). Footprint
+  rule — flags any reach-around the helpers.
