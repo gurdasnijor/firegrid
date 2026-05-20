@@ -1,6 +1,7 @@
 import { DurableTable, type DurableTableService } from "effect-durable-operators"
 import { ParseResult, Schema } from "effect"
 import type { Either, SchemaAST } from "effect"
+import { RowOtelContextSchema } from "../otel/row-otel.ts"
 import {
   RuntimeInputIntentRowSchema,
 } from "../runtime-ingress/schema.ts"
@@ -168,6 +169,10 @@ const RuntimeContextRowSchema = Schema.Struct({
 const RuntimeRunEventRowSchema = Schema.Struct({
   ...runtimeRunEventFields,
   runEventId: RuntimeRunEventPrimaryKeySchema.pipe(DurableTable.primaryKey),
+  // tf-gc7: trace context captured at row-write time so wait-router
+  // consumers parent from the SHORT-LIVED `*.append` producer span, not
+  // the long-lived ambient stream subscription that wraps the consumer.
+  _otel: Schema.optional(RowOtelContextSchema),
 })
 
 const runtimeControlPlaneSchemas = {
@@ -184,11 +189,18 @@ const runtimeControlPlaneSchemas = {
 const RuntimeEventRowSchema = Schema.Struct({
   ...runtimeEventFields,
   eventId: RuntimeOutputEventPrimaryKeySchema.pipe(DurableTable.primaryKey),
+  // tf-gc7: see RuntimeRunEventRowSchema comment above. Load-bearing for
+  // wait_router.complete_match parents on `AgentOutput*` sources.
+  _otel: Schema.optional(RowOtelContextSchema),
 })
 
 const RuntimeLogLineRowSchema = Schema.Struct({
   ...runtimeLogLineFields,
   logLineId: RuntimeOutputLogLinePrimaryKeySchema.pipe(DurableTable.primaryKey),
+  // tf-gc7: stamped alongside event rows for symmetry; logs aren't a
+  // wait source today but the propagation is cheap and keeps lineage
+  // consistent across the output table.
+  _otel: Schema.optional(RowOtelContextSchema),
 })
 
 const runtimeOutputSchemas = {
