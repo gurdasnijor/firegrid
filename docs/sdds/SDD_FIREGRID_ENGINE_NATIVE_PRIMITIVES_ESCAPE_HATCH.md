@@ -440,6 +440,45 @@ Mitigation ladder, in order:
 6. Keep stable spans under `firegrid.engine.<primitive_name>.<phase>` so every
    mitigation proves the latency source it removed.
 
+## Post-Cutover Structural Collapse Targets
+
+The engine-native primitive track also names follow-on collapses that should be
+queued after the initial durable-tools cutover. These are not Phase 1 blockers,
+but they are high-leverage places where host-sdk still owns coordination state
+that the workflow engine can absorb.
+
+### `control-request-reconciler.ts`
+
+This is the polling-loop / claim-completion collapse target. Control request
+rows become request-specific workflow executions. Claim rows, completion rows,
+abandon timers, and idle polling move into engine execution semantics.
+
+### `runtime-context-engine-registry.ts`
+
+This is a different shape: it is not primarily a polling loop. It is a
+scoped-engine-per-context registry:
+
+- today: `N` runtime contexts provision `N` scoped
+  `DurableStreamsWorkflowEngine` instances;
+- target: one host-scoped workflow engine owns many runtime-context workflow
+  executions, keyed by `contextId` / execution id.
+
+The existing input-intent dispatcher is already event-driven and should keep
+that shape. The collapse target is the per-context engine factory/cache:
+`claimActive` becomes `engine.ensureExecution(contextId)`, `dispatchIntent`
+becomes `engine.signal(executionId, "input", intent)`, and `deregister`
+becomes `engine.interrupt(executionId)`.
+
+This follow-on depends on two decisions:
+
+1. `engine.signal(executionId, channel, payload)` or an equivalent primitive.
+2. An explicit architectural decision to move from one engine per context to
+   one engine with many executions.
+
+If accepted, the registry should shrink to context-id/execution-id mapping plus
+SDK compatibility glue. The engine owns execution lifecycle, replay, and input
+delivery.
+
 ## Decision Triggers
 
 Start the engine-native primitive track if any of these become true:
@@ -459,6 +498,11 @@ Start the engine-native primitive track if any of these become true:
    `control-request-reconciler.ts`: collapsing it into request-specific
    workflows removes idle scans, eliminates the 0-5s control-plane latency
    floor, and moves multi-host coordination into the workflow engine.
+7. The post-cutover plan chooses to collapse
+   `runtime-context-engine-registry.ts` from one scoped engine per context to
+   one host-scoped engine with many executions. This activates the `signal`
+   primitive and requires the one-engine-many-executions decision, but it is a
+   structural simplification independent of the polling-loop trigger.
 
 Until a trigger fires, keep the narrow Phase 1 fix moving. Do not pause the
 one-substrate collapse just to design engine-native primitives.
