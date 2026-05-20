@@ -8,6 +8,12 @@
 
 import { ParseResult, Schema } from "effect"
 import type { SchemaAST } from "effect"
+import { VerifiedWebhookFactKeySchema } from "@firegrid/protocol/verified-webhook"
+
+export {
+  VerifiedWebhookFactKeySchema,
+  type VerifiedWebhookFactKey,
+} from "@firegrid/protocol/verified-webhook"
 
 const invalidFactKey = (
   ast: SchemaAST.AST,
@@ -34,14 +40,6 @@ const parseJsonTuple = (
   }
   return ParseResult.succeed(parsed as ReadonlyArray<unknown>)
 }
-
-export const VerifiedWebhookFactKeySchema = Schema.Tuple(
-  Schema.String,
-  Schema.String,
-)
-export type VerifiedWebhookFactKey = Schema.Schema.Type<
-  typeof VerifiedWebhookFactKeySchema
->
 
 export const VerifiedWebhookFactKeyEncoded = Schema.transformOrFail(
   Schema.String,

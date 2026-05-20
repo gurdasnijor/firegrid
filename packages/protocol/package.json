@@ -40,6 +40,10 @@
     "./observations": {
       "types": "./src/observations/index.ts",
       "default": "./src/observations/index.ts"
+    },
+    "./verified-webhook": {
+      "types": "./src/verified-webhook/index.ts",
+      "default": "./src/verified-webhook/index.ts"
     }
   },
   "files": [
