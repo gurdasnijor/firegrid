@@ -11,6 +11,11 @@ components:
       3: Channel registry metadata exposes the channel schema shape needed by downstream tool metadata without exposing substrate bindings.
       4: Channel registrations bind afferent channels to typed streams, efferent channels to append targets, and call channels to request-response handlers.
       5: The factory.events channel can be registered through host composition as an afferent channel without exposing CallerFact or stream names to agent-visible metadata.
+  MCP_CHANNEL_METADATA:
+    requirements:
+      1: Runtime-context MCP tools/list metadata exposes the registered channel inventory with channel name, direction, and schema information.
+      2: The factory.events tools/list metadata entry exposes its row schema without exposing substrate storage names.
+      3: Channel metadata enrichment is limited to MCP tool metadata and does not replace the Effect AI toolkit or tool-call handlers.
 
   STATE_CHANGES:
     requirements:

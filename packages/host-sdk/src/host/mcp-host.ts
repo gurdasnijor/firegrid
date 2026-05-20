@@ -49,6 +49,9 @@ import {
   FiregridAgentToolkitLayer,
 } from "../agent-tools/index.ts"
 import {
+  enrichRuntimeContextMcpToolsListWithChannelMetadata,
+} from "./mcp-channel-metadata.ts"
+import {
   publishRuntimeContextMcpBase,
 } from "./runtime-context-mcp-base-url.ts"
 
@@ -207,7 +210,10 @@ export const FiregridMcpServerLayer = (
 ) =>
   Layer.mergeAll(
     Layer.scopedDiscard(
-      McpServer.registerToolkit(FiregridAgentToolkit).pipe(
+      Effect.gen(function* () {
+        yield* McpServer.registerToolkit(FiregridAgentToolkit)
+        yield* enrichRuntimeContextMcpToolsListWithChannelMetadata
+      }).pipe(
         Effect.withSpan("firegrid.mcp.register_toolkit", {
           kind: "server",
           attributes: {
