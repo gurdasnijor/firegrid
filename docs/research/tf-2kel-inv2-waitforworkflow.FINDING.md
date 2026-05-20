@@ -6,7 +6,7 @@ Scope: a tiny-firegrid sim that proves the Firegrid workflow engine
 handles the racing match/timeout shape natively, with NO production
 wait-router involvement, NO API changes.
 
-## Verdict — ACCEPTANCE MET (a / b / c / d)
+## Verdict — ACCEPTANCE MET (a / b / c / d), in two equivalent R-discharge shapes
 
 The engine handles the shape natively. The custom `WaitForWorkflow`
 defined with stock `@effect/workflow` primitives (`Workflow.make`,
@@ -17,12 +17,24 @@ with the production wait-router substrate intentionally absent from
 this code path. No `@effect/workflow` or `@firegrid/runtime` API
 changes were required.
 
-The sim lives at
-`packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/`.
+This FINDING covers TWO sibling sims, each independently sufficient to
+clear acceptance, that exercise the SAME `WaitForWorkflow` body shape
+but discharge the `WorkflowEngine.WorkflowEngine` requirement on the
+tool handler in TWO different ways. The Path A amendment (cf. PR #458
+commit list) was added after the initial sim landed, to demonstrate the
+@effect/workflow-canonical layer-composition shape alongside the
+initial capture-and-re-provide shape — see §"R-discharge shape" below.
+The recommendation for the production cutover at
+`packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts:runWaitForTool`
+is the layer-composition shape.
 
-Live run: `2026-05-20T06-58-42-986Z__inv2-waitforworkflow`
-(`packages/tiny-firegrid/.simulate/runs/.../trace.jsonl`,
-`DriverCompleted` outcome, 18 s wall, 6 862 spans).
+| Sim folder                                                                       | R-discharge shape         | Live run id                                          |
+|---|---|---|
+| `packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/`                   | capture-and-re-provide    | `2026-05-20T06-58-42-986Z__inv2-waitforworkflow`         |
+| `packages/tiny-firegrid/src/simulations/inv2-waitforworkflow-layered/`           | layer-composition (canonical) | `2026-05-20T07-15-23-072Z__inv2-waitforworkflow-layered` |
+
+Both runs: `DriverCompleted`, ~18–19 s wall, ~6 800 spans, all four
+acceptance criteria met identically.
 
 ## Acceptance verdicts (against bead tf-2kel)
 
@@ -156,11 +168,12 @@ input → WaitForWorkflow.execute({ executionKey, stream, whereFields,
         | { matched: false, timedOut: true }      // Timeout
 ```
 
-The handler captures the sim's `WorkflowEngine` context once at toolkit
-layer build time and re-provides it inside every invocation, so the
-toolkit's `R = never` contract is preserved. There is no involvement of
-`ToolCallWorkflow`, `toolUseToEffect`, `runWaitForTool`, or
-`WaitFor.match` on this path.
+How the `WorkflowEngine` requirement on `WaitForWorkflow.execute` is
+discharged into that handler — capture vs layer-composition — is the
+subject of §"R-discharge shape" below. The two sibling sims differ
+ONLY in that mechanism; neither involves `ToolCallWorkflow`,
+`toolUseToEffect`, `runWaitForTool`, or `WaitFor.match` on the
+`wait_for` tool path.
 
 ## How `WaitForWorkflow` is composed
 
@@ -226,6 +239,191 @@ The sim host (`host.ts`):
   `/mcp`), which carries `CallerOwnedFactStreams` into the
   `WaitForWorkflow`-body Activity through the layer dependency chain.
 
+The Path-A-amendment sibling sim `inv2-waitforworkflow-layered/`
+mirrors this exactly, with three localized renames so the two sims can
+coexist on the same Durable Streams test server:
+fact stream name `inv2-waitforworkflow-layered.facts`,
+DurableTable key `inv2WaitForWorkflowLayeredFacts`, MCP loopback port
+14774, MCP server name `firegrid-sim-inv2-wait-for-workflow-layered`,
+execution keys `inv2-layered-call-{a,b}`, marker
+`FIREGRID_INV2_LAYERED_DONE`.
+
+## R-discharge shape: capture-and-re-provide vs layer-composition
+
+The `wait_for` tool handler must somehow have `WorkflowEngine.WorkflowEngine`
+in scope when it calls `WaitForWorkflow.execute(...)`. There are two
+shapes that work; this FINDING demonstrates BOTH against the same
+workflow body and records that they produce identical observable
+outcomes. The recommendation for the production cutover is shape #2,
+on the grounds that it's the @effect/workflow-canonical shape.
+
+### Shape 1 — Capture-and-re-provide  (sim: `inv2-waitforworkflow`)
+
+`Tool.make` declares NO dependencies; the handler's static R is `never`.
+The toolkit Layer build captures `Effect.context<WorkflowEngine.WorkflowEngine>()`
+once and the handler re-provides it per invocation:
+
+```ts
+const SimWaitForToolkitLayer = SimWaitForToolkit.toLayer(
+  Effect.map(
+    Effect.context<WorkflowEngine.WorkflowEngine>(),
+    (captured) => ({
+      wait_for: (input): Effect.Effect<Success, Failure /* R = never */> =>
+        Effect.gen(function*() {
+          const outcome = yield* WaitForWorkflow.execute({...})
+          return ...
+        }).pipe(Effect.provide(captured)),   // <-- re-provide the captured engine
+    }),
+  ),
+)
+```
+
+The engine is in scope by virtue of the toolkit Layer being built UNDER
+a layer chain that already includes the engine. `Effect.context<…>()`
+is the seam; the closure carries the engine to every later invocation.
+
+### Shape 2 — Layer-composition  (sim: `inv2-waitforworkflow-layered` — CANONICAL)
+
+`Tool.make` declares `dependencies: [WorkflowEngine.WorkflowEngine]`;
+the handler's static R is `WorkflowEngine.WorkflowEngine`. The handler
+body does NOT capture and does NOT re-provide. The layer chain
+provides the engine via `Layer.provideMerge` at one place, satisfying
+the engine requirement for BOTH the handler AND the workflow body
+registration:
+
+```ts
+const SimWaitForTool = Tool.make("wait_for", {
+  ...,
+  dependencies: [WorkflowEngine.WorkflowEngine],   // <-- canonical R declaration
+})...
+
+const SimWaitForToolkitLayer = SimWaitForToolkit.toLayer({
+  wait_for: (input): Effect.Effect<Success, Failure, WorkflowEngine.WorkflowEngine> =>
+    Effect.gen(function*() {
+      const outcome = yield* WaitForWorkflow.execute({...})   // <-- engine resolved from ambient
+      return ...
+    }),
+})
+
+return Layer.mergeAll(
+  Layer.scopedDiscard(McpServer.registerToolkit(SimWaitForToolkit)),
+  HttpRouter.Default.serve(),
+  WaitForWorkflowLayer,                              // <-- requires WorkflowEngine
+).pipe(
+  Layer.provide(SimWaitForToolkitLayer),             // <-- also requires WorkflowEngine (Tool.dependencies)
+  Layer.provideMerge(engineLayer),                   // <-- single point of provision; satisfies BOTH
+  Layer.provide(McpServer.layerHttp({...})),
+  Layer.provide(NodeHttpServer.layer(createServer, {...})),
+  Layer.provide(Logger.remove(Logger.defaultLogger)),
+)
+```
+
+This is exactly the shape @effect/workflow uses in its own test suite
+at `repos/effect/packages/workflow/test/WorkflowEngine.test.ts:14-23`
+(vendored mirror of the upstream
+[`Effect-TS/effect WorkflowEngine.test.ts:94`](https://github.com/Effect-TS/effect/blob/main/packages/workflow/test/WorkflowEngine.test.ts#L94)):
+
+```ts
+Effect.provide(LongWorkflowLayer.pipe(
+  Layer.provideMerge(WorkflowEngine.layerMemory)
+))
+```
+
+— workflow body layer composed with `Layer.provideMerge(engineLayer)`,
+then provided to the consuming Effect. The handler just calls
+`LongWorkflow.execute(...)` and the engine is resolved through the
+ambient Effect context exactly like any other service.
+
+### Side-by-side
+
+|                                            | Capture-and-re-provide                                           | Layer-composition (canonical)                              |
+|---|---|---|
+| `Tool.make` `dependencies`                  | unset                                                            | `[WorkflowEngine.WorkflowEngine]`                          |
+| Handler `R` (static)                       | `never`                                                          | `WorkflowEngine.WorkflowEngine`                            |
+| Handler body                                | captures ambient at layer-build, `Effect.provide` per call       | direct call, engine resolved from ambient                  |
+| Engine provision site                       | INSIDE the toolkit layer (closure of captured context)           | OUTSIDE the toolkit layer (`Layer.provideMerge(engineLayer)`) |
+| Same engine for handler + workflow body?   | Yes (must be — both captured under the same layer chain)         | Yes (provided once at `provideMerge` boundary)             |
+| `@effect/workflow` test-suite usage         | not used in upstream tests                                       | `WorkflowEngine.test.ts:14-23` (`Layer.provideMerge(WorkflowEngine.layerMemory)`) |
+| Tool dependency relationship type-tracked? | no (handler's static R = `never`)                                | yes (Tool.dependencies → handler R = WorkflowEngine)       |
+
+### Empirical equivalence
+
+Both sims drive the same agent (`claude-agent-acp@0.36.1`) through the
+same prompt (modulo a name disambiguation marker), against the same
+seeded CallerFact stream shape, dispatching the same `WaitForWorkflow`
+definition. Acceptance counts are identical (per-execution multiples,
+not totals, are the meaningful comparison — driver-side
+`session.wait.forAgentOutput` poll-count varies run-to-run for
+unrelated reasons):
+
+| Per-execution-multiple                                                                    | inv2-waitforworkflow | inv2-waitforworkflow-layered |
+|---|---|---|
+| `firegrid.sim.inv2{,_layered}.wait_for_tool` spans                                        | 2                    | 2                            |
+| `workflow_engine.execution.execute` (workflow `firegrid.sim.inv2.wait-for-workflow`)      | 2                    | 2                            |
+| `workflow_engine.activity.execute` (`wait-for-workflow.match/...`)                        | 2                    | 2                            |
+| `workflow_engine.deferred.done` (`wait-for-workflow.race/...`)                            | 2                    | 2                            |
+| `workflow_engine.clock.schedule` (`wait-for-workflow.timeout/...`)                        | 2                    | 2                            |
+| `wait_router.complete_match` with `firegrid.wait.source = CallerFact`                     | 0                    | 0                            |
+| Terminal marker text-chunk count                                                          | 1                    | 1                            |
+| Run wall-clock                                                                            | ~18 s                | ~19 s                        |
+| Run outcome                                                                                | `DriverCompleted`    | `DriverCompleted`            |
+
+Same outcomes by every observable measure; the shape of how
+`WorkflowEngine` reaches the handler is a layer-composition choice
+with no runtime-behavior implication. Restart-replay equivalence is
+implied (both shapes hand the engine to identical workflow body code,
+which is what restart re-attaches against — durable state lives in
+`firegrid.workflow.*` durable tables, not in the toolkit closure or
+the layer chain) but INV-3 / `tf-r5e3` will exercise it empirically.
+
+### Recommendation for the SDD production cutover
+
+When the SDD's One-Substrate Steps 2-3 land at
+`packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts:runWaitForTool`,
+prefer the layer-composition shape (Shape 2). Reasons:
+
+1. **It's the canonical shape.** `@effect/workflow`'s own tests use
+   `Layer.provideMerge(WorkflowEngine.layerMemory)` against workflow
+   body layers; the production cutover should not pioneer a different
+   convention.
+2. **The dependency relationship is type-tracked.** `Tool.dependencies`
+   makes the handler's engine requirement statically visible to
+   `Toolkit.HandlersFrom`. Capture-and-re-provide hides this in a
+   closure; it works but cannot be relied on by external code.
+3. **No internal Effect-context plumbing.** The handler body is a
+   normal Effect over a normal service requirement, with no
+   `Effect.context<…>()` capture seam or `Effect.provide(captured)`
+   per call. Future readers don't need to know why the closure
+   construction exists.
+4. **The engine is provisioned at one explicit place.** The host
+   composition's `Layer.provideMerge(engineLayer)` is the obvious
+   answer to "where does the engine come from?" — the same answer
+   for the workflow body registration and for the tool handler. With
+   capture-and-re-provide, the answer for the tool handler is "look
+   inside the toolkit-layer closure, not the layer chain."
+
+The production tool-use-to-effect.ts cutover should:
+
+- Add `dependencies: [WorkflowEngine.WorkflowEngine]` to the production
+  `WaitForTool` definition in
+  `packages/host-sdk/src/agent-tools/bindings/tools.ts` (the existing
+  `FiregridToolDependencies` set already encodes the same convention
+  for `FiregridAgentToolContext` and `IdGenerator.IdGenerator`).
+- Replace `runWaitForTool`'s `WaitFor.match(...)` body with
+  `engine.execute(WaitForWorkflow, ...)` per the SDD.
+- Compose `WaitForWorkflowLayer` (the body registration) alongside the
+  existing `ToolCallWorkflowLayer` under
+  `HostRuntimeObservationSubstrateLive` in
+  `packages/host-sdk/src/host/runtime-substrate.ts`, OR — preferably —
+  drop `ToolCallWorkflowLayer` entirely if the SDD's One-Substrate
+  conclusion is that the wrapper workflow becomes unnecessary once
+  `wait_for` dispatches a real nested workflow.
+
+The capture-and-re-provide shape (Shape 1) remains a valid local
+fallback for ad-hoc test harnesses and one-off sims; the sibling
+sim file is kept as a side-by-side reference, not as a precedent
+worth following in production.
+
 ## Engine-shape observations worth keeping
 
 1. **`Activity.make` cleanly hosts a long-blocking Stream.runHead**.
@@ -262,21 +460,28 @@ The sim host (`host.ts`):
 
 ```
 pnpm --filter @firegrid/tiny-firegrid simulate:run inv2-waitforworkflow
+pnpm --filter @firegrid/tiny-firegrid simulate:run inv2-waitforworkflow-layered
 ```
 
-Requires `ANTHROPIC_API_KEY`. Wall-clock ~18 s per run. Trace is
+Requires `ANTHROPIC_API_KEY`. Wall-clock ~18–19 s per run. Traces are
 written to
 `packages/tiny-firegrid/.simulate/runs/<runId>/trace.jsonl`.
 
-## Trace artifact (committed)
+## Trace artifacts (committed)
 
-The full per-run trace (6 862 spans, ~9 MB) is gitignored under
-`packages/tiny-firegrid/.simulate/`. A focused excerpt
-(`tf-2kel-inv2-waitforworkflow.trace-excerpt.jsonl`, alongside this
-file) carries the load-bearing spans the verdicts above are derived
-from:
+The full per-run traces (each ~6 800 spans, ~9 MB) are gitignored
+under `packages/tiny-firegrid/.simulate/`. Two focused excerpts
+alongside this file carry the load-bearing spans the verdicts above
+are derived from:
 
-- every `firegrid.sim.inv2.*` span
+- `tf-2kel-inv2-waitforworkflow.trace-excerpt.jsonl` —
+  capture-and-re-provide variant (`firegrid.sim.inv2.*` namespace).
+- `tf-2kel-inv2-waitforworkflow-layered.trace-excerpt.jsonl` —
+  layer-composition variant (`firegrid.sim.inv2_layered.*` namespace).
+
+Each excerpt includes:
+
+- every `firegrid.sim.inv2{,_layered}.*` span (sim's own observability)
 - `workflow_engine.workflow.register` for the WaitForWorkflow
 - `workflow_engine.execution.execute` for both nested executions
 - `workflow_engine.activity.execute` / `activity.claim` for the match
@@ -285,4 +490,4 @@ from:
 - `workflow_engine.clock.schedule` for both DurableClock.sleep timeouts
 - a 3-span sample of `wait_router.complete_match` (sufficient to show
   the `firegrid.wait.source: AgentOutputAfter` attribution — the
-  remaining 353 spans in the full trace are the same shape)
+  remaining ~350 spans per run in the full trace are the same shape)
