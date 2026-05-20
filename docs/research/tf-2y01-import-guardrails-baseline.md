@@ -109,14 +109,13 @@ The scan mirrors for runtime-to-host-sdk and client-sdk-to-runtime reported zero
 
 The raw hard flip showed that Lanes B/C did not fully eliminate all host-sdk substrate imports before this slice. Those violations are not mechanical in scope for `tf-wtgc`; they are the remaining boundary-refactor surface. The hard rules now exclude only these existing debt files, so new host-sdk files and any non-carved-out import sites fail immediately.
 
-Current count after `tf-emxk`: 9 files.
+Current count after `tf-rb9e`: 8 files.
 
 | Carved-out file | Remaining substrate import class |
 |---|---|
 | `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts` | workflow clock / workflow definitions |
 | `packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts` | workflow definitions |
 | `packages/host-sdk/src/host/control-request-reconciler.ts` | workflow engine and workflow definitions |
-| `packages/host-sdk/src/host/index.ts` | workflow definitions re-export |
 | `packages/host-sdk/src/host/internal/runtime-context-helpers.ts` | workflow definitions |
 | `packages/host-sdk/src/host/runtime-context-workflow-core.ts` | workflow definitions |
 | `packages/host-sdk/src/host/runtime-context-workflow-runtime.ts` | workflow engine |
@@ -228,4 +227,32 @@ Normal gate after removing the two shim carveouts:
 
 ```text
 ✔ no dependency violations found (219 modules, 529 dependencies cruised)
+```
+
+## tf-rb9e Shim Retirement Iteration 3
+
+Date: 2026-05-20
+
+Base: current `origin/main` for `codex/tf-rb9e-shim-retirement-iteration-3`.
+
+Result: 1 carveout removed. The list moves from 9 files to 8 files.
+
+Removed compatibility re-export carveout:
+
+```text
+packages/host-sdk/src/host/index.ts
+```
+
+Why removed: the host public barrel only needed its carveout for a compatibility re-export of runtime control workflow helpers from `@firegrid/runtime/workflows`. The only repo consumer of those barrel re-exports was `packages/host-sdk/test/host/control-request-reconciler.test.ts`; that test now imports the helpers from the canonical runtime workflow subpath.
+
+No-carveout probe after iteration 3:
+
+```text
+x 17 dependency violations (17 errors, 0 warnings). 219 modules, 531 dependencies cruised.
+```
+
+Normal gate after removing the barrel carveout:
+
+```text
+✔ no dependency violations found (219 modules, 531 dependencies cruised)
 ```

@@ -13,20 +13,26 @@ import {
   type HostId,
   type HostSessionId,
 } from "@firegrid/protocol/launch"
-import { Effect, Fiber, Option } from "effect"
+import { Data, Effect, Fiber, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   reconcileRuntimeControlRequestsOnce,
-  runtimeControlRequestWorkflowExecutionId,
-  runtimeControlRequestWorkflowStreamUrl,
   runtimeControlRequestReconcilerDefaults,
   runRuntimeControlRequestReconciler,
   type RuntimeControlRequestReconcilerOptions,
 } from "../../src/host/index.ts"
+import {
+  runtimeControlRequestWorkflowExecutionId,
+  runtimeControlRequestWorkflowStreamUrl,
+} from "@firegrid/runtime/workflows"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
+
+class StartedRunsTimeout extends Data.TaggedError("StartedRunsTimeout")<{
+  readonly contextIds: ReadonlyArray<string>
+}> {}
 
 beforeEach(async () => {
   server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
@@ -126,9 +132,7 @@ const waitForStartedRuns = (
       if (contextIds.every(contextId => started.has(contextId))) return rows
       yield* Effect.sleep("25 millis")
     }
-    return yield* Effect.fail(new Error(
-      `timed out waiting for started runs: ${contextIds.join(", ")}`,
-    ))
+    return yield* new StartedRunsTimeout({ contextIds })
   })
 
 const seedStartRequest = (
