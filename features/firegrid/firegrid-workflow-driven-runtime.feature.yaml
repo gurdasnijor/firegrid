@@ -103,6 +103,7 @@ constraints:
       6: RuntimeContextSession cutover tests prove idempotent startOrAttach, lazy send reattach after workflow-engine reconstruction, and at-most-once external command emission across restart.
       7: Per-context engine tests prove duplicate cross-host start or attach for the same contextId is rejected before a second engine is provisioned, while same-owner attach is idempotent.
       8: Runtime input intent tests prove a client or non-owner host can append an intent and the owning host's local dispatcher completes the active per-context workflow deferred without appendRuntimeIngressToOwner or owner-host workflow stream URL routing.
+      9: The runtime control request reconciler daemon continues polling and can activate a newly appended context start request while a prior long-running RuntimeContextWorkflow start request remains active.
 
   AGENT_TOOL_BOUNDARIES:
     requirements:

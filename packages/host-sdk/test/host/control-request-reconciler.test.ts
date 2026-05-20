@@ -18,6 +18,7 @@ import {
   FiregridRuntimeHostWithWorkflowLive,
   reconcileRuntimeControlRequestsOnce,
   runtimeControlRequestReconcilerDefaults,
+  runRuntimeControlRequestReconciler,
   type RuntimeControlRequestReconcilerOptions,
 } from "../../src/host/index.ts"
 
@@ -46,19 +47,17 @@ const controlPlaneLayer = (namespace: string) =>
     },
   })
 
-const seedRequests = (
-  namespace: string,
+const insertRequests = (
   contextId: string,
   createdAt: string,
+  runtime: ReturnType<typeof local.jsonl>,
 ) =>
   Effect.gen(function* () {
     const table = yield* RuntimeControlPlaneTable
     const contextRequest = makeRuntimeContextRequestRow(
       {
         contextId,
-        runtime: local.jsonl({
-          argv: [process.execPath, "-e", "process.exit(0)"],
-        }),
+        runtime,
         createdBy: "control-request-reconciler-test",
       },
       { createdAt },
@@ -70,10 +69,50 @@ const seedRequests = (
     yield* table.contextRequests.insertOrGet(contextRequest)
     yield* table.startRequests.insertOrGet(startRequest)
     return { contextRequest, startRequest }
-  }).pipe(
+  })
+
+const seedRequestsWithRuntime = (
+  namespace: string,
+  contextId: string,
+  createdAt: string,
+  runtime: ReturnType<typeof local.jsonl>,
+) =>
+  insertRequests(contextId, createdAt, runtime).pipe(
     Effect.provide(controlPlaneLayer(namespace)),
     Effect.scoped,
   )
+
+const seedRequests = (
+  namespace: string,
+  contextId: string,
+  createdAt: string,
+) =>
+  seedRequestsWithRuntime(
+    namespace,
+    contextId,
+    createdAt,
+    local.jsonl({
+      argv: [process.execPath, "-e", "process.exit(0)"],
+    }),
+  )
+
+const waitForStartedRuns = (
+  contextIds: ReadonlyArray<string>,
+) =>
+  Effect.gen(function* () {
+    const table = yield* RuntimeControlPlaneTable
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const rows = yield* table.runs.query((coll) =>
+        coll.toArray.filter(row =>
+          row.status === "started" && contextIds.includes(row.contextId)))
+      const started = new Set(rows.map(row => row.contextId))
+      if (contextIds.every(contextId => started.has(contextId))) return rows
+      yield* Effect.sleep("25 millis")
+    }
+    return yield* Effect.fail(new Error(
+      `timed out waiting for started runs: ${contextIds.join(", ")}`,
+    ))
+  })
 
 const seedStartRequest = (
   namespace: string,
@@ -394,4 +433,59 @@ describe("Runtime control request reconciler", () => {
     expect(state.claims).toHaveLength(0)
     expect(state.completions).toHaveLength(0)
   })
+
+  it("firegrid-workflow-driven-runtime.VALIDATION.9 keeps polling while long-running start requests are active", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `control-request-concurrent-start-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const firstContextId = `ctx_${crypto.randomUUID()}`
+    const secondContextId = `ctx_${crypto.randomUUID()}`
+    const runtime = local.jsonl({
+      argv: [
+        process.execPath,
+        "--input-type=module",
+        "-e",
+        `
+const shutdown = () => process.exit(0)
+process.on("SIGTERM", shutdown)
+process.on("SIGINT", shutdown)
+process.stdin.on("end", shutdown)
+process.stdin.resume()
+setInterval(() => {}, 1_000)
+setTimeout(shutdown, 30_000)
+`,
+      ],
+    })
+
+    const state = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* insertRequests(firstContextId, new Date().toISOString(), runtime)
+        yield* runRuntimeControlRequestReconciler({
+          pollIntervalMs: 25,
+          claimWindowMs: 60_000,
+        }).pipe(Effect.forkScoped)
+        yield* waitForStartedRuns([firstContextId])
+
+        yield* insertRequests(secondContextId, new Date().toISOString(), runtime)
+        const runs = yield* waitForStartedRuns([firstContextId, secondContextId])
+        const table = yield* RuntimeControlPlaneTable
+        const completions = yield* table.controlRequestCompletions.query((coll) =>
+          coll.toArray.filter(row => row.requestKind === "start"))
+        return { runs, completions }
+      }).pipe(
+        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+          durableStreamsBaseUrl: baseUrl,
+          namespace,
+          hostId,
+          controlRequestReconciler: false,
+        })),
+        Effect.scoped,
+      ),
+    )
+
+    expect(new Set(state.runs.map(row => row.contextId))).toEqual(
+      new Set([firstContextId, secondContextId]),
+    )
+    expect(state.completions).toHaveLength(0)
+  }, 15_000)
 })
