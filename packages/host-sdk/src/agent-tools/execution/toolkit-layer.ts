@@ -53,6 +53,7 @@ import {
   RuntimeContextEngineRegistry,
   type ActiveRuntimeContextEngine,
 } from "../../host/runtime-context-engine-registry.ts"
+import type { ChannelRegistry } from "../../host/channel-registry.ts"
 
 const TOOL_USE_ID_PREFIX = "mcp"
 
@@ -123,6 +124,7 @@ const toolCallWorkflowSupportLayer = (
 type ToolCallHostEnvironment =
   | RuntimeContextEngineRegistry
   | AgentToolHost
+  | ChannelRegistry
   | HostRuntimeContextExecutionEnv
 
 /**

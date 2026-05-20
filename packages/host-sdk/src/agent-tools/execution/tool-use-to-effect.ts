@@ -45,7 +45,6 @@ import {
   WaitForToolInputSchema,
   type CallToolInput,
   type CallToolOutput,
-  type RuntimeWaitQuery,
   type ExecuteToolInput,
   type ScheduleMeToolInput,
   type ScheduleMeToolOutput,
@@ -71,21 +70,24 @@ import {
   Duration,
   Clock,
   Effect,
+  Option,
   ParseResult,
   Schema,
-  type Scope,
+  Stream,
 } from "effect"
 import {
   type AgentInputEvent,
   type AgentOutputEvent,
 } from "@firegrid/runtime/events"
 import {
-  WaitFor,
-  type DurableWaitRowLookup,
-  type DurableWaitRowUpsert,
+  evaluateFieldEquals,
   type FieldEqualsTrigger,
 } from "@firegrid/runtime/durable-tools"
 import { AgentToolHost } from "./tool-host.ts"
+import {
+  ChannelRegistry,
+  type AfferentChannel,
+} from "../../host/channel-registry.ts"
 import {
   toolErrorResult,
   toolExecutionFailed,
@@ -104,7 +106,7 @@ export interface ToolLoweringContext {
 }
 
 // ---------------------------------------------------------------------------
-// RuntimeWaitQuery → FieldEqualsTrigger adapter
+// wait_for channel match → FieldEqualsTrigger adapter
 // ---------------------------------------------------------------------------
 
 const isFieldEqualsScalar = (
@@ -126,13 +128,11 @@ const describeNonScalarValue = (value: unknown): string => {
 }
 
 const waitQueryToTrigger = (
-  query: RuntimeWaitQuery,
+  match: WaitForToolInput["match"],
 ):
   | { readonly _tag: "Ok"; readonly trigger: FieldEqualsTrigger }
-  | { readonly _tag: "NonScalar"; readonly failures: ReadonlyArray<EventQueryAdapterFailure> }
-  | { readonly _tag: "Empty" } => {
-  const entries = Object.entries(query.whereFields)
-  if (entries.length === 0) return { _tag: "Empty" }
+  | { readonly _tag: "NonScalar"; readonly failures: ReadonlyArray<EventQueryAdapterFailure> } => {
+  const entries = Object.entries(match ?? {})
   const failures: Array<EventQueryAdapterFailure> = []
   const trigger: Array<FieldEqualsTrigger[number]> = []
   for (const [key, value] of entries) {
@@ -180,17 +180,13 @@ const runWaitForTool = (
   ToolError,
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
-  | DurableWaitRowLookup
-  | DurableWaitRowUpsert
-  | Scope.Scope
+  | ChannelRegistry
 > => {
-  // `whereFields` is typed `Record<string, unknown>` because schema-level
+  // `match` is typed `Record<string, unknown>` because schema-level
   // scalar refinement would prevent codecs from publishing the JSON shape
   // unchanged. We enforce scalar-only predicates here because the downstream
-  // FieldEqualsTrigger evaluator treats an empty trigger as a universal
-  // match — an agent emitting non-scalar values would otherwise see wait_for
-  // "match any row" instead of an invalid-input ToolResult.
-  const adapted = waitQueryToTrigger(input.waitQuery)
+  // FieldEqualsTrigger evaluator ignores non-scalar predicates.
+  const adapted = waitQueryToTrigger(input.match)
   if (adapted._tag === "NonScalar") {
     const summary = adapted.failures
       .map((f) => `${f.key}=${describeNonScalarValue(f.value)}`)
@@ -200,58 +196,62 @@ const runWaitForTool = (
       toolUseId,
       name: "wait_for",
       reason:
-        `waitQuery.whereFields values must be string, number, or boolean (got non-scalar: ${summary})`,
+        `match values must be string, number, or boolean (got non-scalar: ${summary})`,
     })
   }
-  if (adapted._tag === "Empty") {
-    return Effect.fail({
-      _tag: "ToolInvalidInput",
-      toolUseId,
-      name: "wait_for",
-      reason:
-        "waitQuery.whereFields must declare at least one predicate; empty predicate sets are rejected because they would match every row.",
-    })
-  }
-  // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
-  //
-  // Post-#315 runtime output is sharded per-context; the wait router
-  // resolves an `AgentOutput` wait to the per-context output stream
-  // selected by the trigger's `contextId` predicate. A contextId-less
-  // `AgentOutput` wait would have no stream to observe and silently
-  // hang until timeout. Reject it here with an actionable error
-  // instead. See docs/research/host-vs-context-boundary-audit.md §A4.
-  if (
-    input.waitQuery.source._tag === "AgentOutput" &&
-    !adapted.trigger.some(
-      (predicate) =>
-        predicate.path.length === 1 &&
-        predicate.path[0] === "contextId" &&
-        typeof predicate.equals === "string",
+
+  const timeout: WaitForToolOutput = { matched: false, timedOut: true }
+  const waitForChannel = Effect.gen(function*() {
+    const registry = yield* ChannelRegistry
+    const registration = yield* registry.require(input.channel).pipe(
+      Effect.mapError((): ToolError => ({
+        _tag: "ToolInvalidInput",
+        toolUseId,
+        name: "wait_for",
+        reason: `unknown channel: ${input.channel}`,
+      })),
     )
-  ) {
-    return Effect.fail({
-      _tag: "ToolInvalidInput",
-      toolUseId,
-      name: "wait_for",
-      reason:
-        "waitQuery.whereFields must include a string `contextId` predicate for AgentOutput waits: runtime output is observed per runtime context.",
-    })
-  }
-  return WaitFor.match({
-    name: `tool:${toolUseId}`,
-    source: input.waitQuery.source,
-    trigger: adapted.trigger,
-    ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-  }).pipe(
-    Effect.map((outcome): WaitForToolOutput =>
-      outcome._tag === "Match"
-        ? { matched: true, event: outcome.row }
-        : { matched: false, timedOut: true },
-    ),
-    Effect.mapError((cause) =>
-      toolExecutionFailed(toolUseId, "wait_for", cause),
-    ),
-  )
+    if (registration.direction !== "afferent") {
+      return yield* Effect.fail({
+        _tag: "ToolInvalidInput" as const,
+        toolUseId,
+        name: "wait_for",
+        reason: `wait_for requires an afferent channel: ${input.channel}`,
+      })
+    }
+    const channel = registration as AfferentChannel
+    const match = Stream.runHead(
+      channel.binding.stream.pipe(
+        Stream.filter((row) => evaluateFieldEquals(adapted.trigger, row)),
+      ),
+    ).pipe(
+      Effect.map(Option.match({
+        onNone: (): WaitForToolOutput => timeout,
+        onSome: (row): WaitForToolOutput => ({ matched: true, event: row }),
+      })),
+      Effect.mapError((cause) =>
+        toolExecutionFailed(toolUseId, "wait_for", cause),
+      ),
+    )
+    // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.3
+    // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.4
+    // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.5
+    //
+    // This is the channel-resolution scaffold for tf-dlaa. The production
+    // substrate handoff to `WaitForWorkflow.execute` is blocked on tf-xw0w;
+    // until that lands, the registry binding drives the same typed stream
+    // surface directly so the public tool contract can be validated.
+    return input.timeoutMs === undefined
+      ? yield* match
+      : yield* match.pipe(
+        Effect.timeoutTo({
+          duration: Duration.millis(input.timeoutMs === 0 ? 1 : input.timeoutMs),
+          onTimeout: () => timeout,
+          onSuccess: (result) => result,
+        }),
+      )
+  })
+  return waitForChannel
 }
 
 const runSpawnTool = (
@@ -512,9 +512,7 @@ const runCallTool = (
 type ToolEnvironment =
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
-  | DurableWaitRowLookup
-  | DurableWaitRowUpsert
-  | Scope.Scope
+  | ChannelRegistry
   | AgentToolHost
 
 /**

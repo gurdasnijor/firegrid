@@ -79,16 +79,19 @@ export const humanChannelPair = <S extends Schema.Schema.Any>(
   }
 }
 
-export const dmChannel = (
-  options: {
-    readonly handle: string
-    readonly target?: ChannelTarget | string
-    readonly incoming: Stream.Stream<HumanMessage, unknown, never>
-    readonly send: (payload: HumanMessage) => Effect.Effect<void, unknown, never>
-  },
+interface HumanMessageChannelOptions {
+  readonly handle: string
+  readonly target?: ChannelTarget | string
+  readonly incoming: Stream.Stream<HumanMessage, unknown, never>
+  readonly send: (payload: HumanMessage) => Effect.Effect<void, unknown, never>
+}
+
+const humanMessageChannel = (
+  kind: HumanChannelKind,
+  options: HumanMessageChannelOptions,
 ): HumanChannelPair<typeof HumanMessageSchema> =>
   humanChannelPair({
-    kind: "dm",
+    kind,
     handle: options.handle,
     ...(options.target === undefined ? {} : { target: options.target }),
     schema: HumanMessageSchema,
@@ -96,22 +99,15 @@ export const dmChannel = (
     send: options.send,
   })
 
-export const notificationChannel = (
-  options: {
-    readonly handle: string
-    readonly target?: ChannelTarget | string
-    readonly incoming: Stream.Stream<HumanMessage, unknown, never>
-    readonly send: (payload: HumanMessage) => Effect.Effect<void, unknown, never>
-  },
+export const dmChannel = (
+  options: HumanMessageChannelOptions,
 ): HumanChannelPair<typeof HumanMessageSchema> =>
-  humanChannelPair({
-    kind: "notification",
-    handle: options.handle,
-    ...(options.target === undefined ? {} : { target: options.target }),
-    schema: HumanMessageSchema,
-    incoming: options.incoming,
-    send: options.send,
-  })
+  humanMessageChannel("dm", options)
+
+export const notificationChannel = (
+  options: HumanMessageChannelOptions,
+): HumanChannelPair<typeof HumanMessageSchema> =>
+  humanMessageChannel("notification", options)
 
 export const humanChannelRegistrations = (
   channels: Iterable<HumanChannelPair<Schema.Schema.Any>>,
