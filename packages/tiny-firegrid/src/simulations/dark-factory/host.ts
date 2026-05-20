@@ -37,6 +37,9 @@ import type { TinyFiregridHostEnv } from "../../types.ts"
 
 const darkFactorySource = "linear.oauth"
 const darkFactoryFactSource = "darkFactory.facts"
+const factoryEventsChannelTarget = "factory.events"
+const planReadyEventChannelTarget = eventChannelTarget("plan.ready")
+const dmOperatorChannelTarget = "dm.operator"
 const repoHint = "gurdasnijor/firegrid"
 
 const DarkFactoryFactRowSchema = Schema.Struct({
@@ -226,13 +229,13 @@ const makeDarkFactoryChannels = (
   facts: Layer.Layer<DarkFactoryFactTable, DurableTableError>,
 ): DarkFactoryChannels => {
   const factoryEvents = makeIngressChannel({
-    target: "factory.events",
+    target: factoryEventsChannelTarget,
     schema: DarkFactoryFactRowSchema,
     sourceClass: "static-source",
     stream: rowsFromDarkFactoryTable(facts, table => table.facts.rows()),
   })
   const planReady = makeBidirectionalChannel({
-    target: eventChannelTarget("plan.ready"),
+    target: planReadyEventChannelTarget,
     schema: PlanReadyEventRowSchema,
     sourceClasses: ["static-source", "predicate-eligible"],
     stream: rowsFromDarkFactoryTable(
@@ -349,8 +352,21 @@ export const darkFactoryHost = (
   const callerFacts = Layer.effect(
     CallerOwnedFactStreams,
     Effect.map(DarkFactoryFactTable, table => ({
-      streamFor: (stream: string) =>
-        stream === darkFactoryFactSource ? table.facts.rows() : Stream.empty,
+      streamFor: (stream: string) => {
+        if (stream === darkFactoryFactSource || stream === factoryEventsChannelTarget) {
+          return table.facts.rows()
+        }
+        if (stream === planReadyEventChannelTarget) {
+          return table.planReadyEvents.rows()
+        }
+        if (stream === dmOperatorChannelTarget) {
+          return table.operatorMessages.rows().pipe(
+            Stream.filter(row => row.handle === "operator"),
+            Stream.map(humanMessageFromRow),
+          )
+        }
+        return Stream.empty
+      },
     })),
   ).pipe(Layer.provide(facts))
   const seedTriggerFact = seedTriggerFactLayer(env, facts)

@@ -96,7 +96,7 @@ const schemaExtensionsFromToolsList = (result: unknown): ReadonlyArray<unknown> 
   return Array.isArray(metadata) ? metadata : []
 }
 
-const sleepPayloadFromResult = (result: unknown): Record<string, unknown> => {
+const toolPayloadFromResult = (result: unknown): Record<string, unknown> => {
   expect(isRecord(result)).toBe(true)
   if (!isRecord(result)) {
     return {}
@@ -136,8 +136,8 @@ const smokeLayer = (
     never
   >
 
-describe("dark-factory sleep-only substrate smoke", () => {
-  it("firegrid-agent-body-plan.MCP_CHANNEL_METADATA.1 firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.6 exposes channel metadata and executes sleep through the runtime-context MCP route", async () => {
+describe("dark-factory sleep + wait_for substrate smoke", () => {
+  it("firegrid-agent-body-plan.MCP_CHANNEL_METADATA.1 firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.6 firegrid-workflow-driven-runtime.PHASE_6_AGENT_TOOLS.10 exposes channel metadata and executes sleep plus wait_for through the runtime-context MCP route", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const runId = `sleep-smoke-${crypto.randomUUID()}`
     const namespace = `tiny-firegrid-${runId}`
@@ -243,8 +243,32 @@ describe("dark-factory sleep-only substrate smoke", () => {
               },
             },
           }))
-        expect(sleepPayloadFromResult(resultFromResponse(sleepResult))).toMatchObject({
+        expect(toolPayloadFromResult(resultFromResponse(sleepResult))).toMatchObject({
           slept: true,
+        })
+
+        const waitForResult = yield* Effect.promise(() =>
+          postJsonRpc(runtimeContextMcp.server.url, {
+            jsonrpc: "2.0",
+            id: 4,
+            method: "tools/call",
+            params: {
+              name: "wait_for",
+              arguments: {
+                channel: "factory.events",
+                match: {
+                  externalEventKey: `trigger-${runId}`,
+                },
+                timeoutMs: 5_000,
+              },
+            },
+          }))
+        expect(toolPayloadFromResult(resultFromResponse(waitForResult))).toMatchObject({
+          matched: true,
+          event: {
+            externalEventKey: `trigger-${runId}`,
+            eventType: "factory.trigger.accepted",
+          },
         })
       }).pipe(
         Effect.provide(smokeLayer(hostEnv)),
