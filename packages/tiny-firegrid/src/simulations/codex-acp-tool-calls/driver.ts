@@ -2,17 +2,7 @@ import {
   Firegrid,
   local,
 } from "@firegrid/client-sdk/firegrid"
-import { Clock, Effect } from "effect"
-
-interface CodexAcpToolCallSimulationResult {
-  readonly sawReady: boolean
-  readonly sawSleepToolUse: boolean
-  // Every ToolUse part.name the real agent surfaced (evidence: answers
-  // "did a real MCP tool-call round-trip happen, and under what name").
-  readonly observedToolNames: ReadonlyArray<string>
-  readonly sawAnyToolUse: boolean
-  readonly resultText: string
-}
+import { Effect } from "effect"
 
 const codexAcpArgv = [
   "npx",
@@ -28,11 +18,7 @@ const promptForToolCall = [
   "Do not call any tool more than once. Do not answer before the call.",
 ].join("\n")
 
-export const codexAcpToolCallDriver: Effect.Effect<
-  CodexAcpToolCallSimulationResult,
-  unknown,
-  Firegrid
-> =
+export const codexAcpToolCallDriver: Effect.Effect<void, unknown, Firegrid> =
   Effect.gen(function*() {
     const firegrid = yield* Firegrid
     const session = yield* firegrid.sessions.createOrLoad({
@@ -60,39 +46,14 @@ export const codexAcpToolCallDriver: Effect.Effect<
     })
     yield* session.start()
 
-    const deadline = (yield* Clock.currentTimeMillis) + 260_000
-    let sawReady = false
-    let sawSleepToolUse = false
-    let resultText = ""
     let afterSequence: number | undefined
-    const observedToolNames = new Set<string>()
-
-    while (
-      !(sawReady && observedToolNames.size > 0 &&
-        resultText.includes("FIREGRID_TOOL_RESULT"))
-    ) {
-      if ((yield* Clock.currentTimeMillis) >= deadline) break
+    while (true) {
       const next = yield* session.wait.forAgentOutput({
         ...(afterSequence === undefined ? {} : { afterSequence }),
         timeoutMs: 15_000,
       })
-      if (!next.matched) continue
-      const observation = next.output
-      afterSequence = observation.sequence
-      const event = observation.event
-      if (event._tag === "Ready") sawReady = true
-      if (event._tag === "ToolUse") {
-        observedToolNames.add(event.part.name)
-        if (event.part.name === "sleep") sawSleepToolUse = true
+      if (next.matched) {
+        afterSequence = next.output.sequence
       }
-      if (event._tag === "TextChunk") resultText += event.part.delta
-    }
-
-    return {
-      sawReady,
-      sawSleepToolUse,
-      observedToolNames: [...observedToolNames].sort(),
-      sawAnyToolUse: observedToolNames.size > 0,
-      resultText,
     }
   })
