@@ -2,20 +2,20 @@
 
 Date: 2026-05-20
 
-Base: current `origin/main` for `codex/tf-2y01-binding-execution-import-guardrails`.
+Base: `6860203b2` for `codex/tf-wtgc-lint-guardrails-error-flip`.
 
 Canonical source: `docs/architecture/host-sdk-runtime-boundary.md`.
 
 ## Rule Posture
 
-This PR adds dependency-cruiser guardrails in report mode (`severity: "warn"`). The warning posture is intentional: lanes B and C still need to move execution substrate below the binding line, so this slice records the debt surface without failing `pnpm run lint:deps`.
+PR #498 added dependency-cruiser guardrails in report mode (`severity: "warn"`). After #508 calibrated the Effect diagnostics gate, `tf-wtgc` flips the scan rules to hard errors.
 
 Existing hard zero package-direction rules remain in place:
 
 - `runtime-no-host-sdk`
 - `client-sdk-no-runtime`
 
-Lane D adds warning-level scan mirrors for those package directions plus host-sdk-specific scan rules for runtime subpath and substrate imports.
+Lane D now enforces hard-error scan mirrors for those package directions plus host-sdk-specific scan rules for runtime subpath and substrate imports.
 
 ## Proposed Sanctioned Runtime Capability Subpaths
 
@@ -40,7 +40,19 @@ Not sanctioned by this first-slice rule:
 - direct imports of runtime implementation files below exported subpath barrels
 - `effect-durable-operators` durable table facades from host-sdk binding modules
 
-This list is a proposal for coordinator/Gurdas confirmation, not a final public API declaration.
+This list remains the sanctioned host-sdk-to-runtime import surface for the hard gate:
+
+- `@firegrid/runtime/errors`
+- `@firegrid/runtime/tool-executor`
+- `@firegrid/runtime/control-plane`
+- `@firegrid/runtime/runtime-output`
+- `@firegrid/runtime/streams`
+- `@firegrid/runtime/events`
+- `@firegrid/runtime/codecs`
+- `@firegrid/runtime/agent-adapters`
+- `@firegrid/runtime/sources/sandbox`
+
+The list is intentionally narrow. Workflow-engine, durable-tools, runtime implementation files below exported barrels, and durable table facades remain outside the sanctioned surface.
 
 ## Baseline Command
 
@@ -48,13 +60,25 @@ This list is a proposal for coordinator/Gurdas confirmation, not a final public 
 pnpm run lint:deps
 ```
 
-Result:
+Initial warning-mode result from PR #498:
 
 ```text
 x 11 dependency violations (0 errors, 11 warnings). 221 modules, 547 dependencies cruised.
 ```
 
-## Current Warning List
+Raw hard-flip result on `6860203b2` before adding current-debt carveouts:
+
+```text
+x 25 dependency violations (25 errors, 0 warnings). 228 modules, 563 dependencies cruised.
+```
+
+Final hard-gate result after explicit current-debt carveouts:
+
+```text
+✔ no dependency violations found (228 modules, 563 dependencies cruised)
+```
+
+## Original Warning List
 
 | Rule | From | To |
 |---|---|---|
@@ -81,13 +105,37 @@ The warnings match the architecture doc's expected debt shape:
 
 The scan mirrors for runtime-to-host-sdk and client-sdk-to-runtime reported zero warnings. The existing hard rules already enforce those directions.
 
-## Error-Gate Flip Plan
+## Current Hard-Gate Carveouts
 
-Flip the new host-sdk scan rules from `warn` to `error` when all of the following are true:
+The raw hard flip showed that Lanes B/C did not fully eliminate all host-sdk substrate imports before this slice. Those violations are not mechanical in scope for `tf-wtgc`; they are the remaining boundary-refactor surface. The hard rules now exclude only these existing debt files, so new host-sdk files and any non-carved-out import sites fail immediately:
 
-1. Lane B has moved the execution arms out of `agent-tools/execution` or replaced the durable-tools import with a sanctioned runtime capability.
-2. Lane C has moved workflow definitions/execution mechanics out of host-sdk or replaced direct workflow-engine imports with sanctioned runtime-owned capability tags.
-3. The durable-tools deletion path has removed `host-owned-durable-tools.ts` and any `@firegrid/runtime/durable-tools` imports.
-4. `pnpm run lint:deps` reports zero warnings for `host-sdk-no-unsanctioned-runtime-subpaths-scan` and `host-sdk-no-workflow-or-durable-substrate-scan`, or every remaining warning has a deliberately documented exception.
+| Carved-out file | Remaining substrate import class |
+|---|---|
+| `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts` | durable-tools predicate helper |
+| `packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts` | workflow definitions |
+| `packages/host-sdk/src/host/control-request-reconciler.ts` | workflow engine and workflow definitions |
+| `packages/host-sdk/src/host/host-owned-durable-tools.ts` | durable-tools layer |
+| `packages/host-sdk/src/host/index.ts` | workflow definitions re-export |
+| `packages/host-sdk/src/host/internal/runtime-context-helpers.ts` | workflow definitions |
+| `packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts` | workflow definitions |
+| `packages/host-sdk/src/host/runtime-context-workflow-core.ts` | workflow definitions |
+| `packages/host-sdk/src/host/runtime-context-workflow-runtime.ts` | workflow engine |
+| `packages/host-sdk/src/host/runtime-ingress-transform.ts` | workflow definitions |
+| `packages/host-sdk/src/host/runtime-input-deferred.ts` | workflow engine |
+| `packages/host-sdk/src/host/session-log-channel.ts` | durable table facade |
 
-After the flip, keep `runtime-no-host-sdk` and `client-sdk-no-runtime` as hard zero package-direction rules. The warning mirrors can then be removed or converted to comments on the existing hard rules.
+The package-direction mirror rules have no carveouts:
+
+- `runtime-no-host-sdk-scan`: hard error, zero current violations.
+- `client-sdk-no-runtime-scan`: hard error, zero current violations.
+
+## Carveout Removal Plan
+
+Remove entries from `currentHostSdkSubstrateDebt` as the owning refactors land:
+
+1. Lane B moves the execution arms out of `agent-tools/execution` or replaces the durable-tools import with a sanctioned runtime capability.
+2. Lane C moves workflow definitions/execution mechanics out of host-sdk or replaces direct workflow-engine/workflow-definition imports with sanctioned runtime-owned capability tags.
+3. The durable-tools deletion path removes `host-owned-durable-tools.ts` and any `@firegrid/runtime/durable-tools` imports.
+4. Channel binding work wraps `session-log-channel.ts` durable table access behind a sanctioned runtime capability or moves that substrate access below the boundary.
+
+After each cleanup, delete the corresponding carveout and re-run `pnpm run lint:deps`. The target end state is an empty `currentHostSdkSubstrateDebt` list with all four scan rules still at `severity: "error"`.

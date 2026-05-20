@@ -15,6 +15,21 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "agent-event-pipeline/sources/sandbox/index\\.ts$",
 ].join("|")
 
+const currentHostSdkSubstrateDebt = [
+  "^packages/host-sdk/src/agent-tools/execution/tool-use-to-effect\\.ts$",
+  "^packages/host-sdk/src/agent-tools/execution/toolkit-layer\\.ts$",
+  "^packages/host-sdk/src/host/control-request-reconciler\\.ts$",
+  "^packages/host-sdk/src/host/host-owned-durable-tools\\.ts$",
+  "^packages/host-sdk/src/host/index\\.ts$",
+  "^packages/host-sdk/src/host/internal/runtime-context-helpers\\.ts$",
+  "^packages/host-sdk/src/host/internal/runtime-context-workflow-run\\.ts$",
+  "^packages/host-sdk/src/host/runtime-context-workflow-core\\.ts$",
+  "^packages/host-sdk/src/host/runtime-context-workflow-runtime\\.ts$",
+  "^packages/host-sdk/src/host/runtime-ingress-transform\\.ts$",
+  "^packages/host-sdk/src/host/runtime-input-deferred\\.ts$",
+  "^packages/host-sdk/src/host/session-log-channel\\.ts$",
+]
+
 module.exports = {
   forbidden: [
     {
@@ -174,20 +189,26 @@ module.exports = {
     },
     {
       name: "host-sdk-no-unsanctioned-runtime-subpaths-scan",
-      severity: "warn",
+      severity: "error",
       comment:
-        "Lane D scan-only guardrail: host-sdk binding/composition modules may import runtime only through sanctioned public capability subpaths. Flip to error after lanes B/C move execution substrate below the binding line.",
-      from: { path: hostSdkBoundaryModules },
+        "Lane D hard guardrail: host-sdk binding/composition modules may import runtime only through sanctioned public capability subpaths. Existing substrate-debt files are carved out explicitly and must be removed as boundary refactors land.",
+      from: {
+        path: hostSdkBoundaryModules,
+        pathNot: currentHostSdkSubstrateDebt,
+      },
       to: {
         path: `^packages/runtime/src/(?!${sanctionedRuntimeCapabilitySubpaths})`,
       },
     },
     {
       name: "host-sdk-no-workflow-or-durable-substrate-scan",
-      severity: "warn",
+      severity: "error",
       comment:
-        "Lane D scan-only guardrail: host-sdk binding modules must not depend on workflow engine substrate, durable-tools, or durable table facades as stable architecture.",
-      from: { path: hostSdkBoundaryModules },
+        "Lane D hard guardrail: host-sdk binding modules must not depend on workflow engine substrate, durable-tools, or durable table facades as stable architecture. Existing substrate-debt files are carved out explicitly.",
+      from: {
+        path: hostSdkBoundaryModules,
+        pathNot: currentHostSdkSubstrateDebt,
+      },
       to: {
         path:
           "(^packages/runtime/src/(?:workflow-engine|durable-tools)(?:/|$)|^packages/effect-durable-operators/src|(^|/)node_modules/(?:\\.pnpm/)?@effect/workflow/)",
@@ -195,7 +216,7 @@ module.exports = {
     },
     {
       name: "runtime-no-host-sdk-scan",
-      severity: "warn",
+      severity: "error",
       comment:
         "Lane D report-mode mirror of the hard package-direction rule: runtime execution modules must not import host-sdk bindings.",
       from: { path: "^packages/runtime/src" },
@@ -203,7 +224,7 @@ module.exports = {
     },
     {
       name: "client-sdk-no-runtime-scan",
-      severity: "warn",
+      severity: "error",
       comment:
         "Lane D report-mode mirror of the hard package-direction rule: client-sdk must remain runtime-source-free.",
       from: { path: "^packages/client-sdk/src" },
