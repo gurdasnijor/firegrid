@@ -6,6 +6,7 @@
 
 import { Effect, JSONSchema, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import { getFiregridProjectionMetadata } from "../../src/projection/schema.ts"
 import {
   ApprovalCallOutputSchema,
   ApprovalCallRequestSchema,
@@ -14,7 +15,6 @@ import {
   ExecuteToolInputSchema,
   ExecuteToolOutputSchema,
   FiregridAgentToolOperations,
-  getFiregridProjectionMetadata,
   PermissionRespondInputSchema,
   PermissionRespondOutputSchema,
   SandboxRefSchema,

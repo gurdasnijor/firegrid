@@ -5,7 +5,7 @@ import {
   PermissionRespondInputSchema,
   SessionPromptToolInputSchema,
 } from "../../src/agent-tools/schema.ts"
-import { getFiregridProjectionMetadata } from "../../src/operations/schema.ts"
+import { getFiregridProjectionMetadata } from "../../src/projection/schema.ts"
 import { FiregridClientOperations } from "../../src/session-facade/operations.ts"
 import {
   RuntimePermissionRequestObservationSchema,
