@@ -1,49 +1,23 @@
 import {
   ContextNotLocal,
   type HostSessionRow,
-  type RuntimeContext,
 } from "@firegrid/protocol/launch"
-import { Clock, Effect, Option } from "effect"
+import { Clock, Effect } from "effect"
 import {
   RuntimeContextRead,
   type RuntimeContextReadService,
 } from "@firegrid/runtime/control-plane"
 import {
-  asRuntimeContextError,
-  mapRuntimeContextError,
-} from "@firegrid/runtime/errors"
-import type { RuntimeContextError } from "@firegrid/runtime/errors"
+  readRuntimeContext,
+} from "@firegrid/runtime/workflows"
 
-// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5
-export const runtimeContextWorkflowExecutionId = (contextId: string) =>
-  `runtime-context:${contextId}`
+export {
+  readRuntimeContext,
+  runtimeContextWorkflowExecutionId,
+} from "@firegrid/runtime/workflows"
 
 // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5
 export const runtimeExecutionClock = Clock.make()
-
-// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5
-export const readRuntimeContext = (
-  contextId: string,
-): Effect.Effect<RuntimeContext, RuntimeContextError, RuntimeContextRead> =>
-  Effect.gen(function* () {
-    const contextRead = yield* RuntimeContextRead
-    const maybeContext = yield* contextRead.readContext(contextId).pipe(
-      mapRuntimeContextError(
-        "runtime-control-plane.contexts.get",
-        "failed to read runtime context row",
-        contextId,
-      ),
-    )
-    return yield* Option.match(maybeContext, {
-      onNone: () =>
-        Effect.fail(asRuntimeContextError(
-          "runtime-control-plane.contexts.get",
-          `runtime context not found: ${contextId}`,
-          contextId,
-        )),
-      onSome: row => Effect.succeed(row),
-    })
-  })
 
 const readRuntimeContextWithHostSession = (
   contextRead: RuntimeContextReadService,
