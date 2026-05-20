@@ -6,6 +6,10 @@ export {
   RuntimeAgentToolExecution,
   type RuntimeAgentToolExecutionError,
   type RuntimeAgentToolExecutionService,
+  type RuntimeCallToolExecutionParams,
+  type RuntimeSendToolExecutionParams,
   type RuntimeToolExecutionContext,
+  type RuntimeWaitForAnyDescriptorExecution,
+  type RuntimeWaitForAnyToolExecutionParams,
   type RuntimeWaitForToolExecutionParams,
 } from "./runtime-agent-tool-execution.ts"

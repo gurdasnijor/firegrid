@@ -414,9 +414,14 @@ const waitForIngressChannel = <S extends Schema.Schema.Any>(
   )
 
 const runSendTool = (
+  ctx: ToolLoweringContext,
   toolUseId: string,
   input: SendToolInput,
-): Effect.Effect<SendToolOutput, ToolError, ChannelInventory> =>
+): Effect.Effect<
+  SendToolOutput,
+  ToolError,
+  RuntimeAgentToolExecution | ChannelInventory
+> =>
   Effect.gen(function* () {
     const channel = (yield* requireChannelDirection(
       toolUseId,
@@ -430,18 +435,27 @@ const runSendTool = (
       channel.schema,
       input.payload,
     )
-    // firegrid-agent-body-plan.SLICE_D_VERBS.2
-    // firegrid-agent-body-plan.SLICE_BOUNDARY.4
-    yield* appendEgressPayload(channel, payload).pipe(
-      Effect.mapError(cause => toolExecutionFailed(toolUseId, "send", cause)),
+    const execution = yield* RuntimeAgentToolExecution
+    return yield* execution.send({
+      contextId: ctx.contextId,
+      toolUseId,
+      input,
+      append: appendEgressPayload(channel, payload),
+    }).pipe(
+      Effect.mapError(error =>
+        runtimeAgentToolExecutionErrorToToolError(toolUseId, "send", error)),
     )
-    return { sent: true, channel: input.channel }
   })
 
 const runRegisteredCallChannel = (
+  ctx: ToolLoweringContext,
   toolUseId: string,
   input: CallToolInput,
-): Effect.Effect<CallToolOutput, ToolError, ChannelInventory> =>
+): Effect.Effect<
+  CallToolOutput,
+  ToolError,
+  RuntimeAgentToolExecution | ChannelInventory
+> =>
   Effect.gen(function* () {
     const channel = (yield* requireChannelDirection(
       toolUseId,
@@ -458,10 +472,15 @@ const runRegisteredCallChannel = (
       channel.requestSchema,
       input.request,
     )
-    // firegrid-agent-body-plan.SLICE_D_VERBS.3
-    // firegrid-agent-body-plan.SLICE_BOUNDARY.4
-    return yield* callCallableChannel(channel, request).pipe(
-      Effect.mapError(cause => toolExecutionFailed(toolUseId, "call", cause)),
+    const execution = yield* RuntimeAgentToolExecution
+    return yield* execution.call({
+      contextId: ctx.contextId,
+      toolUseId,
+      input,
+      call: callCallableChannel(channel, request),
+    }).pipe(
+      Effect.mapError(error =>
+        runtimeAgentToolExecutionErrorToToolError(toolUseId, "call", error)),
     )
   })
 
@@ -470,7 +489,11 @@ const waitForAnyDescriptorToEffect = (
   descriptor: WaitForAnyDescriptor,
   winnerIndex: number,
 ): Effect.Effect<
-  WaitForAnyToolOutput,
+  {
+    readonly winnerIndex: number
+    readonly channel: string
+    readonly wait: Effect.Effect<unknown, unknown, never>
+  },
   ToolError,
   ChannelInventory
 > =>
@@ -491,37 +514,45 @@ const waitForAnyDescriptorToEffect = (
           `wait_for_any match values must be string, number, or boolean (got non-scalar: ${describeTriggerFailures(adapted.failures)})`,
       })
     }
-    const result = yield* waitForIngressChannel(channel, adapted.trigger).pipe(
-      Effect.mapError(cause =>
-        toolExecutionFailed(toolUseId, "wait_for_any", cause)),
-    )
     return {
       winnerIndex,
       channel: descriptor.channel,
-      result,
+      wait: waitForIngressChannel(channel, adapted.trigger),
     }
   })
 
 const runWaitForAnyTool = (
+  ctx: ToolLoweringContext,
   toolUseId: string,
   input: WaitForAnyToolInput,
-): Effect.Effect<WaitForAnyToolOutput, ToolError, ChannelInventory> => {
+): Effect.Effect<
+  WaitForAnyToolOutput,
+  ToolError,
+  RuntimeAgentToolExecution | ChannelInventory
+> =>
   // firegrid-agent-body-plan.SLICE_D_VERBS.4
   // firegrid-agent-body-plan.SLICE_BOUNDARY.4
-  const raced = Effect.raceAll(
-    input.channels.map((descriptor, index) =>
-      waitForAnyDescriptorToEffect(toolUseId, descriptor, index),
-    ),
-  )
-  if (input.timeoutMs === undefined) return raced
-  return raced.pipe(
-    Effect.timeoutTo({
-      duration: Duration.millis(input.timeoutMs),
-      onSuccess: output => output,
-      onTimeout: (): WaitForAnyToolOutput => ({ timedOut: true }),
-    }),
-  )
-}
+  Effect.gen(function*() {
+    const waits = yield* Effect.all(
+      input.channels.map((descriptor, index) =>
+        waitForAnyDescriptorToEffect(toolUseId, descriptor, index),
+      ),
+    )
+    const execution = yield* RuntimeAgentToolExecution
+    return yield* execution.waitForAny({
+      contextId: ctx.contextId,
+      toolUseId,
+      input,
+      waits,
+    }).pipe(
+      Effect.mapError(error =>
+        runtimeAgentToolExecutionErrorToToolError(
+          toolUseId,
+          "wait_for_any",
+          error,
+        )),
+      )
+  })
 
 const runSpawnTool = (
   ctx: ToolLoweringContext,
@@ -753,7 +784,11 @@ const runCallTool = (
   ctx: ToolLoweringContext,
   toolUseId: string,
   input: CallToolInput,
-): Effect.Effect<CallToolOutput, ToolError, AgentToolHost | ChannelInventory> =>
+): Effect.Effect<
+  CallToolOutput,
+  ToolError,
+  AgentToolHost | ChannelInventory | RuntimeAgentToolExecution
+> =>
   Effect.gen(function* () {
     if (input.channel.startsWith("approval.")) {
       const request = yield* Schema.decodeUnknown(ApprovalCallRequestSchema)(
@@ -782,7 +817,7 @@ const runCallTool = (
           registered.right.direction,
         ))
       }
-      return yield* runRegisteredCallChannel(toolUseId, input)
+      return yield* runRegisteredCallChannel(ctx, toolUseId, input)
     }
     // firegrid-agent-body-plan.APPROVAL_CALL.4
     return yield* Effect.fail({
@@ -896,14 +931,14 @@ export const toolUseToEffect = (
       )
     case "send":
       return dispatchTool(event, "send", SendToolInputSchema, (input) =>
-        runSendTool(event.part.id, input),
+        runSendTool(ctx, event.part.id, input),
       )
     case "wait_for_any":
       return dispatchTool(
         event,
         "wait_for_any",
         WaitForAnyToolInputSchema,
-        (input) => runWaitForAnyTool(event.part.id, input),
+        (input) => runWaitForAnyTool(ctx, event.part.id, input),
       )
     case "spawn":
       return dispatchTool(event, "spawn", SpawnToolInputSchema, (input) =>
