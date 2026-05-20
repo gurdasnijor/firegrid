@@ -43,6 +43,7 @@ import {
 } from "../../src/host/runtime-context-workflow-core.ts"
 import { WorkflowEngine } from "@effect/workflow"
 import {
+  appendRuntimeInputDeferred,
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
 } from "@firegrid/runtime/workflow-engine"
@@ -56,9 +57,6 @@ import { RuntimeHostConfig } from "../../src/host/config.ts"
 import {
   PerContextRuntimeOutputWriter,
 } from "../../src/host/per-context-runtime-output.ts"
-import {
-  appendRuntimeInputDeferred,
-} from "../../src/host/runtime-input-deferred.ts"
 import { executeRuntimeContextWorkflow } from "../../src/host/internal/run-context-workflow.ts"
 import { runtimeContextWorkflowExecutionId } from "../../src/host/internal/runtime-context-helpers.ts"
 

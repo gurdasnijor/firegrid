@@ -7,18 +7,22 @@ import {
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import type { RowOtelContext } from "@firegrid/protocol/otel"
-import {
-  WorkflowEngineTable,
-} from "@firegrid/runtime/workflow-engine"
 import { Cause, Clock, Effect, Either, Exit, Match, Schema } from "effect"
 import {
+  runtimeIngressError,
+  type RuntimeIngressError,
+} from "../runtime-errors.ts"
+import {
+  WorkflowEngineTable,
+} from "./DurableStreamsWorkflowEngine.ts"
+import {
   runtimeContextWorkflowExecutionId,
-} from "./internal/runtime-context-helpers.ts"
+} from "./workflows/runtime-context-run.ts"
 import {
   RuntimeContextWorkflowNative,
   runtimeInputDeferredFor,
   runtimeInputDeferredName,
-} from "./runtime-context-workflow-core.ts"
+} from "./workflows/runtime-context.ts"
 
 const workflowEngineTable: Effect.Effect<
   WorkflowEngineTable["Type"],
@@ -96,19 +100,22 @@ export const appendRuntimeInputDeferred = (
   intentOtel?: RowOtelContext,
 ): Effect.Effect<
   RuntimeIngressInputRow,
-  Error,
+  RuntimeIngressError,
   WorkflowEngine.WorkflowEngine | WorkflowEngineTable
 > => {
   const append: Effect.Effect<
     RuntimeIngressInputRow,
-    Error,
+    RuntimeIngressError,
     WorkflowEngine.WorkflowEngine | WorkflowEngineTable
   > = Effect.gen(function*() {
     const pending = makeRuntimeIngressInputRow(request)
     if (pending.contextId !== context.contextId) {
-      return yield* Effect.fail(new Error(
+      return yield* runtimeIngressError(
+        "runtime-input-deferred.append",
         `runtime ingress context mismatch: expected ${context.contextId}, got ${pending.contextId}`,
-      ))
+        context.contextId,
+        pending.inputId,
+      )
     }
 
     const table = yield* workflowEngineTable
@@ -145,9 +152,13 @@ export const appendRuntimeInputDeferred = (
     return sequenced
   }).pipe(
     Effect.mapError(cause =>
-      cause instanceof Error
-        ? cause
-        : new Error("failed appending runtime input deferred", { cause })),
+      runtimeIngressError(
+        "runtime-input-deferred.append",
+        "failed appending runtime input deferred",
+        context.contextId,
+        request.inputId,
+        cause,
+      )),
     Effect.withSpan("firegrid.host.runtime_input.deferred.append", {
       kind: "internal",
       attributes: {

@@ -1,4 +1,7 @@
 export {
+  appendRuntimeInputDeferred,
+} from "./runtime-input-deferred.ts"
+export {
   DurableStreamsWorkflowEngine,
   make,
   type WorkflowActivityClaimRow,
