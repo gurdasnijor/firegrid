@@ -82,6 +82,7 @@
         "src/simulations/to-be-migrated/**/*.ts"
       ],
       "ignoreDependencies": [
+        "@firegrid/runtime",
         "effect-durable-operators"
       ]
     },
