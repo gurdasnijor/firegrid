@@ -256,3 +256,21 @@ Normal gate after removing the barrel carveout:
 ```text
 ✔ no dependency violations found (219 modules, 531 dependencies cruised)
 ```
+
+## tf-ygz3 Shim Retirement Iteration 4
+
+Date: 2026-05-20
+
+Base: current `origin/main` for `codex/tf-ygz3-shim-retirement-iteration-4`.
+
+Result: no carveouts removed. The list remains 8 files.
+
+Why no ratchet: only `packages/host-sdk/src/host/runtime-context-workflow-core.ts` is a pure compatibility shim, and it still has active production, test, and tiny-firegrid simulation consumers. The other seven carveouts are implementation modules or channel bindings that actively import workflow engine, workflow definitions, or durable table substrate.
+
+No-carveout probe:
+
+```text
+x 17 dependency violations (17 errors, 0 warnings). 219 modules, 531 dependencies cruised.
+```
+
+Recommended next slice: migrate `runtime-context-workflow-core.ts` consumers to `@firegrid/runtime/workflows`, delete the shim, and remove that carveout.
