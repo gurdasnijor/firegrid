@@ -141,18 +141,53 @@ All engine extension primitives must satisfy this contract:
 
 Concrete constraints:
 
-- Predicates are schema-defined data, not arbitrary JavaScript functions.
-  Examples: `{ fieldEquals }`, `{ schemaMatch }`, or another small union the
-  engine owns and can index.
+- `streamWait` accepts `Predicate<Row>` from `effect/Predicate`, not a
+  replacement DSL. The public surface should compose with Effect's existing
+  vocabulary: `Predicate.and`, `Predicate.or`, `Predicate.struct`,
+  `Predicate.tuple`, `Predicate.compose`, `Predicate.implies`, and refinement
+  narrowing.
+- Predicates must be deterministic functions of the row input. They must not
+  read wall-clock time, random values, process-local refs, mutable closure
+  state, or perform I/O.
 - Timeouts are persisted as absolute deadlines, not relative durations
   recomputed on replay.
-- Predicate evaluation reads durable row fields only. It must not read
-  wall-clock time, random values, process-local refs, or non-durable state.
-- Source offsets / "from now" semantics are explicit fields in the source or
-  predicate descriptor.
+- Predicate evaluation should read durable row fields only. If a predicate
+  needs workflow-body in-memory state, that value must first be fixed into the
+  workflow's durable call payload.
+- Source offsets / "from now" semantics are explicit fields in the source
+  descriptor or durable call payload.
 
 Workflow behavior that cannot satisfy this contract is not an engine extension.
 It should remain a workflow body composed over deterministic extensions.
+
+### Predicate Optimization Hints
+
+The engine can still optimize hot predicates without replacing Effect's
+predicate surface. Add optional factory helpers under a Firegrid-owned module:
+
+```ts
+import { Predicate } from "effect"
+
+const predicate = Predicate.and(
+  StreamPredicates.fieldEquals("scenario", "factory.events"),
+  StreamPredicates.fieldEquals("eventType", "plan.ready"),
+)
+```
+
+The helper returns an ordinary `Predicate<Row>` and attaches engine-readable
+metadata via a symbol. The engine may inspect that metadata to use an indexed
+scan. If no metadata is present, it falls back to row-by-row predicate
+evaluation.
+
+This keeps optimization additive:
+
+- bare Effect predicates work;
+- optimized factory predicates work better on hot paths;
+- no user-facing schema DSL is required for baseline correctness.
+
+Process note: before inventing a Firegrid-specific DSL, first check the vendored
+Effect primitives under `repos/effect/packages/effect/src/`. `Predicate`,
+`Schema`, `Match`, and `Order` already cover many "small DSL" instincts.
 
 ## Extension Surface Shape
 
@@ -211,7 +246,7 @@ Concept:
 yield* FiregridWorkflowEngineExtensions.streamWait({
   name,
   source,
-  predicate, // schema-defined data, not a function
+  predicate, // Predicate<Row>
   deadline,
   success,
 })
