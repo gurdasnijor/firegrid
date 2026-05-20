@@ -530,7 +530,7 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
     const streams = makeStreams("call")
     let observed: CallRequest | undefined
     const channel = makeCallableChannel({
-      target: "approval.operator",
+      target: "operator.call",
       requestSchema: CallRequestSchema,
       responseSchema: CallResponseSchema,
       call: request =>
@@ -545,7 +545,7 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-call",
           event: toolUse("tool-call", "call", {
-            channel: "approval.operator",
+            channel: "operator.call",
             request: { prompt: "approve" },
           }),
         })
@@ -1053,5 +1053,73 @@ describe("toolUseToEffect — failure semantics", () => {
     expect(resultContent(result)).toMatchObject({
       error: { _tag: "ToolExecutionFailed", name: "execute" },
     })
+  })
+})
+
+describe("toolUseToEffect — tf-e1g8 approval registration precedence", () => {
+  it("firegrid-agent-body-plan.APPROVAL_CALL.4 keeps approval.* on AgentToolHost even when the channel is registered", async () => {
+    const streams = makeStreams("call-approval-registered")
+    let registeredCalled = false
+    let hostCalled = false
+    const registeredApproval = makeCallableChannel({
+      target: "approval.operator",
+      requestSchema: CallRequestSchema,
+      responseSchema: CallResponseSchema,
+      call: () =>
+        Effect.sync(() => {
+          registeredCalled = true
+          return { approved: false }
+        }),
+    })
+    const host = fakeHost({
+      callApprovalChannel: ({ contextId, channel, request }) =>
+        Effect.sync(() => {
+          hostCalled = true
+          return {
+            matched: true,
+            request: {
+              contextId,
+              activityAttempt: 1,
+              sequence: 4,
+              permissionRequestId: "permission-registered",
+              toolUseId: "tool-needing-permission",
+              options: [],
+            },
+            response: {
+              responded: true,
+              contextId,
+              permissionRequestId: "permission-registered",
+              inputId: `${channel}:${request.decision._tag}`,
+            },
+          } as const
+        }),
+    })
+    const result = await runWith(
+      buildLayer(
+        streams,
+        AgentToolHost.layer(host),
+        [registeredApproval],
+      ),
+      RunToolWorkflow.execute({
+        contextId: "ctx-call-registered",
+        event: toolUse("tool-call-registered", "call", {
+          channel: "approval.operator",
+          request: {
+            decision: { _tag: "Allow", optionId: "allow_once" },
+          },
+        }),
+      }),
+    )
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toMatchObject({
+      matched: true,
+      response: {
+        contextId: "ctx-call-registered",
+        permissionRequestId: "permission-registered",
+        inputId: "approval.operator:Allow",
+      },
+    })
+    expect(hostCalled).toBe(true)
+    expect(registeredCalled).toBe(false)
   })
 })

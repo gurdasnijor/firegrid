@@ -761,6 +761,22 @@ const runCallTool = (
   input: CallToolInput,
 ): Effect.Effect<CallToolOutput, ToolError, AgentToolHost | ChannelInventory> =>
   Effect.gen(function* () {
+    if (input.channel.startsWith("approval.")) {
+      const request = yield* Schema.decodeUnknown(ApprovalCallRequestSchema)(
+        input.request,
+      ).pipe(
+        Effect.mapError(cause =>
+          toolInvalidInputFromParseError(toolUseId, "call", cause)),
+      )
+      const host = yield* AgentToolHost
+      return yield* host.callApprovalChannel({
+        toolUseId,
+        contextId: ctx.contextId,
+        channel: input.channel,
+        request,
+      })
+    }
+
     const registered = yield* Effect.either(channelDispatch(input.channel))
     if (registered._tag === "Right") {
       if (registered.right.direction !== "call") {
@@ -774,28 +790,13 @@ const runCallTool = (
       }
       return yield* runRegisteredCallChannel(toolUseId, input)
     }
-    const host = yield* AgentToolHost
     // firegrid-agent-body-plan.APPROVAL_CALL.4
-    if (!input.channel.startsWith("approval.")) {
-      return yield* Effect.fail({
-        _tag: "ToolInvalidInput" as const,
-        toolUseId,
-        name: "call",
-        reason:
-          "call requires a registered call channel or an approval.* fallback channel.",
-      })
-    }
-    const request = yield* Schema.decodeUnknown(ApprovalCallRequestSchema)(
-      input.request,
-    ).pipe(
-      Effect.mapError(cause =>
-        toolInvalidInputFromParseError(toolUseId, "call", cause)),
-    )
-    return yield* host.callApprovalChannel({
+    return yield* Effect.fail({
+      _tag: "ToolInvalidInput" as const,
       toolUseId,
-      contextId: ctx.contextId,
-      channel: input.channel,
-      request,
+      name: "call",
+      reason:
+        "call requires a registered call channel or an approval.* fallback channel.",
     })
   })
 
