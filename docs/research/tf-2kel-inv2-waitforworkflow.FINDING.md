@@ -28,6 +28,19 @@ The recommendation for the production cutover at
 `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts:runWaitForTool`
 is the layer-composition shape.
 
+**Cross-finding integration (PR #457 merged 2026-05-20 a445f70c — INV-3
+verdict REPLAY-WORKS).** INV-2's design validation here + INV-3's
+durability validation together close the SDD One-Substrate question
+end-to-end: the engine handles the racing match/timeout shape natively
+(INV-2), AND that shape's durability across worker bounce holds
+empirically (INV-3, 345-span trace, with the in-process-scoped-bounce
+bound documented). The production cutover at `tool-use-to-effect.ts`
+can retire the wait-router substrate in the same transaction it swaps
+`WaitFor.match → engine.execute(WaitForWorkflow, ...)`; see the
+"Recommendation for the SDD production cutover" section below for the
+concrete file/line changes and the residual-risk note carried forward
+from INV-3's documented bound.
+
 | Sim folder                                                                       | R-discharge shape         | Live run id                                          |
 |---|---|---|
 | `packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/`                   | capture-and-re-provide    | `2026-05-20T06-58-42-986Z__inv2-waitforworkflow`         |
@@ -418,6 +431,24 @@ The production tool-use-to-effect.ts cutover should:
   drop `ToolCallWorkflowLayer` entirely if the SDD's One-Substrate
   conclusion is that the wrapper workflow becomes unnecessary once
   `wait_for` dispatches a real nested workflow.
+- **Retire the wait-router substrate in the SAME transaction.**
+  INV-3 has now landed (see "Restart-replay durability" below); the
+  REPLAY-WORKS verdict closes the durability gap that previously
+  gated this. The wait-router (`packages/runtime/src/durable-tools/
+  internal/wait-router.ts`), the durable-wait-store, and the
+  registration-replay machinery (`startRouter`, the
+  `HostOwnedDurableToolsWaitForLive` layer chain in
+  `packages/host-sdk/src/host/host-owned-durable-tools.ts`) have no
+  remaining non-redundant role on the `wait_for` path once
+  `engine.execute(WaitForWorkflow, ...)` is doing the work — the
+  engine's own `WorkflowExecutionRow` / `WorkflowActivityRow` /
+  `WorkflowDeferredRow` / `WorkflowClockWakeupRow` tables are the
+  durable artifact, and `engine.resume` on restart re-attaches the
+  execution against those tables (which is exactly what INV-3
+  exercised with a 345-span trace across in-process scoped-host-bounce).
+  The one residual-risk note for that retirement is the documented
+  INV-3 bound — see below — which is not blocking for the cutover
+  but should be acknowledged in its PR description.
 
 The capture-and-re-provide shape (Shape 1) remains a valid local
 fallback for ad-hoc test harnesses and one-off sims; the sibling
@@ -442,19 +473,42 @@ worth following in production.
    semantics — no `clock.fire` span for either timeout, exactly what a
    match-side win should produce.
 
-## What this does NOT prove (out of scope, owned by other INVs)
+## What this does NOT prove (in this sim)
 
-- **Restart-replay durability** (`source` replay across worker death,
-  Activity attempt-reclaim semantics on the same execution). That is
-  INV-3 / `tf-r5e3` and explicitly out of scope here. The seam used in
-  this sim (a single sim-local engine, never restarted, fact rows
-  pre-seeded before the agent calls `wait_for`) is the simplest possible
-  shape; INV-3 will exercise the durability story.
-- **`SourceAsOffset` payload `executionId`-deterministic offset semantics**
-  — also INV-3.
+- **Restart-replay durability** is not exercised by THIS sim — the
+  INV-2 seam is a single sim-local engine, never restarted, fact rows
+  pre-seeded before the agent calls `wait_for`. That is by design;
+  durability is INV-3's scope.
+
+  → **INV-3 has landed and the verdict is REPLAY-WORKS.** See
+  `docs/research/tf-r5e3-inv3-waitforworkflow-restart-replay.FINDING.md`
+  (PR #457, merged a445f70c, 2026-05-20). Self-contained
+  `inv3-restart-replay` sim, 345-span trace evidence across in-process
+  scoped-host-bounce: already-written replay returns the same value,
+  live-after-restart resubscribes for next match, timeout deadline
+  preserved across restart. All 4 OLA acceptance criteria met.
+
+  **Documented bound** (carried forward into the cutover risk
+  register): stock tiny-firegrid runner has no OS process-kill /
+  restart API, so the sim closes/rebuilds scoped host generations
+  against the same Durable Streams URLs (the `env.stopSignal` route
+  from OLA's acceptance spec). REPLAY-WORKS is established
+  empirically for in-process scoped-bounce; OS-level process-kill
+  bounce remains an unexercised-but-not-disproven case. The engine's
+  durable artifacts (workflow execution / activity / deferred / clock
+  tables in Durable Streams) are the same in either bounce mode, so
+  the gap is a runner-shape gap, not an engine-shape gap.
+
+- **`SourceAsOffset` payload `executionId`-deterministic offset
+  semantics** — also covered by INV-3 (see PR #457 FINDING for the
+  source-position determinism evidence).
+
 - **Production replacement of `WaitFor.match`**. INV-2 is a design
   validation, not a swap. The production wait-router is left untouched
-  by this sim; promoting this shape to production is a separate decision.
+  by this sim; promoting this shape to production is a separate PR
+  whose scope is now clear (see §"Recommendation for the SDD
+  production cutover" above, including the wait-router-retirement
+  bullet point that INV-3's REPLAY-WORKS verdict unlocks).
 
 ## Reproduction
 
