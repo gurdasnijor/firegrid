@@ -23,10 +23,11 @@ import { Cause, Clock, Context, Duration, Effect, Layer, Option, Schema, Stream,
 import { withRowOtelParent } from "@firegrid/protocol/otel"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { startRuntime } from "./commands.ts"
-import { RuntimeContextEngineRegistry } from "./runtime-context-engine-registry.ts"
+import { RuntimeContextWorkflowRuntime } from "./runtime-context-workflow-runtime.ts"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 import { PerContextRuntimeOutputWriter } from "./per-context-runtime-output.ts"
 import { RuntimeHostConfig } from "./config.ts"
+import type { ChannelRegistry } from "./channel-registry.ts"
 
 const runtimeControlPlaneTable: Effect.Effect<
   RuntimeControlPlaneTable["Type"],
@@ -72,7 +73,7 @@ type ResolvedRuntimeControlRequestReconcilerOptions = {
 
 // TFIND-045: `reconcileStartRequest` calls `startRuntime()`, which
 // transitively requires `RuntimeOutputTable` and
-// `HostRuntimeContextExecutionEnv` via `RuntimeContextEngineRegistry`.
+// `HostRuntimeContextExecutionEnv` via RuntimeContextWorkflowRuntime.
 // Before TFIND-005's curry, `RuntimeOutputTable`'s tag identity was
 // `any`, so it was mutually assignable with `RuntimeControlPlaneTable`
 // (Crux-B false equivalence) and these two were silently discharged —
@@ -85,7 +86,8 @@ type ResolvedRuntimeControlRequestReconcilerOptions = {
 type RuntimeControlRequestReconcilerEnvironment =
   | CurrentHostSession
   | RuntimeControlPlaneTable
-  | RuntimeContextEngineRegistry
+  | RuntimeContextWorkflowRuntime
+  | ChannelRegistry
   | PerContextRuntimeOutputWriter
   | AgentToolHost
   | RuntimeOutputTable
@@ -283,7 +285,8 @@ export const runtimeControlRequestWorkflowStreamUrl = (input: {
 type RuntimeControlRequestWorkflowExecutionEnv =
   | CurrentHostSession
   | RuntimeControlPlaneTable
-  | RuntimeContextEngineRegistry
+  | RuntimeContextWorkflowRuntime
+  | ChannelRegistry
   | PerContextRuntimeOutputWriter
   | AgentToolHost
   | RuntimeOutputTable
@@ -433,7 +436,8 @@ const runStartRequestSideEffect = (
   unknown,
   | CurrentHostSession
   | RuntimeControlPlaneTable
-  | RuntimeContextEngineRegistry
+  | RuntimeContextWorkflowRuntime
+  | ChannelRegistry
   | AgentToolHost
   | RuntimeOutputTable
   | HostRuntimeContextExecutionEnv
@@ -544,7 +548,8 @@ const runLifecycleRequestSideEffect = (
   unknown,
   | CurrentHostSession
   | RuntimeControlPlaneTable
-  | RuntimeContextEngineRegistry
+  | RuntimeContextWorkflowRuntime
+  | ChannelRegistry
   | PerContextRuntimeOutputWriter
 > =>
   Effect.gen(function*() {
@@ -553,8 +558,8 @@ const runLifecycleRequestSideEffect = (
     const context = yield* localContextForRequest(request)
     if (Option.isNone(context)) return
     const session = yield* currentHostSession
-    const registry = yield* RuntimeContextEngineRegistry
-    yield* registry.deregister(request.contextId)
+    const runtime = yield* RuntimeContextWorkflowRuntime
+    yield* runtime.deregister(request.contextId)
     const completedAtMs = yield* Clock.currentTimeMillis
     yield* writeCompletion(kind, request, {
       status: "succeeded",

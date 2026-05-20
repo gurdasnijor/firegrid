@@ -1,6 +1,6 @@
-import { WorkflowEngine } from "@effect/workflow"
+import type { WorkflowEngine } from "@effect/workflow"
 import { Layer } from "effect"
-import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
+import type { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -10,9 +10,10 @@ import {
 } from "./runtime-context-workflow-core.ts"
 import {
   HostRuntimeObservationSubstrateLive,
+  type HostRuntimeContextExecutionEnv,
   RuntimeToolUseExecutorLive,
 } from "./runtime-substrate.ts"
-import type { ActiveRuntimeContextEngine } from "./runtime-context-engine-registry.ts"
+import type { ChannelRegistry } from "./channel-registry.ts"
 
 // TFIND-031 (Option Y, layer-composition-order fix): BOTH the workflow
 // body (`RuntimeContextWorkflowNativeLayer`) and the tool executor
@@ -31,9 +32,17 @@ import type { ActiveRuntimeContextEngine } from "./runtime-context-engine-regist
 // so Effect Layer memoization builds it exactly once; recorder and waker
 // cannot diverge. The public host contract is unchanged.
 export const runtimeContextWorkflowSupportLayer = (
-  handle: ActiveRuntimeContextEngine,
+  contextId: string,
   agentToolHost: AgentToolHostService,
-) =>
+): Layer.Layer<
+  never,
+  unknown,
+  | HostRuntimeContextExecutionEnv
+  | ChannelRegistry
+  | WorkflowEngine.WorkflowEngine
+  | WorkflowEngineTable
+> =>
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer still leaks any through substrate layers; the declared Layer R channel is the intended capability boundary.
   RuntimeContextWorkflowNativeLayer.pipe(
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
     Layer.provideMerge(
@@ -41,13 +50,11 @@ export const runtimeContextWorkflowSupportLayer = (
         Layer.provide(HostRuntimeObservationSubstrateLive),
       ),
     ),
-    Layer.provideMerge(Layer.succeed(WorkflowEngine.WorkflowEngine, handle.engine)),
-    Layer.provideMerge(Layer.succeed(WorkflowEngineTable, handle.table)),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
     Layer.withSpan("firegrid.host.runtime_context.workflow_support.layer", {
       kind: "internal",
       attributes: {
-        "firegrid.context.id": handle.context.contextId,
+        "firegrid.context.id": contextId,
       },
     }),
   )

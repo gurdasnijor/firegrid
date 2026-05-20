@@ -168,7 +168,7 @@ const FiregridMcpRouteContextLayer = Layer.effect(
  *   - `NodeHttpServer.layer(createServer, { port, host })` — loopback
  *     binder
  *
- * Caller must provide the host runtime layer that owns per-context engines.
+ * Caller must provide the host runtime layer that owns RuntimeContext executions.
  */
 // firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1
 //

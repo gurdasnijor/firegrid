@@ -18,9 +18,9 @@ import {
   type ChannelRegistration,
 } from "../../channel-registry.ts"
 import {
-  RuntimeContextEngineRegistry,
-  type ActiveRuntimeContextEngine,
-} from "../../runtime-context-engine-registry.ts"
+  RuntimeContextCheckpointSource,
+  type RuntimeContextWorkflowCheckpointHandle,
+} from "../../runtime-context-workflow-runtime.ts"
 
 export const SessionSelfLifecycleChannelTarget = makeChannelTarget("session.self.lifecycle")
 export const SessionSelfCheckpointChannelTarget = makeChannelTarget("session.self.checkpoint")
@@ -147,10 +147,11 @@ const clockWakeupCheckpoint = (
 })
 
 const checkpointsForEngine = (
-  handle: ActiveRuntimeContextEngine,
+  handle: RuntimeContextWorkflowCheckpointHandle,
 ): Effect.Effect<ReadonlyArray<SessionSelfCheckpointEvent>, unknown> =>
   Effect.gen(function* () {
-    const executionRows = yield* handle.table.executions.query(coll => coll.toArray)
+    const executionRows = yield* handle.table.executions.query(coll =>
+      coll.toArray.filter(row => row.executionId === handle.executionId))
     const workflowNames = new Map(
       executionRows.map(row => [row.executionId, row.workflowName] as const),
     )
@@ -159,19 +160,25 @@ const checkpointsForEngine = (
     )
     const [activities, deferreds, clockWakeups] = yield* Effect.all([
       handle.table.activities.query(coll =>
-        coll.toArray.map(row =>
-          activityCheckpoint(
-            handle.context.contextId,
-            row,
-            workflowNames.get(row.executionId) ?? "unknown",
+        coll.toArray
+          .filter(row => row.executionId === handle.executionId)
+          .map(row =>
+            activityCheckpoint(
+              handle.context.contextId,
+              row,
+              workflowNames.get(row.executionId) ?? "unknown",
+            ),
           ),
-        ),
       ),
       handle.table.deferreds.query(coll =>
-        coll.toArray.map(row => deferredCheckpoint(handle.context.contextId, row)),
+        coll.toArray
+          .filter(row => row.executionId === handle.executionId)
+          .map(row => deferredCheckpoint(handle.context.contextId, row)),
       ),
       handle.table.clockWakeups.query(coll =>
-        coll.toArray.map(row => clockWakeupCheckpoint(handle.context.contextId, row)),
+        coll.toArray
+          .filter(row => row.executionId === handle.executionId)
+          .map(row => clockWakeupCheckpoint(handle.context.contextId, row)),
       ),
     ])
     return [
@@ -183,7 +190,7 @@ const checkpointsForEngine = (
   })
 
 const checkpointStreamForEngine = (
-  handle: ActiveRuntimeContextEngine,
+  handle: RuntimeContextWorkflowCheckpointHandle,
 ): Stream.Stream<SessionSelfCheckpointEvent, unknown, never> =>
   Stream.unwrap(
     checkpointsForEngine(handle).pipe(
@@ -191,9 +198,11 @@ const checkpointStreamForEngine = (
         Stream.mergeAll([
           Stream.fromIterable(snapshot),
           handle.table.executions.rows().pipe(
+            Stream.filter(row => row.executionId === handle.executionId),
             Stream.map(row => executionCheckpoint(handle.context.contextId, row)),
           ),
           handle.table.activities.rows().pipe(
+            Stream.filter(row => row.executionId === handle.executionId),
             Stream.map(row =>
               activityCheckpoint(
                 handle.context.contextId,
@@ -206,9 +215,11 @@ const checkpointStreamForEngine = (
             ),
           ),
           handle.table.deferreds.rows().pipe(
+            Stream.filter(row => row.executionId === handle.executionId),
             Stream.map(row => deferredCheckpoint(handle.context.contextId, row)),
           ),
           handle.table.clockWakeups.rows().pipe(
+            Stream.filter(row => row.executionId === handle.executionId),
             Stream.map(row => clockWakeupCheckpoint(handle.context.contextId, row)),
           ),
         ], { concurrency: "unbounded" }),
@@ -259,13 +270,13 @@ const checkpointKey = (event: SessionSelfCheckpointEvent): string => {
 }
 
 const checkpointStream = (
-  registry: RuntimeContextEngineRegistry["Type"],
+  checkpoints: RuntimeContextCheckpointSource["Type"],
 ): Stream.Stream<SessionSelfCheckpointEvent, unknown, never> =>
   Stream.unwrap(
     Effect.gen(function* () {
-      const contextIds = yield* registry.activeContextIds
+      const contextIds = yield* checkpoints.activeContextIds
       const streams = yield* Effect.forEach(contextIds, contextId =>
-        registry.get(contextId).pipe(
+        checkpoints.get(contextId).pipe(
           Effect.map(Option.match({
             onNone: () => Stream.empty,
             onSome: checkpointStreamForEngine,
@@ -292,7 +303,7 @@ const checkpointStream = (
 export const makeSessionSelfChannels = (
   options: {
     readonly control: RuntimeControlPlaneTable["Type"]
-    readonly engineRegistry: RuntimeContextEngineRegistry["Type"]
+    readonly checkpoints: RuntimeContextCheckpointSource["Type"]
   },
 ): ReadonlyArray<ChannelRegistration> => [
   // firegrid-agent-body-plan.SESSION_SELF.1
@@ -310,7 +321,7 @@ export const makeSessionSelfChannels = (
   makeIngressChannel({
     target: SessionSelfCheckpointChannelTarget,
     schema: SessionSelfCheckpointEventSchema,
-    stream: checkpointStream(options.engineRegistry),
+    stream: checkpointStream(options.checkpoints),
   }),
 ]
 
@@ -330,13 +341,13 @@ const makeSessionSelfChannelRegistry = (
 ): Effect.Effect<
   ChannelRegistry["Type"],
   never,
-  RuntimeControlPlaneTable | RuntimeContextEngineRegistry
+  RuntimeControlPlaneTable | RuntimeContextCheckpointSource
 > =>
-  Effect.context<RuntimeControlPlaneTable | RuntimeContextEngineRegistry>().pipe(
+  Effect.context<RuntimeControlPlaneTable | RuntimeContextCheckpointSource>().pipe(
     Effect.map((context) => {
       const control = Context.get(context, RuntimeControlPlaneTable)
-      const engineRegistry = Context.get(context, RuntimeContextEngineRegistry)
-      const defaults = makeSessionSelfChannels({ control, engineRegistry })
+      const checkpoints = Context.get(context, RuntimeContextCheckpointSource)
+      const defaults = makeSessionSelfChannels({ control, checkpoints })
       return makeChannelRegistry(appendDefaultChannels(registrations, defaults))
     }),
   )
@@ -346,7 +357,7 @@ export const SessionSelfChannelRegistryLive = (
 ): Layer.Layer<
   ChannelRegistry,
   never,
-  RuntimeControlPlaneTable | RuntimeContextEngineRegistry
+  RuntimeControlPlaneTable | RuntimeContextCheckpointSource
 > =>
   Layer.effect(
     ChannelRegistry,

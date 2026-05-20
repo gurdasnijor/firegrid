@@ -42,7 +42,7 @@ import {
 import {
   RuntimeToolUseExecutor,
 } from "@firegrid/runtime/tool-executor"
-import {
+import type {
   WorkflowEngineTable,
 } from "@firegrid/runtime/workflow-engine"
 import {
@@ -83,9 +83,8 @@ import {
   runtimeExecutionClock,
 } from "../../../../host-sdk/src/host/internal/runtime-context-helpers.ts"
 import {
-  RuntimeContextEngineRegistry,
-  type ActiveRuntimeContextEngine,
-} from "../../../../host-sdk/src/host/runtime-context-engine-registry.ts"
+  RuntimeContextWorkflowRuntime,
+} from "../../../../host-sdk/src/host/runtime-context-workflow-runtime.ts"
 import {
   agentInputEventFromRuntimeIngressRow,
 } from "../../../../host-sdk/src/host/runtime-ingress-transform.ts"
@@ -665,9 +664,17 @@ const Inv1ContextRequestDaemonLive = Layer.scopedDiscard(
 )
 
 const streamZipWorkflowSupportLayer = (
-  handle: ActiveRuntimeContextEngine,
+  contextId: string,
   agentToolHost: AgentToolHostService,
-) =>
+): Layer.Layer<
+  never,
+  unknown,
+  | RuntimeContextWorkflowExecutionEnv
+  | AgentToolHost
+  | WorkflowEngine.WorkflowEngine
+  | WorkflowEngineTable
+> =>
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer still leaks any through substrate layers; the declared Layer R channel is the intended sim capability boundary.
   Layer.mergeAll(
     RuntimeContextWorkflowStreamZipLayer,
   ).pipe(
@@ -677,13 +684,11 @@ const streamZipWorkflowSupportLayer = (
         Layer.provide(HostRuntimeObservationSubstrateLive),
       ),
     ),
-    Layer.provideMerge(Layer.succeed(WorkflowEngine.WorkflowEngine, handle.engine)),
-    Layer.provideMerge(Layer.succeed(WorkflowEngineTable, handle.table)),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
     Layer.withSpan("firegrid.inv1.stream_zip.workflow_support.layer", {
       kind: "internal",
       attributes: {
-        "firegrid.context.id": handle.context.contextId,
+        "firegrid.context.id": contextId,
       },
     }),
   )
@@ -693,22 +698,27 @@ const startContextWithStreamZipWorkflow = (
 ) =>
   Effect.gen(function*() {
     const context = yield* requireLocalContext(contextId)
-    const registry = yield* RuntimeContextEngineRegistry
+    const runtime = yield* RuntimeContextWorkflowRuntime
     const agentToolHost = yield* AgentToolHost
-    const handle = yield* registry.claimActive(context)
-    yield* registry.reconcile(context)
-    return yield* executeRuntimeContextWorkflow(
-      handle.engine,
-      RuntimeContextWorkflowStreamZip,
-      {
-        executionId: runtimeContextWorkflowExecutionId(contextId),
-        payload: RuntimeContextWorkflowPayload.make({ contextId }),
-      },
-    ).pipe(
-      Effect.provide(streamZipWorkflowSupportLayer(handle, agentToolHost)),
-      Effect.withClock(runtimeExecutionClock),
-      Effect.ensuring(registry.deregister(context.contextId)),
-    )
+    return yield* runtime.run({
+      context,
+      workflowName: RuntimeContextWorkflowStreamZip.name,
+      supportLayer: streamZipWorkflowSupportLayer(contextId, agentToolHost),
+      effect: Effect.gen(function* () {
+        const engine = yield* WorkflowEngine.WorkflowEngine
+        return yield* executeRuntimeContextWorkflow(
+          engine,
+          RuntimeContextWorkflowStreamZip,
+          {
+            executionId: runtimeContextWorkflowExecutionId(contextId),
+            payload: RuntimeContextWorkflowPayload.make({ contextId }),
+          },
+        )
+      }).pipe(
+        Effect.withClock(runtimeExecutionClock),
+      ),
+      deregisterOnExit: true,
+    })
   }).pipe(
     Effect.withSpan("firegrid.inv1.stream_zip.start_context", {
       kind: "internal",

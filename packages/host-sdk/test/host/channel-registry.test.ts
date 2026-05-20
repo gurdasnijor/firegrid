@@ -25,8 +25,9 @@ import {
   type SessionSelfLifecycleEvent,
 } from "../../src/host/index.ts"
 import {
-  RuntimeContextEngineRegistry,
-} from "../../src/host/runtime-context-engine-registry.ts"
+  RuntimeContextCheckpointSource,
+  RuntimeContextWorkflowRuntime,
+} from "../../src/host/runtime-context-workflow-runtime.ts"
 
 const FactoryEventRowSchema = Schema.Struct({
   eventType: Schema.String,
@@ -199,7 +200,8 @@ describe("ChannelRegistry", () => {
       Effect.gen(function* () {
         const control = yield* RuntimeControlPlaneTable
         const registry = yield* ChannelRegistry
-        const engineRegistry = yield* RuntimeContextEngineRegistry
+        const workflowRuntime = yield* RuntimeContextWorkflowRuntime
+        const checkpoints = yield* RuntimeContextCheckpointSource
         const lifecycleMetadata = Option.getOrThrow(
           registry.getMetadata(SessionSelfLifecycleChannelTarget),
         )
@@ -249,7 +251,8 @@ describe("ChannelRegistry", () => {
           },
         }
         yield* control.contexts.upsert(context)
-        const handle = yield* engineRegistry.claimActive(context)
+        yield* workflowRuntime.ensureActive(context)
+        const handle = Option.getOrThrow(yield* checkpoints.get(contextId))
         const checkpointFiber = yield* checkpointStream.pipe(
           Stream.filter(event =>
             event.contextId === contextId &&
@@ -261,7 +264,7 @@ describe("ChannelRegistry", () => {
           Effect.fork,
         )
         yield* handle.table.executions.upsert({
-          executionId: `session-self-checkpoint:${contextId}`,
+          executionId: handle.executionId,
           workflowName: "firegrid.runtime-context",
           payload: { contextId },
           interrupted: false,

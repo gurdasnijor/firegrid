@@ -1,4 +1,5 @@
 import { Prompt } from "@effect/ai"
+import { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
@@ -37,8 +38,8 @@ import {
 } from "./internal/runtime-context-helpers.ts"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 import {
-  RuntimeContextEngineRegistry,
-} from "./runtime-context-engine-registry.ts"
+  RuntimeContextWorkflowRuntime,
+} from "./runtime-context-workflow-runtime.ts"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import {
   RuntimeContextWorkflowNative,
@@ -55,6 +56,7 @@ import type {
   ApprovalCallPermissionRequest,
   ApprovalCallRequest,
 } from "@firegrid/protocol/agent-tools"
+import type { ChannelRegistry } from "./channel-registry.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.3
 // Host-coupled AgentToolHost live behavior lives here instead of the host
@@ -192,12 +194,12 @@ const runtimeHostAgentToolHostService = (captured: {
   // durable RuntimeControlPlaneTable backing the reconciler reads.
   readonly durableStreamsBaseUrl: string
   readonly namespace: string
-  readonly registry: RuntimeContextEngineRegistry["Type"]
+  readonly workflowRuntime: RuntimeContextWorkflowRuntime["Type"]
   readonly agentToolHost: AgentToolHostService
   readonly agentOutputEvents: RuntimeAgentOutputAfterEvents["Type"]
   // TFIND-031: ambient host durable substrate captured at layer-build
   // time, re-provided into the deferred child-context workflow run.
-  readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv>
+  readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv | ChannelRegistry>
   // Gap-2: optional provider side-effect capability resolved at
   // layer-build time. NOT part of `hostContext` — never re-provided into
   // the deferred child-context workflow capture (TFIND-031 boundary held).
@@ -491,44 +493,44 @@ const appendIngressWithHostCapabilities = (
   captured: {
     readonly contextRead: RuntimeContextReadService
     readonly controlTable: RuntimeControlPlaneTable["Type"]
-    readonly registry: RuntimeContextEngineRegistry["Type"]
   },
   request: RuntimeIngressRequest,
 ) =>
   appendRuntimeIngress(request).pipe(
     Effect.provideService(RuntimeContextRead, captured.contextRead),
     Effect.provideService(RuntimeControlPlaneTable, captured.controlTable),
-    Effect.provideService(
-      RuntimeContextEngineRegistry,
-      captured.registry,
-    ),
   )
 
 const startChildContextWorkflow = (
   captured: {
     readonly contextRead: RuntimeContextReadService
     readonly hostSession: HostSessionRow
-    readonly registry: RuntimeContextEngineRegistry["Type"]
+    readonly workflowRuntime: RuntimeContextWorkflowRuntime["Type"]
     readonly agentToolHost: AgentToolHostService
   },
   contextId: string,
 ) =>
   Effect.gen(function*() {
     const context = yield* requireLocalContextWithHostCapabilities(captured, contextId)
-    const handle = yield* captured.registry.claimActive(context)
-    yield* captured.registry.reconcile(context)
-    yield* executeRuntimeContextWorkflow(
-      handle.engine,
-      RuntimeContextWorkflowNative,
-      {
-        executionId: runtimeContextWorkflowExecutionId(contextId),
-        payload: RuntimeContextWorkflowPayload.make({ contextId }),
-        discard: true,
-      },
-    ).pipe(
-      Effect.provide(runtimeContextWorkflowSupportLayer(handle, captured.agentToolHost)),
-      Effect.withClock(runtimeExecutionClock),
-    )
+    yield* captured.workflowRuntime.run({
+      context,
+      workflowName: RuntimeContextWorkflowNative.name,
+      supportLayer: runtimeContextWorkflowSupportLayer(contextId, captured.agentToolHost),
+      effect: Effect.gen(function* () {
+        const engine = yield* WorkflowEngine.WorkflowEngine
+        yield* executeRuntimeContextWorkflow(
+          engine,
+          RuntimeContextWorkflowNative,
+          {
+            executionId: runtimeContextWorkflowExecutionId(contextId),
+            payload: RuntimeContextWorkflowPayload.make({ contextId }),
+            discard: true,
+          },
+        )
+      }).pipe(
+        Effect.withClock(runtimeExecutionClock),
+      ),
+    })
   })
 
 export const RuntimeHostAgentToolHostLive = Layer.effect(
@@ -539,12 +541,12 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     const hostSession = yield* CurrentHostSession
     const controlTable = yield* RuntimeControlPlaneTable
     const hostConfig = yield* RuntimeHostConfig
-    const registry = yield* RuntimeContextEngineRegistry
+    const workflowRuntime = yield* RuntimeContextWorkflowRuntime
     const agentOutputEvents = yield* RuntimeAgentOutputAfterEvents
     // TFIND-031: capture the ambient host durable substrate so the
     // deferred child-context workflow (run later, outside this gen) can
     // re-provide it. Always present here via the composed host layer.
-    const hostContext = yield* Effect.context<HostRuntimeContextExecutionEnv>()
+    const hostContext = yield* Effect.context<HostRuntimeContextExecutionEnv | ChannelRegistry>()
     // Gap-2: optional provider side-effect capability. Resolved at
     // layer-build time, NOT folded into `hostContext` — the TFIND-031
     // deferred-capture boundary stays narrow.
@@ -556,7 +558,7 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
       controlTable,
       durableStreamsBaseUrl: hostConfig.durableStreamsBaseUrl,
       namespace: hostConfig.namespace,
-      registry,
+      workflowRuntime,
       agentOutputEvents,
       hostContext,
       sandboxProvider,

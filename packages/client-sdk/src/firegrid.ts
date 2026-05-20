@@ -353,9 +353,7 @@ const outputLayerForContext = (
 // handle owns its own CloseableScope so the make-body finalizer can
 // tear down all materialized RuntimeOutputTable layers on service
 // shutdown. The cached service is the already-extracted
-// RuntimeOutputTableService (mirrors host-sdk's
-// RuntimeContextEngineRegistry, which caches the engine/table
-// services not the Context<any> the Layer builds into).
+// RuntimeOutputTableService, not the Context<any> the Layer builds into.
 interface OutputContextHandle {
   readonly service: RuntimeOutputTableService
   readonly scope: Scope.CloseableScope
@@ -487,7 +485,7 @@ const make = (config: ResolvedConfig) =>
     // for the service lifetime collapses the per-call createStreamDB
     // preload + open subscription onto a shared connection; per-call
     // projectionWait / .query each still get their own sub-scope on
-    // top. Pattern mirrors RuntimeContextEngineRegistry (host-sdk).
+    // top.
     const outputContextHandles = yield* Ref.make(
       new Map<string, OutputContextHandle>(),
     )
