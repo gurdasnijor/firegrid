@@ -15,4 +15,4 @@ export const acpSdkExampleAgentHost = (
     input: true,
   }).pipe(
     Layer.provide(FiregridLocalProcessFromEnv(env.processEnv)),
-  )
+  ) as Layer.Layer<FiregridHost, unknown, never>
