@@ -10,6 +10,7 @@ import {
 } from "./runtime-context-workflow-core.ts"
 import {
   HostRuntimeObservationSubstrateLive,
+  HostRuntimeObservationStreamsLive,
   RuntimeAgentToolExecutionLive,
   type HostRuntimeContextExecutionEnv,
   RuntimeToolUseExecutorLive,
@@ -46,9 +47,11 @@ export const runtimeContextWorkflowSupportLayer = (
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer still leaks any through substrate layers; the declared Layer R channel is the intended capability boundary.
   RuntimeContextWorkflowNativeLayer.pipe(
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+    Layer.provideMerge(HostRuntimeObservationStreamsLive),
     Layer.provideMerge(
       RuntimeToolUseExecutorLive.pipe(
         Layer.provide(HostRuntimeObservationSubstrateLive),
+        Layer.provideMerge(HostRuntimeObservationStreamsLive),
         Layer.provideMerge(RuntimeAgentToolExecutionLive),
       ),
     ),

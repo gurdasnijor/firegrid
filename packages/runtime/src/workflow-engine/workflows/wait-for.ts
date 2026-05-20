@@ -1,7 +1,5 @@
 import {
   Activity,
-  DurableClock,
-  DurableDeferred,
   Workflow,
 } from "@effect/workflow"
 import { Duration, Effect, Option, Schema, Stream } from "effect"
@@ -23,14 +21,11 @@ export const WaitForWorkflowPayloadSchema = Schema.Struct({
   timeoutMs: Schema.optional(Schema.Number),
 })
 
-export const WaitForWorkflowMatchOutcomeSchema = Schema.Struct({
-  _tag: Schema.Literal("Match"),
+export const WaitForWorkflowMatchOutcomeSchema = Schema.TaggedStruct("Match", {
   raw: Schema.Unknown,
 })
 
-export const WaitForWorkflowTimeoutOutcomeSchema = Schema.Struct({
-  _tag: Schema.Literal("Timeout"),
-})
+export const WaitForWorkflowTimeoutOutcomeSchema = Schema.TaggedStruct("Timeout", {})
 
 export const WaitForWorkflowOutcomeSchema = Schema.Union(
   WaitForWorkflowMatchOutcomeSchema,
@@ -75,29 +70,37 @@ const streamForSource = (
 const matchActivityName = (executionKey: string): string =>
   `wait-for-workflow.match/${executionKey}`
 
-const raceDeferredName = (executionKey: string): string =>
-  `wait-for-workflow.race/${executionKey}`
-
-const timeoutClockName = (executionKey: string): string =>
-  `wait-for-workflow.timeout/${executionKey}`
-
-const matchActivity = (
+const matchOrTimeoutActivity = (
   executionKey: string,
   source: RuntimeObservationSource,
   trigger: FieldEqualsTrigger,
+  timeoutMs: number | undefined,
 ) =>
   Activity.make({
     name: matchActivityName(executionKey),
-    success: Schema.Unknown,
+    success: WaitForWorkflowOutcomeSchema,
     execute: Effect.gen(function*() {
       const streams = yield* RuntimeObservationStreams
-      const first = yield* Stream.runHead(
+      const match = Stream.runHead(
         streamForSource(streams, source).pipe(
           Stream.filter(row => evaluateFieldEquals(trigger, row)),
         ),
+      ).pipe(
+        Effect.flatMap(Option.match({
+          onNone: () => Effect.never,
+          onSome: (raw): Effect.Effect<WaitForWorkflowOutcome> =>
+            Effect.succeed({ _tag: "Match", raw }),
+        })),
       )
-      if (Option.isNone(first)) return yield* Effect.never
-      return first.value
+
+      if (timeoutMs === undefined) return yield* match
+
+      return yield* Effect.race(
+        match,
+        Effect.sleep(Duration.millis(timeoutMs)).pipe(
+          Effect.as<WaitForWorkflowOutcome>({ _tag: "Timeout" }),
+        ),
+      )
     }).pipe(
       Effect.orDie,
       Effect.withSpan("firegrid.agent_tools.wait_for.workflow.match_activity", {
@@ -105,6 +108,7 @@ const matchActivity = (
         attributes: {
           "firegrid.agent_tools.wait_for.execution_key": executionKey,
           "firegrid.wait.source": source._tag,
+          "firegrid.wait.has_timeout": timeoutMs !== undefined,
         },
       }),
     ),
@@ -116,45 +120,21 @@ export const WaitForWorkflowLayer = WaitForWorkflow.toLayer(({
   trigger,
   timeoutMs,
 }) => {
-  const match = matchActivity(executionKey, source, trigger).pipe(
-    Effect.map((raw): WaitForWorkflowOutcome => ({ _tag: "Match", raw })),
+  const activity = matchOrTimeoutActivity(
+    executionKey,
+    source,
+    trigger,
+    timeoutMs,
   )
 
-  if (timeoutMs === undefined) {
-    return match.pipe(
-      Effect.withSpan("firegrid.agent_tools.wait_for.workflow.body", {
-        kind: "internal",
-        attributes: {
-          "firegrid.agent_tools.wait_for.execution_key": executionKey,
-          "firegrid.wait.source": source._tag,
-          "firegrid.wait.has_timeout": false,
-        },
-      }),
-    )
-  }
-
-  return DurableDeferred.raceAll({
-    name: raceDeferredName(executionKey),
-    success: WaitForWorkflowOutcomeSchema,
-    error: Schema.Never,
-    effects: [
-      match,
-      DurableClock.sleep({
-        name: timeoutClockName(executionKey),
-        duration: Duration.millis(timeoutMs),
-        inMemoryThreshold: Duration.zero,
-      }).pipe(
-        Effect.as<WaitForWorkflowOutcome>({ _tag: "Timeout" }),
-      ),
-    ],
-  }).pipe(
+  return activity.pipe(
     Effect.withSpan("firegrid.agent_tools.wait_for.workflow.body", {
       kind: "internal",
       attributes: {
         "firegrid.agent_tools.wait_for.execution_key": executionKey,
         "firegrid.wait.source": source._tag,
-        "firegrid.wait.has_timeout": true,
-        "firegrid.wait.timeout_ms": timeoutMs,
+        "firegrid.wait.has_timeout": timeoutMs !== undefined,
+        ...(timeoutMs === undefined ? {} : { "firegrid.wait.timeout_ms": timeoutMs }),
       },
     }),
   )
