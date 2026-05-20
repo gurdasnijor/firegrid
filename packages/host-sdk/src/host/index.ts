@@ -52,6 +52,10 @@ export {
   startRuntime,
 } from "./commands.ts"
 export {
+  hostProjectionObserver,
+  type HostProjectionObserverOptions,
+} from "./projection-observer.ts"
+export {
   RuntimeControlRequestReconciler,
   RuntimeControlRequestReconcilerDaemonLive,
   RuntimeControlRequestReconcilerLive,

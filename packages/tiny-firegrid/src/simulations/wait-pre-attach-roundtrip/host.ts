@@ -1,5 +1,6 @@
-import type { ServeError } from "@effect/platform/HttpServerError"
+import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
 import {
+  appendRuntimeIngress,
   CallerOwnedFactStreams,
   durableStreamUrl,
   ensurePathInput,
@@ -7,15 +8,22 @@ import {
   FiregridLocalHostLive,
   FiregridLocalProcessFromEnv,
   FiregridMcpServerLayer,
-  type FiregridHost,
+  hostProjectionObserver,
+  type RuntimeAgentOutputObservation,
 } from "@firegrid/host-sdk"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Layer, Option, Schema, Stream } from "effect"
 import {
   DurableTable,
-  type DurableTableError,
   type DurableTableLayerOptions,
 } from "effect-durable-operators"
 import type { TinyFiregridHostEnv } from "../../types.ts"
+
+const waitPreAttachExternalKey = {
+  source: "tiny-firegrid",
+  id: "wait-pre-attach-roundtrip",
+} as const
+const waitPreAttachContextId = sessionContextIdForExternalKey(waitPreAttachExternalKey)
+const waitObservedMarker = "FIREGRID_WAIT_OBSERVED"
 
 // Scenario constants the driver shares (NOT a substrate API — just the
 // names the prompt needs to know).
@@ -59,6 +67,80 @@ const preSeed = () => ({
   acceptedAt: new Date().toISOString(),
 })
 
+type TextChunkObservation = RuntimeAgentOutputObservation & {
+  readonly event: Extract<
+    RuntimeAgentOutputObservation["event"],
+    { readonly _tag: "TextChunk" }
+  >
+}
+
+type PermissionRequestObservation = RuntimeAgentOutputObservation & {
+  readonly event: Extract<
+    RuntimeAgentOutputObservation["event"],
+    { readonly _tag: "PermissionRequest" }
+  >
+}
+
+const isWaitPreAttachTextChunk = (
+  observation: RuntimeAgentOutputObservation,
+): observation is TextChunkObservation =>
+  observation.contextId === waitPreAttachContextId &&
+  observation.event._tag === "TextChunk"
+
+const isWaitPreAttachPermissionRequest = (
+  observation: RuntimeAgentOutputObservation,
+): observation is PermissionRequestObservation =>
+  observation.contextId === waitPreAttachContextId &&
+  observation.event._tag === "PermissionRequest"
+
+const waitPreAttachResultObserver = (
+  env: TinyFiregridHostEnv,
+) =>
+  hostProjectionObserver({
+    spanName: "firegrid.simulation.observer.wait_pre_attach_result",
+    contextId: waitPreAttachContextId,
+    initialState: "",
+    attributes: {
+      "firegrid.simulation.marker": waitObservedMarker,
+    },
+    project: (resultText, observation) => {
+      if (!isWaitPreAttachTextChunk(observation)) return [resultText, Option.none()]
+      const nextResultText = resultText + observation.event.part.delta
+      return [
+        nextResultText,
+        nextResultText.includes(waitObservedMarker)
+          ? Option.some(waitObservedMarker)
+          : Option.none(),
+      ]
+    },
+    onMatch: () => env.stopSignal.complete,
+  })
+
+const waitPreAttachPermissionResponder = () =>
+  hostProjectionObserver({
+    spanName: "firegrid.simulation.observer.wait_pre_attach_permission",
+    contextId: waitPreAttachContextId,
+    initialState: undefined,
+    project: (state, observation) => [
+      state,
+      isWaitPreAttachPermissionRequest(observation)
+        ? Option.some(observation.event.permissionRequestId)
+        : Option.none(),
+    ],
+    onMatch: permissionRequestId =>
+      appendRuntimeIngress({
+        contextId: waitPreAttachContextId,
+        kind: "required_action_result",
+        authoredBy: "client",
+        payload: {
+          _tag: "PermissionResponse",
+          permissionRequestId,
+          decision: { _tag: "Allow" },
+        },
+        idempotencyKey: `wait-pre-attach-roundtrip:permission:${permissionRequestId}`,
+      }).pipe(Effect.asVoid),
+  })
+
 // The pre-seed runs as part of the host layer's acquire. The fact is in
 // the durable stream BEFORE the agent process is spawned, BEFORE the
 // agent issues `wait_for`, BEFORE the runtime registers the wait. That's
@@ -67,7 +149,7 @@ const preSeed = () => ({
 // future-arriving rows?
 export const waitPreAttachHost = (
   env: TinyFiregridHostEnv,
-): Layer.Layer<FiregridHost, DurableTableError | ServeError, never> => {
+) => {
   const baseUrl = env.durableStreamsBaseUrl
   const namespace = env.namespace
   const mcpHost = "127.0.0.1"
@@ -130,8 +212,12 @@ export const waitPreAttachHost = (
     }),
   )
 
-  return mcp.pipe(
+  return Layer.mergeAll(
+    mcp,
+    waitPreAttachPermissionResponder(),
+    waitPreAttachResultObserver(env),
+  ).pipe(
     Layer.provideMerge(host),
     Layer.provideMerge(appFacts),
-  ) as Layer.Layer<FiregridHost, DurableTableError | ServeError, never>
+  )
 }

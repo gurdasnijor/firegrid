@@ -449,6 +449,9 @@ importers:
       '@firegrid/host-sdk':
         specifier: workspace:*
         version: link:../host-sdk
+      '@firegrid/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@firegrid/runtime':
         specifier: workspace:*
         version: link:../runtime

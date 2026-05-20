@@ -27,6 +27,7 @@
     "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",
     "@firegrid/host-sdk": "workspace:*",
+    "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
     "@opentelemetry/sdk-trace-base": "^2.7.1",
     "effect": "^3.21.2",
