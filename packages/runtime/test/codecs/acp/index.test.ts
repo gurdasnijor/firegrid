@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs"
+import { createRequire } from "node:module"
+import { dirname, join } from "node:path"
 import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
 import { Chunk, Context, Deferred, Effect, Fiber, Layer, Stream } from "effect"
@@ -10,6 +13,13 @@ import {
   type AcpSessionOptions,
 } from "../../../src/agent-event-pipeline/codecs/acp/index.ts"
 import { AgentSession } from "../../../src/agent-event-pipeline/codecs/contract.ts"
+
+const requireFromTest = createRequire(import.meta.url)
+
+const claudeAgentAcpSource = (): string => {
+  const packageJsonPath = requireFromTest.resolve("@agentclientprotocol/claude-agent-acp/package.json")
+  return readFileSync(join(dirname(packageJsonPath), "dist/acp-agent.js"), "utf8")
+}
 
 interface Harness {
   readonly bytes: AgentByteStream
@@ -379,6 +389,27 @@ describe("AcpSessionLive", () => {
     expect(agent.newSessionRequests).toHaveLength(1)
     expect(agent.newSessionRequests[0]?.cwd).toBe(globalThis.process.cwd())
     expect(agent.newSessionRequests[0]?.mcpServers).toEqual([])
+    expect(agent.newSessionRequests[0]?._meta).toEqual({
+      claudeCode: {
+        options: {
+          settingSources: ["project"],
+        },
+      },
+    })
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.8 source-verifies claude-agent-acp lets _meta claudeCode options override settingSources", () => {
+    const source = claudeAgentAcpSource()
+    const defaultSettingSourcesIndex = source.indexOf(
+      'settingSources: ["user", "project", "local"]',
+    )
+    const userProvidedOptionsSpreadIndex = source.indexOf(
+      "...userProvidedOptions",
+      defaultSettingSourcesIndex,
+    )
+
+    expect(defaultSettingSourcesIndex).toBeGreaterThanOrEqual(0)
+    expect(userProvidedOptionsSpreadIndex).toBeGreaterThan(defaultSettingSourcesIndex)
   })
 
   it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.5 firegrid-local-mcp-run.LAUNCH_CONFIG.1 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9 lowers MCP declarations through ACP-specific session options", async () => {
@@ -426,6 +457,7 @@ describe("AcpSessionLive", () => {
           disableBuiltInTools: true,
           claudeCode: {
             options: {
+              settingSources: ["project"],
               mcpServers: {
                 "firegrid-runtime-context-alwaysload": {
                   type: "http",

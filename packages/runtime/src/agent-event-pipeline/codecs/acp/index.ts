@@ -145,6 +145,8 @@ const lowerMcpServerDeclaration = (
     })),
 })
 
+const CLAUDE_AGENT_ACP_SETTING_SOURCES = ["project"] as const
+
 // tf-b6n / A1 (#408 tf-p9s): claude-agent-acp (Claude Agent SDK) defers MCP
 // tools behind a `ToolSearch` discovery indirection; the §6 planner stalls
 // after ToolSearch and never issues a Firegrid `tools/call` (#405). The
@@ -163,10 +165,9 @@ const lowerMcpServerDeclaration = (
 // built-ins inflating the set past the tool-search threshold). Both are the
 // documented Claude Agent SDK / claude-agent-acp levers; this is the minimal
 // fix fully in Firegrid's control to make §6 actually run.
-const claudeAgentAcpAlwaysLoadMeta = (
+const claudeAgentAcpMeta = (
   declarations: ReadonlyArray<AcpMcpServerDeclaration>,
-): { readonly [key: string]: unknown } | undefined => {
-  if (declarations.length === 0) return undefined
+): { readonly [key: string]: unknown } => {
   const mcpServers = Object.fromEntries(
     declarations.map(declaration => {
       const headers = declaration.server.headers === undefined
@@ -188,8 +189,15 @@ const claudeAgentAcpAlwaysLoadMeta = (
   return {
     // Shrink the planner tool set to the Firegrid catalog so tool-search
     // does not engage (documented fallback per the A1 finding).
-    disableBuiltInTools: true,
-    claudeCode: { options: { mcpServers } },
+    ...(declarations.length === 0 ? {} : { disableBuiltInTools: true }),
+    claudeCode: {
+      options: {
+        // tf-9cn: claude-agent-acp defaults to user+project+local settings,
+        // then lets _meta.claudeCode.options override that value.
+        settingSources: CLAUDE_AGENT_ACP_SETTING_SOURCES,
+        ...(declarations.length === 0 ? {} : { mcpServers }),
+      },
+    },
   }
 }
 
@@ -220,8 +228,8 @@ const sha256Prefix = (text: string): Effect.Effect<string> =>
 const codecToolChoice = (
   declarations: ReadonlyArray<AcpMcpServerDeclaration>,
 ): string => {
-  const meta = claudeAgentAcpAlwaysLoadMeta(declarations)
-  if (meta === undefined) return "default"
+  if (declarations.length === 0) return "default"
+  const meta = claudeAgentAcpMeta(declarations)
   const parts: Array<string> = []
   if ((meta as { disableBuiltInTools?: boolean }).disableBuiltInTools === true) {
     parts.push("disable_built_in")
@@ -545,12 +553,10 @@ export const AcpSessionLive = (
         // tf-b6n / A1: additive ACP `_meta` so Claude Agent SDK loads the
         // runtime-context MCP tools directly instead of deferring them
         // behind ToolSearch. Reserved-namespace metadata; non-claude ACP
-        // agents ignore it (no behavior change). Omitted when there are
-        // no MCP servers.
-        ...(() => {
-          const meta = claudeAgentAcpAlwaysLoadMeta(mcpServerDeclarations)
-          return meta === undefined ? {} : { _meta: meta }
-        })(),
+        // agents ignore it (no behavior change). Also scopes Claude
+        // settingSources to project config so sim runs do not load user
+        // Skills from ~/.claude.
+        _meta: claudeAgentAcpMeta(mcpServerDeclarations),
       }
       // Hash the exact JSON the codec is about to put on the wire. Pair
       // this against the subprocess wire capture (tf-ofq) to verify the
