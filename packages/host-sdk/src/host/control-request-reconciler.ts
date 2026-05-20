@@ -13,7 +13,7 @@ import {
   type RuntimeOutputTable,
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
-import { Cause, Clock, Context, Duration, Effect, Layer, Option } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Option, type Scope } from "effect"
 import { withRowOtelParent } from "@firegrid/protocol/otel"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { startRuntime } from "./commands.ts"
@@ -37,12 +37,18 @@ export const runtimeControlRequestReconcilerDefaults = {
   pollIntervalMs: 5_000,
   claimWindowMs: 60_000,
   abandonAfterMs: 600_000,
+  startRequestConcurrency: "unbounded" as const,
+  startRequestExecution: "await" as const,
 } as const
+
+type StartRequestExecution = "await" | "background"
 
 export interface RuntimeControlRequestReconcilerOptions {
   readonly pollIntervalMs?: number
   readonly claimWindowMs?: number
   readonly abandonAfterMs?: number
+  readonly startRequestConcurrency?: number | "unbounded"
+  readonly startRequestExecution?: StartRequestExecution
 }
 
 type ResolvedRuntimeControlRequestReconcilerOptions = Required<
@@ -69,6 +75,7 @@ type RuntimeControlRequestReconcilerEnvironment =
   | AgentToolHost
   | RuntimeOutputTable
   | HostRuntimeContextExecutionEnv
+  | Scope.Scope
 
 export interface RuntimeControlRequestReconcilerService {
   readonly reconcileOnce: (
@@ -99,6 +106,10 @@ const resolveOptions = (
     options.abandonAfterMs,
     runtimeControlRequestReconcilerDefaults.abandonAfterMs,
   ),
+  startRequestConcurrency: options.startRequestConcurrency ??
+    runtimeControlRequestReconcilerDefaults.startRequestConcurrency,
+  startRequestExecution: options.startRequestExecution ??
+    runtimeControlRequestReconcilerDefaults.startRequestExecution,
 })
 
 const createdAtMs = (createdAt: string): number => {
@@ -320,6 +331,7 @@ const acquireReconcileClaim = (
     if (Option.isNone(nowMs)) return Option.none()
     const context = yield* table.contexts.get(request.contextId)
     if (Option.isNone(context)) return Option.none()
+    if (context.value.host.hostId !== session.hostId) return Option.none()
     if (!(yield* winClaim(kind, request, nowMs.value, options.claimWindowMs))) {
       return Option.none()
     }
@@ -338,24 +350,43 @@ const reconcileStartRequest = (
     if (Option.isNone(claim)) return
     const { nowMs, session } = claim.value
 
-    const result = yield* startRuntime({ contextId: request.contextId }).pipe(
-      Effect.tapError(cause =>
-        writeCompletion("start", request, {
-          status: "failed",
-          hostId: session.hostId,
-          completedAtMs: nowMs,
-          message: cause instanceof Error ? cause.message : String(cause),
-        })),
-    )
-    const completedAtMs = yield* Clock.currentTimeMillis
-    yield* writeCompletion("start", request, {
-      status: "succeeded",
-      hostId: session.hostId,
-      completedAtMs,
-      activityAttempt: result.activityAttempt,
-      exitCode: result.exitCode,
-      ...(result.signal === undefined ? {} : { signal: result.signal }),
+    const runStartRequest = Effect.gen(function*() {
+      const result = yield* startRuntime({ contextId: request.contextId }).pipe(
+        Effect.tapError(cause =>
+          writeCompletion("start", request, {
+            status: "failed",
+            hostId: session.hostId,
+            completedAtMs: nowMs,
+            message: cause instanceof Error ? cause.message : String(cause),
+          })),
+      )
+      const completedAtMs = yield* Clock.currentTimeMillis
+      yield* writeCompletion("start", request, {
+        status: "succeeded",
+        hostId: session.hostId,
+        completedAtMs,
+        activityAttempt: result.activityAttempt,
+        exitCode: result.exitCode,
+        ...(result.signal === undefined ? {} : { signal: result.signal }),
+      })
     })
+
+    if (options.startRequestExecution === "background") {
+      yield* runStartRequest.pipe(
+        Effect.catchAllCause(cause =>
+          Effect.logError("[host-sdk] runtime control request start failed").pipe(
+            Effect.annotateLogs({
+              contextId: request.contextId,
+              requestId: request.requestId,
+              cause: Cause.pretty(cause),
+            }),
+          )),
+        Effect.forkScoped,
+      )
+      return
+    }
+
+    yield* runStartRequest
   }).pipe(
     Effect.withSpan("firegrid.host.control_request.start.reconcile", {
       kind: "consumer",
@@ -539,7 +570,7 @@ export const reconcileRuntimeControlRequestsOnce = (
     yield* Effect.forEach(
       startRequests,
       request => reconcileStartRequest(request, resolved),
-      { discard: true },
+      { concurrency: resolved.startRequestConcurrency, discard: true },
     )
     yield* annotateReconcileOutcome(
       contextRequests.length + lifecycleRequestCount + startRequests.length === 0 ? "noop" : "completed",
@@ -560,7 +591,11 @@ export const runRuntimeControlRequestReconciler = (
     options.pollIntervalMs,
     runtimeControlRequestReconcilerDefaults.pollIntervalMs,
   )
-  const resolved = resolveOptions(options)
+  const daemonOptions = {
+    startRequestExecution: "background" as const,
+    ...options,
+  }
+  const resolved = resolveOptions(daemonOptions)
   const loop = <R>(
     effect: Effect.Effect<unknown, unknown, R>,
     spanName: string,
@@ -578,7 +613,7 @@ export const runRuntimeControlRequestReconciler = (
     never,
     RuntimeControlRequestReconcilerEnvironment
   > = loop(
-    reconcileRuntimeControlRequestsOnce(options),
+    reconcileRuntimeControlRequestsOnce(daemonOptions),
     "control",
   )
   const lifecycleLoop: Effect.Effect<
