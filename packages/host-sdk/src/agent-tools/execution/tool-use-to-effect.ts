@@ -91,6 +91,10 @@ import {
   RuntimeAgentToolExecution,
   type RuntimeAgentToolExecutionError,
 } from "@firegrid/runtime/tool-executor"
+import type {
+  RuntimeObservationSource,
+  RuntimeObservationStreams,
+} from "@firegrid/runtime/streams"
 import {
   evaluateFieldEquals,
   type FieldEqualsTrigger,
@@ -307,6 +311,7 @@ const runSleepTool = (
   })
 
 const runWaitForTool = (
+  ctx: ToolLoweringContext,
   toolUseId: string,
   input: WaitForToolInput,
 ): Effect.Effect<
@@ -314,6 +319,8 @@ const runWaitForTool = (
   ToolError,
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
+  | RuntimeAgentToolExecution
+  | RuntimeObservationStreams
   | ChannelInventory
 > => {
   // `match` is typed `Record<string, unknown>` because schema-level
@@ -334,7 +341,6 @@ const runWaitForTool = (
     })
   }
 
-  const timeout: WaitForToolOutput = { matched: false, timedOut: true }
   const waitForChannel = Effect.gen(function*() {
     const registration = yield* channelDispatch(input.channel).pipe(
       Effect.mapError((): ToolError => ({
@@ -355,36 +361,24 @@ const runWaitForTool = (
         reason: `wait_for requires an ingress channel: ${input.channel}`,
       })
     }
-    const channel = registration as IngressChannel
-    const match = Stream.runHead(
-      channel.binding.stream.pipe(
-        Stream.filter((row) => evaluateFieldEquals(adapted.trigger, row)),
-      ),
-    ).pipe(
-      Effect.map(Option.match({
-        onNone: (): WaitForToolOutput => timeout,
-        onSome: (row): WaitForToolOutput => ({ matched: true, event: row }),
-      })),
-      Effect.mapError((cause) =>
-        toolExecutionFailed(toolUseId, "wait_for", cause),
-      ),
-    )
-    // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.3
-    // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.4
-    // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.5
-    //
-    // This is the channel-resolution scaffold for tf-dlaa. The production
-    // substrate handoff to `WaitForWorkflow.execute` is blocked on tf-xw0w;
-    // until that lands, the registry binding drives the same typed stream
-    // surface directly so the public tool contract can be validated.
-    return input.timeoutMs === undefined
-      ? yield* match
-      : yield* match.pipe(
-        Effect.timeoutTo({
-          duration: Duration.millis(input.timeoutMs === 0 ? 1 : input.timeoutMs),
-          onTimeout: () => timeout,
-          onSuccess: (result) => result,
-        }),
+    const execution = yield* RuntimeAgentToolExecution
+    const source: RuntimeObservationSource = {
+      _tag: "CallerFact",
+      stream: String(registration.target),
+    }
+    return yield* execution.waitFor({
+      contextId: ctx.contextId,
+      toolUseId,
+      input,
+      source,
+      trigger: adapted.trigger,
+    }).pipe(
+      Effect.mapError(error =>
+        runtimeAgentToolExecutionErrorToToolError(
+          toolUseId,
+          "wait_for",
+          error,
+        )),
       )
   })
   return waitForChannel
@@ -810,6 +804,7 @@ type ToolEnvironment =
   | ChannelInventory
   | AgentToolHost
   | RuntimeAgentToolExecution
+  | RuntimeObservationStreams
 
 /**
  * Decode `event.part.params` against the concrete `@firegrid/protocol`
@@ -897,7 +892,7 @@ export const toolUseToEffect = (
       )
     case "wait_for":
       return dispatchTool(event, "wait_for", WaitForToolInputSchema, (input) =>
-        runWaitForTool(event.part.id, input),
+        runWaitForTool(ctx, event.part.id, input),
       )
     case "send":
       return dispatchTool(event, "send", SendToolInputSchema, (input) =>

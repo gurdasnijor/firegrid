@@ -45,6 +45,7 @@ export {
 // Host-provided live layers for the runtime-owned executor seam +
 // shared host observation substrate.
 export {
+  HostRuntimeObservationStreamsLive,
   HostRuntimeObservationSubstrateLive,
   RuntimeAgentToolExecutionLive,
   RuntimeToolUseExecutorLive,

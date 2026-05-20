@@ -30,10 +30,8 @@ const runtimeObservationStreamsLayer = Layer.succeed(
   runtimeObservationStreams,
 )
 
-const waitForWorkflowTestLayer = Layer.mergeAll(
-  WaitForWorkflowLayer,
-  runtimeObservationStreamsLayer,
-).pipe(
+const waitForWorkflowTestLayer = WaitForWorkflowLayer.pipe(
+  Layer.provideMerge(runtimeObservationStreamsLayer),
   Layer.provideMerge(WorkflowEngine.layerMemory),
 )
 
@@ -57,6 +55,24 @@ describe("WaitForWorkflow", () => {
       _tag: "Match",
       raw: { kind: "match", correlationId: "target", payload: 42 },
     })
+  })
+
+  it("returns Timeout when no row arrives before the per-Activity-attempt timeout", async () => {
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        WaitForWorkflow.execute({
+          executionKey: "wf-timeout",
+          source: { _tag: "CallerFact", stream: "empty" },
+          trigger: [{ path: ["correlationId"], equals: "missing" }],
+          timeoutMs: 10,
+        }).pipe(
+          Effect.provide(waitForWorkflowTestLayer),
+          Effect.provideService(RuntimeObservationStreams, runtimeObservationStreams),
+        ),
+      ),
+    )
+
+    expect(outcome).toEqual({ _tag: "Timeout" })
   })
 
   it("uses the stable wait-for workflow execution id prefix", () => {

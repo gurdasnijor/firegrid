@@ -99,6 +99,7 @@ export {
   type HostProjectionObserverOptions,
 } from "./projection-observer.ts"
 export {
+  HostRuntimeObservationStreamsLive,
   RuntimeAgentToolExecutionLive,
 } from "./runtime-substrate.ts"
 export {

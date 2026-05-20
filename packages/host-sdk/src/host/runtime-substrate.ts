@@ -14,6 +14,10 @@ import {
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import {
+  RuntimeObservationStreamsLive,
+  type RuntimeObservationStreams,
+} from "@firegrid/runtime/streams"
+import {
   makeRuntimeAgentToolExecutionService,
   RuntimeAgentToolExecution,
   RuntimeToolUseExecutor,
@@ -60,17 +64,22 @@ export type HostRuntimeContextExecutionEnv =
 // and requires the current WorkflowEngine so matched observations can wake
 // suspended workflow deferreds; there is no source-name registration layer.
 export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForLive.pipe(
-  Layer.provideMerge(Layer.mergeAll(
-    RuntimeAgentOutputEventsLayer,
-    PerContextRuntimeAgentOutputAfterEventsLive,
-    RuntimeControlPlaneRecorderLive,
-  )),
+  Layer.provideMerge(RuntimeAgentOutputEventsLayer),
+  Layer.provideMerge(PerContextRuntimeAgentOutputAfterEventsLive),
+  Layer.provideMerge(RuntimeControlPlaneRecorderLive),
   Layer.withSpan("firegrid.host.runtime_substrate.observation.layer", {
     kind: "internal",
   }),
 )
 
 type HostRuntimeObservationSubstrateEnv = HostOwnedRuntimeObservationSubstrate
+
+export const HostRuntimeObservationStreamsLive = RuntimeObservationStreamsLive.pipe(
+  Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+  Layer.withSpan("firegrid.host.runtime_substrate.observation_streams.layer", {
+    kind: "internal",
+  }),
+)
 
 // TFIND-031 (Option Y, execution-scoped): the workflow-body capture
 // seam (`RuntimeContextWorkflowNativeLayer`) is built *inside*
@@ -88,6 +97,7 @@ type RuntimeToolUseExecutorExecutionEnv =
   | AgentToolHost
   | ChannelInventory
   | RuntimeAgentToolExecution
+  | RuntimeObservationStreams
 
 // firegrid-host-sdk.PACKAGE_GRAPH.6
 // Host-provided live layer for the runtime-owned validated tool execution seam.

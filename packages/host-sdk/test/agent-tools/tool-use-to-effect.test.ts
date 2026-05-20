@@ -26,10 +26,12 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import { Prompt } from "@effect/ai"
 import { Workflow } from "@effect/workflow"
 import { DurableTable } from "effect-durable-operators"
-import { Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { Effect, Fiber, Layer, Option, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { AgentOutputEvent, ToolResultEvent } from "@firegrid/runtime/events"
 import { AgentToolCallPartSchema, ToolResultEventSchema } from "@firegrid/runtime/events"
+import { RuntimeObservationStreams } from "@firegrid/runtime/streams"
+import { WaitForWorkflowLayer } from "@firegrid/runtime/workflows"
 import {
   ChannelInventory,
   makeChannelInventory,
@@ -104,12 +106,16 @@ const resultIsError = (result: ToolResultEvent): boolean => result.part.isFailur
 
 const resultContent = (result: ToolResultEvent): unknown => result.part.result
 
+const crashEffect = <A = never>(message: string): Effect.Effect<A, never> =>
+  Effect.try(() => {
+    throw new Error(message)
+  }).pipe(Effect.orDie)
+
 const RunToolWorkflow = Workflow.make({
   name: "agent-tools-test-run",
   payload: Schema.Struct({
     contextId: Schema.String,
-    event: Schema.Struct({
-      _tag: Schema.Literal("ToolUse"),
+    event: Schema.TaggedStruct("ToolUse", {
       part: AgentToolCallPartSchema,
     }),
   }),
@@ -194,6 +200,22 @@ const TestChannelInventoryLive = (
   }),
 )
 
+const TestRuntimeObservationStreamsLive = Layer.effect(
+  RuntimeObservationStreams,
+  Effect.gen(function*() {
+    const table = yield* TestSourceTable
+    return {
+      agentOutput: Stream.empty,
+      agentOutputAfter: () => Stream.empty,
+      initialAgentOutputAfter: () => Effect.succeed(Option.none()),
+      agentOutputForContext: () => Stream.empty,
+      runtimeRun: Stream.empty,
+      callerFact: (stream: string) =>
+        stream === TEST_EVENTS_CHANNEL ? table.rows.rows() : Stream.empty,
+    }
+  }),
+)
+
 // ---------------------------------------------------------------------------
 // Layer builder
 // ---------------------------------------------------------------------------
@@ -211,6 +233,8 @@ const buildLayer = (
 ) => {
   return RunToolWorkflowLayer.pipe(
     Layer.provideMerge(RuntimeAgentToolExecutionLive),
+    Layer.provideMerge(WaitForWorkflowLayer),
+    Layer.provideMerge(TestRuntimeObservationStreamsLive),
     Layer.provideMerge(hostLayer),
     Layer.provideMerge(TestChannelInventoryLive(channels)),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
@@ -246,11 +270,9 @@ describe("toolUseToEffect — name dispatch", () => {
     const streams = makeStreams("unknown")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-unknown",
           event: toolUse("tool-unknown", "definitely_not_a_tool", {}),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(true)
@@ -263,11 +285,9 @@ describe("toolUseToEffect — name dispatch", () => {
     const streams = makeStreams("invalid")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-invalid",
           event: toolUse("tool-invalid", "sleep", { durationMs: "not-a-number" }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(true)
@@ -286,11 +306,9 @@ describe("toolUseToEffect — sleep arm", () => {
     const streams = makeStreams("sleep")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-sleep",
           event: toolUse("tool-sleep", "sleep", { durationMs: 1 }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -303,15 +321,13 @@ describe("toolUseToEffect — wait_for arm", () => {
     const streams = makeStreams("waitfor-timeout")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-wait",
           event: toolUse("tool-wait", "wait_for", {
               channel: TEST_EVENTS_CHANNEL,
               match: { requestId: "no-such-request" },
               timeoutMs: 50,
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -424,14 +440,12 @@ describe("toolUseToEffect — wait_for arm", () => {
     const streams = makeStreams("waitfor-unknown-channel")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-wait-unknown-channel",
           event: toolUse("tool-wait-unknown-channel", "wait_for", {
               channel: "missing.channel",
               timeoutMs: 0,
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(true)
@@ -479,14 +493,12 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
         AgentToolHost.layer(fakeHost()),
         [channel],
       ),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-send",
           event: toolUse("tool-send", "send", {
             channel: "notification.operator",
             payload: { id: "event-1", message: "ready" },
           }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -510,14 +522,12 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
         AgentToolHost.layer(fakeHost()),
         [channel],
       ),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-send-wrong-direction",
           event: toolUse("tool-send-wrong-direction", "send", {
             channel: "state.rows",
             payload: { id: "event-1", message: "ready" },
           }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(true)
@@ -541,14 +551,12 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost()), [channel]),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-call",
           event: toolUse("tool-call", "call", {
             channel: "operator.call",
             request: { prompt: "approve" },
           }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -581,8 +589,7 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
         AgentToolHost.layer(fakeHost()),
         [slow, fast],
       ),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-wait-for-any",
           event: toolUse("tool-wait-for-any", "wait_for_any", {
             channels: [
@@ -590,7 +597,6 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
               { channel: "event.plan.ready", match: { status: "ready" } },
             ],
           }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -618,14 +624,12 @@ describe("toolUseToEffect — spawn arm", () => {
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-spawn",
           event: toolUse("tool-spawn", "spawn", {
               agentKind: "stdio-jsonl",
               prompt: "summarize the issue",
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -656,15 +660,13 @@ describe("toolUseToEffect — session-plane arms", () => {
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-parent",
           event: toolUse("tool-session-new", "session_new", {
               agentKind: "stdio-jsonl",
               prompt: "summarize the issue",
               options: { metadata: { correlationId: "corr-1" } },
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -701,15 +703,13 @@ describe("toolUseToEffect — session-plane arms", () => {
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-parent",
           event: toolUse("tool-session-prompt", "session_prompt", {
               sessionId: "ctx-child-session",
               inputId: "input-1",
               prompt: "continue",
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -729,14 +729,12 @@ describe("toolUseToEffect — session-plane arms", () => {
     const streams = makeStreams("session-cancel")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-parent",
           event: toolUse("tool-session-cancel", "session_cancel", {
               sessionId: "ctx-child-session",
               reason: "stop",
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(true)
@@ -749,14 +747,12 @@ describe("toolUseToEffect — session-plane arms", () => {
     const streams = makeStreams("session-close")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-parent",
           event: toolUse("tool-session-close", "session_close", {
               sessionId: "ctx-child-session",
               reason: "done",
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(true)
@@ -781,8 +777,7 @@ describe("toolUseToEffect — spawn_all arm", () => {
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-spawn-all",
           event: toolUse("tool-spawn-all", "spawn_all", {
               tasks: [
@@ -790,7 +785,6 @@ describe("toolUseToEffect — spawn_all arm", () => {
                 { agentKind: "stdio-jsonl", prompt: "second" },
               ],
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -858,14 +852,12 @@ describe("toolUseToEffect — execute arm", () => {
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-execute",
           event: toolUse("tool-execute", "execute", {
               sandbox: { providerName: "local", toolName: "shell" },
               input: { argv: ["echo", "hi"] },
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -897,15 +889,13 @@ describe("toolUseToEffect — execute arm", () => {
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-execute",
           event: toolUse("tool-execute-session", "execute", {
               sessionId: "ctx-child-session",
               capability: { kind: "terminal", name: "primary" },
               input: { command: "pwd" },
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -950,8 +940,7 @@ describe("toolUseToEffect — call approval arm", () => {
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-call",
           event: toolUse("tool-call", "call", {
             channel: "approval.operator",
@@ -959,7 +948,6 @@ describe("toolUseToEffect — call approval arm", () => {
               decision: { _tag: "Allow", optionId: "allow_once" },
             },
           }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -978,8 +966,7 @@ describe("toolUseToEffect — call approval arm", () => {
     const streams = makeStreams("call-non-approval")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-call-invalid",
           event: toolUse("tool-call-invalid", "call", {
             channel: "factory.events",
@@ -987,7 +974,6 @@ describe("toolUseToEffect — call approval arm", () => {
               decision: { _tag: "Allow" },
             },
           }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(true)
@@ -1010,11 +996,9 @@ describe("toolUseToEffect — failure semantics", () => {
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-fail",
           event: toolUse("tool-fail", "spawn", { agentKind: "stdio-jsonl", prompt: "noop" }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(true)
@@ -1033,20 +1017,16 @@ describe("toolUseToEffect — failure semantics", () => {
     const streams = makeStreams("defect")
     const host = fakeHost({
       executeSandboxTool: () =>
-        Effect.sync<unknown>(() => {
-          throw new Error("transient crash")
-        }),
+        crashEffect("transient crash"),
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        return yield* RunToolWorkflow.execute({
+      RunToolWorkflow.execute({
           contextId: "ctx-defect",
           event: toolUse("tool-defect", "execute", {
               sandbox: { providerName: "local", toolName: "x" },
               input: {},
             }),
-        })
       }),
     )
     expect(resultIsError(result)).toBe(true)
