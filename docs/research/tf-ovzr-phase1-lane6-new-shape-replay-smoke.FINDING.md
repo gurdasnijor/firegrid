@@ -30,7 +30,7 @@ pnpm --filter @firegrid/tiny-firegrid simulate:run phase1-lane6-new-shape-replay
 Run id:
 
 ```text
-2026-05-20T09-18-32-847Z__phase1-lane6-new-shape-replay
+2026-05-20T09-27-52-547Z__phase1-lane6-new-shape-replay
 ```
 
 Trace artifact:
@@ -43,7 +43,7 @@ docs/research/tf-gyxc-engine-recycle-suspend-not-cancel.trace.jsonl
 Runner copy:
 
 ```text
-packages/tiny-firegrid/.simulate/runs/2026-05-20T09-18-32-847Z__phase1-lane6-new-shape-replay/trace.jsonl
+packages/tiny-firegrid/.simulate/runs/2026-05-20T09-27-52-547Z__phase1-lane6-new-shape-replay/trace.jsonl
 ```
 
 ## Evidence
@@ -66,6 +66,12 @@ firegrid.phase1.lane6.timeout_after_restart.deadline_preserved = true
 The rerun has no `ParseError` / `Expected Cause<never>` spans. Gen-2 reaches
 source replay for both match scenarios and reaches the preserved clock deadline
 for the timeout scenario.
+
+The simulation now asserts this GREEN shape in `host.ts`: all three
+`replay_completed` fields must be true, the two match values must match the
+rows written around gen-2, and the timeout clock deadline must remain
+preserved. A future regression in the tf-gyxc recycle invariant makes the sim
+fail instead of merely recording a RED trace.
 
 ## Acceptance Matrix
 
