@@ -1,3 +1,20 @@
+const hostSdkBoundaryModules = "^packages/host-sdk/src"
+
+const sanctionedRuntimeCapabilitySubpaths = [
+  // Runtime-owned capability tags and public observation/protocol projections
+  // sanctioned for host-sdk binding composition by
+  // docs/architecture/host-sdk-runtime-boundary.md.
+  "runtime-errors\\.ts$",
+  "agent-event-pipeline/subscribers/runtime-tool-use-executor\\.ts$",
+  "authorities/index\\.ts$",
+  "agent-event-pipeline/authorities/runtime-output-public\\.ts$",
+  "streams/index\\.ts$",
+  "agent-event-pipeline/events/index\\.ts$",
+  "agent-event-pipeline/codecs/index\\.ts$",
+  "agent-adapters/index\\.ts$",
+  "agent-event-pipeline/sources/sandbox/index\\.ts$",
+].join("|")
+
 module.exports = {
   forbidden: [
     {
@@ -154,6 +171,43 @@ module.exports = {
         "The runtime package must not import @firegrid/host-sdk. Runtime owns the RuntimeToolUseExecutor tag; host-sdk provides the live layer (firegrid-host-sdk.PACKAGE_GRAPH.2).",
       from: { path: "^packages/runtime/src" },
       to: { path: "^packages/host-sdk/src" },
+    },
+    {
+      name: "host-sdk-no-unsanctioned-runtime-subpaths-scan",
+      severity: "warn",
+      comment:
+        "Lane D scan-only guardrail: host-sdk binding/composition modules may import runtime only through sanctioned public capability subpaths. Flip to error after lanes B/C move execution substrate below the binding line.",
+      from: { path: hostSdkBoundaryModules },
+      to: {
+        path: `^packages/runtime/src/(?!${sanctionedRuntimeCapabilitySubpaths})`,
+      },
+    },
+    {
+      name: "host-sdk-no-workflow-or-durable-substrate-scan",
+      severity: "warn",
+      comment:
+        "Lane D scan-only guardrail: host-sdk binding modules must not depend on workflow engine substrate, durable-tools, or durable table facades as stable architecture.",
+      from: { path: hostSdkBoundaryModules },
+      to: {
+        path:
+          "(^packages/runtime/src/(?:workflow-engine|durable-tools)(?:/|$)|^packages/effect-durable-operators/src|(^|/)node_modules/(?:\\.pnpm/)?@effect/workflow/)",
+      },
+    },
+    {
+      name: "runtime-no-host-sdk-scan",
+      severity: "warn",
+      comment:
+        "Lane D report-mode mirror of the hard package-direction rule: runtime execution modules must not import host-sdk bindings.",
+      from: { path: "^packages/runtime/src" },
+      to: { path: "^packages/host-sdk/src" },
+    },
+    {
+      name: "client-sdk-no-runtime-scan",
+      severity: "warn",
+      comment:
+        "Lane D report-mode mirror of the hard package-direction rule: client-sdk must remain runtime-source-free.",
+      from: { path: "^packages/client-sdk/src" },
+      to: { path: "^packages/runtime/src" },
     },
     {
       // firegrid-typed-wait-source-redesign.MIGRATION.4
