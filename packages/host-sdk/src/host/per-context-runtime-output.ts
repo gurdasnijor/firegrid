@@ -7,6 +7,7 @@ import {
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
 import { Context, Effect, Layer, Option, Stream } from "effect"
+import { stampRowOtel } from "@firegrid/protocol/otel"
 import {
   RuntimeAgentOutputAfterEvents,
 } from "@firegrid/runtime/runtime-output"
@@ -62,14 +63,19 @@ const appendEventRow = (
   context: RuntimeContext,
   row: RuntimeEventRow,
 ) =>
-  Effect.map(
-    RuntimeOutputTable,
-    table => table.events.upsert(row).pipe(Effect.as(row)),
-  ).pipe(
-    Effect.flatten,
+  // tf-gc7: stamp `_otel` from the SHORT-LIVED `*.event.append` producer
+  // span onto the row before upsert. wait-router consumers reading this
+  // row downstream parent from THIS span (which exports promptly) instead
+  // of the long-lived ambient stream subscription that wraps them — the
+  // load-bearing producer-span lifetime fix.
+  Effect.gen(function*() {
+    const stamped = yield* stampRowOtel(row)
+    const table = yield* RuntimeOutputTable
+    return yield* table.events.upsert(stamped).pipe(Effect.as(stamped))
+  }).pipe(
     Effect.provide(perContextRuntimeOutputTableLayer(hostConfig, context)),
     Effect.withSpan("firegrid.runtime_output.per_context.event.append", {
-      kind: "internal",
+      kind: "producer",
       attributes: {
         "firegrid.context.id": context.contextId,
         "firegrid.runtime.activity_attempt": row.activityAttempt,
@@ -100,14 +106,17 @@ export const PerContextRuntimeOutputWriterLive = Layer.effect(
         }),
       appendEventRow: (context, row) => appendEventRow(hostConfig, context, row),
       appendLogLine: (context, row) =>
-        Effect.map(
-          RuntimeOutputTable,
-          table => table.logs.upsert(row).pipe(Effect.as(row)),
-        ).pipe(
-          Effect.flatten,
+        // tf-gc7: stamp _otel for symmetry with appendEventRow. Logs are
+        // not a wait source today but the propagation is cheap and keeps
+        // lineage consistent if logs ever become one.
+        Effect.gen(function*() {
+          const stamped = yield* stampRowOtel(row)
+          const table = yield* RuntimeOutputTable
+          return yield* table.logs.upsert(stamped).pipe(Effect.as(stamped))
+        }).pipe(
           Effect.provide(perContextRuntimeOutputTableLayer(hostConfig, context)),
           Effect.withSpan("firegrid.runtime_output.per_context.log.append", {
-            kind: "internal",
+            kind: "producer",
             attributes: {
               "firegrid.context.id": context.contextId,
               "firegrid.runtime.activity_attempt": row.activityAttempt,
