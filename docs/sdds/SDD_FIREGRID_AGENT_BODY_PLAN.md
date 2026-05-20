@@ -32,7 +32,7 @@ The intended layering is:
 ```text
 agent / app code
   -> semantic channel handle
-  -> host channel registry / binding
+  -> host-provided channel Layer / binding
   -> workflow engine, stream substrate, durable table CDC, clock, signal infra
 ```
 
@@ -50,6 +50,15 @@ handles around as naked coordination objects. Host composition may register
 channel bindings backed by workflows, durable streams, tables, clocks, webhooks,
 human approval queues, or future engine-native primitives, but the agent-facing
 surface remains the channel handle plus the fixed verbs in this SDD.
+
+In Effect terms, the channel inventory should be a `Context`/`Layer`-provided
+capability surface, not a mutable application registry object. A host composes
+the agent's body plan by providing channel services in a Layer. The MCP string
+name boundary may need a lookup table to decode `"factory.events"` into the
+corresponding service, but that lookup is an adapter at the protocol edge, not
+the application model and not something business logic passes around. If a file
+or service is called "registry", it must behave like a Layer-composed binding
+manifest, not a second runtime or naked map of workflow handles.
 
 This distinction matters for the Phase 1 bridge. A temporary
 `wait_for(source/query) -> WaitForWorkflow` cutover is acceptable as a substrate
@@ -275,14 +284,14 @@ Channel-typed `wait_for` then sits as a thin presentation wrapper over whichever
 
 ### What this means for the body-plan migration's Slice A ordering
 
-The migration plan below is sequenced assuming the substrate prerequisites have landed. The channel registry classifies each registered channel as **static-source** or **predicate-eligible** at registration time:
+The migration plan below is sequenced assuming the substrate prerequisites have landed. The channel Layer classifies each provided channel binding as **static-source** or **predicate-eligible** at composition time:
 
 - Static-source channels (`time.*`, `state.changes(c)`, `session.self.*`, `event(name)`-when-typed) → inline `Stream.runHead` over the typed observation stream. No name to track, no router.
 - Predicate-eligible channels (caller-fact streams used with agent-author-supplied scalar-AND predicates, `dm`/`approval`/`notification` triads) → generic `WaitFor.match` + wait-router. Wait identity stays in the wait store.
 
-The agent never sees which class a channel is — it calls `wait_for(channel, match?, timeoutMs?)` and the host-side registry routes appropriately. Tonight's dark-factory discovery gap dissolves naturally: most channels migrate to the static-source class (their schema is declarable at body-plan time), and only channels that genuinely need agent-author-supplied predicates use the predicate-eligible class.
+The agent never sees which class a channel is — it calls `wait_for(channel, match?, timeoutMs?)` and the host-provided channel binding routes appropriately. Tonight's dark-factory discovery gap dissolves naturally: most channels migrate to the static-source class (their schema is declarable at body-plan time), and only channels that genuinely need agent-author-supplied predicates use the predicate-eligible class.
 
-**Don't start Slice A until `SDD_FIREGRID_WORKFLOW_BODY_DEFERRED_INPUT_REWRITE` lands.** Slice A's channel-registry implementation would dual-route into both substrate paths if shape #1's engine-contract wasn't already established as the substrate's canonical second wait shape — and tf-qoyg empirically demonstrated that the inline-`Stream.runHead` form structurally cannot satisfy the engine's `discard:true` contract without engine-side changes.
+**Don't start Slice A until `SDD_FIREGRID_WORKFLOW_BODY_DEFERRED_INPUT_REWRITE` lands.** Slice A's channel-layer implementation would dual-route into both substrate paths if shape #1's engine-contract wasn't already established as the substrate's canonical second wait shape — and tf-qoyg empirically demonstrated that the inline-`Stream.runHead` form structurally cannot satisfy the engine's `discard:true` contract without engine-side changes.
 
 ## Migration Plan
 
@@ -290,19 +299,19 @@ The migration is staged so each slice is independently shippable and falsifiable
 
 ### Slice A — Substrate refactor: opaque `ChannelTarget` for `wait_for`
 
-**What changes:** `wait_for`'s tool input becomes `{channel: ChannelTarget, match?, timeoutMs?}` where `ChannelTarget` is an opaque token string. The host runtime maintains a **channel registry** mapping registered names → substrate sources (current `source: {_tag: "CallerFact", stream}` becomes a registry entry, not an agent-visible arg shape).
+**What changes:** `wait_for`'s tool input becomes `{channel: ChannelTarget, match?, timeoutMs?}` where `ChannelTarget` is an opaque token string. The host composes a **channel Layer** that provides named ingress/egress/call capabilities (current `source: {_tag: "CallerFact", stream}` becomes an internal binding, not an agent-visible arg shape).
 
 **Affected files:**
 
 - `packages/runtime/src/durable-tools/internal/types.ts` — `WaitForToolInput` schema rewrite (replace `source: SourceSchema` with `channel: ChannelTargetSchema`).
 - `packages/runtime/src/durable-tools/internal/wait-for.ts` — translate `ChannelTarget` → substrate source at handler entry; rest of the file is unchanged.
-- `packages/host-sdk/src/host/channel-registry.ts` (NEW) — host-side registry of `name → IngressChannel | EgressChannel | CallableChannel`. Channels registered at host startup; the registry is what `resolveEffectiveMcpServers`-style logic consults.
+- host-side channel Layer / binding manifest — `name → IngressChannel | EgressChannel | CallableChannel`. Channels are provided at host startup through Effect Layer composition; only the MCP protocol edge needs a name lookup to decode tool input.
 - `packages/host-sdk/src/host/agent-tools/bindings/tools.ts` — toolkit binding for `wait_for` updated to publish typed channel options based on registered inventory.
 - `packages/runtime/test/durable-tools/...` — update test fixtures.
 
 **Backwards compatibility:** the current `source: {_tag: "CallerFact", stream}` shape is internal only after this slice; agents never see it again. No external API is broken — only the agent-tool input shape changes, which Firegrid owns.
 
-**Acceptance:** existing dark-factory and other sims pass after channel-registry migration; the agent's tool input schema (visible via MCP tools/list) shows `channel: string` and no longer shows `source._tag` discriminants.
+**Acceptance:** existing dark-factory and other sims pass after channel-layer migration; the agent's tool input schema (visible via MCP tools/list) shows `channel: string` and no longer shows `source._tag` discriminants.
 
 ### Slice B — Optional `match` + `timeoutMs: 0` discovery semantics
 
@@ -333,7 +342,7 @@ Each slice is its own bead, ~one to two files per channel, plus a test fixture i
 
 Once Slice A lands (channels are first-class typed handles), the new verbs are mechanical additions to `FiregridAgentToolkit`:
 
-- `send` — append-fact-shaped, governed by per-channel append-allow policy on the registry. Direction-enforced at the type level (only `EgressChannel` accepted).
+- `send` — append-fact-shaped, governed by per-channel append-allow policy on the binding. Direction-enforced at the type level (only `EgressChannel` accepted).
 - `call` — composes `send` (request) + `wait_for` (response) under a paired-channel handle. Suspends durably; resumes when the response row appears on the call channel's response side. This is what tonight's `call(approval, ...)` would have looked like if it existed.
 - `wait_for_any` — accepts an array of `IngressChannel` (or call-channel response-side) descriptors with optional per-channel `match`. Returns the first-firing channel's result + a discriminator (`{ winnerIndex, channel, result }`). Substrate: races N `wait_for`s and cancels the losers.
 
@@ -359,7 +368,7 @@ Recommendation: (b) initially for migration safety; (a) once consumers are migra
 
 - **Not a substrate redesign.** Every machinery primitive Firegrid has today (durable tables, awakeables, workflow checkpoints, claim-first execution, projection observation) stays as-is. Only the *agent-facing* presentation layer changes.
 - **Not a tool-count expansion in the sense of "more product tools."** Forge has many product-shaped tools (`bash`, `memory.{...}`, `update_plan`, etc.) — Firegrid's tools at the substrate layer remain the 9 listed above. Product-shape tools (memory, finish, update_plan, bash) are for **consumers** of Firegrid to layer on top, not for Firegrid core to ship.
-- **Not a breaking change to host-sdk consumers.** The channel registry is additive; existing `runtime.config.mcpServers` style declarations get migrated to channel-registry entries by a one-to-one mapping. Consumer apps continue to declare what tools/channels are available to the agent the same way they do today (via host construction), with a shape change.
+- **Not a breaking change to host-sdk consumers.** The channel Layer is additive; existing `runtime.config.mcpServers` style declarations get migrated to channel bindings by a one-to-one mapping. Consumer apps continue to declare what tools/channels are available to the agent the same way they do today (via host construction), with a shape change.
 - **Not in scope: `memory.*` / `update_plan` / `finish` product tools.** These are Forge-shaped product affordances. They compose existing substrate (state, awakeable, append-fact) and could be added as a separate SDD if Firegrid wants to ship an opinionated agent product. This SDD covers the **substrate-neutral** body plan; product-shape composition is downstream.
 
 ## Acceptance criteria (full SDD-level)
@@ -375,7 +384,7 @@ Recommendation: (b) initially for migration safety; (a) once consumers are migra
 
 ## Open questions
 
-1. **Channel registration is a host-startup concern.** Today's tiny-firegrid host (e.g., `dark-factory/host.ts`) declares MCP server URLs and seeds facts. Should channel registration sit alongside that, or move into a separate host composition step? Recommend: it goes alongside, since channel inventory IS the body plan. **Resolved-by-Shape-A note:** once `wait_router` folds inline into the workflow body, the channel registry's substrate side becomes "tell the workflow body which observation streams to race over" — a single configuration site rather than a registry-plus-router split.
+1. **Channel composition is a host-startup concern.** Today's tiny-firegrid host (e.g., `dark-factory/host.ts`) declares MCP server URLs and seeds facts. Should channel Layer composition sit alongside that, or move into a separate host composition step? Recommend: it goes alongside, since channel inventory IS the body plan. **Resolved-by-Shape-A note:** once `wait_router` folds inline into the workflow body, the channel binding's substrate side becomes "tell the workflow body which observation streams to race over" — a single Layer-provided configuration site rather than a registry-plus-router split.
 2. **How does `event(name)` schema get declared?** A typed channel needs a schema. Either: (a) channels are registered with an explicit Effect Schema; (b) channels are registered with a JSON Schema; (c) typed via the `DurableTable` row type when backed by a collection. Recommend (c) where possible, (a) for hand-declared events.
 3. **`spawn` is "synaptic, not channel" per the doc.** Should `spawn` remain a verb that doesn't go through the channel layer, or should there be a `peer(name)` channel? Recommend: stays as a verb (matching the doc), but a `peer.lifecycle(child_id)` *ingress* channel exists so the parent can `wait_for_any([peer.lifecycle(c1), peer.lifecycle(c2)])` for fastest-child semantics.
 4. **Permission-channel routing**: today the ACP permission gate triggers a runtime workflow that awaits a `PermissionResponse` row. After the migration, that wiring is "the substrate side of the `approval` channel." Confirm this aligns with `SDD_PERMISSION_CODEC_AUTHORITY.md`'s invariants.
@@ -388,7 +397,7 @@ Recommendation: (b) initially for migration safety; (a) once consumers are migra
 - `tf-slb` (P1, in-flight, Lane 1) — Shape A collapse of `wait_router` into workflow-body `DurableDeferred.raceAll`. Direct prerequisite for this SDD's Slice A.
 - `docs/research/durable-tools-vs-workflow-engine-convergence.md:83-89` — convergence doc; couples Shape A to the deferred-input rewrite.
 - `SDD_CHOREOGRAPHY_FACADE.md` — overlapping scope; this SDD extends the choreography facade into the explicit body-plan / channels-as-nervous-system framing.
-- `SDD_FIREGRID_TYPED_WAIT_SOURCE_REDESIGN.md` — the prior typed-wait-source work; this SDD subsumes it by replacing typed source taxonomy with the channel registry.
+- `SDD_FIREGRID_TYPED_WAIT_SOURCE_REDESIGN.md` — the prior typed-wait-source work; this SDD subsumes it by replacing typed source taxonomy with channel Layer bindings.
 - `SDD_FIREGRID_RUNTIME_AGENT_EVENT_PIPELINE.md` — the agent-event pipeline this SDD's channels read from / write to.
 - `SDD_PERMISSION_CODEC_AUTHORITY.md` — the permission flow this SDD's `approval` channel surfaces as a faculty.
 - `SDD_FIREGRID_FIRELINE_READINESS.md` / `SDD_FIREGRID_FIREPIXEL_FOUNDATION.md` — the conformance work this SDD operates within.

@@ -34,7 +34,7 @@ Empirical baseline and investigations:
 - `docs/research/tf-zuom-inv1-stream-zip-body.FINDING.md`
 - PR #458 / `tf-2kel`: INV-2 `WaitForWorkflow` nested workflow validation
 - PR #457 / `tf-r5e3`: INV-3 restart-replay for the old wait-router shape
-- PR #461 / `tf-r3mo`: INV-4 channel registry surface validation
+- PR #461 / `tf-r3mo`: INV-4 channel binding surface validation
 - PR #460 / `tf-tg8q`: INV-5 multi-context activation gap
 - PR #462 / `tf-ui4l`: INV-6 activity-shape comparison
 
@@ -318,7 +318,7 @@ Acceptance:
 - Production env aliases no longer mention durable wait rows.
 - Runtime package public exports no longer expose durable-tools.
 - Remaining source/stream capability names are substrate-neutral enough for the
-  channel registry to consume in Phase 2.
+  channel Layer / binding surface to consume in Phase 2.
 
 ### Lane 4: Delete `durable-tools/`
 
@@ -450,17 +450,19 @@ subscription details.
 This phase should begin immediately after Phase 1 compiles and the sims pass.
 Do not reintroduce a dynamic wait-router to implement channels.
 
-### Lane 1: Channel Registry
+### Lane 1: Channel Layer
 
 Owns:
 
-- new `packages/host-sdk/src/host/channel-registry.ts`
-- host composition entry points for channel registration
+- host composition entry points for channel Layer provisioning
+- the protocol-edge name lookup needed to decode tool input strings into
+  Layer-provided channel capabilities
 
 Work:
 
-- Add host-side channel registry.
-- Register opaque channel ids with:
+- Add host-side channel Layer / binding manifest. This should be Effect
+  `Context`/`Layer` composition, not a mutable application registry.
+- Provide opaque channel ids with:
   - direction: ingress / egress / call
   - schema metadata
   - substrate binding to typed stream or append target
@@ -470,6 +472,10 @@ Acceptance:
 
 - Host can register `factory.events` without exposing `CallerFact` or stream
   names to the agent.
+- Ordinary app/tool execution code depends on channel capability services, not
+  on a naked registry map, workflow handle, or engine service. A lookup table is
+  allowed only at the MCP/protocol boundary where the agent supplies a channel
+  string.
 
 ### Lane 2: `wait_for(channel)`
 
@@ -481,8 +487,8 @@ Owns:
 
 Work:
 
-- Start after Phase 2 Lane 1 has committed the registry shape. It does not need
-  to wait for every host channel registration, but it must share the registry
+- Start after Phase 2 Lane 1 has committed the channel Layer shape. It does not
+  need to wait for every host channel binding, but it must share the Layer
   contract.
 - Change visible `wait_for` input to:
 
@@ -494,7 +500,8 @@ Work:
 }
 ```
 
-- Resolve channel to typed stream + trigger behind the registry.
+- Resolve channel to typed stream + trigger through the Layer-provided channel
+  capability / protocol-edge name lookup.
 - Execute `WaitForWorkflow`.
 - Make `match` optional.
 - Support `timeoutMs: 0` discovery semantics:
@@ -604,9 +611,9 @@ Use existing beads where they already fit:
 - `tf-auuv`: Phase 1 integration / one-substrate collapse.
 - `tf-uo2c`: promote `waitUntilWorkflowStarted`; make this a Phase 1 Lane 5
   dependency or fold it into Lane 5 if the PR is not landed.
-- `tf-lawq`: Phase 2 Lane 1/2 channel registry + opaque `ChannelTarget`.
+- `tf-lawq`: Phase 2 Lane 1/2 channel Layer + opaque `ChannelTarget`.
 - `tf-ma6c`: multi-context concurrent activation. This does not block Phase 1
-  or basic Phase 2 channel registry work, but it blocks realistic multi-agent
+  or basic Phase 2 channel Layer work, but it blocks realistic multi-agent
   `event(name)` choreography. Attach it to Phase 2 Lane 4 if not already fixed.
 - `tf-fmwg`: Phase 2 Lane 4 `event(name)`.
 - `tf-v8i4`: Phase 2 Lane 5 `approval(handle)`.

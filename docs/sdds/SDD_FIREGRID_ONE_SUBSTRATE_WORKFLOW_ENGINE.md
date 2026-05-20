@@ -10,7 +10,7 @@ Related artifacts:
 - `docs/handoffs/HANDOFF_tf-qoyg_shape-a-narrow.md` — Lane 1's halt establishing the engine-contract gap that this SDD reframes from "design a bridge" to "delete the bridge layer."
 - `docs/research/tf-9ut-workflow-core-paths-empirical-finding.md` — substrate baseline.
 - `docs/research/durable-tools-vs-workflow-engine-convergence.md` lines 84-89 — "Shape A should ride with the deferred-input rewrite"; this SDD operationalizes that ride-with constraint as a fuller collapse.
-- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md` — downstream presentation-layer SDD. Slice A's channel registry sits on top of the one-substrate model this SDD lands.
+- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md` — downstream presentation-layer SDD. Slice A's channel Layer sits on top of the one-substrate model this SDD lands.
 - `repos/effect/packages/cluster/src/ClusterWorkflowEngine.ts` — template that informed Firegrid's engine; primitive set is identical.
 - `packages/runtime/test/workflow-engine/DurableStreamsWorkflowEngine.test.ts` (932 lines) — empirical evidence Firegrid's engine already supports Activity + DurableClock + DurableDeferred + replay; no engine-side extension needed for this SDD.
 
@@ -36,11 +36,11 @@ Therefore the Phase 1 `wait_for(source/query) -> WaitForWorkflow` cutover is a
 pre-channel bridge. It removes `durable-tools/` and proves the workflow engine
 can own durable suspension. It does not bless workflow handles, execution ids,
 stream URLs, or table CDC details as agent-facing transports. Phase 2 must put
-the channel registry back on top of the workflow substrate:
+the channel Layer back on top of the workflow substrate:
 
 ```text
 wait_for(channel)
-  -> host channel registry resolves binding
+  -> host-provided channel Layer resolves binding
   -> workflow / engine primitive executes durable wait
 ```
 
@@ -174,7 +174,7 @@ This is a real test contract change, but Lane 1's halt doc shows the helper is ~
 5. **In-sim metrics preserved**: `workflow-core-paths` sim (Lane 1's tf-9ut reproducer) shows `AgentOutputAfter wait_for.match` and `wait_router.complete_match` spans go to zero (because the substrate that emitted them is deleted); `CallerFact` waits run through `engine.execute(WaitForWorkflow)` and emit a corresponding `Activity` + `DurableDeferred.raceAll` + `DurableClock.sleep` span trio.
 6. **Restart-replay sim added**: a sim that bounces the host process while an agent-tool `wait_for` workflow is suspended on `DurableDeferred.raceAll` resumes cleanly (the engine's existing activity-result-record + DurableClock-resume semantics carry this).
 7. **No engine API additions.** The collapse uses only primitives `DurableStreamsWorkflowEngine.test.ts` already validates.
-8. **Body-plan SDD's Slice A becomes implementable.** Channel-typed `wait_for` agent surface (`tf-lawq`) wraps `engine.execute(WaitForWorkflow, ...)` underneath; the channel registry's static-source class resolves to the typed observation stream the Activity subscribes to.
+8. **Body-plan SDD's Slice A becomes implementable.** Channel-typed `wait_for` agent surface (`tf-lawq`) wraps `engine.execute(WaitForWorkflow, ...)` underneath; the channel Layer's static-source binding resolves to the typed observation stream the Activity subscribes to.
 
 ## Freedom we have but deliberately don't use in THIS SDD
 
@@ -264,7 +264,7 @@ The collapse lands in this order. Each step has a clear test it must keep green:
 3. **Cut over the agent-tool surface.** Switch `tool-use-to-effect.ts:216` to `engine.execute(WaitForWorkflow, ...)`. Run `wait-pre-attach-roundtrip` + dark-factory; CallerFact path span shape changes but functional outcome preserved.
 4. **Cut over the runtime-context body.** Restructure to stream-zip + handler. Delete per-row deferreds, WaitFor.match call, completedRuntimeInput, awaitPermissionResponseInput.
 5. **Delete `durable-tools/`.** Once no callers remain. Clean removal — no compat shims.
-6. **Body-plan Slice A.** `tf-lawq` (ChannelRegistry + opaque ChannelTarget) becomes implementable; sits on top of the one-substrate model.
+6. **Body-plan Slice A.** `tf-lawq` (channel Layer + opaque ChannelTarget) becomes implementable; sits on top of the one-substrate model.
 
 Each step is independently shippable. Step 1 unblocks tests. Step 2 lands a new isolated workflow with its own tests. Step 3 cuts the agent-tool surface over but preserves observability. Step 4 is the big runtime-context body restructure. Step 5 is cleanup. Step 6 unblocks the body-plan migration.
 
