@@ -8,6 +8,14 @@ This package projects `@firegrid/protocol` operations into host-side Effect
 Layers and Effect AI `Tool`/`Toolkit` values, and composes whatever runtime
 substrate `@firegrid/runtime` exposes.
 
+Host SDK is the host-author projection of the same protocol contracts consumed
+by `@firegrid/client-sdk`, `@firegrid/cli`, MCP clients, and future REST, gRPC,
+or JSON-RPC bindings. It installs concrete capabilities and channel bindings;
+it does not define a central orchestration graph. Application and agent-facing
+surfaces should see sessions, tools, channels, and observations, while workflow
+engines, stream URLs, provider handles, and Durable Streams plumbing stay below
+the host boundary.
+
 ## Boundary
 
 - May import: `@firegrid/protocol`, `@firegrid/runtime`, `@effect/ai`,

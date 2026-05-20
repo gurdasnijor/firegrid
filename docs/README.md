@@ -10,6 +10,13 @@ the intent and trade-offs behind those requirements.
 
 ## Current Direction
 
+**Start with `cannon/README.md`.** The `docs/cannon/` tree is the compact
+canonical source-of-truth set for the current host-sdk/runtime boundary, agent
+body plan, one-substrate workflow engine, private-beta convergence state, and
+active next-step proposals. Older docs in `docs/sdds/`, `docs/research/`, and
+`docs/proposals/` are historical unless promoted or linked from
+`docs/cannon/README.md`.
+
 Read these first for the current shape of Firegrid:
 
 | Area | Document | Primary Specs |

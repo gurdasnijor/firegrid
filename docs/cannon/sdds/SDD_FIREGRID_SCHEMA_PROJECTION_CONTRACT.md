@@ -18,14 +18,16 @@ protocol operation catalog
        -> agent tool binding
        -> TypeScript SDK binding
        -> CLI binding
+       -> future REST / gRPC / JSON-RPC bindings
   -> execution
        -> shared operation execution where the substrate is actually common
 ```
 
-The schema catalog is the product contract. Tools, client APIs, docs, and CLI
-commands are bindings of that contract. The bindings expose the same operation
-constraints to different touchpoints; execution turns a validated operation
-into concrete Firegrid substrate effects.
+The schema catalog is the product contract. Tools, client APIs, docs, CLI
+commands, and future transport adapters such as REST, gRPC, or JSON-RPC are
+bindings of that contract. The bindings expose the same operation constraints
+to different touchpoints; execution turns a validated operation into concrete
+Firegrid substrate effects.
 
 This is deliberately not:
 
@@ -47,8 +49,8 @@ In other words:
 schema -> [tool binding, client binding, cli binding]
 ```
 
-The bindings may have different user-facing names, but they must not define
-different contracts.
+The bindings may have different user-facing names and transports, but they must
+not define different contracts.
 
 The package-level shape is:
 

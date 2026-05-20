@@ -6,6 +6,12 @@ The runtime observes durable control-plane and ingress tables, starts sandbox
 providers, writes runtime output rows, owns the workflow engine, and exposes
 runtime-owned workflow definitions.
 
+`@firegrid/runtime` is the execution substrate below Firegrid's projection
+surfaces. Client SDK methods, CLI commands, MCP tools, and future REST, gRPC, or
+JSON-RPC adapters should bind protocol contracts and delegate down to runtime
+capabilities through host composition. Runtime should not import those bindings
+or expose workflow handles as the application-facing API.
+
 For the stable operational map of the runtime package, see
 [Runtime Architecture](ARCHITECTURE.md). The SDDs remain decision records.
 

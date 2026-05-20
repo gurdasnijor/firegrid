@@ -2,11 +2,19 @@
 
 Browser- and edge-safe Firegrid client APIs for application code.
 
-`@firegrid/client-sdk` writes durable session intent and reads Firegrid durable
-projections. It does not import `@firegrid/runtime`, start processes by itself,
-own sandbox providers, or deliver live runtime input. `session.start()` records
-a durable start request and returns an acknowledgement; host processes execute
-that request through `@firegrid/host-sdk`.
+`@firegrid/client-sdk` is the TypeScript/app projection of Firegrid's protocol
+contracts. It writes durable session intent and reads durable observations, but
+it does not define a workflow graph, start processes by itself, own sandbox
+providers, or deliver live runtime input. `session.start()` records a durable
+start request and returns an acknowledgement; host processes execute that
+request through `@firegrid/host-sdk`.
+
+The same protocol operation catalog can be projected into other bindings: CLI
+commands, MCP tools, and future REST, gRPC, or JSON-RPC endpoints. Those
+bindings may look different to their callers, but they should validate against
+the same protocol schemas and lower to the same runtime/session contracts. The
+client SDK is one projection of the substrate, not the dominant way to configure
+a central agent graph.
 
 ## Public Surface
 
@@ -91,7 +99,7 @@ Layer.succeed(FiregridConfig, {
 
 ## Durable Sessions
 
-The main app-facing surface is the session facade. It creates or loads a
+The main app-facing projection is the session facade. It creates or loads a
 RuntimeContext from a caller-owned external key, reads durable snapshots, and
 waits for permission requests.
 Its inputs are decoded through protocol-owned session operation schemas exposed
@@ -121,6 +129,10 @@ export const createPlanner = Effect.gen(function*() {
   return yield* session.snapshot()
 })
 ```
+
+`local.jsonl(...)` is the protocol launch intent helper. CLI presets such as a
+future `pnpm firegrid -- run --agent claude ...` should compile to the same
+shape rather than introducing a second runtime configuration model.
 
 Server/host code that needs to send the initial prompt should use
 `@firegrid/host-sdk` `appendRuntimeIngress`; the browser-safe client does not
@@ -189,6 +201,13 @@ lower-level integrations and tests.
 Prefer `firegrid.sessions.createOrLoad(...)` for new RuntimeContext-backed app
 work because it centralizes deterministic context identity and scoped session
 operations.
+
+Transport-specific APIs should stay above this layer. If a product exposes
+Firegrid through HTTP, REST, gRPC, JSON-RPC, or another RPC shape, that adapter
+should decode its transport request into the same protocol operation schemas
+that `FiregridClientOperations` exposes, then delegate to the appropriate
+client, host, or runtime capability. It should not clone schemas or invent a
+parallel graph DSL.
 
 ## Browser UI Reads
 

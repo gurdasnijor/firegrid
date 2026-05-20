@@ -1,25 +1,122 @@
 # Firegrid
 
-Firegrid is a durable runtime substrate for launching local stdio agents,
-recording their control-plane state, delivering prompts through durable
-ingress tables, and observing runtime output through live DurableTable-backed
-collections.
+Firegrid lets you build local AI agents that survive crashes, restarts, long
+waits, and external events without losing their place.
 
-The current repo is intentionally small:
+It is not a graph builder where you hard-code the agent workflow up front.
+Firegrid gives agents a small set of durable primitives - wait, sleep,
+delegate, schedule, execute, observe - and lets the model decide what to do
+next at runtime. Firegrid handles the durable execution underneath: workflow
+state, event streams, runtime contexts, retries, host restarts, and typed
+protocol boundaries.
 
-- `@firegrid/client` is the app/browser-facing API for `launch`, `prompt`,
-  `open`, and `watchContexts`.
-- `@firegrid/runtime` is the host-side package that runs contexts, wires
-  sandbox providers, owns the workflow engine, and exposes durable tools such
-  as `wait_for`.
-- `@firegrid/protocol` owns shared browser-safe schemas and DurableTable
-  declarations for runtime control-plane, ingress, and output rows.
-- `effect-durable-operators` owns the blessed durable state primitive:
-  `DurableTable`.
-- `effect-durable-streams` is the low-level raw retained-stream adapter used
-  only where table semantics are not enough.
-- `apps/flamecast` is the current toy app proving browser UI -> Firegrid
-  client -> runtime host -> local stdio process -> live output.
+**Status:** private beta. The runtime is usable for local experiments and
+internal agent workflows, but public APIs may still change.
+
+## Choreography, Not Orchestration
+
+Most agent frameworks ask you to author the control flow: define a graph, write
+steps, wire branches, set timeouts, and decide when one agent should call the
+next. Firegrid's bet is different. The durable substrate should make agent
+decisions safe and observable, but the sequence of work should be chosen by the
+agent in response to what it actually sees.
+
+```mermaid
+flowchart LR
+  subgraph O["Orchestration"]
+    O0["Developer writes graph"] --> O1["research step"]
+    O1 --> O2{"coded branch"}
+    O2 --> O3["score step"]
+    O2 --> O4["draft step"]
+    O3 --> O5["fixed retry / timeout policy"]
+    O4 --> O5
+    O5 --> O6["workflow ceiling: change code to change behavior"]
+  end
+
+  subgraph C["Firegrid choreography"]
+    C0["Agent receives goal + durable tools"] --> C1["observe history"]
+    C1 --> C2["decide next move at runtime"]
+    C2 --> C3["wait_for / sleep"]
+    C2 --> C4["session_new / session_prompt"]
+    C2 --> C5["execute / schedule_me"]
+    C3 --> C6["durable event stream"]
+    C4 --> C6
+    C5 --> C6
+    C6 --> C1
+  end
+```
+
+The agent-facing surface is intentionally small:
+
+- `wait_for` - pause durably until a matching fact appears
+- `session_new`, `session_prompt` - create and continue delegated participants
+- `schedule_me` - ask your future self to resume with a prompt
+- `execute` - call a bounded, advertised capability and record the result
+- `sleep` - pause for a duration
+
+That means the primary "program" can be a prompt plus durable tools, not a
+TypeScript DAG:
+
+```text
+Goal: fix the failing checkout test and open a PR.
+
+Available durable tools:
+- wait_for(channel, match, timeout)
+- session_new(prompt)
+- session_prompt(session, prompt)
+- schedule_me(when, prompt)
+- execute(capability, input)
+- sleep(duration)
+
+Agent:
+1. Start an investigation session for the failing test.
+2. Wait for its summary.
+3. If the fix is small, implement it directly; otherwise start a second
+   session for review.
+4. Execute the test command.
+5. Wait for CI or schedule myself to re-check.
+6. Open the PR when the evidence is good enough.
+```
+
+The model owns the sequence, branching, delegation, and recovery policy. The
+durability comes from the primitives, and the legibility comes from the
+observation stream every primitive writes to.
+
+## One Substrate, Several Projections
+
+Firegrid does have client APIs, host composition APIs, CLI entry points, and MCP
+tools. Those are projections of the same substrate, not separate ways to define
+a central agent graph.
+
+- **Agent tool projection:** the agent sees `wait_for`, `session_new`,
+  `schedule_me`, `execute`, and related durable tools.
+- **Channel projection:** application events such as webhooks, approvals,
+  runtime observations, and domain facts become semantic channels the agent can
+  wait on or emit to.
+- **Client SDK projection:** apps can create sessions, read observations, and
+  render live state without importing runtime internals.
+- **Host Layer projection:** host authors compose runtime services, channel
+  bindings, MCP exposure, and adapters with Effect `Layer`s.
+- **CLI projection:** local development can start a host or run one context
+  without writing a host app.
+- **Transport projections:** future REST, gRPC, or JSON-RPC adapters can bind
+  the same protocol contracts without becoming a new orchestration layer.
+
+Application code talks to these projections. It does not receive workflow
+engines, stream URLs, table names, execution ids, or subscription handles.
+
+## Who It Is For
+
+Firegrid is for developers building agents that need to do real work over time:
+local coding agents, automation workers, private assistants, webhook-driven
+agents, and internal tools that need durable waits without becoming a full
+hosted workflow platform.
+
+It sits near systems such as Temporal, Restate, Inngest, LangGraph, Mastra, and
+CrewAI, but the center of gravity is different. Firegrid is an Effect-native
+local agent runtime for choreography: durable primitives, typed channels, and
+observable history under an agent-facing surface. It is not a general workflow
+SaaS, and it is not primarily a graph authoring framework.
 
 ## Quick Start
 
@@ -29,158 +126,134 @@ Install dependencies:
 pnpm install
 ```
 
-Run the Firegrid host against a Durable Streams endpoint:
+Run the full local verification gate:
 
 ```sh
-export DURABLE_STREAMS_BASE_URL="http://127.0.0.1:8080"
-export FIREGRID_RUNTIME_NAMESPACE="firegrid-dev"
-export FIREGRID_RUNTIME_INPUT_ENABLED="true"
-
-pnpm firegrid:host
+pnpm run verify
 ```
 
-For Electric Cloud, also set `FIREGRID_DURABLE_STREAMS_TOKEN` and use the
-service-scoped base URL:
-
-```sh
-export DURABLE_STREAMS_BASE_URL="https://api.electric-sql.cloud/v1/stream/<service-id>"
-export FIREGRID_RUNTIME_NAMESPACE="firegrid-dev"
-export FIREGRID_DURABLE_STREAMS_TOKEN="<token>"
-
-pnpm firegrid:host
-```
-
-See [Electric Cloud runtime host](docs/runbooks/electric-cloud-runtime-host.md)
-for the smoke runbook.
-
-Run one local-process agent synchronously through the same durable runtime path:
-
-```sh
-export DURABLE_STREAMS_BASE_URL="http://127.0.0.1:8080"
-export FIREGRID_RUNTIME_NAMESPACE="firegrid-run-dev"
-
-pnpm firegrid -- run \
-  --cwd "$PWD" \
-  --prompt "hello from durable ingress" \
-  --secret-env CHILD_API_KEY=PARENT_API_KEY \
-  -- \
-  node agent.mjs
-```
-
-`firegrid run` creates a `RuntimeContext` row, optionally appends the initial
-prompt through `RuntimeIngressTable`, calls `startRuntime(contextId)`, waits for
-the runtime workflow to finish, and exits with the child process exit code.
-`--secret-env` accepts env-var names only; it authorizes a specific
-child-env/host-env binding without writing the secret value into durable rows.
-See [Firegrid Run - Synchronous MVP](docs/runbooks/firegrid-run-sync-mvp.md) for
-local and Electric Cloud smoke commands.
-
-Start a local route-scoped MCP host and context for MCP Inspector or another
-client:
+Start a local Firegrid host with a route-scoped MCP endpoint:
 
 ```sh
 pnpm firegrid -- start
 ```
 
-With no `DURABLE_STREAMS_BASE_URL`, this starts an embedded loopback Durable
-Streams test server, creates a host-bound no-op `RuntimeContext`, prints one
-JSON ready record with `contextId` and `mcpUrl`, and keeps the host scope alive.
-Pass optional run flags and `-- <agent command...>` only when you want a
-specific runtime intent in the seeded context.
-
-For manual commands, `DURABLE_STREAMS_BASE_URL` must point at a running Durable
-Streams endpoint. The `smoke:firegrid-run` scenario starts its own local test
-server, so it does not require a separate server process.
-
-## Flamecast Toy
-
-The fastest end-to-end product path is the Flamecast toy app:
+Run one local-process context synchronously:
 
 ```sh
-pnpm --filter @firegrid/flamecast runtime
-pnpm --filter @firegrid/flamecast dev
+pnpm firegrid -- run \
+  --cwd "$PWD" \
+  --prompt "hello from Firegrid" \
+  -- \
+  node agent.mjs
 ```
 
-It uses `@firegrid/client` for launch and prompt intents, then observes shared
-Firegrid DurableTables with TanStack live queries. See
-[apps/flamecast/README.md](apps/flamecast/README.md).
+Run deterministic tiny-firegrid simulations:
 
-## Packages
+```sh
+pnpm --filter @firegrid/tiny-firegrid simulate:list
+pnpm --filter @firegrid/tiny-firegrid simulate:perf
+```
 
-| Package | Purpose |
+## What Firegrid Provides
+
+- **Durable local agent contexts.** Agent work can span sleeps, waits, restarts,
+  and host bounces without depending on one in-memory process staying alive.
+- **Agent tools with durable semantics.** Operations like `sleep`, `wait_for`,
+  session control, scheduling, and execution are exposed as a small tool
+  surface.
+- **Typed channels.** Agents wait on or emit semantic events such as webhooks,
+  approvals, lifecycle events, and domain facts without knowing the transport
+  underneath.
+- **Effect-native runtime composition.** Host applications compose Firegrid
+  services with `Layer`s, so tests and local hosts can swap concrete bindings
+  cleanly.
+- **Protocol-owned contracts.** Host, client, CLI, runtime, and tests share
+  schemas through `@firegrid/protocol` instead of inventing local contracts.
+- **Simulation-first validation.** `@firegrid/tiny-firegrid` provides fast,
+  deterministic traces and perf harnesses for runtime behavior that should not
+  require live provider calls.
+
+## How It Is Organized
+
+```text
+@firegrid/protocol
+  shared schemas, operation contracts, row/projection schemas
+
+bindings
+  @firegrid/host-sdk
+    host composition, channel Layers, MCP / Effect AI tool binding
+  @firegrid/client-sdk
+    browser/app-safe client surface over protocol schemas
+  @firegrid/cli
+    local command-line binding
+
+@firegrid/runtime
+  workflow engine integration, runtime workflows, event pipeline,
+  verified webhook ingest, provider adapters, common execution services
+```
+
+| Package | Role |
 | --- | --- |
-| [`@firegrid/client`](packages/client/README.md) | App/browser API for launching contexts, prompting, snapshots, and context watches. |
-| [`@firegrid/runtime`](packages/runtime/README.md) | Host-side runtime, sandbox execution, workflow engine, and durable tools. |
-| [`@firegrid/protocol`](packages/protocol/README.md) | Browser-safe shared schemas and DurableTable declarations. |
-| [`effect-durable-operators`](packages/effect-durable-operators/README.md) | `DurableTable` service-tag API and optional React live-query bindings. |
-| [`effect-durable-streams`](packages/effect-durable-streams/README.md) | Low-level Effect adapter for raw Durable Streams. |
-
-## Common Commands
-
-| Command | Purpose |
-| --- | --- |
-| `pnpm firegrid:host` | Run the Firegrid runtime host from environment config. |
-| `pnpm firegrid:host:env` | Run the host after loading root `.env`. |
-| `pnpm firegrid -- start` | Start a local host with MCP mounted, seed a context, print the MCP URL, and stay alive. |
-| `pnpm firegrid:start` | Compatibility script for `pnpm firegrid -- start`. |
-| `pnpm firegrid -- run -- <agent>` | Launch one synchronous local-process runtime context. |
-| `pnpm firegrid:run -- <agent>` | Compatibility script for `pnpm firegrid -- run -- <agent>`. |
-| `pnpm firegrid:run:env -- <agent>` | Run the synchronous path after loading root `.env`. |
-| `pnpm smoke:firegrid-run` | Run the local Tracer 019 sync-run smoke with an in-process Durable Streams test server. |
-| `pnpm run check:docs` | Fast docs-only whitespace and conflict-marker check. |
-| `pnpm run check:specs` | Validate all Acai feature YAML files parse. |
-| `pnpm run typecheck` | Typecheck all workspace packages through Turbo. |
-| `pnpm run lint` | Run ESLint and production cutover checks. |
-| `pnpm verify` | Full ready-for-review gate. |
+| [`@firegrid/protocol`](packages/protocol/README.md) | Browser-safe shared schemas, operation contracts, launch/control rows, runtime ingress rows, observations, projection schemas, verified-webhook schemas. |
+| [`@firegrid/runtime`](packages/runtime/README.md) | Durable execution substrate: workflow engine, workflow definitions, runtime event pipeline, provider adapters, verified webhook ingest, runtime operation execution. |
+| [`@firegrid/host-sdk`](packages/host-sdk/README.md) | Host-author composition: `FiregridRuntimeHostLive`, channel Layers, MCP server exposure, Effect AI toolkit binding, local host topology. |
+| [`@firegrid/client-sdk`](packages/client-sdk/README.md) | App/browser-safe client binding over protocol schemas and normalized observations. |
+| [`@firegrid/cli`](packages/cli/package.json) | Local CLI entry points for starting hosts and running contexts. |
+| [`@firegrid/tiny-firegrid`](packages/tiny-firegrid/README.md) | Deterministic simulations, trace capture, perf harnesses, and factory-vision smokes. |
+| [`effect-durable-operators`](packages/effect-durable-operators/README.md) | Effect-native durable table/operator layer over Durable Streams State. |
+| [`effect-durable-streams`](packages/effect-durable-streams/README.md) | Low-level Effect client for the Durable Streams protocol. |
 
 ## Architecture Docs
 
-- [Durable Launch Runtime Operator](docs/proposals/SDD_FIREGRID_DURABLE_LAUNCH_RUNTIME_OPERATOR.md)
-- [Firegrid Agent Runtime Substrate](docs/proposals/SDD_FIREGRID_AGENT_RUNTIME_SUBSTRATE.md)
-- [Firegrid Durable Tools](docs/proposals/SDD_FIREGRID_DURABLE_TOOLS.md)
-- [DurableTable React Live Query](docs/proposals/SDD_DURABLE_TABLE_REACT_LIVE_QUERY.md)
-- [Runtime Environment Boundary](docs/architecture/runtime-env-boundary.md)
-- [Runbooks](docs/runbooks/README.md)
-- [Docs map](docs/README.md)
+The compact source-of-truth reading set starts at
+[`docs/cannon/README.md`](docs/cannon/README.md). Older docs elsewhere under
+`docs/` are historical unless they are promoted there.
 
-Acai specs live under `features/`. Implementation work should update specs
-first, then reference full ACIDs in tests or nearby comments.
+Useful entry points:
 
-## Validation
+- [`docs/cannon/architecture/host-sdk-runtime-boundary.md`](docs/cannon/architecture/host-sdk-runtime-boundary.md)
+- [`docs/cannon/architecture/current-convergence-assessment-2026-05-20.md`](docs/cannon/architecture/current-convergence-assessment-2026-05-20.md)
+- [`docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`](docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md)
+- [`docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`](docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md)
+- [`docs/cannon/vision/factory-vision.md`](docs/cannon/vision/factory-vision.md)
 
-Run the full ready-for-review gate:
+## For Contributors
 
-```sh
-pnpm verify
-```
-
-Common narrower gates:
+Run docs-only checks when editing documentation:
 
 ```sh
-pnpm run check:specs
 pnpm run check:docs
-pnpm run lint
-pnpm run lint:deps
-pnpm run typecheck
-pnpm run test
+pnpm run check:specs
 ```
 
-Dependency graphs are generated by dependency-cruiser and committed under
-`docs/`:
+Run the full gate before code review:
 
 ```sh
-pnpm run arch:deps
-pnpm run arch:deps:detail
+pnpm run verify
 ```
 
-## Boundary Rules
+Lane work happens in sibling worktrees under `../firegrid-worktrees/`, not in
+the primary checkout:
 
-- Durable state should be modeled with `DurableTable` unless the data is truly
-  an append-only retained fact stream.
-- Runtime product code should not import `@durable-streams/client` or
-  `@durable-streams/state` directly.
-- `@firegrid/protocol` stays browser-safe and does not own runtime services.
-- Do not recreate generic consumer/projection/checkpoint abstractions; express
-  those workflows with Effect streams plus owner-local DurableTables.
-- Root `src/` is the product composition entrypoint. Do not add a new package
-  for composition or topology helpers.
+```sh
+bash scripts/task-enter.sh <bead-id> <slug>
+# work in ../firegrid-worktrees/<bead-id>-<slug>
+bash scripts/task-exit.sh <bead-id>
+```
+
+Architecture discipline for contributors:
+
+- Channels are the application and agent surface.
+- Runtime owns workflow execution and durable substrate integration.
+- Host SDK owns binding and host composition.
+- Protocol owns shared contracts consumed by more than one binding.
+- Product code imports from normal package dependencies, never from
+  `repos/**`; vendored upstream sources are read-only references.
+
+The current convergence scoreboard is the `currentHostSdkSubstrateDebt` list in
+[`.dependency-cruiser.cjs`](.dependency-cruiser.cjs).
+
+## License
+
+This repository does not currently include a license file.

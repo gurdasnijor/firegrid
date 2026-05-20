@@ -1,15 +1,108 @@
 flowchart LR
 
 subgraph 0["packages"]
-subgraph 1["protocol"]
+subgraph 1["effect-durable-operators"]
 subgraph 2["src"]
-3["index.ts"]
-4["launch"]
-5["required-action"]
-6["session"]
+3["DurableTable.ts"]
+4["Errors.ts"]
+5["index.ts"]
+end
+end
+subgraph 6["effect-durable-streams"]
+subgraph 7["src"]
+8["Bound.ts"]
+9["DurableStream.ts"]
+A["Reader.ts"]
+B["Writer.ts"]
+C["errors.ts"]
+D["index.ts"]
+subgraph E["internal"]
+F["schema.ts"]
+G["sse.ts"]
+end
+H["namespace.ts"]
+subgraph I["protocol"]
+J["Http.ts"]
+K["Producer.ts"]
+L["Read.ts"]
+M["constants.ts"]
+end
+end
+end
+subgraph N["protocol"]
+subgraph O["src"]
+P["agent-output"]
+Q["agent-tools"]
+R["index.ts"]
+S["launch"]
+T["observations"]
+U["operations"]
+V["otel"]
+W["projection"]
+X["runtime-ingress"]
+Y["session-facade"]
+Z["verified-webhook"]
 end
 end
 end
 3-->4
-3-->5
-3-->6
+3-->D
+5-->3
+5-->4
+8-->A
+8-->B
+A-->F
+A-->J
+A-->L
+B-->C
+B-->F
+B-->J
+B-->K
+D-->C
+D-->H
+F-->C
+G-->9
+G-->C
+G-->M
+G-->J
+H-->8
+H-->9
+H-->C
+H-->A
+H-->B
+J-->M
+K-->C
+K-->F
+K-->J
+L-->9
+L-->F
+L-->G
+L-->M
+L-->J
+Q-->P
+Q-->T
+Q-->U
+Q-->W
+R-->P
+R-->Q
+R-->S
+R-->T
+R-->U
+R-->V
+R-->W
+R-->X
+R-->Y
+R-->Z
+S-->V
+S-->5
+S-->X
+U-->W
+X-->V
+X-->5
+Y-->P
+Y-->Q
+Y-->T
+Y-->U
+Y-->X
+Y-->S
+Y-->W
