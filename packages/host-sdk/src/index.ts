@@ -46,6 +46,7 @@ export {
 // shared host observation substrate.
 export {
   HostRuntimeObservationSubstrateLive,
+  RuntimeAgentToolExecutionLive,
   RuntimeToolUseExecutorLive,
 } from "./host/runtime-substrate.ts"
 

@@ -13,7 +13,11 @@ import {
   type RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
-import { RuntimeToolUseExecutor } from "@firegrid/runtime/tool-executor"
+import {
+  makeRuntimeAgentToolExecutionService,
+  RuntimeAgentToolExecution,
+  RuntimeToolUseExecutor,
+} from "@firegrid/runtime/tool-executor"
 import {
   toolUseToEffect,
 } from "../agent-tools/execution/tool-use-to-effect.ts"
@@ -83,6 +87,17 @@ type RuntimeToolUseExecutorExecutionEnv =
   | HostRuntimeObservationSubstrateEnv
   | AgentToolHost
   | ChannelInventory
+  | RuntimeAgentToolExecution
+
+// firegrid-host-sdk.PACKAGE_GRAPH.6
+// Host-provided live layer for the runtime-owned validated tool execution seam.
+export const RuntimeAgentToolExecutionLive = RuntimeAgentToolExecution.layer(
+  makeRuntimeAgentToolExecutionService(),
+).pipe(
+  Layer.withSpan("firegrid.host.runtime_substrate.agent_tool_execution.layer", {
+    kind: "internal",
+  }),
+)
 
 // firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2
 // Temporary runtime-host live layer. The future host-sdk layer can provide the
