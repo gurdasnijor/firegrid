@@ -2,7 +2,8 @@ import {
   Firegrid,
   local,
 } from "@firegrid/client-sdk/firegrid"
-import { Effect } from "effect"
+import { Effect, Ref } from "effect"
+import type * as Scope from "effect/Scope"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 
@@ -36,12 +37,73 @@ const makeAgentCwd = (): string => {
   return dir
 }
 
+// tf-v7t follow-up (post-codec-rationalization trace inspection): the
+// agent's claude-agent-acp wraps every MCP tool invocation in an ACP
+// `session/request_permission` gate (acp-agent.js `canUseTool`
+// callback). Firegrid's codec forwards that as a PermissionRequest
+// observation on the agent-output stream; the driver is the policy
+// authority — it MUST respond via `session.permissions.respond` or the
+// agent waits forever and §6 never progresses past tool-1.
+//
+// This is the §6-live-tonight unblock. For a closed-harness sim with
+// only Firegrid MCP tools (no security boundary), allow-everything is
+// safe. `afterSequence` is threaded forward from each match so the
+// projection-wait doesn't hot-loop on already-resolved permission
+// rows — same discipline that tf-85bs lifts to wait.forAgentOutput.
+// Returns `Effect<..., never, Scope>` so the forked fiber attaches to
+// the DRIVER'S scope (the caller's Effect.gen scope), not an inner
+// freshly-opened-then-closed scope. A previous version used
+// `Effect.scoped` here which immediately closed the inner scope on
+// return, killing the forked fiber before any permission request
+// arrived — same mistake the runner-heartbeat had at first.
+const forkAutoApprovePermissions = (
+  session: {
+    readonly wait: {
+      readonly forPermissionRequest: (
+        request: { readonly afterSequence?: number; readonly timeoutMs?: number },
+      ) => Effect.Effect<unknown, unknown>
+    }
+    readonly permissions: {
+      readonly respond: (
+        request: { readonly permissionRequestId: string; readonly decision: { readonly _tag: "Allow" } },
+      ) => Effect.Effect<unknown, unknown>
+    }
+  },
+): Effect.Effect<void, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    const afterSequence = yield* Ref.make<number | undefined>(undefined)
+    yield* Effect.forever(Effect.gen(function*() {
+      const after = yield* Ref.get(afterSequence)
+      const result = (yield* session.wait.forPermissionRequest({
+        ...(after === undefined ? {} : { afterSequence: after }),
+        timeoutMs: 15_000,
+      })) as
+        | { readonly matched: true; readonly request: { readonly permissionRequestId: string; readonly sequence: number } }
+        | { readonly matched: false; readonly timedOut: true }
+      if (result.matched) {
+        yield* Ref.set(afterSequence, result.request.sequence)
+        yield* session.permissions.respond({
+          permissionRequestId: result.request.permissionRequestId,
+          decision: { _tag: "Allow" as const },
+        })
+      }
+    }))
+  }).pipe(
+    Effect.forkScoped,
+    Effect.asVoid,
+  )
+
 export const darkFactoryDriver: Effect.Effect<
   void,
   unknown,
   Firegrid
 > =
-  Effect.gen(function*() {
+  // Effect.scoped wraps the driver body so the auto-approve fork
+  // (forkScoped) attaches to a scope that lasts the lifetime of this
+  // gen body. The body runs forever (while(true) at the bottom) so
+  // the scope only closes on cancellation (sim timeout), which is
+  // exactly when we want the forked fiber to die.
+  Effect.scoped(Effect.gen(function*() {
     const firegrid = yield* Firegrid
     const cwd = makeAgentCwd()
 
@@ -72,6 +134,11 @@ export const darkFactoryDriver: Effect.Effect<
     // .mcp.json write happens at start, which needs the row).
     yield* session.whenReady
 
+    // Fork the permission auto-approver BEFORE start(). The agent's first
+    // tool call hits the permission gate within seconds of start; the
+    // handler must already be observing the output stream by then.
+    yield* forkAutoApprovePermissions(session)
+
     yield* firegrid.sessions.prompt({
       sessionId: session.contextId,
       prompt: promptForFactoryLoop,
@@ -84,4 +151,4 @@ export const darkFactoryDriver: Effect.Effect<
         timeoutMs: 15_000,
       })
     }
-  })
+  }))
