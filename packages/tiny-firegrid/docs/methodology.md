@@ -48,6 +48,20 @@ write a sim, read a trace, or file a finding, you know which job you're doing.
   (`FiregridLocalHostLive`, `FiregridMcpServerLayer`, etc.), but only the layer
   factories — not the runtime context's private machinery.
 
+## Stopping a simulation
+
+Stop is an external signal, not an in-driver predicate. The runner creates a
+`stopSignal` effect for each run and passes it to `host(env)`. Drivers stay on
+the public client surface and keep polling until the runner timeout, SIGINT, or
+some host-scoped fiber completes that signal.
+
+When a simulation needs to stop early after demonstrated success or a specific
+observed condition, fork a named observer fiber from the host layer. That fiber
+may consume `session.wait.forAgentOutput` or a future stream surface and yield
+`env.stopSignal.complete` when its predicate fires. Keep that observer separate
+from the driver: the driver remains a pure client loop, the trace remains the
+output, and the host scope owns the observer lifetime.
+
 ## Triage rubric
 
 When you read a trace and something doesn't match expectation, classify the
