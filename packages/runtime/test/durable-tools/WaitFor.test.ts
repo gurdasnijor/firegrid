@@ -412,6 +412,137 @@ describe("durable-tools wait_for", () => {
     )
   })
 
+  it("tf-ovrk docs/research/durable-tools-vs-workflow-engine-convergence.md:54-59 host restart fires wait_router.start + wait_router.initial_check off waits.rows() replay and re-attaches the still-active wait", async () => {
+    const streams = makeStreams("router-replay")
+    type CapturedSpan = { readonly name: string; readonly attributes: Readonly<Record<string, unknown>> }
+    type CapturedEvent = {
+      readonly spanName: string
+      readonly eventName: string
+      readonly attributes: Readonly<Record<string, unknown>>
+    }
+    const makeCapturingTracerLayer = (
+      capturedSpans: Array<CapturedSpan>,
+      capturedEvents: Array<CapturedEvent>,
+    ) => {
+      const capturingTracer: Tracer.Tracer = {
+        [Tracer.TracerTypeId]: Tracer.TracerTypeId,
+        span: (name, parent, context, links, startTime, kind) => {
+          capturedSpans.push({ name, attributes: {} })
+          const span: Tracer.Span = {
+            _tag: "Span",
+            name,
+            spanId: `cap-${Math.random().toString(36).slice(2, 10)}`,
+            traceId: "cap-trace",
+            parent,
+            context,
+            status: { _tag: "Started", startTime },
+            attributes: new Map(),
+            links,
+            sampled: true,
+            kind,
+            end: () => {},
+            attribute: () => {},
+            event: (eventName, _startTime, attributes) => {
+              capturedEvents.push({
+                spanName: name,
+                eventName,
+                attributes: attributes ?? {},
+              })
+            },
+            addLinks: () => {},
+          }
+          return span
+        },
+        context: (f) => f(),
+      }
+      return Layer.setTracer(capturingTracer)
+    }
+
+    const Wf = Workflow.make({
+      name: "wait-for-router-replay",
+      payload: Schema.Struct({ id: Schema.String, requestId: Schema.String }),
+      success: TestRowResultSchema,
+      idempotencyKey: (p) => p.id,
+    })
+    const workflowLayer = Wf.toLayer((payload) =>
+      Effect.gen(function*() {
+        const outcome = yield* waitForOrDie<TestRow>({
+          name: "router-replay",
+          source: RUNTIME_RUN_SOURCE,
+          trigger: [{ path: ["requestId"], equals: payload.requestId }],
+          resultSchema: TestRowResultSchema,
+        })
+        if (outcome._tag !== "Match") throw new Error("expected Match")
+        return outcome.row
+      }))
+
+    // Run 1: register a wait + persist its active row to the durable wait index.
+    // Tear the layer down WITHOUT a matching source row, so the wait stays
+    // status=active in the durable index for Run 2 to discover.
+    await runWith(
+      buildLayer(streams, workflowLayer),
+      Effect.gen(function*() {
+        yield* registerTestSource
+        yield* Wf.execute(
+          { id: "router-replay-1", requestId: "req-router-replay" },
+          { discard: true },
+        )
+        yield* sleep(50)
+        const table = yield* DurableToolsTable
+        const waits = yield* table.waits.query((coll) => coll.toArray)
+        expect(waits.some((w) => w.status === "active")).toBe(true)
+      }),
+    )
+
+    // Run 2: bring up a FRESH layer against the same durable streams (the
+    // structural equivalent of a host process restart). Install a capturing
+    // tracer to observe the registration-replay code path. Then produce the
+    // matching source row and prove the wait satisfies through the re-attached
+    // subscription.
+    const capturedSpans: Array<CapturedSpan> = []
+    const capturedEvents: Array<CapturedEvent> = []
+    const layer = buildLayer(streams, workflowLayer).pipe(
+      Layer.provideMerge(makeCapturingTracerLayer(capturedSpans, capturedEvents)),
+    )
+
+    const result = await runWith(
+      layer,
+      Effect.gen(function*() {
+        yield* registerTestSource
+        const source = yield* TestSourceTable
+        const fiber = yield* Effect.fork(
+          Wf.execute({ id: "router-replay-1", requestId: "req-router-replay" }),
+        )
+        // Allow the fresh router to bootstrap, replay waits.rows(), and
+        // re-attach the still-active wait BEFORE the source row arrives.
+        yield* sleep(100)
+        yield* source.rows.upsert({
+          id: "router-replay-match",
+          requestId: "req-router-replay",
+          status: "submitted",
+        })
+        return yield* Fiber.join(fiber)
+      }),
+    )
+    expect(result.id).toBe("router-replay-match")
+
+    // Per convergence doc:54-59, the durable wait index exists for exactly
+    // this code path. Trace evidence: the bootstrap span fires, the per-wait
+    // initial_check fires off the waits.rows() replay, and the re-attached
+    // subscription eventually completes the match.
+    const spanNames = new Set(capturedSpans.map((s) => s.name))
+    expect(spanNames.has("firegrid.durable_tools.wait_router.start")).toBe(true)
+    expect(spanNames.has("firegrid.durable_tools.wait_router.initial_check"))
+      .toBe(true)
+
+    // The wait fires wait.satisfied (and the Slice-E canonical alias) only if
+    // the re-attached subscription successfully drove completion in this run.
+    // Workflow replay may double-emit; uniqueness is what we assert here.
+    const uniqueEvents = new Set(capturedEvents.map((e) => e.eventName))
+    expect(uniqueEvents.has("wait.satisfied")).toBe(true)
+    expect(uniqueEvents.has("fireline.agent.resumed")).toBe(true)
+  })
+
   it("firegrid-durable-tools.WAIT_FOR.6, SUBSCRIPTION.1 resumes after restart when the source row appears between runs", async () => {
     const streams = makeStreams("restart")
     const Wf = Workflow.make({
