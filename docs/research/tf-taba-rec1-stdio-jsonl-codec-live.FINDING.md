@@ -105,3 +105,17 @@ protocol, but it is not live-compatible with native Codex CLI JSONL. A Phase 2
 multi-codec cutover should not treat `codex exec --json` as the native
 `stdio-jsonl` backend unless a deliberate Codex-JSONL adapter is added and its
 permission/MCP policy is specified separately.
+
+Codec catalog implication: the codec should not remain silently ambiguous. If
+ACP coverage is confirmed for all target agents, `stdio-jsonl` is a deletion
+candidate and the cross-codec `AgentSession` indirection should be re-evaluated
+with only one live implementation. If a future stdio-jsonl consumer is planned,
+that consumer should be named in the codec catalog and validated before Phase 2
+depends on it.
+
+Permission implication: the Codex `mcp_tool_call` cancellation under
+noninteractive `-a never` is the same structural class as the ACP/Claude
+can-use-tool gate. Permission gates are a general interactive agent-CLI
+pattern, not ACP-specific. Future codec integrations should expect a
+cross-codec `call(approval(...))`-style authority instead of treating approval
+as a Claude-only workaround.

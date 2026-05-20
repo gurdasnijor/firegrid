@@ -74,6 +74,42 @@ continuation, but it does not accept subscriber-produced `ToolResult` input.
 `firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7`
 `firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9`
 
+## Codec Catalog Status
+
+### ACP
+
+ACP is the validated production-oriented external-agent codec. Current Codex
+coverage is through the Zed `codex-acp` adapter, whose upstream README
+describes it as an "ACP adapter for Codex" with client MCP server support.
+Claude agent coverage is also ACP-shaped. Permission prompts and tool-call
+approval gates should be treated as normal interactive-agent behavior, not as
+Claude-specific behavior.
+
+### stdio-jsonl
+
+`stdio-jsonl` is a Firegrid-owned wire protocol for agents that explicitly
+emit Firegrid event frames:
+
+- stdout: `text`, `assistant`, `tool_use`, `turn_complete`, `end_turn`,
+  `status`;
+- stdin: `prompt`, `tool_result`.
+
+It is validated against deterministic Firegrid fixtures, but as of
+`tf-taba` it has no validated current production agent consumer. In
+particular, native `codex exec --json` is not this protocol: it emits
+Codex-native JSONL event types such as `thread.started`, `turn.started`,
+`item.started`, `item.completed`, and `turn.completed`. Those events decode as
+recoverable Error rows under this codec, so no Firegrid `ToolUse` reaches the
+runtime tool executor.
+
+Do not assume `agentProtocol: "stdio-jsonl"` works with Codex CLI without a
+deliberate Codex-JSONL adapter and an explicit permission/MCP policy. Phase 2
+should either delete this codec as residue after ACP target-agent coverage is
+confirmed, or name the planned consumer and keep this README current.
+`firegrid-runtime-agent-event-pipeline.VALIDATION.2`
+`firegrid-runtime-host-modularity.CODEC_RUNTIME.1`
+`firegrid-runtime-host-modularity.CODEC_RUNTIME.4`
+
 ## Boundary Rules
 
 - Put wire-format parsing, encoding, and protocol session contracts here.
