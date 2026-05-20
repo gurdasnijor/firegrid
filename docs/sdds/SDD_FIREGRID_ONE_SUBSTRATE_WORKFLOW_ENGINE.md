@@ -138,6 +138,28 @@ This is a real test contract change, but Lane 1's halt doc shows the helper is ~
 7. **No engine API additions.** The collapse uses only primitives `DurableStreamsWorkflowEngine.test.ts` already validates.
 8. **Body-plan SDD's Slice A becomes implementable.** Channel-typed `wait_for` agent surface (`tf-lawq`) wraps `engine.execute(WaitForWorkflow, ...)` underneath; the channel registry's static-source class resolves to the typed observation stream the Activity subscribes to.
 
+## Freedom we have but deliberately don't use in THIS SDD
+
+Because Firegrid owns `DurableStreamsWorkflowEngine` (sibling to `ClusterWorkflowEngine`, written specifically for our durable-streams substrate), we own the implementation of `Activity` registration and replay for it. We are NOT bound to `@effect/workflow`'s upstream Activity-as-value-terminator contract — we could additively extend Activity's semantics for our engine specifically.
+
+Three shapes become natural under that freedom:
+
+- **Option α — `Activity.streamed(name, schema)((seed) => Stream<A>)`** — Activity returns a stream rather than a value; engine durably tracks emit cursor + last-emitted-value-per-chunk.
+- **Option β — `Activity.subscribed(name, sourceSchema)((event) => Effect<void>)`** — Activity declares a subscription + per-event handler; engine owns the subscription lifecycle + durable last-acknowledged cursor.
+- **Option γ — `Activity.folded(name, stateSchema, sourceSchema)(seed, step)`** — Activity declares a fold over a source with durable folded state; restart resumes from last folded value rather than re-folding from stream beginning.
+
+Under Option β, the runtime-context body could become two declarative `Activity.subscribed` registrations + per-event handlers — no `Stream.zipLatest` in the body itself. Under Option γ, the body could be a single `Activity.folded` evaluated incrementally with restart-resumes-from-state semantics.
+
+**This SDD deliberately does NOT use that freedom.** Three reasons:
+
+1. **Scope discipline.** The current collapse is already a ~2400-line deletion against an existing engine surface. Bolting on "redesign Activity" makes the SDD un-reviewable and the implementation riskier.
+2. **Independent acceptance.** The current SDD's acceptance criteria don't need Activity changes to be falsifiable. The Activity-rethink has its own set of tests and benchmarks (specifically: how much replay-cost we pay today on a stream-zip body, and whether per-event idempotency-key infrastructure makes cursor-tracked-not-replayed semantics meaningfully cheaper).
+3. **Real options to evaluate.** α / β / γ have different tradeoffs. Picking among them needs measurement, not first-principles argument.
+
+A future SDD (`SDD_FIREGRID_STREAM_NATIVE_ACTIVITY_PRIMITIVES.md` or similar) should design that rethink as an ADDITIVE engine surface — old `Activity.make(...)` keeps working unchanged for terminal-value uses; new shapes (α/β/γ pick) land alongside.
+
+The current SDD's collapse is **independently valuable and shippable on today's engine surface**. The Activity-rethink is a follow-on simplification that the substrate collapse paves the way for, not a prerequisite.
+
 ## What this DOES NOT remove
 
 - The typed observation streams (`RuntimeAgentOutputEvents`, `RuntimeAgentOutputAfterEvents`, `RuntimeRuns`, etc.) are KEPT. They are the substrate the Activity subscribes to. The `RuntimeWaitStreams` capability hub stays as the named-typed-stream registry, just consumed by the WaitForWorkflow Activity directly instead of by the wait-router.
