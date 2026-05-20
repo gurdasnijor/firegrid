@@ -35,6 +35,13 @@
  * the race deferred; the timeout-side's later Timeout write loses the race.
  * The previous "read completions to preempt" branch was a second mechanism
  * the convergence doc confirmed redundant.
+ *
+ * Empty triggers are intentional any-row matches
+ * (firegrid-durable-tools.SUBSCRIPTION.4-1). A caller can combine
+ * `trigger: []` with `timeoutMs: 0` as a discovery probe: snapshot replay may
+ * return an already-present source row, while an empty source resolves as
+ * `Timeout` without adding a separate peek/list primitive
+ * (firegrid-durable-tools.TIMEOUT.2-1).
  */
 
 import {
@@ -115,6 +122,11 @@ export interface WaitForOptions<A = unknown> {
   readonly source: RuntimeWaitSource
   /**
    * AND-of-scalar-equality predicates over decoded row paths.
+   *
+   * An empty array is valid and matches any source row
+   * (firegrid-durable-tools.SUBSCRIPTION.4-1). With `timeoutMs: 0`, it becomes
+   * a snapshot discovery call: return a replayed row if one is present,
+   * otherwise return `Timeout` (firegrid-durable-tools.TIMEOUT.2-1).
    *
    * firegrid-durable-tools.SUBSCRIPTION.4
    * firegrid-durable-tools.SUBSCRIPTION.6

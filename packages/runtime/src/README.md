@@ -66,6 +66,11 @@ These are intentionally not agent event-pipeline stages:
   typed `RuntimeWaitSource` selection, `RuntimeWaitStreams`, and the
   wait-owned router. `wait_for` is the first durable tool
   (`firegrid-typed-wait-source-redesign.CONTEXT.4`).
+  `WaitFor.match` accepts an empty trigger as an any-row match. Combined with
+  `timeoutMs: 0`, this is the discovery probe for an already-present row:
+  initial-state replay can return a source row, while an empty source resolves
+  as `Timeout` without adding a peek, list-stream, or schema-introspection
+  primitive.
 - `workflow-engine/`: workflow substrate adapter
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
 - `agent-tools/`: tool schemas, lowering, MCP exposure, and host-coupled live

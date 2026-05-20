@@ -479,6 +479,74 @@ describe("durable-tools wait_for", () => {
     expect(result).toBe("Timeout")
   })
 
+  it("firegrid-durable-tools.SUBSCRIPTION.4-1, TIMEOUT.2-1 accepts an empty trigger with timeoutMs: 0 and returns a pre-existing source row", async () => {
+    const streams = makeStreams("empty-trigger-discovery")
+    const Wf = Workflow.make({
+      name: "wait-for-empty-trigger-discovery",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.Literal("Match", "Timeout"),
+      idempotencyKey: (p) => p.id,
+    })
+    const workflowLayer = Wf.toLayer(() =>
+      Effect.gen(function*() {
+        const outcome: WaitForOutcome<TestRow> = yield* waitForOrDie<TestRow>({
+          name: "empty-trigger-discovery",
+          source: RUNTIME_RUN_SOURCE,
+          trigger: [],
+          resultSchema: TestRowResultSchema,
+          timeoutMs: 0,
+        })
+        return outcome._tag
+      }))
+
+    const result = await runWith(
+      buildLayer(streams, workflowLayer),
+      Effect.gen(function*() {
+        yield* registerTestSource
+        const source = yield* TestSourceTable
+        yield* source.rows.upsert({
+          id: "seeded-row",
+          requestId: "req-seeded",
+          status: "seeded",
+        })
+        return yield* Wf.execute({ id: "empty-trigger-discovery-1" })
+      }),
+    )
+
+    expect(result).toBe("Match")
+  })
+
+  it("firegrid-durable-tools.SUBSCRIPTION.4-1, TIMEOUT.2-1 accepts an empty trigger with timeoutMs: 0 and returns Timeout when the source has no row", async () => {
+    const streams = makeStreams("empty-trigger-discovery-timeout")
+    const Wf = Workflow.make({
+      name: "wait-for-empty-trigger-discovery-timeout",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.Literal("Match", "Timeout"),
+      idempotencyKey: (p) => p.id,
+    })
+    const workflowLayer = Wf.toLayer(() =>
+      Effect.gen(function*() {
+        const outcome: WaitForOutcome<TestRow> = yield* waitForOrDie<TestRow>({
+          name: "empty-trigger-discovery-timeout",
+          source: RUNTIME_RUN_SOURCE,
+          trigger: [],
+          resultSchema: TestRowResultSchema,
+          timeoutMs: 0,
+        })
+        return outcome._tag
+      }))
+
+    const result = await runWith(
+      buildLayer(streams, workflowLayer),
+      Effect.gen(function*() {
+        yield* registerTestSource
+        return yield* Wf.execute({ id: "empty-trigger-discovery-timeout-1" })
+      }),
+    )
+
+    expect(result).toBe("Timeout")
+  })
+
   it("firegrid-durable-tools.TIMEOUT.3, TIMEOUT.4 prefers a match when the source row arrives before the timeout", async () => {
     const streams = makeStreams("preempt")
     const Wf = Workflow.make({
