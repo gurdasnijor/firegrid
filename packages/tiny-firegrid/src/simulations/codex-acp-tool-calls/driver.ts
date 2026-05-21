@@ -18,6 +18,8 @@ const promptForToolCall = [
   "Do not call any tool more than once. Do not answer before the call.",
 ].join("\n")
 
+const toolResultMarker = "FIREGRID_TOOL_RESULT sleep slept=true"
+
 export const codexAcpToolCallDriver: Effect.Effect<void, unknown, Firegrid> =
   Effect.gen(function*() {
     const firegrid = yield* Firegrid
@@ -47,6 +49,7 @@ export const codexAcpToolCallDriver: Effect.Effect<void, unknown, Firegrid> =
     yield* session.start()
 
     let afterSequence: number | undefined
+    let resultText = ""
     while (true) {
       const next = yield* session.wait.forAgentOutput({
         ...(afterSequence === undefined ? {} : { afterSequence }),
@@ -54,6 +57,11 @@ export const codexAcpToolCallDriver: Effect.Effect<void, unknown, Firegrid> =
       })
       if (next.matched) {
         afterSequence = next.output.sequence
+        const event = next.output.event
+        if (event._tag === "TextChunk") {
+          resultText += event.part.delta
+          if (resultText.includes(toolResultMarker)) return
+        }
       }
     }
   })

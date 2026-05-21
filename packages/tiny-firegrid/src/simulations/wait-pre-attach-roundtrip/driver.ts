@@ -38,6 +38,8 @@ const promptForWaitForCall = [
   "where <json> is the matched row. Then stop.",
 ].join("\n")
 
+const waitObservedMarker = "FIREGRID_WAIT_OBSERVED"
+
 export const waitPreAttachDriver: Effect.Effect<void, unknown, Firegrid> = Effect.gen(function*() {
   const firegrid = yield* Firegrid
   const session = yield* firegrid.sessions.createOrLoad({
@@ -59,6 +61,7 @@ export const waitPreAttachDriver: Effect.Effect<void, unknown, Firegrid> = Effec
   })
 
   yield* session.whenReady
+  yield* session.permissions.autoApprove("allow", { timeoutMs: 30_000 })
   yield* session.prompt({
     payload: promptForWaitForCall,
     idempotencyKey: "wait-pre-attach-roundtrip:turn-1",
@@ -66,6 +69,7 @@ export const waitPreAttachDriver: Effect.Effect<void, unknown, Firegrid> = Effec
   yield* session.start()
 
   let afterSequence: number | undefined
+  let resultText = ""
   while (true) {
     const next = yield* session.wait.forAgentOutput({
       ...(afterSequence === undefined ? {} : { afterSequence }),
@@ -73,5 +77,10 @@ export const waitPreAttachDriver: Effect.Effect<void, unknown, Firegrid> = Effec
     })
     if (!next.matched) continue
     afterSequence = next.output.sequence
+    const event = next.output.event
+    if (event._tag === "TextChunk") {
+      resultText += event.part.delta
+      if (resultText.includes(waitObservedMarker)) return
+    }
   }
-})
+}).pipe(Effect.scoped)

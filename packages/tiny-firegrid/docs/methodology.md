@@ -40,13 +40,18 @@ write a sim, read a trace, or file a finding, you know which job you're doing.
   match the folder), `description`, `host(env): Layer<FiregridHost>`, and
   `driver: Effect<A, _, Firegrid>`.
 - The driver imports **only** from `@firegrid/client-sdk` (and Effect). It
-  must not import host-sdk, runtime, protocol internals, or codec/sandbox
-  primitives. If the scenario needs those, it's exercising a private seam, not
-  the public client surface — write the test in the owning package's `test/`
-  folder instead.
+  should use public session APIs such as `sessions.createOrLoad`,
+  `session.wait.forAgentOutput`, `session.wait.forPermissionRequest`,
+  `session.permissions.respond`, and `session.permissions.autoApprove` when it
+  is validating public behavior. It must not import host-sdk, runtime,
+  protocol internals, or codec/sandbox primitives. If the scenario needs those,
+  it's exercising a private seam, not the public client surface — write the
+  test in the owning package's `test/` folder instead.
 - The host file may import `@firegrid/host-sdk` to compose a host layer
-  (`FiregridLocalHostLive`, `FiregridMcpServerLayer`, etc.), but only the layer
-  factories — not the runtime context's private machinery.
+  (`FiregridLocalHostLive`, `FiregridMcpServerLayer`, etc.) and package-owned
+  test adapters, but only as host composition. Host-only stop conditions are
+  harness-private instrumentation, not API examples, and should not be imported
+  from host-sdk public barrels.
 
 ## Stopping a simulation
 
@@ -55,14 +60,20 @@ Stop is an external signal, not an in-driver predicate. The runner creates a
 the public client surface and keep polling until the runner timeout, SIGINT, or
 some host-scoped fiber completes that signal.
 
-When a simulation needs to stop early after demonstrated success or a specific
-observed condition, fork a named observer fiber from the host layer. That fiber
-should use `hostProjectionObserver` from `@firegrid/host-sdk` when the condition
-is visible in per-context runtime-output rows, then yield
-`env.stopSignal.complete` when its predicate fires. The helper stamps
-`firegrid.wait.bucket="projection"` on the observer span. Keep that observer
-separate from the driver: the driver remains a pure client loop, the trace
-remains the output, and the host scope owns the observer lifetime.
+When a simulation needs to stop early after demonstrated success, prefer the
+public client surface first. If the condition is visible to users, make the
+driver wait through `session.wait.*` and return after it observes the marker;
+the runner treats driver completion as a valid simulation outcome. If the
+condition is a semantic application event or fact, prefer channel bindings and
+wait on the channel rather than scraping runtime-output rows.
+
+Use host-scoped observers only for conditions that are genuinely harness-private
+and not user-visible. Keep those observers local to the sim or to the owning
+package test, compose them from ordinary Effect `Stream` operations or
+runtime-owned observation tags, and complete `env.stopSignal` from that local
+fiber. Runtime-internal package tests may use runtime observation tags directly;
+tiny-firegrid sims that demonstrate public behavior should not turn those tags
+into public host-sdk examples.
 
 ## Triage rubric
 

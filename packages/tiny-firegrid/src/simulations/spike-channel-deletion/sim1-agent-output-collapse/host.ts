@@ -9,12 +9,10 @@ import {
 import {
   FiregridLocalHostLive,
   FiregridLocalProcessFromEnv,
-  hostProjectionObserver,
 } from "@firegrid/host-sdk"
-import type { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
 import { runtimeAgentOutputObservationFromRow } from "@firegrid/runtime/events"
 import { RuntimeAgentOutputAfterEvents } from "@firegrid/runtime/runtime-output"
-import { Chunk, Effect, Layer, Option, Stream } from "effect"
+import { Chunk, Effect, Layer, Stream } from "effect"
 import type { Scope } from "effect"
 import type { TinyFiregridHostEnv } from "../../../types.ts"
 import {
@@ -59,29 +57,6 @@ const collectExpected = <R = never>(
     Effect.forkScoped,
     Effect.asVoid,
   )
-
-const hostProjectionObserverPath: Layer.Layer<
-  never,
-  unknown,
-  SessionAgentOutputChannel
-> =
-  hostProjectionObserver({
-    spanName: "firegrid.simulation.sim1.host_projection_observer",
-    contextId: sim1ContextId,
-    initialState: [] as ReadonlyArray<Sim1EventSignature>,
-    attributes: {
-      "firegrid.simulation.path": "hostProjectionObserver",
-    },
-    project: (state, observation) => {
-      if (!isSim1ExpectedEvent(observation)) return [state, Option.none()]
-      const next = [...state, sim1EventSignature(observation)]
-      return [
-        next,
-        next.length === 3 ? Option.some(next) : Option.none(),
-      ]
-    },
-    onMatch: events => recordWithSpan("hostProjectionObserver", events),
-  })
 
 const runtimeAgentOutputAfterEventsPath: Layer.Layer<
   never,
@@ -145,7 +120,6 @@ export const sim1AgentOutputCollapseHost = (
 
   return Layer.mergeAll(
     resetLayer,
-    hostProjectionObserverPath,
     runtimeAgentOutputAfterEventsPath,
     rawRuntimeOutputTablePath(env),
   ).pipe(

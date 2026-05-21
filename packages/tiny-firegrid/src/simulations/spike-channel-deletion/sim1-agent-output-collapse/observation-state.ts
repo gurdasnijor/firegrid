@@ -1,4 +1,4 @@
-import type { RuntimeAgentOutputObservation } from "@firegrid/host-sdk"
+import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 import { Effect } from "effect"
 
 export const sim1ExternalKey = {
@@ -10,7 +10,6 @@ export const sim1Token = "SIM1_AGENT_OUTPUT_COLLAPSE"
 
 export type Sim1ObserverPath =
   | "session.wait.forAgentOutput"
-  | "hostProjectionObserver"
   | "RuntimeAgentOutputAfterEvents.forContext"
   | "RuntimeOutputTable.events.rows"
 
@@ -24,7 +23,6 @@ const observations = new Map<Sim1ObserverPath, ReadonlyArray<Sim1EventSignature>
 
 export const sim1ObserverPaths: ReadonlyArray<Sim1ObserverPath> = [
   "session.wait.forAgentOutput",
-  "hostProjectionObserver",
   "RuntimeAgentOutputAfterEvents.forContext",
   "RuntimeOutputTable.events.rows",
 ]
