@@ -110,11 +110,13 @@ const sseConnection = (
               return yield* Effect.fail(new TransportError({ cause: e }))
             }
             const out: Array<unknown> = []
-            for (const event of eventBuffer) {
+            let eventIndex = 0
+            while (eventIndex < eventBuffer.length) {
+              const event = eventBuffer[eventIndex]!
               const name = event.event ?? "message"
               if (name === C.SSE_EVENT_DATA || name === "message") {
                 const items = yield* parseDataPayload(event.data, isBase64)
-                for (const item of items) out.push(item)
+                out.push(...items)
               } else if (name === C.SSE_EVENT_CONTROL) {
                 const ctrl = yield* parseControl(event.data)
                 if (typeof ctrl.streamNextOffset === "string") {
@@ -124,6 +126,7 @@ const sseConnection = (
                   yield* Ref.set(closedRef, true)
                 }
               }
+              eventIndex += 1
             }
             return Chunk.unsafeFromArray(out)
           }),

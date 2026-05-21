@@ -186,7 +186,7 @@ export const catchUpAll = (
         live: false,
         ...(callHeaders !== undefined ? { callHeaders } : {}),
       })
-      for (const item of res.items) items.push(item)
+      items.push(...res.items)
       offset = res.nextOffset
       if (res.upToDate || res.streamClosed) break
     }

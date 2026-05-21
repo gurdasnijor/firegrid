@@ -175,7 +175,9 @@ export const make = <A, I>(
       const out: Array<Array<A>> = []
       let cur: Array<A> = []
       let curBytes = 2 // `[` + `]` overhead
-      for (const item of items) {
+      let index = 0
+      while (index < items.length) {
+        const item = items[index]!
         // Approx per-item bytes by re-encoding through the schema. This is
         // double work — sendBatch will encode again — but it's bounded and
         // happens only at batch-emission time, not per-event.
@@ -187,6 +189,7 @@ export const make = <A, I>(
         }
         cur.push(item)
         curBytes += itemBytes
+        index += 1
       }
       if (cur.length > 0) out.push(cur)
       return out
@@ -196,7 +199,9 @@ export const make = <A, I>(
       Effect.gen(function* () {
         if (Chunk.size(batch) === 0) return
         const subBatches = splitByBytes(Chunk.toReadonlyArray(batch))
-        for (const sub of subBatches) {
+        let index = 0
+        while (index < subBatches.length) {
+          const sub = subBatches[index]!
           const subChunk = Chunk.unsafeFromArray(sub.slice())
           const result = yield* sendBatch(opts, state, encode, subChunk).pipe(Effect.exit)
           yield* SubscriptionRef.update(sent, (n) => n + sub.length)
@@ -211,6 +216,7 @@ export const make = <A, I>(
             // backpressured offers wake and observe the typed failure).
             return
           }
+          index += 1
         }
       })
 

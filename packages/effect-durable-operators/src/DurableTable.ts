@@ -1,49 +1,6 @@
 /**
  * DurableTable — ksql-inspired table declaration and action facade over
  * `@durable-streams/state`'s `createStreamDB`.
- *
- * Implements:
- *  - effect-durable-operators.TABLE.1 — facade, no new engine
- *  - effect-durable-operators.TABLE.2 — Effect Schema in, Standard Schema only
- *    at the `@durable-streams/state` boundary
- *  - effect-durable-operators.TABLE.3 — Scope-managed; preload on acquire,
- *    close on finalization; txid coordination through Effect
- *  - effect-durable-operators.TABLE.4 — pull/push helpers, no re-folding
- *  - effect-durable-operators.TABLE.5 — replay rebuilds state through
- *    createStreamDB cold-start
- *  - effect-durable-operators.TABLE.6 — declaration returns an Effect service
- *    tag class with a Layer constructor
- *  - effect-durable-operators.TABLE.7 — primary key is field schema metadata
- *  - effect-durable-operators.TABLE.8 — exactly one primary key per collection
- *  - effect-durable-operators.TABLE.9 — durable type is namespace.collection
- *  - effect-durable-operators.TABLE.10 — per-collection facade methods
- *  - effect-durable-operators.TABLE.11 — insert/upsert/delete writes use
- *    createStreamDB actions
- *  - effect-durable-operators.TABLE.12 — insert/upsert/delete writes attach
- *    txid headers and await createStreamDB awaitTxId
- *  - effect-durable-operators.TABLE.13 — no wire type/action overrides
- *  - effect-durable-operators.TABLE.14 — no package-owned append helper path
- *  - effect-durable-operators.TABLE.15 — change events come from
- *    createStateSchema collection helpers
- *  - effect-durable-operators.TABLE.16 — primaryKey wraps the field schema
- *    with a Schema.transform so its encoded form is a string; the package's
- *    primary-key annotation is preserved for AST discovery
- *  - effect-durable-operators.TABLE.17 — composite primary keys are declared
- *    as Schema.transform schemas; no runtime separator concatenation
- *  - effect-durable-operators.TABLE.18 — primary-key values are encoded
- *    through the field schema (Schema.encodeSync); no string-coercion helper
- *  - effect-durable-operators.TABLE.21 — collection facades expose a
- *    read-only TanStack collection view for query engines and UI bindings
- *  - effect-durable-operators.TABLE.22 — read-only collection views decode
- *    primary-key fields before exposing rows to query and subscription users
- *  - effect-durable-operators.TABLE.23 — synchronous TanStack mutation
- *    rejection throws DurableTableError directly (no FiberFailure wrap)
- *  - effect-durable-operators.TABLE.24 — non-string encoded primary-key
- *    values fail loudly with a typed DurableTableError; no String() fallback
- *  - effect-durable-operators.TABLE.25 — get/upsert/delete agree with
- *    query.toArray for Schema.transformOrFail JSON-tuple composite keys
- *  - effect-durable-operators.TABLE.26 — insertOrGet inserts absent rows and
- *    observes existing rows without silent replacement
  */
 
 import type { DurableStreamOptions } from "@durable-streams/client"
@@ -147,9 +104,6 @@ export interface CollectionFacade<Row extends object, Key> {
   /**
    * Read-only TanStack collection view for query engines and UI bindings.
    *
-   * effect-durable-operators.TABLE.21
-   * effect-durable-operators.TABLE.22
-   *
    * This collection decodes DurableTable primary-key fields on reads and
    * subscriptions. Data mutations through the collection view fail loudly;
    * callers must use the generated DurableTable insert/upsert/delete actions
@@ -158,17 +112,11 @@ export interface CollectionFacade<Row extends object, Key> {
   readonly collection: DurableTableCollection<Row>
   /**
    * Current non-deleted rows plus live non-deleted row changes.
-   *
-   * effect-durable-operators.TABLE.28
-   * effect-durable-operators.TABLE.28-1
    */
   readonly rows: () => ProjectionStream<Row, DurableTableError>
   readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
   /**
    * Row-level insert-or-read by primary key.
-   *
-   * effect-durable-operators.TABLE.26
-   * effect-durable-operators.TABLE.26-8
    *
    * This is not a lock, claim, mutex, semaphore, lease, or general
    * coordination primitive.
@@ -251,8 +199,6 @@ type TableActionMap = TableStreamDB["actions"]
 const reservedFacadeProperties = new Set(["awaitTxId"])
 
 /**
- * effect-durable-operators.TABLE.16
- *
  * `primaryKey` wraps the underlying field schema with a `Schema.transform`
  * whose encoded form is a string, then attaches the package-owned annotation
  * used for AST-level primary-key discovery.
@@ -299,7 +245,6 @@ const actionName = (
 const rowCountForQueryResult = (value: unknown): number | undefined =>
   Array.isArray(value) ? value.length : undefined
 
-// effect-durable-operators.TABLE.24
 const requireString = (
   collection: CompiledCollection,
   value: unknown,
@@ -338,7 +283,6 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
 
     const [primaryKeyName, primaryKeyFieldSchema] = primaryKeyEntries[0]!
     const fieldSchema = primaryKeyFieldSchema as Schema.Schema<unknown, unknown, never>
-    // effect-durable-operators.TABLE.18
     // Capture encode/decode closures so action paths can run them in plain
     // promise contexts without needing Effect or per-call schema resolution.
     const encodeFn = Schema.encodeSync(fieldSchema)
@@ -349,10 +293,9 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
       durableType: `${namespace}.${collectionKey}`,
       primaryKey: primaryKeyName,
       schema,
-      // effect-durable-operators.TABLE.18 — primary-key values are encoded
-      // through the field schema as-is. Non-string encoded values are
-      // rejected by `requireString` at the action boundary; the package
-      // contains no String(...) coercion fallback.
+      // Primary-key values are encoded through the field schema as-is.
+      // Non-string encoded values are rejected by `requireString` at the
+      // action boundary; the package contains no String(...) coercion fallback.
       encodePrimaryKey: (value: unknown) => encodeFn(value),
       decodePrimaryKey: (encoded: string) => decodeFn(encoded),
     } satisfies CompiledCollection
@@ -369,10 +312,8 @@ const makeStateDefinition = (
       (collection): [string, StateCollectionDefinition] => [
         collection.collectionKey,
         {
-          // effect-durable-operators.TABLE.9
           type: collection.durableType,
           primaryKey: collection.primaryKey,
-          // effect-durable-operators.TABLE.2
           schema: Schema.standardSchemaV1(
             collection.schema as unknown as Schema.Schema<object, unknown, never>,
           ),
@@ -386,8 +327,6 @@ const makeStateSchema = (
 ): StateSchemaWithHelpers => createStateSchema(makeStateDefinition(table))
 
 /**
- * effect-durable-operators.TABLE.18
- *
  * Returns a row whose primary-key field has been pre-encoded to its string
  * wire form. @durable-streams/state's TanStack DB wiring uses
  * `String(row[primaryKey])` to derive the collection index key; replacing the
@@ -430,9 +369,8 @@ const makeActionDefinitions = (
               value: encoded,
               headers: { txid },
             })
-            // effect-durable-operators.TABLE.11
-            // effect-durable-operators.TABLE.12
-            // effect-durable-operators.TABLE.15
+            // Append the State Protocol event and wait until the materialized
+            // table has observed its txid.
             await stream.append(JSON.stringify(event))
             await db.utils.awaitTxId(txid, txTimeoutMs)
           },
@@ -459,7 +397,6 @@ const makeActionDefinitions = (
               value: encoded,
               headers: { txid },
             })
-            // effect-durable-operators.TABLE.15
             await stream.append(JSON.stringify(event))
             await db.utils.awaitTxId(txid, txTimeoutMs)
           },
@@ -485,7 +422,6 @@ const makeActionDefinitions = (
               key: encodedKey,
               headers: { txid },
             })
-            // effect-durable-operators.TABLE.15
             await stream.append(JSON.stringify(event))
             await db.utils.awaitTxId(txid, txTimeoutMs)
           },
@@ -528,8 +464,6 @@ const runAction = (
   )
 
 /**
- * effect-durable-operators.TABLE.18
- *
  * On read, the stored row carries the encoded-string primary-key value. To
  * preserve the user-facing row type (whose primary-key field is the decoded
  * form), decode the field back before returning to callers.
@@ -657,7 +591,6 @@ const makeReadableCollection = <Row extends object>(
   tanstackCollection: TanStackCollection<Row, string>,
 ): TanStackCollection<Row, string> => {
   const rejectMutation = (): never => {
-    // effect-durable-operators.TABLE.23
     // Synchronous TanStack mutation boundary: throw the typed error directly
     // so callers can `instanceof DurableTableError` it. Wrapping in
     // Effect.runSync(Effect.fail(...)) would re-package this as a FiberFailure.
@@ -827,7 +760,6 @@ const makeFacade = <Row extends object, Key>(options: {
       ),
     insertOrGet: (row) =>
       Effect.gen(function* () {
-        // effect-durable-operators.TABLE.26
         const { encoded, encodedKey } = yield* Effect.try({
           try: () => encodeRowForStore(collection, row),
           catch: (cause) => new DurableTableError({ table: tableName, cause }),
@@ -1001,7 +933,6 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
         > = {
           streamOptions: options.streamOptions,
           state: stateSchema,
-          // effect-durable-operators.TABLE.11
           actions: makeActionDefinitions(
             table,
             stateSchema,

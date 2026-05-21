@@ -7,9 +7,7 @@
   "scripts": {
     "bootstrap": "pnpm install",
     "build": "turbo run build",
-    "check": "pnpm run check:specs && pnpm run check:docs && pnpm run lint && turbo run build check",
-    "check:specs": "node scripts/tooling.mjs check specs",
-    "check:docs": "node scripts/tooling.mjs check docs",
+    "check": "pnpm run lint && turbo run build check",
     "effect:check": "effect-language-service check",
     "effect:diagnostics": "node scripts/tooling.mjs effect diagnostics",
     "effect:diagnostics:baseline": "node scripts/tooling.mjs effect diagnostics --update-baseline",

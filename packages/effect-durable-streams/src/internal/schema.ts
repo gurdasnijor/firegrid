@@ -10,12 +10,15 @@ export const arrayDecoder = <A, I>(schema: Schema.Schema<A, I>) => {
   const decode = Schema.decodeUnknownEither(schema)
   return (raw: ReadonlyArray<unknown>): Effect.Effect<ReadonlyArray<A>, DecodeError> => {
     const out: Array<A> = []
-    for (const item of raw) {
+    let index = 0
+    while (index < raw.length) {
+      const item = raw[index]
       const r = decode(item)
       if (Either.isLeft(r)) {
         return Effect.fail(new DecodeError({ cause: r.left, raw: item }))
       }
       out.push(r.right)
+      index += 1
     }
     return Effect.succeed(out)
   }

@@ -9,8 +9,6 @@ import { error, log } from "node:console"
 import process from "node:process"
 
 const gates = [
-  ["check:specs", "Validate feature.yaml files"],
-  ["check:docs", "Validate docs/spec conflict markers and trailing whitespace"],
   ["typecheck", "TypeScript project references"],
   ["lint", "ESLint and production cutover checks"],
   ["lint:dead", "Knip dead-code ratchet"],

@@ -142,8 +142,11 @@ export const makeWorkflowEngine = (
       const pending = yield* orDieTable(table.clockWakeups.query((coll) =>
         coll.toArray.filter(row => row.status === "pending"),
       ))
-      for (const row of pending) {
+      let index = 0
+      while (index < pending.length) {
+        const row = pending[index]!
         yield* scheduleClockWakeup(row)
+        index += 1
       }
     })
 

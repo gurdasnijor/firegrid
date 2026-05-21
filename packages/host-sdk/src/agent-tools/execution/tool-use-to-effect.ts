@@ -153,12 +153,15 @@ const waitQueryToTrigger = (
   const entries = Object.entries(match ?? {})
   const failures: Array<EventQueryAdapterFailure> = []
   const trigger: Array<FieldEqualsTrigger[number]> = []
-  for (const [key, value] of entries) {
+  let index = 0
+  while (index < entries.length) {
+    const [key, value] = entries[index]!
     if (isFieldEqualsScalar(value)) {
       trigger.push({ path: [key], equals: value })
     } else {
       failures.push({ key, value })
     }
+    index += 1
   }
   if (failures.length > 0) return { _tag: "NonScalar", failures }
   return { _tag: "Ok", trigger }
