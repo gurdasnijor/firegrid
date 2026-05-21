@@ -16,13 +16,21 @@ import {
 } from "effect-durable-operators"
 import { Schema } from "effect"
 import {
+  LinearWebhookFactFields,
+  LinearWebhookFactSchema,
+  type LinearWebhookFact,
   VerifiedWebhookFactFields,
   VerifiedWebhookFactSchema,
   type VerifiedWebhookFact,
 } from "@firegrid/protocol/verified-webhook"
 import { VerifiedWebhookFactKeyEncoded } from "./keys.ts"
 
-export { VerifiedWebhookFactSchema, type VerifiedWebhookFact }
+export {
+  LinearWebhookFactSchema,
+  type LinearWebhookFact,
+  VerifiedWebhookFactSchema,
+  type VerifiedWebhookFact,
+}
 
 export interface VerifiedWebhookFactTableOptions {
   readonly streamUrl: string
@@ -34,6 +42,16 @@ export interface VerifiedWebhookFactTableOptions {
 const VerifiedWebhookFactTableRowSchema = Schema.Struct({
   ...VerifiedWebhookFactFields,
   factKey: VerifiedWebhookFactKeyEncoded.pipe(DurableTable.primaryKey),
+  action: Schema.optional(LinearWebhookFactFields.action),
+  type: Schema.optional(LinearWebhookFactFields.type),
+  webhookId: Schema.optional(LinearWebhookFactFields.webhookId),
+  webhookTimestamp: Schema.optional(LinearWebhookFactFields.webhookTimestamp),
+  createdAt: Schema.optional(LinearWebhookFactFields.createdAt),
+  organizationId: LinearWebhookFactFields.organizationId,
+  url: LinearWebhookFactFields.url,
+  actor: LinearWebhookFactFields.actor,
+  data: LinearWebhookFactFields.data,
+  updatedFrom: LinearWebhookFactFields.updatedFrom,
 })
 
 const verifiedWebhookFactSchemas = {
