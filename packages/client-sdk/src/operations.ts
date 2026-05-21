@@ -1,64 +1,14 @@
+// tf-aago: the client-sdk `FiregridClientOperations` catalog was a
+// duplicate of the protocol-owned one. The protocol catalog
+// (`@firegrid/protocol/session-facade`, built via `defineFiregridOperation`)
+// is canonical and a structural superset — it carries `{inputSchema,
+// outputSchema}` plus projection metadata. Re-export it here so existing
+// `@firegrid/client-sdk/operations` import paths keep resolving while the
+// catalog has a single source of truth.
 export {
+  FiregridClientOperations,
   type PermissionRespondInput,
   type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
-} from "@firegrid/protocol/agent-tools"
-import {
-  PermissionRespondInputSchema,
-  PermissionRespondOutputSchema,
-  SessionPromptToolInputSchema,
-  SessionPromptToolOutputSchema,
-} from "@firegrid/protocol/agent-tools"
-import { RuntimeInputIntentRowSchema } from "@firegrid/protocol/runtime-ingress"
-import {
-  SessionAgentOutputWaitInputSchema,
-  SessionAgentOutputWaitOutputSchema,
-  SessionAttachInputSchema,
-  SessionCreateOrLoadInputSchema,
-  SessionHandlePromptInputSchema,
-  SessionHandleReferenceSchema,
-  SessionPermissionRequestWaitInputSchema,
-  SessionPermissionRequestWaitOutputSchema,
-  SessionPermissionRespondInputSchema,
 } from "@firegrid/protocol/session-facade"
-
-const operation = <InputSchema, OutputSchema>(
-  inputSchema: InputSchema,
-  outputSchema: OutputSchema,
-) => ({
-  inputSchema,
-  outputSchema,
-})
-
-export const FiregridClientOperations = {
-  sessions: {
-    createOrLoad: operation(
-      SessionCreateOrLoadInputSchema,
-      SessionHandleReferenceSchema,
-    ),
-    attach: operation(SessionAttachInputSchema, SessionHandleReferenceSchema),
-    prompt: operation(SessionPromptToolInputSchema, SessionPromptToolOutputSchema),
-    promptScoped: operation(
-      SessionHandlePromptInputSchema,
-      RuntimeInputIntentRowSchema,
-    ),
-  },
-  wait: {
-    forAgentOutput: operation(
-      SessionAgentOutputWaitInputSchema,
-      SessionAgentOutputWaitOutputSchema,
-    ),
-    forPermissionRequest: operation(
-      SessionPermissionRequestWaitInputSchema,
-      SessionPermissionRequestWaitOutputSchema,
-    ),
-  },
-  permissions: {
-    respond: operation(PermissionRespondInputSchema, PermissionRespondOutputSchema),
-    respondScoped: operation(
-      SessionPermissionRespondInputSchema,
-      PermissionRespondOutputSchema,
-    ),
-  },
-} as const

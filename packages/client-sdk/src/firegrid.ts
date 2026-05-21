@@ -16,9 +16,6 @@ import {
   RuntimeOutputTable,
   type RuntimeOutputTableService,
   local,
-  makeRuntimeContextRequestRow,
-  makeRuntimeStartRequestAck,
-  makeRuntimeStartRequestRow,
   runtimeControlPlaneStreamUrl,
   runtimeContextOutputStreamUrl,
   type PublicLaunchRequest,
@@ -30,7 +27,6 @@ import {
   type RuntimeStartRequestAck,
 } from "@firegrid/protocol/launch"
 import {
-  type PermissionDecision,
   type PermissionRespondInput,
   type PermissionRespondOutput,
   type SessionPromptToolInput,
@@ -68,8 +64,14 @@ import {
   type SessionPermissionRespondInput,
 } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
-import { HostSessionsCreateOrLoadChannel } from "@firegrid/protocol/channels"
+import {
+  HostContextsCreateChannel,
+  HostPermissionRespondChannel,
+  HostSessionsCreateOrLoadChannel,
+  HostSessionsStartChannel,
+} from "@firegrid/protocol/channels"
 import { Clock, Context, Data, Duration, Effect, Exit, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
+import { HostControlChannelsStandaloneLive } from "./channels/host-control-default.ts"
 import { HostSessionsCreateOrLoadChannelStandaloneLive } from "./channels/host-sessions-create-or-load-default.ts"
 import { projectionWait } from "./internal/projection-wait.ts"
 import { FiregridClientOperations } from "./operations.ts"
@@ -525,6 +527,14 @@ const make = (config: ResolvedConfig) =>
     // for callers.
     const hostSessionsCreateOrLoadChannel =
       yield* HostSessionsCreateOrLoadChannel
+    // tf-aago: launch / start / permissions.respond dispatch through their
+    // protocol-owned callable channel Tags. Captured at make-time so the
+    // public method signatures stay unchanged; the standalone-default
+    // bindings (HostControlChannelsStandaloneLive) or a host-sdk Live Layer
+    // provide them.
+    const hostContextsCreateChannel = yield* HostContextsCreateChannel
+    const hostSessionsStartChannel = yield* HostSessionsStartChannel
+    const hostPermissionRespondChannel = yield* HostPermissionRespondChannel
 
     // tf-ivl6 / tf-tw49 concern #1: per-contextId RuntimeOutputTable
     // cache. Baseline trace showed 75 of 80 layer.acquire spans landing
@@ -789,117 +799,17 @@ const make = (config: ResolvedConfig) =>
         }),
       )
 
-    const appendRuntimeContextRequest = (
-      input: {
-        readonly contextId: string
-        readonly runtime: PublicLaunchRuntimeIntent
-        readonly createdBy?: string
-      },
-    ): Effect.Effect<void, AppendError> =>
-      Effect.gen(function* () {
-        const stamped = yield* stampRowOtel(makeRuntimeContextRequestRow(input))
-        yield* control.contextRequests.insertOrGet(stamped).pipe(
-          Effect.mapError(cause =>
-          new AppendError({ contextId: input.contextId, cause })),
-        )
-      }).pipe(
-        Effect.withSpan("firegrid.client.runtime_context_request.append", {
-          kind: "producer",
-          attributes: {
-            "firegrid.context.id": input.contextId,
-          },
-        }),
-      )
-
-    const createContextRequest = (
-      contextId: string,
-      runtime: PublicLaunchRuntimeIntent,
-      createdBy?: string,
-    ) =>
-      appendRuntimeContextRequest({
-        contextId,
-        runtime,
-        ...(createdBy === undefined ? {} : { createdBy }),
-      })
-
-    const appendRuntimeStartRequest = (
-      contextId: string,
-    ): Effect.Effect<RuntimeStartRequestAck, AppendError> =>
-      Effect.gen(function* () {
-        const row = makeRuntimeStartRequestRow({ contextId })
-        const stamped = yield* stampRowOtel(row)
-        const result = yield* control.startRequests.insertOrGet(stamped).pipe(
-          Effect.mapError(cause => new AppendError({ contextId, cause })),
-        )
-        return makeRuntimeStartRequestAck({
-          requestId: row.requestId,
-          contextId,
-          inserted: result._tag === "Inserted",
-        })
-      }).pipe(
-        Effect.withSpan("firegrid.client.runtime_start_request.append", {
-          kind: "producer",
-          attributes: {
-            "firegrid.context.id": contextId,
-          },
-        }),
-      )
-
-    const appendPermissionResponseIntent = (
-      request: {
-        readonly contextId: string
-        readonly permissionRequestId: string
-        readonly decision: PermissionDecision
-        readonly idempotencyKey?: string | undefined
-      },
-    ): Effect.Effect<PermissionRespondOutput, AppendError> =>
-      Effect.gen(function* () {
-        const idempotencyKey = request.idempotencyKey ??
-          `permission-response:${request.contextId}:${request.permissionRequestId}`
-        const intent = yield* appendRuntimeInputIntent({
-          contextId: request.contextId,
-          kind: "required_action_result",
-          authoredBy: "client",
-          payload: {
-            _tag: "PermissionResponse",
-            permissionRequestId: request.permissionRequestId,
-            decision: request.decision,
-          },
-          idempotencyKey,
-        })
-        return {
-          responded: true,
-          contextId: request.contextId,
-          permissionRequestId: request.permissionRequestId,
-          inputId: intent.intentId,
-        }
-      })
-
-    const appendDecodedPermissionResponseIntent = (
-      request: {
-        readonly contextId: string
-        readonly permissionRequestId: string
-        readonly decision: PermissionDecision
-        readonly idempotencyKey?: string | undefined
-      },
-    ) =>
-      appendPermissionResponseIntent(request)
-
-    const permissionResponseInput = (
-      contextId: string,
-      decoded: {
-        readonly permissionRequestId: string
-        readonly decision: PermissionDecision
-        readonly idempotencyKey?: string | undefined
-      },
-    ) => ({
-      contextId,
-      permissionRequestId: decoded.permissionRequestId,
-      decision: decoded.decision,
-      ...(decoded.idempotencyKey !== undefined
-        ? { idempotencyKey: decoded.idempotencyKey }
-        : {}),
-    })
+    // tf-aago: contexts.create / sessions.start / permissions.respond write
+    // helpers deleted — those methods now dispatch through their callable
+    // channel Tags (HostContextsCreate / HostSessionsStart /
+    // HostPermissionRespond), whose bindings live in the shared
+    // @firegrid/protocol/launch factories. `appendRuntimeInputIntent`
+    // (below) survives for the prompt egress paths: lane 3's HostPrompt /
+    // SessionPrompt channels return void, but the client prompt methods
+    // return the stored RuntimeInputIntentRow (tests assert returned ===
+    // stored, createdAt included). The egress-void vs row-return gap is
+    // flagged for lane 3 reconciliation (an append-returning-row variant or
+    // a contract change); until then prompt stays on the local helper.
 
     const makeSessionHandle = (
       sessionId: FiregridSessionId,
@@ -951,10 +861,19 @@ const make = (config: ResolvedConfig) =>
           LaunchInputError | AppendError
         > =>
           Effect.gen(function* () {
+            // tf-aago: session-scoped respond dispatches through the same
+            // host-scoped HostPermissionRespondChannel, supplying the
+            // handle's sessionId as contextId.
             const decoded = yield* decodeSessionPermissionRespondInput(request)
-            return yield* appendDecodedPermissionResponseIntent(
-              permissionResponseInput(sessionId, decoded),
-            )
+            return yield* hostPermissionRespondChannel.binding.call({
+              contextId: sessionId,
+              permissionRequestId: decoded.permissionRequestId,
+              decision: decoded.decision,
+              ...(decoded.idempotencyKey === undefined
+                ? {}
+                : { idempotencyKey: decoded.idempotencyKey }),
+            }).pipe(Effect.mapError(cause =>
+              new AppendError({ contextId: sessionId, cause })))
           })
         const permissionsClient: FiregridSessionPermissionsClient = {
           respond,
@@ -997,7 +916,9 @@ const make = (config: ResolvedConfig) =>
             withClientSpan("firegrid.client.session.start", {
               "firegrid.session.id": sessionId,
               "firegrid.context.id": sessionId,
-            }, appendRuntimeStartRequest(sessionId)),
+            }, hostSessionsStartChannel.binding.call({ sessionId }).pipe(
+              Effect.mapError(cause => new AppendError({ contextId: sessionId, cause })),
+            )),
           snapshot: () => readSnapshot(sessionId),
           wait: waitClient,
           permissions: permissionsClient,
@@ -1056,9 +977,16 @@ const make = (config: ResolvedConfig) =>
       launch: (request) => Effect.gen(function* () {
         // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1
         // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6
+        // tf-aago: dispatch through HostContextsCreateChannel (callable).
         const decoded = yield* decodePublicLaunchRequest(request)
         const contextId = makeContextId()
-        yield* createContextRequest(contextId, decoded.runtime, decoded.requestedBy)
+        yield* hostContextsCreateChannel.binding.call({
+          contextId,
+          runtime: decoded.runtime,
+          ...(decoded.requestedBy === undefined
+            ? {}
+            : { createdBy: decoded.requestedBy }),
+        }).pipe(Effect.mapError(cause => new AppendError({ contextId, cause })))
         return open(contextId)
       }),
       prompt: request => Effect.gen(function* () {
@@ -1095,10 +1023,18 @@ const make = (config: ResolvedConfig) =>
       },
       permissions: {
         respond: request => Effect.gen(function* () {
+          // tf-aago: dispatch through HostPermissionRespondChannel (callable,
+          // host-scoped — contextId travels in the request).
           const decoded = yield* decodePermissionRespondInput(request)
-          return yield* appendDecodedPermissionResponseIntent(
-            permissionResponseInput(decoded.contextId, decoded),
-          )
+          return yield* hostPermissionRespondChannel.binding.call({
+            contextId: decoded.contextId,
+            permissionRequestId: decoded.permissionRequestId,
+            decision: decoded.decision,
+            ...(decoded.idempotencyKey === undefined
+              ? {}
+              : { idempotencyKey: decoded.idempotencyKey }),
+          }).pipe(Effect.mapError(cause =>
+            new AppendError({ contextId: decoded.contextId, cause })))
         }),
       },
       open,
@@ -1143,15 +1079,18 @@ const firegridServiceLayer = Layer.scoped(
  *   - `RuntimeControlPlaneTable` (shared with the runtime host layer
  *     so durable context/start requests and runtime projections share
  *     one materialized RuntimeContext index)
- *   - `HostSessionsCreateOrLoadChannel` (provided below by the
- *     standalone default; production hosts may override by providing
- *     `HostSessionsCreateOrLoadChannelLive` from `@firegrid/host-sdk`)
+ *   - the protocol-owned channel Tags the rewired methods dispatch
+ *     through (createOrLoad / contexts.create / sessions.start /
+ *     permissions.respond), provided below by the client-sdk
+ *     standalone-default Layers. Production hosts may override by
+ *     providing the host-sdk-owned channel Live Layers upstream.
  *
  * Standalone consumers can fall back to `FiregridControlPlaneTableLive`
  * for the table Tag.
  */
 export const FiregridLive = firegridServiceLayer.pipe(
   Layer.provide(HostSessionsCreateOrLoadChannelStandaloneLive),
+  Layer.provide(HostControlChannelsStandaloneLive),
 )
 
 /**
