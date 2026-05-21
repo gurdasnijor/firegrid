@@ -4,7 +4,7 @@ import {
   ensurePathInput,
   FiregridLocalHostLive,
   FiregridMcpServerLayer,
-  RuntimeContextMcpChannelCatalogLive,
+  RuntimeContextChannelRouterLive,
   VerifiedWebhookFactCallerOwnedFactStreamsLive,
   durableStreamUrl,
   makeIngressChannel,
@@ -218,7 +218,7 @@ export const linearWebhookCookbookHost = (
     callerFacts,
     route,
   )
-  const channelsLive = RuntimeContextMcpChannelCatalogLive([
+  const channelsLive = RuntimeContextChannelRouterLive([
     verifiedWebhookChannel,
   ])
   const host = FiregridLocalHostLive({

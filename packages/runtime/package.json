@@ -53,6 +53,10 @@
       "types": "./src/agent-event-pipeline/events/index.ts",
       "default": "./src/agent-event-pipeline/events/index.ts"
     },
+    "./channels": {
+      "types": "./src/channels/index.ts",
+      "default": "./src/channels/index.ts"
+    },
     "./codecs": {
       "types": "./src/agent-event-pipeline/codecs/index.ts",
       "default": "./src/agent-event-pipeline/codecs/index.ts"

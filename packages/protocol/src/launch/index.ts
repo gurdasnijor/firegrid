@@ -119,6 +119,9 @@ export {
   requireLocalContext,
 } from "./host-context-authority.ts"
 export {
+  requestRuntimeContextCreate,
+} from "./host-context-request-binding.ts"
+export {
   makeHostSessionsCreateOrLoadRequestRowChannel,
   requestHostSessionCreateOrLoad,
 } from "./host-session-create-or-load-request.ts"

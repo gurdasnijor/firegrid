@@ -42,7 +42,7 @@ import {
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
-import type { RuntimeContextMcpChannelCatalog } from "./channel.ts"
+import type { RuntimeChannelRouter } from "./channel.ts"
 
 type RuntimeIngressAppendEnvironment =
   | RuntimeContextRead
@@ -191,7 +191,7 @@ export const RuntimeStartCapabilityLive = Layer.effect(
     // can re-provide it. `never` here was only sound while
     // `DurableTable.layer` leaked `any`.
     const captured = yield* Effect.context<
-      HostRuntimeContextExecutionEnv | RuntimeContextMcpChannelCatalog
+      HostRuntimeContextExecutionEnv | RuntimeChannelRouter
     >()
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession

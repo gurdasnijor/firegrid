@@ -4,7 +4,7 @@ import {
 } from "@firegrid/runtime/tool-executor"
 import { RuntimeObservationStreams } from "@firegrid/runtime/streams"
 import { Context, Effect, Layer } from "effect"
-import { RuntimeContextMcpChannelCatalog } from "../../host/channel.ts"
+import { RuntimeChannelRouter } from "../../host/channel.ts"
 import {
   toolErrorResult,
   toolExecutionFailed,
@@ -14,7 +14,7 @@ import { toolUseToEffect } from "./tool-use-to-effect.ts"
 
 type RuntimeToolUseExecutorExecutionEnv =
   | AgentToolHost
-  | RuntimeContextMcpChannelCatalog
+  | RuntimeChannelRouter
   | RuntimeAgentToolExecution
   | RuntimeObservationStreams
 
@@ -25,7 +25,7 @@ export const RuntimeToolUseExecutorLive = Layer.effect(
   Effect.gen(function* () {
     const captured = yield* Effect.context<RuntimeToolUseExecutorExecutionEnv>()
     const agentToolHost = Context.get(captured, AgentToolHost)
-    const channelInventory = Context.get(captured, RuntimeContextMcpChannelCatalog)
+    const channelRouter = Context.get(captured, RuntimeChannelRouter)
     const toolExecution = Context.get(captured, RuntimeAgentToolExecution)
     const observationStreams = Context.get(captured, RuntimeObservationStreams)
     return RuntimeToolUseExecutor.of({
@@ -36,7 +36,7 @@ export const RuntimeToolUseExecutorLive = Layer.effect(
               toolExecutionFailed(event.part.id, event.part.name, defect),
             ))),
           Effect.provideService(AgentToolHost, agentToolHost),
-          Effect.provideService(RuntimeContextMcpChannelCatalog, channelInventory),
+          Effect.provideService(RuntimeChannelRouter, channelRouter),
           Effect.provideService(RuntimeAgentToolExecution, toolExecution),
           Effect.provideService(RuntimeObservationStreams, observationStreams),
           Effect.tap(result =>

@@ -93,18 +93,18 @@ import {
 } from "@firegrid/runtime/tool-executor"
 import type { RuntimeObservationSource } from "@firegrid/runtime/streams"
 import type {
-  CallableChannel,
+  RuntimeChannelRoute,
+  RuntimeStreamBackedChannelRoute,
+} from "@firegrid/runtime/channels"
+import type {
   ChannelDirection,
-  ChannelRegistration,
-  EgressChannel,
-  IngressChannel,
 } from "@firegrid/protocol/channels"
+import type { ChannelRouteDescriptor } from "@firegrid/protocol/channels/router"
 import { AgentToolHost } from "./tool-host.ts"
 import {
-  UnknownChannelTarget,
-  RuntimeContextMcpChannelCatalog,
-  findRuntimeContextMcpChannel,
+  RuntimeChannelRouter,
 } from "../../host/channel.ts"
+import type { UnknownChannelTarget } from "../../host/channel.ts"
 import {
   toolErrorResult,
   toolExecutionFailed,
@@ -116,7 +116,6 @@ import {
 
 type ToolUseEvent = Extract<AgentOutputEvent, { _tag: "ToolUse" }>
 type ToolResultEvent = Extract<AgentInputEvent, { _tag: "ToolResult" }>
-type RuntimeChannelSchema = Schema.Schema<unknown, unknown, never>
 
 export interface ToolLoweringContext {
   /** Parent runtime-context id; used to derive deterministic child ids. */
@@ -178,8 +177,8 @@ const directionInvalid = (
   toolUseId: string,
   name: string,
   channel: string,
-  expected: ChannelRegistration["direction"],
-  actual: ChannelRegistration["direction"],
+  expected: ChannelDirection,
+  actual: ChannelDirection,
 ): ToolError => ({
   _tag: "ToolInvalidInput",
   toolUseId,
@@ -200,18 +199,29 @@ const unknownChannelInvalid = (
   reason: `Unknown channel '${channel}': ${String(cause)}`,
 })
 
+const missingStreamInvalid = (
+  toolUseId: string,
+  name: string,
+  channel: string,
+): ToolError => ({
+  _tag: "ToolInvalidInput",
+  toolUseId,
+  name,
+  reason: `channel '${channel}' is declared as ingress-capable but has no stream binding.`,
+})
+
 const requireChannelDirection = <Direction extends ChannelDirection>(
   toolUseId: string,
   name: string,
   channel: string,
   expected: Direction,
 ): Effect.Effect<
-  ChannelRegistration,
+  ChannelRouteDescriptor,
   ToolError,
-  RuntimeContextMcpChannelCatalog
+  RuntimeChannelRouter
 > =>
   Effect.gen(function* () {
-    const registration = yield* channelDispatch(channel).pipe(
+    const registration = yield* channelRoute(channel).pipe(
       Effect.mapError(cause =>
         unknownChannelInvalid(toolUseId, name, channel, cause)),
     )
@@ -230,29 +240,22 @@ const requireChannelDirection = <Direction extends ChannelDirection>(
     return registration
   })
 
-const channelDispatch = (
+const channelRoute = (
   channel: string,
-): Effect.Effect<ChannelRegistration, UnknownChannelTarget, RuntimeContextMcpChannelCatalog> =>
+): Effect.Effect<ChannelRouteDescriptor, UnknownChannelTarget, RuntimeChannelRouter> =>
   Effect.gen(function* () {
-    const inventory = yield* RuntimeContextMcpChannelCatalog
-    return yield* Option.match(findRuntimeContextMcpChannel(inventory, channel), {
-      onNone: () => Effect.fail(new UnknownChannelTarget({ target: channel })),
-      onSome: registration => Effect.succeed(registration),
-    })
+    const router = yield* RuntimeChannelRouter
+    const route = yield* router.route(channel)
+    return route.descriptor
   })
 
-const decodeChannelValue = <S extends Schema.Schema.Any>(
-  toolUseId: string,
-  name: string,
-  schema: S,
-  value: unknown,
-): Effect.Effect<unknown, ToolError, never> =>
-  Schema.decodeUnknown(
-    schema as unknown as RuntimeChannelSchema,
-  )(value).pipe(
-    Effect.mapError(cause =>
-      toolInvalidInputFromParseError(toolUseId, name, cause)),
-  )
+const runtimeChannelRoute = (
+  channel: string,
+): Effect.Effect<RuntimeChannelRoute, UnknownChannelTarget, RuntimeChannelRouter> =>
+  Effect.gen(function* () {
+    const router = yield* RuntimeChannelRouter
+    return yield* router.route(channel)
+  })
 
 const runtimeAgentToolExecutionErrorToToolError = (
   toolUseId: string,
@@ -313,7 +316,7 @@ const runWaitForTool = (
 ): Effect.Effect<
   WaitForToolOutput,
   ToolError,
-  RuntimeAgentToolExecution | RuntimeContextMcpChannelCatalog
+  RuntimeAgentToolExecution | RuntimeChannelRouter
 > => {
   // `match` is typed `Record<string, unknown>` because schema-level
   // scalar refinement would prevent codecs from publishing the JSON shape
@@ -334,7 +337,7 @@ const runWaitForTool = (
   }
 
   const waitForChannel = Effect.gen(function*() {
-    const registration = yield* channelDispatch(input.channel).pipe(
+    const registration = yield* channelRoute(input.channel).pipe(
       Effect.mapError((): ToolError => ({
         _tag: "ToolInvalidInput",
         toolUseId,
@@ -376,25 +379,11 @@ const runWaitForTool = (
   return waitForChannel
 }
 
-const appendEgressPayload = <S extends Schema.Schema.Any>(
-  channel: EgressChannel<S>,
-  payload: Schema.Schema.Type<S>,
-): Effect.Effect<void, unknown, never> => channel.binding.append(payload)
-
-const callCallableChannel = <
-  Request extends Schema.Schema.Any,
-  Response extends Schema.Schema.Any,
->(
-  channel: CallableChannel<Request, Response>,
-  request: Schema.Schema.Type<Request>,
-): Effect.Effect<Schema.Schema.Type<Response>, unknown, never> =>
-  channel.binding.call(request)
-
-const waitForIngressChannel = <S extends Schema.Schema.Any>(
-  channel: IngressChannel<S>,
+const waitForIngressRoute = (
+  route: RuntimeStreamBackedChannelRoute,
   trigger: FieldEqualsTrigger,
-): Effect.Effect<Schema.Schema.Type<S>, unknown, never> =>
-  channel.binding.stream.pipe(
+): Effect.Effect<unknown, unknown, never> =>
+  route.stream.pipe(
     Stream.filter((row) =>
       trigger.length === 0 ? true : evaluateFieldEquals(trigger, row),
     ),
@@ -412,27 +401,26 @@ const runSendTool = (
 ): Effect.Effect<
   SendToolOutput,
   ToolError,
-  RuntimeAgentToolExecution | RuntimeContextMcpChannelCatalog
+  RuntimeAgentToolExecution | RuntimeChannelRouter
 > =>
   Effect.gen(function* () {
-    const channel = (yield* requireChannelDirection(
+    yield* requireChannelDirection(
       toolUseId,
       "send",
       input.channel,
       "egress",
-    )) as unknown as EgressChannel<RuntimeChannelSchema>
-    const payload = yield* decodeChannelValue(
-      toolUseId,
-      "send",
-      channel.schema,
-      input.payload,
     )
     const execution = yield* RuntimeAgentToolExecution
+    const router = yield* RuntimeChannelRouter
     return yield* execution.send({
       contextId: ctx.contextId,
       toolUseId,
       input,
-      append: appendEgressPayload(channel, payload),
+      append: router.dispatch({
+        target: input.channel,
+        verb: "send",
+        payload: input.payload,
+      }),
     }).pipe(
       Effect.mapError(error =>
         runtimeAgentToolExecutionErrorToToolError(toolUseId, "send", error)),
@@ -446,30 +434,26 @@ const runRegisteredCallChannel = (
 ): Effect.Effect<
   CallToolOutput,
   ToolError,
-  RuntimeAgentToolExecution | RuntimeContextMcpChannelCatalog
+  RuntimeAgentToolExecution | RuntimeChannelRouter
 > =>
   Effect.gen(function* () {
-    const channel = (yield* requireChannelDirection(
+    yield* requireChannelDirection(
       toolUseId,
       "call",
       input.channel,
       "call",
-    )) as unknown as CallableChannel<
-        RuntimeChannelSchema,
-        RuntimeChannelSchema
-      >
-    const request = yield* decodeChannelValue(
-      toolUseId,
-      "call",
-      channel.requestSchema,
-      input.request,
     )
     const execution = yield* RuntimeAgentToolExecution
+    const router = yield* RuntimeChannelRouter
     return yield* execution.call({
       contextId: ctx.contextId,
       toolUseId,
       input,
-      call: callCallableChannel(channel, request),
+      call: router.dispatch({
+        target: input.channel,
+        verb: "call",
+        payload: input.request,
+      }),
     }).pipe(
       Effect.mapError(error =>
         runtimeAgentToolExecutionErrorToToolError(toolUseId, "call", error)),
@@ -487,15 +471,42 @@ const waitForAnyDescriptorToEffect = (
     readonly wait: Effect.Effect<unknown, unknown, never>
   },
   ToolError,
-  RuntimeContextMcpChannelCatalog
+  RuntimeChannelRouter
 > =>
   Effect.gen(function* () {
-    const channel = (yield* requireChannelDirection(
+    const route = yield* runtimeChannelRoute(descriptor.channel).pipe(
+      Effect.mapError(cause =>
+        unknownChannelInvalid(
+          toolUseId,
+          "wait_for_any",
+          descriptor.channel,
+          cause,
+        )),
+    )
+    const registration = route.descriptor
+    const supported = registration.direction === "ingress" ||
+      registration.direction === "bidirectional"
+    if (!supported) {
+      return yield* Effect.fail(directionInvalid(
       toolUseId,
       "wait_for_any",
       descriptor.channel,
       "ingress",
-    )) as unknown as IngressChannel<RuntimeChannelSchema>
+        registration.direction,
+      ))
+    }
+    const stream = route.stream
+    if (stream === undefined) {
+      return yield* Effect.fail(missingStreamInvalid(
+        toolUseId,
+        "wait_for_any",
+        descriptor.channel,
+      ))
+    }
+    const streamBackedRoute: RuntimeStreamBackedChannelRoute = {
+      ...route,
+      stream,
+    }
     const adapted = waitQueryToTrigger(descriptor.match)
     if (adapted._tag === "NonScalar") {
       return yield* Effect.fail({
@@ -509,7 +520,10 @@ const waitForAnyDescriptorToEffect = (
     return {
       winnerIndex,
       channel: descriptor.channel,
-      wait: waitForIngressChannel(channel, adapted.trigger),
+      wait: waitForIngressRoute(
+        streamBackedRoute,
+        adapted.trigger,
+      ),
     }
   })
 
@@ -520,7 +534,7 @@ const runWaitForAnyTool = (
 ): Effect.Effect<
   WaitForAnyToolOutput,
   ToolError,
-  RuntimeAgentToolExecution | RuntimeContextMcpChannelCatalog
+  RuntimeAgentToolExecution | RuntimeChannelRouter
 > =>
   // firegrid-agent-body-plan.SLICE_D_VERBS.4
   // firegrid-agent-body-plan.SLICE_BOUNDARY.4
@@ -787,7 +801,7 @@ const runCallTool = (
 ): Effect.Effect<
   CallToolOutput,
   ToolError,
-  AgentToolHost | RuntimeContextMcpChannelCatalog | RuntimeAgentToolExecution
+  AgentToolHost | RuntimeChannelRouter | RuntimeAgentToolExecution
 > =>
   Effect.gen(function* () {
     if (input.channel.startsWith("approval.")) {
@@ -806,7 +820,7 @@ const runCallTool = (
       })
     }
 
-    const registered = yield* Effect.either(channelDispatch(input.channel))
+    const registered = yield* Effect.either(channelRoute(input.channel))
     if (registered._tag === "Right") {
       if (registered.right.direction !== "call") {
         return yield* Effect.fail(directionInvalid(
@@ -834,7 +848,7 @@ const runCallTool = (
 // ---------------------------------------------------------------------------
 
 type ToolEnvironment =
-  | RuntimeContextMcpChannelCatalog
+  | RuntimeChannelRouter
   | AgentToolHost
   | RuntimeAgentToolExecution
 

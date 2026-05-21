@@ -1,10 +1,10 @@
 import { McpSchema, McpServer } from "@effect/ai"
 import { Effect, JSONSchema } from "effect"
 import {
-  RuntimeContextMcpChannelCatalog,
-  channelMetadata,
+  RuntimeChannelRouter,
   type ChannelMetadata,
 } from "./channel.ts"
+import type { ChannelRouteMetadata } from "@firegrid/protocol/channels/router"
 
 const channelInventoryExtensionKey = "x-firegrid-channels"
 const waitForToolName = "wait_for"
@@ -79,6 +79,45 @@ export const runtimeContextMcpChannelCatalog = (
     }
   })
 
+const routeMetadataToChannelMetadata = (
+  entry: ChannelRouteMetadata,
+): ChannelMetadata => {
+  // ChannelRouteMetadata is canonical. This adapter exists only for the
+  // legacy MCP extension payload shape that predated the router descriptor.
+  switch (entry.schema.direction) {
+    case "ingress":
+      return {
+        target: entry.target,
+        direction: "ingress",
+        schema: entry.schema.schema,
+        ...(entry.schema.sourceClass === undefined
+          ? {}
+          : { sourceClass: entry.schema.sourceClass }),
+      }
+    case "egress":
+      return {
+        target: entry.target,
+        direction: "egress",
+        schema: entry.schema.schema,
+      }
+    case "bidirectional":
+      return {
+        target: entry.target,
+        direction: "bidirectional",
+        directions: entry.schema.directions,
+        schema: entry.schema.schema,
+        sourceClasses: entry.schema.sourceClasses,
+      }
+    case "call":
+      return {
+        target: entry.target,
+        direction: "call",
+        requestSchema: entry.schema.requestSchema,
+        responseSchema: entry.schema.responseSchema,
+      }
+  }
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
@@ -129,9 +168,10 @@ export const enrichRuntimeContextMcpToolWithChannelMetadata = (
 export const enrichRuntimeContextMcpToolsListWithChannelMetadata =
   Effect.gen(function* () {
     const mcpServer = yield* McpServer.McpServer
-    const channelInventory = yield* RuntimeContextMcpChannelCatalog
-    const metadata = channelInventory.channels.map(channelMetadata)
-    const inventory = runtimeContextMcpChannelCatalog(metadata)
+    const channelRouter = yield* RuntimeChannelRouter
+    const inventory = runtimeContextMcpChannelCatalog(
+      channelRouter.metadata.map(routeMetadataToChannelMetadata),
+    )
 
     const waitForTool = mcpServer.tools.find(tool => tool.name === waitForToolName)
     if (waitForTool === undefined) return

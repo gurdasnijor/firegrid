@@ -7,12 +7,13 @@
  *     interface types + channel factory functions (`./core.ts`)
  *   - Per-channel Context.Tag declarations + per-channel request/response
  *     schemas (one file per channel)
+ *   - Pure route descriptor / metadata types for channel routers
+ *     (`./router.ts`)
  *
  * Does NOT own:
- *   - RuntimeContextMcpChannelCatalog / makeRuntimeContextMcpChannelCatalog / RuntimeContextMcpChannelCatalogLive /
- *     findRuntimeContextMcpChannel (stay in host-sdk during the tf-kddg transition;
- *     deleted or narrowed to a thin MCP-edge string→capability adapter
- *     as the inventory bridge is unwound)
+ *   - RuntimeContextMcpChannelCatalog / makeRuntimeContextMcpChannelCatalog /
+ *     RuntimeContextMcpChannelCatalogLive / findRuntimeContextMcpChannel
+ *     (deprecated host-sdk migration shims; router metadata is canonical)
  *   - Live Layer bindings that touch RuntimeOutputTable / DurableTable /
  *     workflow engine / runtime control plane (those belong in
  *     host-sdk/runtime/app integration packages)
@@ -29,3 +30,4 @@ export * from "./human.ts"
 export * from "./event.ts"
 export * from "./host-control.ts"
 export * from "./verified-webhook.ts"
+export * from "./router.ts"

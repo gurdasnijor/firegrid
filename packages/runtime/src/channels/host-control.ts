@@ -81,3 +81,5 @@ export const hostSessionLifecycleStream = (
   control.runs.rows().pipe(
     Stream.filter(row => row.contextId === sessionId),
   )
+
+export * from "./host-control-routes.ts"

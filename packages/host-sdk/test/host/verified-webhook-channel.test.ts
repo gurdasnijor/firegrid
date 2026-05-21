@@ -24,8 +24,8 @@ import { Effect, Layer, Option, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   channelMetadata,
-  makeRuntimeContextMcpChannelCatalog,
-  RuntimeContextMcpChannelCatalog,
+  makeRuntimeContextChannelRouter,
+  RuntimeChannelRouter,
   VerifiedWebhookFactCallerOwnedFactStreamsLive,
   verifiedWebhookFactChannel,
 } from "../../src/host/index.ts"
@@ -155,10 +155,12 @@ const fakeHost = (): AgentToolHostService => ({
     )),
 })
 
-const VerifiedWebhookFactCatalogLive = Layer.effect(
-  RuntimeContextMcpChannelCatalog,
+const VerifiedWebhookFactRouterLive = Layer.unwrapEffect(
   Effect.map(VerifiedWebhookFactChannel, channel =>
-    makeRuntimeContextMcpChannelCatalog([channel])),
+    Layer.succeed(
+      RuntimeChannelRouter,
+      makeRuntimeContextChannelRouter([channel]),
+    )),
 )
 
 const VerifiedWebhookRuntimeObservationStreamsLive = Layer.effect(
@@ -198,7 +200,7 @@ const runWithVerifiedWebhookLayer = <A, E>(
             Layer.provideMerge(WaitForWorkflowLayer),
             Layer.provideMerge(VerifiedWebhookRuntimeObservationStreamsLive),
             Layer.provideMerge(VerifiedWebhookFactCallerOwnedFactStreamsLive),
-            Layer.provideMerge(VerifiedWebhookFactCatalogLive),
+            Layer.provideMerge(VerifiedWebhookFactRouterLive),
             Layer.provideMerge(VerifiedWebhookFactChannelLinearProjectionLive),
             Layer.provideMerge(AgentToolHost.layer(fakeHost())),
             Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
