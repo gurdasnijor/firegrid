@@ -985,6 +985,7 @@ const make = (config: ResolvedConfig) =>
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
         const decoded = yield* decodePublicPromptRequest(request)
+        yield* awaitSessionDependentContext(decoded.contextId)
         return yield* appendHostPrompt(decoded)
       }),
       sessions: {

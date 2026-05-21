@@ -35,6 +35,7 @@ import {
   makeRuntimeContextRequestRow,
 } from "@firegrid/protocol/launch"
 import { Effect, Fiber, Layer, Option, Stream } from "effect"
+import type { Exit } from "effect"
 import type * as Scope from "effect/Scope"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { TestStreamServer } from "../../effect-durable-operators/test/harness.ts"
@@ -473,6 +474,49 @@ describe("Firegrid session facade", () => {
       idempotencyKey: "host-prompt-turn",
     })
     expect(stored).toEqual(result.intent)
+  })
+
+  it("firegrid-agent-ingress.INGRESS.6 launch -> firegrid.prompt waits for reflected context without explicit whenReady", async () => {
+    const fixture = makeFixture()
+    const effect: Effect.Effect<
+      {
+        readonly contextId: string
+        readonly exit: Exit.Exit<RuntimeInputIntentRow, unknown>
+      },
+      unknown,
+      Firegrid | RuntimeControlPlaneTable
+    > = Effect.gen(function*() {
+      const firegrid = yield* Firegrid
+      const context = yield* firegrid.launch({
+        runtime: runtimeConfig(),
+        requestedBy: "prompt-reflection-gap-test",
+      })
+      const prompt = yield* firegrid.prompt({
+        contextId: context.contextId,
+        payload: { text: "barrier top-level prompt" },
+        idempotencyKey: "host-prompt-before-reflection",
+      }).pipe(Effect.fork)
+      yield* Effect.sleep("50 millis")
+      yield* materializeContextRequest(fixture.hostSession, context.contextId)
+      const exit = yield* prompt.await
+      return { contextId: context.contextId, exit }
+    })
+    const result = await runWithClient(
+      fixture,
+      effect,
+    )
+
+    expect(result.exit._tag).toBe("Success")
+    if (result.exit._tag !== "Success") return
+    const stored = await readRuntimeInputIntent(
+      fixture.hostSession,
+      result.exit.value.intentId,
+    )
+    expect(stored).toMatchObject({
+      contextId: result.contextId,
+      payload: { text: "barrier top-level prompt" },
+      idempotencyKey: "host-prompt-before-reflection",
+    })
   })
 
   it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.1 sessions.prompt keeps its ok output and stores the egress receipt", async () => {
