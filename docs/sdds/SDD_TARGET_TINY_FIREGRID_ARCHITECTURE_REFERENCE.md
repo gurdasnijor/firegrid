@@ -62,7 +62,8 @@ The reference replaces only the implementation behind those contracts:
 production client / edge surface
   -> production protocol route + channel contract
   -> tiny host-plane channel router
-  -> tiny channel route implementation
+  -> tiny channel binding / kernel authority
+  -> tiny host workflow consuming channel inputs
   -> tiny workflow-owned durable resource state machine
   -> tiny child workflow instances
   -> production-shaped channel reads, receipts, and trace evidence
@@ -124,9 +125,11 @@ because it has multiple operations.
 
 ### Workflow
 
-The state machine that owns transitions for a durable resource. It receives an
-operation through a channel route lowering, reads the current resource state,
-applies one transition, and may start child workflows or activities.
+The state machine that owns transitions for its durable resource. It receives
+operations through injected channel services, reads the current resource state,
+applies transitions, and may start child workflows or activities. Parent
+workflows may launch or coordinate child workflows, but they do not mutate the
+child workflow's resource rows directly.
 
 ### Channel
 
@@ -147,18 +150,19 @@ runtime implementation.
 ### Router
 
 The edge dispatch boundary over channels. It decodes, validates, authorizes,
-and traces `target + verb + payload`, then invokes the matching channel route.
-It does not own lifecycle, claims, retries, completion, child workflow
-ownership, or durable resource state.
+and traces `target + verb + payload`, then invokes the matching typed channel
+binding. It does not know about workflow names, workflow handles, lifecycle,
+claims, retries, completion, child workflow ownership, or durable resource
+state.
 
 The target shape is:
 
 ```text
 edge/client
   -> router
-  -> channel route
-  -> workflow-owned resource transition
-  -> channel read/call observes semantic state
+  -> channel binding
+  -> host workflow-owned transition
+  -> channel call/read observes semantic state
 ```
 
 The anti-shape is:
@@ -177,9 +181,17 @@ edge/client
 
 The reference treats workflows as state machines over durable resources.
 
-For a session-like resource, the durable model is:
+For host-like and session-like resources, the durable model is:
 
 ```text
+HostResource {
+  hostId
+  status: "created" | "running" | "closing" | "closed" | "failed"
+  activeSessionIds
+  revision
+  updatedAt
+}
+
 SessionResource {
   sessionId
   hostId
@@ -192,9 +204,10 @@ SessionResource {
 
 ```
 
-The workflow owns transitions of `status` and `revision`. Simulation evidence is
-captured by OTel traces emitted by the tiny-firegrid runner, not by durable
-scenario/e2e assertion rows.
+Each workflow owns transitions of its own resource's `status` and `revision`.
+The host workflow updates host rows. The child session workflow updates session
+rows. Simulation evidence is captured by OTel traces emitted by the
+tiny-firegrid runner, not by durable scenario/e2e assertion rows.
 
 This is the core rule:
 
@@ -222,30 +235,161 @@ Rejected reference shapes:
 - route bodies that implement ownership by scanning tables or writing terminal
   completion rows directly.
 
+## Concrete Mechanism Sketch
+
+The channel abstraction is above resource storage. The reference should not put
+invented resource accessors in route code, and it should not make route bodies
+execute workflows directly. The concrete mechanism has three layers:
+
+1. edge/router code dispatches to typed channel bindings;
+2. the host workflow is started by host topology and consumes typed channel
+   services through Effect `Context`;
+3. only workflow/resource modules touch `DurableTable` operations.
+
+Illustrative resource modules, private to `runtime/resources/`:
+
+```ts
+// runtime/resources/host-resource.ts
+import { DurableTable } from "effect-durable-operators"
+import { Schema } from "effect"
+
+export class TinyHostResourceTable extends DurableTable("tinyReference.host", {
+  hosts: Schema.Struct({
+    hostId: Schema.String.pipe(DurableTable.primaryKey),
+    status: Schema.Literal("created", "running", "closing", "closed", "failed"),
+    activeSessionIds: Schema.Array(Schema.String),
+    revision: Schema.Number,
+    updatedAt: Schema.Number,
+  }),
+}) {}
+
+// runtime/resources/session-resource.ts
+export class TinySessionResourceTable extends DurableTable("tinyReference.session", {
+  sessions: Schema.Struct({
+    sessionId: Schema.String.pipe(DurableTable.primaryKey),
+    hostId: Schema.String,
+    status: Schema.Literal(
+      "created",
+      "starting",
+      "running",
+      "cancelling",
+      "closed",
+      "exited",
+      "failed",
+    ),
+    currentRunId: Schema.optional(Schema.String),
+    revision: Schema.Number,
+    updatedAt: Schema.Number,
+  }),
+}) {}
+```
+
+Illustrative Effect-native composition:
+
+```ts
+// runtime/channels/router-live.ts
+export const TinyHostPlaneChannelRouterLive = Layer.effect(
+  HostPlaneChannelRouter,
+  Effect.gen(function*() {
+    const createOrLoad = yield* HostSessionsCreateOrLoadChannel
+    const start = yield* HostSessionsStartChannel
+    const prompt = yield* SessionPromptChannel
+
+    return makeRuntimeChannelRouter([
+      runtimeRouteFromChannel(createOrLoad),
+      runtimeRouteFromChannel(start),
+      runtimeRouteFromFactoryChannel({
+        target: SessionPromptChannelTarget,
+        field: "sessionId",
+        inputSchema: SessionPromptRouteInputSchema,
+        channel: prompt.forSession,
+        payload: input => input.prompt,
+      }),
+    ])
+  }),
+)
+```
+
+The router Layer consumes channel services. It does not import
+`HostWorkflow`, call `HostWorkflow.execute`, or know how the channel binding is
+implemented.
+
+Illustrative workflow ownership, with only concrete channel/storage operations:
+
+```ts
+// runtime/workflows/host-workflow.ts
+export const HostWorkflowLayer = HostWorkflow.toLayer(() =>
+  Effect.gen(function*() {
+    const commandChannel = yield* HostKernelCommandChannel
+    const hostTable = yield* TinyHostResourceTable
+
+    const command = yield* commandChannel.binding.stream.pipe(
+      Stream.runHead,
+      Effect.flatMap(Option.match({
+        onNone: () => Effect.never,
+        onSome: command => Effect.succeed(command),
+      })),
+    )
+    const host = yield* hostTable.hosts.get(command.hostId)
+
+    yield* hostTable.hosts.upsert({
+      ...Option.getOrThrow(host),
+      status: command.nextHostStatus,
+      revision: Option.getOrThrow(host).revision + 1,
+      updatedAt: Date.now(),
+    })
+
+    if (command._tag === "CreateSession") {
+      yield* SessionWorkflow.execute({
+        sessionId: command.sessionId,
+        hostId: command.hostId,
+      })
+    }
+  }))
+```
+
+`HostKernelCommandChannel` is not a public Firegrid concept. It is the private
+workflow-input binding behind production channel contracts. In the reference it
+may be a `makeBidirectionalChannel`/`makeIngressChannel`-shaped service backed
+by a tiny DurableTable mailbox, or a direct in-process service for single-host
+tests. That choice is below the router. The public facts remain: edges see a
+router, the router invokes `binding.call` / `binding.append` /
+`binding.stream`, and workflows own resource transitions.
+
+Reads follow the same rule. A session snapshot or stream channel binding may
+read `TinySessionResourceTable` internally and encode the result as a
+production-shaped channel payload. The router exposes the channel target and
+decoded payload, not a table handle or workflow handle.
+
 ## Channels, Router, And Workflows
 
 The channel router is the edge/system-call boundary. It decodes wire payloads,
-checks target/verb validity, emits dispatch spans, and calls route
-implementations.
+checks target/verb validity, emits dispatch spans, and calls typed channel
+bindings. The router is composed with channel services through Effect `Layer`
+and `Context` in the same style as the production `HostPlaneChannelRouter`
+service.
 
-Route implementations are channel implementations. They are allowed to lower a
-channel verb into workflow-owned resource transitions, but the lowering
-mechanism stays below the channel/router boundary. Do not promote
-`signal`, `mailbox`, `deferred`, request-row, or workflow-engine vocabulary into
-the semantic API.
+Channel bindings are the seam between edge dispatch and kernel/workflow
+ownership. They may lower to a workflow inbox/signal, a durable row bridge, a
+future engine primitive, or a direct in-process service in a single-host test.
+That lowering mechanism stays below the channel/router boundary. Do not
+promote `signal`, `mailbox`, `deferred`, request-row, or workflow-engine
+vocabulary into the semantic API.
 
 ```text
 tiny router
-  -> tiny channel route implementation
-  -> tiny workflow-owned resource transition
+  -> typed channel binding
+  -> private kernel/workflow input mechanism
+  -> host/session workflow-owned transition
   -/-> public DurableTable handles
   -/-> public workflow handles
   -/-> public request/claim/completion rows
 ```
 
 The reference should prove that route behavior can be tested through production
-channel contracts and that workflow behavior can be tested as resource state
-transitions without importing edge adapters.
+channel contracts, and that workflow behavior can be tested as resource state
+transitions without importing edge adapters or coupling route bodies to
+workflow execution handles.
 
 ## Dispatch Flow
 
@@ -255,25 +399,29 @@ The minimum dispatch flow is:
 edge/client request
   -> router.dispatch.call/send(target, unknown)
   -> Schema.decodeUnknown(route request schema)
-  -> channel route lowers request to workflow-owned transition
+  -> channel binding accepts or awaits the operation
+  -> HostKernelWorkflow consumes the channel input
   -> HostKernelWorkflow applies one resource state transition
   -> optional child SessionWorkflow execute or input delivery
   -> resource status/revision update
   -> channel read routes expose updated state where applicable
-  -> route returns production-shaped receipt/response
+  -> channel call returns production-shaped receipt/response
 ```
 
-The router returns receipts from route metadata plus terminal or accepted
-resource state. Callers do not pass `sync`, `awaitMode`, or `isComplete` flags.
+The channel binding returns receipts from operation metadata plus terminal or
+accepted resource state. The router only dispatches. Callers do not pass
+`sync`, `awaitMode`, or `isComplete` flags.
 
 ## HostKernelWorkflow
 
 The reference `HostKernelWorkflow` is one workflow per host identity. It owns:
 
 - host singleton identity for the reference host;
-- session resource create/load;
-- start transitions and child session workflow execution;
-- prompt delivery to the child workflow through a channel route lowering;
+- host resource transitions;
+- child session workflow launch and coordination;
+- session create/load by invoking the child session workflow;
+- start routing to the child session workflow;
+- prompt delivery to the child workflow through injected channel services;
 - cancel, close, and resume transitions;
 - duplicate request identity;
 - terminal receipt state.
