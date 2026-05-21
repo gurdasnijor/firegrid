@@ -34,11 +34,16 @@ import {
 import { Effect, Layer } from "effect"
 import { RuntimeHostConfig } from "../../config.ts"
 
-// tf-bffo: host-sdk COMPOSES only. The contexts.create / prompt / session.prompt /
-// sessions.start / permissions.respond bindings come from the @firegrid/protocol/launch
-// factories; the durable snapshot reads + the session-lifecycle run stream now live in
-// @firegrid/runtime/channels. This layer resolves the control table + host config and
-// wires them together — it owns no durable-state logic.
+// tf-bffo (PARTIAL): the durable snapshot reads + the session-lifecycle run stream
+// now live in @firegrid/runtime/channels; this layer composes them.
+//
+// REMAINING CARVEOUT (tf-hhgs, blocks tf-bffo): the contexts.create / prompt /
+// session.prompt / sessions.start / permissions.respond request-row channel lives are
+// still constructed here from RuntimeControlPlaneTable via the @firegrid/protocol/launch
+// factories (makeHostContextsCreateChannel(control), etc.). Those table-bound channel
+// lives still sit ABOVE the runtime channels box and are NOT relocated by this PR —
+// see tf-hhgs ("Relocate host-control request-row channel lives below the runtime
+// channels box").
 
 type HostControlChannels =
   | HostContextsCreateChannel
