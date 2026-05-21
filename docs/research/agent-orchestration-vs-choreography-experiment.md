@@ -3,7 +3,8 @@
 Date: 2026-05-21
 Status: design to approve
 
-This is first a **general agentic-patterns experiment**, not a Firegrid proof.
+This is a **general agentic-patterns experiment**, not a proof for any one
+runtime or framework.
 
 The core question:
 
@@ -11,9 +12,8 @@ The core question:
 > community over-building around a problem where a dead-simple baseline performs
 > just as well?
 
-Firegrid can be used as the implementation substrate and can produce an
-additional appendix about durable coordination, but the primary result should be
-publishable even if Firegrid is not mentioned.
+The primary result should be publishable as an experiment about frontier models
+and coordination patterns.
 
 ---
 
@@ -22,8 +22,8 @@ publishable even if Firegrid is not mentioned.
 The surrounding space already has several mature threads. This experiment should
 not pretend that "multi-agent coordination" or "software factories" are new.
 The open question is narrower: **when does decentralized choreography beat a
-single agent or an explicit orchestrator on realistic software work, and what
-infrastructure does it require to be legible rather than chaotic?**
+single agent or a developer-authored workflow graph on realistic software work,
+and what infrastructure does it require to be legible rather than chaotic?**
 
 ### What Existing Work Already Covers
 
@@ -44,7 +44,8 @@ execution. The more novel claim to test is:
 
 > A durable shared observation/action substrate may let agents coordinate by
 > choreography: agents watch typed state, claims, events, and traces, then decide
-> locally what to do next, without a central manager assigning every step.
+> locally what to do next, without a developer-authored graph assigning every
+> step.
 
 That is closer to a blackboard or peer-to-peer system than to a DAG runner, but
 with two constraints that most examples do not emphasize:
@@ -54,9 +55,9 @@ with two constraints that most examples do not emphasize:
   its complexity rather than being assumed superior.
 
 If choreography wins, the result should say where it won: recovery, parallelism,
-review quality, interruption handling, or lower manager bottleneck. If it loses,
-that is equally valuable: it identifies which primitives are missing, where
-central control is actually helpful, and where "agent swarm" rhetoric is
+review quality, interruption handling, or adaptation to new context. If it
+loses, that is equally valuable: it identifies which primitives are missing,
+where fixed topology is actually helpful, and where "agent swarm" rhetoric is
 overbuilt for the task.
 
 ---
@@ -75,7 +76,7 @@ overbuilt for the task.
 
 ## Non-Goals
 
-- Do not prove Firegrid is good by construction.
+- Do not prove any one runtime or framework is good by construction.
 - Do not assume choreography wins.
 - Do not compare framework marketing claims.
 - Do not use an LLM judge as the primary scorer.
@@ -115,10 +116,10 @@ Where do more complex patterns get worse?
 - harder observability;
 - higher cost without quality improvement.
 
-### RQ4: Can choreography work without a central planner?
+### RQ4: Can choreography work without a fixed planner?
 
 Can agents discover relevant work and each other through shared artifacts or
-channels, rather than through a central orchestrator assigning tasks?
+channels, rather than through a pre-authored graph assigning tasks?
 
 ---
 
@@ -165,14 +166,17 @@ Each arm should be described by the same four questions:
 
 | Arm | Who Decides? | Communication Shape | What It Tests |
 | --- | --- | --- | --- |
-| A. Single agent | one agent | no handoff; one continuous context | whether anything more complex is justified |
-| B. Fixed workflow | experiment author | pre-written task slices and final merge | whether decomposition alone helps |
-| C. Manager agent | one coordinator agent | manager delegates, workers report back | whether an LLM manager beats fixed routing |
-| D. Choreography | each peer agent locally | agents publish/read shared artifacts and claims | whether decentralized coordination works |
-| E. Independent attempts | no live coordinator | several isolated attempts, final selection | whether parallel attempts beat coordination |
+| A. Single agent | one frontier model | no handoff; one continuous context | whether anything more complex is justified |
+| B. Developer-authored orchestration | experiment author | fixed topology, fixed task slices, fixed merge path | whether a LangGraph/Maestra-style graph helps |
+| C. Choreography | each peer agent locally | agents publish/read shared artifacts and claims | whether decentralized coordination works |
+| D. Independent attempts | no live coordination | several isolated attempts, final selection | whether sampling beats coordination |
 
-The minimum viable first run should include A, C, and D. Add B and E if the
-task budget allows.
+Do not include a central manager-agent arm in the primary comparison. A manager
+agent can itself behave like choreography, so it blurs the line between the
+patterns this experiment is trying to separate.
+
+The minimum viable first run should include A, B, and C. Add D if the task
+budget allows.
 
 ### Arm A: Single Agent
 
@@ -186,32 +190,20 @@ The control arm.
 This is the baseline to beat. If it wins on quality, cost, and reliability,
 the experiment should say so plainly.
 
-### Arm B: Fixed Workflow
+### Arm B: Developer-Authored Orchestration
 
-This is not a neutral harness. It is a hand-authored workflow baseline.
+This is the LangGraph/Maestra-style baseline: a developer writes the topology,
+the step order, and the handoff points.
 
 - The experiment author predefines the split, for example: investigate,
   implement, review, summarize.
 - Agents receive their fixed slice and return an artifact.
 - The workflow combines the artifacts mechanically.
-- No agent decides the decomposition or changes the order.
+- No agent decides the decomposition, graph shape, or execution order.
 
-This tests whether "more agents" helps even when all coordination intelligence
-comes from the human-authored workflow.
+This tests whether a hand-authored graph helps when the split is obvious.
 
-### Arm C: Manager Agent
-
-Classic orchestration, but with the plan owned by an LLM.
-
-- One manager agent receives the full task and can spawn or prompt workers.
-- Workers only see the assignment they are given.
-- Workers report back to the manager.
-- The manager decides whether to ask for more work, revise the plan, or finish.
-
-This tests whether central LLM coordination beats both a single agent and a
-fixed human-authored workflow.
-
-### Arm D: Choreography
+### Arm C: Choreography
 
 No central assignment.
 
@@ -223,7 +215,7 @@ No central assignment.
 This tests the core choreography question: can decentralized agents coordinate
 by watching state rather than being routed by a central planner?
 
-### Arm E: Independent Attempts
+### Arm D: Independent Attempts
 
 Parallelism without coordination.
 
@@ -277,7 +269,7 @@ Start with a small matrix.
 
 | Variable | Values |
 | --- | --- |
-| topology | single, central orchestration, choreography |
+| topology | single, developer-authored orchestration, choreography |
 | coordination load | low, medium, high |
 | external interruption | none, review event, crash/restart |
 | context pressure | small fixture, large fixture |
@@ -312,34 +304,34 @@ they improve quality, latency, cost, or recovery.
 
 ---
 
-## Scoring
+## Evaluation
 
-Use a mixed scoring model:
+Keep the evaluation easy to read.
 
-1. Deterministic checks first: tests pass, expected files changed, required
-   artifacts exist, known failure cases avoided.
-2. Human rubric second: clarity, correctness, maintainability, usefulness.
-3. Trace metrics third: cost, latency, coordination overhead.
+For each arm, report:
 
-Recommended result row:
+- final outcome: pass, partial, or fail;
+- what changed: files, artifacts, or decisions produced;
+- cost and time;
+- where coordination helped;
+- where coordination got in the way;
+- representative trace excerpt.
 
-```ts
-interface CoordinationExperimentResult {
-  arm: "single" | "scripted" | "orchestrator" | "choreography" | "swarm"
-  taskId: string
-  seed: string
-  success: boolean
-  score: number
-  wallClockMs: number
-  modelCallCount: number
-  tokenEstimate?: number
-  toolCallCount: number
-  duplicateWorkCount: number
-  stuckOrIdleCount: number
-  handoffCount: number
-  recoveryPassed?: boolean
-  notes: ReadonlyArray<string>
-}
+A compact diff-style summary is better than a large JSON record:
+
+```txt
+A. single agent
+  + simplest setup
+  + lowest coordination overhead
+  - missed second-order review issue
+
+B. developer-authored orchestration
+  + review happened reliably
+  - graph forced an awkward handoff after new context appeared
+
+C. choreography
+  + peers picked up newly discovered work without changing the graph
+  - duplicated one investigation before claim semantics were clear
 ```
 
 ---
@@ -353,15 +345,16 @@ These are hypotheses, not desired conclusions.
 For small or tightly scoped tasks, a single large-context agent should match or
 beat multi-agent setups on cost and reliability.
 
-### H2: Orchestration Helps When Decomposition Is Obvious
+### H2: Developer-Authored Orchestration Helps When Decomposition Is Obvious
 
-Central orchestration should help when the work naturally decomposes and the
-manager can keep the whole plan in context.
+Fixed-topology orchestration should help when the work naturally decomposes and
+the developer-authored graph captures the right sequence.
 
-### H3: Orchestration Bottlenecks Under High Coordination Load
+### H3: Fixed Topologies Struggle When Coordination Changes At Runtime
 
-As external events and worker reports increase, a central orchestrator should
-show context growth, idle workers, and recovery fragility.
+As external events, review feedback, and task discoveries increase, a static
+graph should either need more pre-authored branches or route useful work through
+awkward handoff points.
 
 ### H4: Choreography Helps When Work Is Parallel And Externally Driven
 
@@ -375,79 +368,208 @@ state, choreographed agents may duplicate work or miss peer findings.
 
 ---
 
-## Firegrid Add-On Track
+## Implementation Requirements
 
-After the generic design is approved, Firegrid can host the experiment.
+The point of the showcase is frontier models plus durable coordination tools.
+The primary run should use real frontier-model participants. A fixture agent is
+useful for CI and regression tests, but it should not be the headline
+experiment because it cannot demonstrate whether model capability actually uses
+durable temporal primitives.
 
-This add-on answers:
+The arm code should make the coordination pattern obvious and use the public
+client surface directly. The concrete runtime can point at Claude Code, Codex,
+an ACP agent, or another frontier-model runner.
 
-> Can Firegrid serve as the durable substrate underneath all coordination
-> paradigms without changing the user-facing coordination model?
+```ts
+import { Firegrid, local } from "@firegrid/client-sdk"
+import { Effect } from "effect"
 
-Firegrid-specific success criteria:
+const claudeRuntime = local.jsonl({
+  argv: ["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.36.1"],
+  agent: "claude-acp",
+  agentProtocol: "acp",
+  envBindings: [{ name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" }],
+  runtimeContextMcp: { enabled: true },
+})
 
-- all arms can use the same client/session/channel surface;
-- the participant code does not import DurableTable, workflow engine, kernel
-  internals, stream URLs, or runtime command APIs;
-- orchestration and choreography are both expressible as user-level patterns;
-- trace/show/perf artifacts are rich enough for debugging and blog material;
-- any helper needed to make the experiment usable becomes a product-surface gap.
-
-Firegrid should be implementation evidence, not the primary claim. The public
-writeup can include an appendix:
-
-```txt
-Appendix: Running the same coordination experiment on Firegrid's durable
-substrate
+declare const taskPacket: string
+declare const scoreArm: (arm: string) => Effect.Effect<void>
 ```
 
----
+### A. Single Agent
 
-## Firegrid Implementation Sketch
+```ts
+export const runSingleAgent = Effect.gen(function*() {
+  const firegrid = yield* Firegrid
+  const session = yield* firegrid.sessions.createOrLoad({
+    externalKey: { source: "coordination-experiment", id: "single" },
+    runtime: claudeRuntime,
+    createdBy: "coordination-experiment",
+  })
 
-If implemented in tiny-firegrid, suggested location:
+  yield* session.prompt({
+    idempotencyKey: "initial",
+    payload: [
+      "You own the whole task.",
+      "Use the available durable tools when you need to wait, record progress,",
+      "ask for approval, or inspect prior state.",
+      "",
+      taskPacket,
+    ].join("\n"),
+  })
+  yield* session.start()
 
-```txt
-packages/tiny-firegrid/src/simulations/coordination-patterns/
-  index.ts
-  driver.ts
-  host.ts
-  task.ts
-  board.ts
-  channels.ts
-  prompts.ts
-  arms/
-    single.ts
-    scripted.ts
-    orchestrator.ts
-    choreography.ts
-    swarm.ts
-  score.ts
-  artifacts.ts
+  yield* scoreArm("single")
+})
 ```
 
-The Firegrid implementation should still preserve the generic experiment arms.
-Do not turn the generic experiment into a Firegrid architecture proof.
+### B. Developer-Authored Orchestration
 
-Participant setup should read like an experiment script, not infrastructure
-plumbing:
+```ts
+export const runDeveloperAuthoredOrchestration = Effect.gen(function*() {
+  const firegrid = yield* Firegrid
 
-```txt
-launch participant "planner" with:
-  role: propose a plan and publish open work
-  tools: read workspace, claim work, publish finding, request review
-  model: deterministic fixture agent first; live Codex/Claude later
+  const investigator = yield* firegrid.sessions.createOrLoad({
+    externalKey: {
+      source: "coordination-experiment",
+      id: "orchestration-investigator",
+    },
+    runtime: claudeRuntime,
+    createdBy: "coordination-experiment",
+  })
 
-launch participant "reviewer" with:
-  role: inspect completed work and publish feedback
-  tools: read workspace, publish review, approve/reject artifact
-  model: same budget class as planner
+  yield* investigator.prompt({
+    idempotencyKey: "investigate",
+    payload: [
+      "Investigate this task and publish an investigation report.",
+      "Do not implement.",
+      "",
+      taskPacket,
+    ].join("\n"),
+  })
+  yield* investigator.start()
+
+  const report = yield* investigator.wait.forAgentOutput({
+    timeoutMs: 120_000,
+  })
+
+  const builder = yield* firegrid.sessions.createOrLoad({
+    externalKey: {
+      source: "coordination-experiment",
+      id: "orchestration-builder",
+    },
+    runtime: claudeRuntime,
+    createdBy: "coordination-experiment",
+  })
+
+  yield* builder.prompt({
+    idempotencyKey: "build",
+    payload: [
+      "Implement from this fixed upstream report.",
+      "Do not change the task decomposition.",
+      "",
+      JSON.stringify(report),
+    ].join("\n"),
+  })
+  yield* builder.start()
+
+  yield* scoreArm("developer-authored-orchestration")
+})
 ```
 
-The implementation can lower this into `Firegrid.sessions.createOrLoad`,
-`session.prompt`, `session.start`, and channel verbs. The design document should
-not make readers understand `local.jsonl`, argv wiring, or MCP setup just to
-understand the experiment.
+### C. Choreography
+
+```ts
+export const runChoreography = Effect.gen(function*() {
+  const firegrid = yield* Firegrid
+
+  const planner = yield* firegrid.sessions.createOrLoad({
+    externalKey: { source: "coordination-experiment", id: "peer-planner" },
+    runtime: claudeRuntime,
+    createdBy: "coordination-experiment",
+  })
+  const builder = yield* firegrid.sessions.createOrLoad({
+    externalKey: { source: "coordination-experiment", id: "peer-builder" },
+    runtime: claudeRuntime,
+    createdBy: "coordination-experiment",
+  })
+  const reviewer = yield* firegrid.sessions.createOrLoad({
+    externalKey: { source: "coordination-experiment", id: "peer-reviewer" },
+    runtime: claudeRuntime,
+    createdBy: "coordination-experiment",
+  })
+
+  const peerPrompt = [
+    taskPacket,
+    "",
+    "Watch the shared workspace.",
+    "Claim useful work when you see it.",
+    "Publish findings, artifacts, and review comments for the others.",
+    "Stop when the final artifact is ready or your budget is exhausted.",
+  ].join("\n")
+
+  yield* Effect.all([
+    planner.prompt({ idempotencyKey: "initial", payload: peerPrompt }),
+    builder.prompt({ idempotencyKey: "initial", payload: peerPrompt }),
+    reviewer.prompt({ idempotencyKey: "initial", payload: peerPrompt }),
+  ], { concurrency: "unbounded" })
+  yield* Effect.all([
+    planner.start(),
+    builder.start(),
+    reviewer.start(),
+  ], { concurrency: "unbounded" })
+
+  yield* scoreArm("choreography")
+})
+```
+
+### D. Independent Attempts
+
+```ts
+export const runIndependentAttempts = Effect.gen(function*() {
+  const firegrid = yield* Firegrid
+
+  const attempts = yield* Effect.all([1, 2, 3].map((index) =>
+    Effect.gen(function*() {
+      const session = yield* firegrid.sessions.createOrLoad({
+        externalKey: {
+          source: "coordination-experiment",
+          id: `attempt-${index}`,
+        },
+        runtime: claudeRuntime,
+        createdBy: "coordination-experiment",
+      })
+      yield* session.prompt({
+        idempotencyKey: "initial",
+        payload: taskPacket,
+      })
+      yield* session.start()
+      return session
+    })
+  ), { concurrency: "unbounded" })
+
+  const outputs = yield* Effect.all(attempts.map((session) =>
+    session.wait.forAgentOutput({ timeoutMs: 120_000 }),
+  ), { concurrency: "unbounded" })
+
+  const selector = yield* firegrid.sessions.createOrLoad({
+    externalKey: { source: "coordination-experiment", id: "attempt-selector" },
+    runtime: claudeRuntime,
+    createdBy: "coordination-experiment",
+  })
+  yield* selector.prompt({
+    idempotencyKey: "select",
+    payload: [
+      "Select or combine the best result from these independent attempts.",
+      "",
+      JSON.stringify(outputs),
+    ].join("\n"),
+  })
+  yield* selector.start()
+
+  yield* scoreArm("independent-attempts")
+})
+```
 
 The participant-facing contract is:
 
@@ -460,10 +582,10 @@ produce final artifact
 ```
 
 Any helper required to make those actions ergonomic should be treated as a
-Firegrid product-surface gap, not hidden as simulation-only convenience code.
+product-surface gap, not hidden as experiment-only convenience code.
 
-Start with deterministic fixture agents. Add live Codex/Claude/ACP canaries
-only after deterministic runs work.
+Use deterministic fixture agents only for CI and regression coverage. The
+showcase experiment itself should run real frontier-model participants.
 
 ---
 
@@ -505,12 +627,12 @@ Before implementation:
 
 After implementation:
 
-- [ ] At least A, C, and D arms run.
+- [ ] At least A, B, and C arms run.
 - [ ] Runs capture cost, failure modes, and coordination patterns.
 - [ ] Artifacts are suitable for technical blog/release material.
 - [ ] Results report where simple wins, where orchestration wins, and where
       choreography wins or fails.
-- [ ] Firegrid-specific conclusions are separated from generic agent-pattern
+- [ ] Framework-specific conclusions are separated from generic agent-pattern
       conclusions.
 
 ---
@@ -522,6 +644,4 @@ After implementation:
 2. Who provides the human rubric, and how many runs need human review?
 3. Should the first choreography arm use shared files, durable channels, issue
    comments, or a purpose-built board?
-4. Should Firegrid be the first implementation substrate, or should the generic
-   experiment design be reviewed independently before implementation?
-5. What model/provider set is in scope for the first run?
+4. What model/provider set is in scope for the first run?

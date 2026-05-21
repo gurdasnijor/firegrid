@@ -17,7 +17,11 @@ confirmed finite, but package-boundary wording corrected. Durable transport
 libraries are substrate exceptions; host/CLI projection shims with byte,
 server, or dev-server effects are explicit follow-up work, not proof of a
 runtime-only boundary. tf-yxdd classified the CLI embedded Durable Streams
-dev-server lifecycle as a named local-dev exception.)
+dev-server lifecycle as a named local-dev exception.
+Peer review wave 4 — edge-transport clarification: external client transports
+are host-plane edge adapters composed by host topology, not privileged
+entrypoints. Agent runtime transports remain separate child-agent codec
+configuration.)
 Owner: Firegrid Architecture
 Supersedes/strengthens: `SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
 Extends: `SDD_FIREGRID_AGENT_BODY_PLAN.md`, `SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
@@ -73,6 +77,50 @@ The unifying property is: every public method on every surface ultimately
 projects through the typed channel layer, which lowers to DurableTable
 primitives. The channel layer is the substrate; the SURFACE NAMES are a
 projection-specific concern.
+
+### Two Transport Axes
+
+Firegrid uses "transport" in two distinct places. They must not collapse into
+one API.
+
+1. **Host-plane edge transport** is how an external client or tool host talks
+   to Firegrid. Examples: a Zed/ACP stdio client, HTTP/SSE, future REST, gRPC,
+   JSON-RPC, or an MCP server edge. These are projection edges over the same
+   protocol/channel surface. The contract is host topology/configuration:
+   a host composes edge adapters alongside channels, runtime providers, and
+   policy Layers.
+
+2. **Agent runtime transport** is how Firegrid talks to a child agent it has
+   launched. Examples: `local.jsonl({ agentProtocol: "acp" })`,
+   `stdio-jsonl`, or raw byte/process sessions. This belongs to runtime launch
+   intent and codec/provider configuration.
+
+The ACP/Zed edge is therefore **not** a special Firegrid entrypoint and is not
+the same thing as launching a child agent with `agentProtocol: "acp"`. Its
+shape is:
+
+```text
+Zed / ACP client over stdio
+  -> host-plane ACP edge adapter
+  -> public protocol/channel verbs
+  -> runtime/kernel channel implementations
+  -> DurableTable substrate
+```
+
+The `claude-agent-acp` `runAcp` pattern is only the byte-stream reference
+(`stdio -> ndJsonStream -> AgentSideConnection`). Firegrid should expose that
+as a configurable host edge adapter/preset, not as a privileged public
+contract. A CLI helper may build that host configuration, but the contract is
+the host-plane topology.
+
+This is the leverage channels buy: each host-plane edge adapter only translates
+its wire protocol into the same small channel vocabulary. ACP, HTTP/SSE, REST,
+gRPC, JSON-RPC, MCP, or a future local IPC edge should not each invent session,
+permission, prompt, output, or tool-call semantics. They project their transport
+shape into `wait_for`, `send`, `call`, and typed channel contracts, then the
+kernel/channel implementation handles durable execution. Swapping the edge
+transport becomes a host-topology concern instead of a runtime-substrate
+rewrite.
 
 ## The One Diagram
 
