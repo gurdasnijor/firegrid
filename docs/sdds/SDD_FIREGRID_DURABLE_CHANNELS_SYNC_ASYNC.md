@@ -4,6 +4,7 @@ Status: canonized framing - **validated by the tf-lfxs spike and production-clos
 Created: 2026-05-20
 Owner: Firegrid Runtime / Agent Tool Surface
 Validation: `tf-lfxs-durable-channels-sync-async.FINDING.md` (both modes proven with existing substrate; no new verb; no Effect-interface leakage) + `tf-1r3h-durable-sync-async-closure-audit.md` (production closure classification and tests)
+Amended: 2026-05-21 (`tf-nioy-channel-completion-contracts.FINDING.md` - completion semantics belong to operation/channel contracts, not public caller flags)
 Follow-on to: `SDD_FIREGRID_AGENT_BODY_PLAN.md` (channels as nervous system; the verb set)
 Grounded in: `SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md` (DurableTable as the one substrate primitive)
 
@@ -204,6 +205,50 @@ dependent-operation bindings where the result gates the next client action.
 `createOrLoad` itself remains request-row/identity acknowledgement because its
 inline result is the handle identity, not reflected host readiness.
 
+## Completion Contracts: Operation Semantics, Not Caller Flags
+
+The sync/async axis does not imply a public completion toggle. Firegrid must not
+expose a user-facing `isComplete` boolean, await-mode enum, or call-site flag
+that asks the caller to declare whether an operation is expected to complete or
+reject. Those controls leak substrate timing and do not compose across ACP/Zed,
+MCP, CLI, HTTP, or in-process callers.
+
+Completion semantics belong to the **operation/channel contract**. A dispatched
+route declares whether its result is terminal completion evidence, and the
+operation's return / receipt schema carries the evidence.
+
+Recommended placement:
+
+1. **Route descriptor metadata is the canonical edge-inspectable contract.**
+   The host-plane router already exposes target, direction, verbs, and schema
+   metadata to edge adapters. Completion metadata belongs beside those fields
+   because edge adapters need to know what invoking the route means before they
+   map the result to a transport response.
+2. **Return / receipt schemas carry terminal evidence.** The receipt schema
+   should distinguish terminal outcomes such as `Done` and `Rejected`, plus
+   transport-relevant fields such as an ACP stop reason when the route supports
+   that transport projection.
+3. **Schema annotations may derive schema-local facts but are not the canonical
+   edge contract.** They are useful in the same way `DurableTable.primaryKey`
+   annotations are useful: metadata can attach to an Effect Schema AST and be
+   discovered mechanically. But completion is route-specific; target, verb,
+   direction, and transport projection matter.
+4. **Call-site flags are rejected.** A caller can lie or diverge from the route
+   result, and router metadata cannot inspect the flag.
+
+For ACP prompt-like routes, the edge inspection path is:
+
+```text
+router route metadata completion contract
+  -> dispatch target + verb
+  -> decode returned operation receipt
+  -> map Done / Rejected to ACP PromptResponse + stopReason
+```
+
+This keeps completion on the channel boundary. The router can expose it to
+every edge consistently, while typed clients and agents continue to choose
+semantic operations rather than substrate timing controls.
+
 ## Decision guide
 
 Reach for sync (`call` / `spawn`) when:
@@ -264,3 +309,5 @@ a stronger binding specifies claim/ack semantics.
 - `@effect/workflow` `DurableDeferred` - durable awakeable semantics behind sync handshakes.
 - `packages/effect-durable-operators/src/DurableTable.ts` - durable append + rows behind async mode.
 - `docs/research/tf-lfxs-durable-channels-sync-async.FINDING.md` - spike evidence and verdict.
+- `docs/research/tf-nioy-channel-completion-contracts.FINDING.md` - completion-contract placement evaluation and tiny-firegrid probe.
+- `docs/sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md` - route descriptor metadata and edge dispatch boundary.
