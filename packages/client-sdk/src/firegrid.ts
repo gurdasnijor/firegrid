@@ -7,8 +7,8 @@
 // Public Firegrid client. This package is browser/app safe: it writes
 // launch/start/permission control requests through protocol channel Tags and
 // reads durable control/output projections, but it does not own live runtime
-// input delivery. Prompt still writes runtime-input intents directly pending
-// tf-fyyk's prompt egress-return decision.
+// input delivery. Prompt dispatches through egress channels whose append
+// receipts preserve the stored RuntimeInputIntentRow client contract.
 
 import {
   PublicLaunchRequestSchema,
@@ -34,14 +34,10 @@ import {
   type SessionPromptToolOutput,
 } from "@firegrid/protocol/session-facade"
 import {
-  makeRuntimeInputIntentRow,
   PublicPromptRequestSchema,
-  promptToRuntimeIngressRequest,
   type PublicPromptRequest,
   type RuntimeInputIntentRow,
-  type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
-import { stampRowOtel } from "@firegrid/protocol/otel"
 import {
   makeIngressChannel,
   SessionAgentOutputChannelTarget,
@@ -69,8 +65,10 @@ import {
   HostContextsChannel,
   HostContextsCreateChannel,
   HostPermissionRespondChannel,
+  HostPromptChannel,
   HostSessionsCreateOrLoadChannel,
   HostSessionsStartChannel,
+  SessionPromptChannel,
 } from "@firegrid/protocol/channels"
 import { Clock, Context, Data, Duration, Effect, Exit, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
 import { HostControlChannelsStandaloneLive } from "./channels/host-control-default.ts"
@@ -520,6 +518,8 @@ const make = (config: ResolvedConfig) =>
     // bindings (HostControlChannelsStandaloneLive) or a host-sdk Live Layer
     // provide them.
     const hostContextsCreateChannel = yield* HostContextsCreateChannel
+    const hostPromptChannel = yield* HostPromptChannel
+    const sessionPromptChannel = yield* SessionPromptChannel
     const hostSessionsStartChannel = yield* HostSessionsStartChannel
     const hostPermissionRespondChannel = yield* HostPermissionRespondChannel
     // tf-qu7l: read-path ingress. watchContexts + whenReady consume the
@@ -763,51 +763,49 @@ const make = (config: ResolvedConfig) =>
         Effect.mapError(cause => new AppendError({ contextId, cause })),
       )
 
-    const appendRuntimeInputIntent = (
-      request: RuntimeIngressRequest,
+    const appendHostPrompt = (
+      request: PublicPromptRequest,
     ): Effect.Effect<RuntimeInputIntentRow, AppendError> =>
-      Effect.gen(function* () {
-        const context = yield* resolveContext(request.contextId).pipe(
-          Effect.mapError(cause =>
-            new AppendError({ contextId: request.contextId, cause })),
-        )
-        if (context === undefined) {
-          return yield* new AppendError({
-            contextId: request.contextId,
-            cause: new Error(`runtime context ${request.contextId} not found`),
-          })
-        }
-        const intent = makeRuntimeInputIntentRow(request)
-        // Capture the producer-side trace context INSIDE the producer span so
-        // the stamped traceparent points at that span (consumer becomes its
-        // descendant via the row carrier).
-        const stamped = yield* stampRowOtel(intent)
-        const result = yield* control.inputIntents.insertOrGet(stamped).pipe(
-          Effect.mapError(cause =>
-            new AppendError({ contextId: request.contextId, cause })),
-        )
-        return result._tag === "Found" ? result.row : stamped
-      }).pipe(
-        Effect.withSpan("firegrid.client.runtime_input_intent.append", {
+      hostPromptChannel.binding.append(request).pipe(
+        Effect.mapError(cause =>
+          new AppendError({ contextId: request.contextId, cause })),
+        Effect.withSpan("firegrid.client.channel.host_prompt.append", {
           kind: "producer",
           attributes: {
+            "firegrid.channel.target": String(hostPromptChannel.target),
+            "firegrid.channel.direction": hostPromptChannel.direction,
             "firegrid.context.id": request.contextId,
-            "firegrid.input.kind": request.kind,
+            "firegrid.input.kind": "message",
             "firegrid.input.idempotency_key": request.idempotencyKey ?? "",
           },
         }),
       )
 
-    // tf-aago: contexts.create / sessions.start / permissions.respond write
-    // helpers deleted — those methods now dispatch through their callable
-    // channel Tags (HostContextsCreate / HostSessionsStart /
-    // HostPermissionRespond), whose bindings live in the shared
-    // @firegrid/protocol/launch factories. `appendRuntimeInputIntent`
-    // survives only for prompt egress paths: HostPrompt / SessionPrompt
-    // channels return void, but the client prompt methods return the stored
-    // RuntimeInputIntentRow (tests assert returned === stored, createdAt
-    // included). tf-fyyk owns that prompt egress-return decision; until then
-    // prompt stays on this local helper as the known residual direct write.
+    const appendSessionPrompt = (
+      sessionId: string,
+      request: SessionHandlePromptInput,
+    ): Effect.Effect<RuntimeInputIntentRow, AppendError> => {
+      const channel = sessionPromptChannel.forSession(sessionId)
+      return channel.binding.append(request).pipe(
+        Effect.mapError(cause => new AppendError({ contextId: sessionId, cause })),
+        Effect.withSpan("firegrid.client.channel.session_prompt.append", {
+          kind: "producer",
+          attributes: {
+            "firegrid.channel.target": String(channel.target),
+            "firegrid.channel.direction": channel.direction,
+            "firegrid.context.id": sessionId,
+            "firegrid.input.kind": "message",
+            "firegrid.input.idempotency_key": request.idempotencyKey ?? "",
+          },
+        }),
+      )
+    }
+
+    // tf-fyyk: contexts.create / sessions.start / permissions.respond and
+    // prompt write helpers now all dispatch through channel Tags. Prompt
+    // remains EgressChannel direction, but the append binding returns the
+    // producer-side durable receipt row so the public client contract keeps
+    // returned === stored, createdAt, and _otel.
 
     const makeSessionHandle = (
       sessionId: FiregridSessionId,
@@ -902,14 +900,7 @@ const make = (config: ResolvedConfig) =>
                 "firegrid.context.id": sessionId,
                 "firegrid.input.idempotency_key": decoded.idempotencyKey ?? "",
               })
-              return yield* appendRuntimeInputIntent({
-                contextId: sessionId,
-                kind: "message",
-                authoredBy: "client",
-                payload: decoded.payload,
-                idempotencyKey: decoded.idempotencyKey,
-                ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
-              })
+              return yield* appendSessionPrompt(sessionId, decoded)
             })),
           start: () =>
             withClientSpan("firegrid.client.session.start", {
@@ -994,7 +985,7 @@ const make = (config: ResolvedConfig) =>
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
         const decoded = yield* decodePublicPromptRequest(request)
-        return yield* appendRuntimeInputIntent(promptToRuntimeIngressRequest(decoded))
+        return yield* appendHostPrompt(decoded)
       }),
       sessions: {
         attach: attachSession,
@@ -1004,17 +995,15 @@ const make = (config: ResolvedConfig) =>
         }, Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)
           yield* awaitSessionDependentContext(decoded.sessionId)
+          const inputId = decoded.inputId ?? `input_${crypto.randomUUID()}`
           yield* Effect.annotateCurrentSpan({
             "firegrid.context.id": decoded.sessionId,
-            "firegrid.input.id": decoded.inputId ?? "",
+            "firegrid.input.id": inputId,
           })
-          const intent = yield* appendRuntimeInputIntent({
-            inputId: decoded.inputId,
-            contextId: decoded.sessionId,
-            kind: "message",
-            authoredBy: "client",
+          const intent = yield* appendSessionPrompt(decoded.sessionId, {
             payload: decoded.prompt,
-            ...(decoded.inputId === undefined ? {} : { idempotencyKey: decoded.inputId }),
+            inputId,
+            idempotencyKey: inputId,
             ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
           })
           return {

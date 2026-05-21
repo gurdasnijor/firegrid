@@ -431,7 +431,87 @@ describe("Firegrid session facade", () => {
       payload: { text: "turn one" },
       idempotencyKey: "turn-1",
     })
-    expect(stored).toMatchObject(result.intent)
+    expect(stored).toEqual(result.intent)
+  })
+
+  it("firegrid-agent-ingress.INGRESS.6 firegrid.prompt returns the stored egress receipt", async () => {
+    const fixture = makeFixture()
+    const result = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        const context = yield* firegrid.launch({
+          runtime: runtimeConfig(),
+          requestedBy: "prompt-receipt-test",
+        })
+        yield* materializeContextRequest(fixture.hostSession, context.contextId)
+        const intent = yield* firegrid.prompt({
+          contextId: context.contextId,
+          payload: { text: "top-level prompt" },
+          idempotencyKey: "host-prompt-turn",
+          metadata: { source: "test" },
+        })
+        return { contextId: context.contextId, intent }
+      }),
+    )
+
+    const stored = await readRuntimeInputIntent(fixture.hostSession, result.intent.intentId)
+
+    expect(result.intent).toMatchObject({
+      intentId: inputIdForRuntimeIngressRequest({
+        contextId: result.contextId,
+        kind: "message",
+        authoredBy: "client",
+        payload: { text: "top-level prompt" },
+        idempotencyKey: "host-prompt-turn",
+        metadata: { source: "test" },
+      }),
+      contextId: result.contextId,
+      kind: "message",
+      authoredBy: "client",
+      payload: { text: "top-level prompt" },
+      idempotencyKey: "host-prompt-turn",
+    })
+    expect(stored).toEqual(result.intent)
+  })
+
+  it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.1 sessions.prompt keeps its ok output and stores the egress receipt", async () => {
+    const fixture = makeFixture()
+    const result = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        const session = yield* firegrid.sessions.createOrLoad({
+          externalKey: { source: "linear", id: "LIN-tool-prompt" },
+          runtime: runtimeConfig(),
+        })
+        yield* materializeContextRequest(fixture.hostSession, session.contextId)
+        const response = yield* firegrid.sessions.prompt({
+          sessionId: session.contextId,
+          prompt: "continue",
+          inputId: "tool-prompt-input",
+          metadata: { source: "test" },
+        })
+        return { contextId: session.contextId, response }
+      }),
+    )
+
+    const stored = await readRuntimeInputIntent(fixture.hostSession, result.response.inputId)
+
+    expect(result.response).toEqual({
+      appended: true,
+      sessionId: result.contextId,
+      inputId: "tool-prompt-input",
+    })
+    expect(stored).toMatchObject({
+      intentId: "tool-prompt-input",
+      contextId: result.contextId,
+      kind: "message",
+      authoredBy: "client",
+      payload: "continue",
+      idempotencyKey: "tool-prompt-input",
+      metadata: { source: "test" },
+    })
   })
 
   it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2 createOrLoad -> prompt waits for reflected context without explicit whenReady", async () => {

@@ -116,6 +116,7 @@ export type SessionHandleReference = Schema.Schema.Type<
 
 export const SessionHandlePromptInputSchema = Schema.Struct({
   payload: Schema.Unknown,
+  inputId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
   idempotencyKey: Schema.String.pipe(Schema.minLength(1)),
   metadata: Schema.optional(Schema.Record({
     key: Schema.String,

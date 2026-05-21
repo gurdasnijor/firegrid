@@ -11,7 +11,10 @@ import type { RuntimeRunEventSchema } from "../launch/schema.ts"
 import {
   RuntimeStartRequestAckSchema,
 } from "../launch/control-request.ts"
-import type { PublicPromptRequestSchema } from "../runtime-ingress/schema.ts"
+import type {
+  PublicPromptRequestSchema,
+  RuntimeInputIntentRowSchema,
+} from "../runtime-ingress/schema.ts"
 import {
   RuntimeAgentOutputObservationSchema,
   SessionHandleReferenceSchema,
@@ -55,7 +58,10 @@ export class HostContextsCreateChannel extends Context.Tag(
 )<HostContextsCreateChannel, HostContextsCreateChannelService>() {}
 
 export const HostPromptChannelTarget = makeChannelTarget("host.prompt")
-export type HostPromptChannelService = EgressChannel<typeof PublicPromptRequestSchema>
+export type HostPromptChannelService = EgressChannel<
+  typeof PublicPromptRequestSchema,
+  Schema.Schema.Type<typeof RuntimeInputIntentRowSchema>
+>
 
 export class HostPromptChannel extends Context.Tag(
   "firegrid/protocol/channels/host.prompt",
@@ -65,7 +71,10 @@ export const SessionPromptChannelTarget = makeChannelTarget("session.prompt")
 export interface SessionPromptChannelService {
   readonly forSession: (
     sessionId: string,
-  ) => EgressChannel<typeof SessionHandlePromptInputSchema>
+  ) => EgressChannel<
+    typeof SessionHandlePromptInputSchema,
+    Schema.Schema.Type<typeof RuntimeInputIntentRowSchema>
+  >
 }
 
 export class SessionPromptChannel extends Context.Tag(
