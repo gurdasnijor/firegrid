@@ -58,30 +58,43 @@ Firegrid is not the manager of your agents. It is the durable coordination layer
 they use.
 
 ```mermaid
-flowchart LR
-  Webhook[Webhook arrives]
-  Human[Human approves]
-  Tool[Tool returns result]
+flowchart TB
+  subgraph World["outside signals"]
+    Webhook[webhooks]
+    Human[human decisions]
+    Tool[tool results]
+  end
 
-  State[(Firegrid durable workspace)]
+  subgraph Firegrid["Firegrid durable streams + state"]
+    Events[(events)]
+    Claims[(claims)]
+    Outputs[(outputs)]
+    Traces[(traces)]
+  end
 
-  Planner[Planner agent]
-  Researcher[Research agent]
-  Builder[Builder agent]
-  Reviewer[Reviewer agent]
+  subgraph Agents["agent sessions"]
+    Planner[planner]
+    Researcher[researcher]
+    Builder[builder]
+    Reviewer[reviewer]
+  end
 
-  Outcome[Work moves forward]
+  Webhook -->|send| Events
+  Human -->|approve| Events
+  Tool -->|return| Outputs
 
-  Webhook -->|records event| State
-  Human -->|records decision| State
-  Tool -->|records result| State
+  Events -->|wake waits| Planner
+  Events -->|wake waits| Researcher
+  Claims -->|claim work| Builder
+  Outputs -->|review work| Reviewer
 
-  Planner <-->|reads and writes| State
-  Researcher <-->|reads and writes| State
-  Builder <-->|reads and writes| State
-  Reviewer <-->|reads and writes| State
+  Planner -->|write plan| Events
+  Researcher -->|write findings| Outputs
+  Builder -->|write patch| Outputs
+  Reviewer -->|write feedback| Events
 
-  State -->|plan, claims, outputs, approvals| Outcome
+  Agents -->|spans| Traces
+  Traces -->|history agents can inspect| Agents
 ```
 
 The participants do not need to know about each other directly. They coordinate
