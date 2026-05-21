@@ -9,8 +9,8 @@
  *     schemas (one file per channel)
  *
  * Does NOT own:
- *   - ChannelInventory / makeChannelInventory / ChannelInventoryLive /
- *     findChannel (stay in host-sdk during the tf-kddg transition;
+ *   - RuntimeContextMcpChannelCatalog / makeRuntimeContextMcpChannelCatalog / RuntimeContextMcpChannelCatalogLive /
+ *     findRuntimeContextMcpChannel (stay in host-sdk during the tf-kddg transition;
  *     deleted or narrowed to a thin MCP-edge string→capability adapter
  *     as the inventory bridge is unwound)
  *   - Live Layer bindings that touch RuntimeOutputTable / DurableTable /
@@ -22,3 +22,9 @@ export * from "./core.ts"
 export * from "./session-agent-output.ts"
 export * from "./session-permission.ts"
 export * from "./host-sessions-create-or-load.ts"
+export * from "./session-self.ts"
+export * from "./session-log.ts"
+export * from "./state-changes.ts"
+export * from "./human.ts"
+export * from "./event.ts"
+export * from "./host-control.ts"

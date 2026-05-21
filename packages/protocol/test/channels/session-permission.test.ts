@@ -43,7 +43,7 @@ describe("session permission channel contract", () => {
     ).resolves.toBe(channel)
   })
 
-  it("firegrid-sim3-binding-swap-isolation.BOUNDARIES.1 keeps generic CallableChannel scaffolding in protocol without ChannelInventory", () => {
+  it("firegrid-sim3-binding-swap-isolation.BOUNDARIES.1 keeps generic CallableChannel scaffolding in protocol without RuntimeContextMcpChannelCatalog", () => {
     const target = makeChannelTarget("session.example")
     const channel = makeCallableChannel({
       target,

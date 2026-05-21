@@ -92,16 +92,18 @@ import {
   type RuntimeAgentToolExecutionError,
 } from "@firegrid/runtime/tool-executor"
 import type { RuntimeObservationSource } from "@firegrid/runtime/streams"
+import type {
+  CallableChannel,
+  ChannelDirection,
+  ChannelRegistration,
+  EgressChannel,
+  IngressChannel,
+} from "@firegrid/protocol/channels"
 import { AgentToolHost } from "./tool-host.ts"
 import {
-  ChannelInventory,
-  type IngressChannel,
-  type CallableChannel,
-  type ChannelDirection,
-  type ChannelRegistration,
-  type EgressChannel,
   UnknownChannelTarget,
-  findChannel,
+  RuntimeContextMcpChannelCatalog,
+  findRuntimeContextMcpChannel,
 } from "../../host/channel.ts"
 import {
   toolErrorResult,
@@ -203,7 +205,7 @@ const requireChannelDirection = <Direction extends ChannelDirection>(
 ): Effect.Effect<
   ChannelRegistration,
   ToolError,
-  ChannelInventory
+  RuntimeContextMcpChannelCatalog
 > =>
   Effect.gen(function* () {
     const registration = yield* channelDispatch(channel).pipe(
@@ -227,10 +229,10 @@ const requireChannelDirection = <Direction extends ChannelDirection>(
 
 const channelDispatch = (
   channel: string,
-): Effect.Effect<ChannelRegistration, UnknownChannelTarget, ChannelInventory> =>
+): Effect.Effect<ChannelRegistration, UnknownChannelTarget, RuntimeContextMcpChannelCatalog> =>
   Effect.gen(function* () {
-    const inventory = yield* ChannelInventory
-    return yield* Option.match(findChannel(inventory, channel), {
+    const inventory = yield* RuntimeContextMcpChannelCatalog
+    return yield* Option.match(findRuntimeContextMcpChannel(inventory, channel), {
       onNone: () => Effect.fail(new UnknownChannelTarget({ target: channel })),
       onSome: registration => Effect.succeed(registration),
     })
@@ -308,7 +310,7 @@ const runWaitForTool = (
 ): Effect.Effect<
   WaitForToolOutput,
   ToolError,
-  RuntimeAgentToolExecution | ChannelInventory
+  RuntimeAgentToolExecution | RuntimeContextMcpChannelCatalog
 > => {
   // `match` is typed `Record<string, unknown>` because schema-level
   // scalar refinement would prevent codecs from publishing the JSON shape
@@ -407,7 +409,7 @@ const runSendTool = (
 ): Effect.Effect<
   SendToolOutput,
   ToolError,
-  RuntimeAgentToolExecution | ChannelInventory
+  RuntimeAgentToolExecution | RuntimeContextMcpChannelCatalog
 > =>
   Effect.gen(function* () {
     const channel = (yield* requireChannelDirection(
@@ -441,7 +443,7 @@ const runRegisteredCallChannel = (
 ): Effect.Effect<
   CallToolOutput,
   ToolError,
-  RuntimeAgentToolExecution | ChannelInventory
+  RuntimeAgentToolExecution | RuntimeContextMcpChannelCatalog
 > =>
   Effect.gen(function* () {
     const channel = (yield* requireChannelDirection(
@@ -482,7 +484,7 @@ const waitForAnyDescriptorToEffect = (
     readonly wait: Effect.Effect<unknown, unknown, never>
   },
   ToolError,
-  ChannelInventory
+  RuntimeContextMcpChannelCatalog
 > =>
   Effect.gen(function* () {
     const channel = (yield* requireChannelDirection(
@@ -515,7 +517,7 @@ const runWaitForAnyTool = (
 ): Effect.Effect<
   WaitForAnyToolOutput,
   ToolError,
-  RuntimeAgentToolExecution | ChannelInventory
+  RuntimeAgentToolExecution | RuntimeContextMcpChannelCatalog
 > =>
   // firegrid-agent-body-plan.SLICE_D_VERBS.4
   // firegrid-agent-body-plan.SLICE_BOUNDARY.4
@@ -782,7 +784,7 @@ const runCallTool = (
 ): Effect.Effect<
   CallToolOutput,
   ToolError,
-  AgentToolHost | ChannelInventory | RuntimeAgentToolExecution
+  AgentToolHost | RuntimeContextMcpChannelCatalog | RuntimeAgentToolExecution
 > =>
   Effect.gen(function* () {
     if (input.channel.startsWith("approval.")) {
@@ -829,7 +831,7 @@ const runCallTool = (
 // ---------------------------------------------------------------------------
 
 type ToolEnvironment =
-  | ChannelInventory
+  | RuntimeContextMcpChannelCatalog
   | AgentToolHost
   | RuntimeAgentToolExecution
 

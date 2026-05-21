@@ -6,22 +6,12 @@ import type { DurableTableError } from "effect-durable-operators"
 import { Stream, type Effect, type Schema } from "effect"
 import {
   makeBidirectionalChannel,
-  makeChannelTarget,
-  type BidirectionalChannel,
-  type ChannelSourceClass,
   type ChannelTarget,
-} from "./channel.ts"
-
-export const EventChannelSourceClasses = [
-  "static-source",
-  "predicate-eligible",
-] as const satisfies ReadonlyArray<ChannelSourceClass>
-
-export type EventChannel<S extends Schema.Schema.Any> = BidirectionalChannel<S> & {
-  readonly kind: "event"
-  readonly eventName: string
-  readonly callerFactStream: string
-}
+  EventChannelSourceClasses,
+  eventChannelTarget,
+  type EventChannel,
+  type ChannelSourceClass,
+} from "@firegrid/protocol/channels"
 
 interface EventChannelBaseOptions<S extends Schema.Schema.Any> {
   readonly name: string
@@ -46,9 +36,6 @@ interface EventChannelFromCollectionOptions<S extends Schema.Schema.Any>
     "rows" | "insert"
   >
 }
-
-export const eventChannelTarget = (name: string): ChannelTarget =>
-  makeChannelTarget(`event.${name}`)
 
 const rowMatchesEventName = (row: object, name: string): boolean =>
   Object.hasOwn(row, "name")

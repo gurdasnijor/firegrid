@@ -1,7 +1,7 @@
 import { McpSchema, McpServer } from "@effect/ai"
 import { Effect, JSONSchema } from "effect"
 import {
-  ChannelInventory,
+  RuntimeContextMcpChannelCatalog,
   channelMetadata,
   type ChannelMetadata,
 } from "./channel.ts"
@@ -9,7 +9,7 @@ import {
 const channelInventoryExtensionKey = "x-firegrid-channels"
 const waitForToolName = "wait_for"
 
-type RuntimeContextMcpChannelInventoryEntry =
+type RuntimeContextMcpChannelCatalogEntry =
   | {
     readonly name: string
     readonly direction: "ingress"
@@ -41,9 +41,9 @@ const schemaJson = (
   schema: Parameters<typeof JSONSchema.make>[0],
 ): JSONSchema.JsonSchema7Root => JSONSchema.make(schema)
 
-export const runtimeContextMcpChannelInventory = (
+export const runtimeContextMcpChannelCatalog = (
   metadata: ReadonlyArray<ChannelMetadata>,
-): ReadonlyArray<RuntimeContextMcpChannelInventoryEntry> =>
+): ReadonlyArray<RuntimeContextMcpChannelCatalogEntry> =>
   metadata.map(entry => {
     switch (entry.direction) {
       case "ingress":
@@ -82,9 +82,9 @@ export const runtimeContextMcpChannelInventory = (
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-const withChannelInventory = (
+const withRuntimeContextMcpChannelCatalog = (
   inputSchema: unknown,
-  inventory: ReadonlyArray<RuntimeContextMcpChannelInventoryEntry>,
+  inventory: ReadonlyArray<RuntimeContextMcpChannelCatalogEntry>,
 ): unknown =>
   isRecord(inputSchema)
     ? {
@@ -94,15 +94,15 @@ const withChannelInventory = (
     : inputSchema
 
 const channelInventoryDescription = (
-  inventory: ReadonlyArray<RuntimeContextMcpChannelInventoryEntry>,
+  inventory: ReadonlyArray<RuntimeContextMcpChannelCatalogEntry>,
 ): string =>
   inventory
     .map(entry => `${entry.name} (${entry.direction})`)
     .join(", ")
 
-const appendChannelInventoryDescription = (
+const appendRuntimeContextMcpChannelCatalogDescription = (
   description: string | undefined,
-  inventory: ReadonlyArray<RuntimeContextMcpChannelInventoryEntry>,
+  inventory: ReadonlyArray<RuntimeContextMcpChannelCatalogEntry>,
 ): string | undefined => {
   if (inventory.length === 0) return description
   const inventoryText = `Registered Firegrid channels: ${channelInventoryDescription(inventory)}. Schema details are in ${channelInventoryExtensionKey}.`
@@ -113,25 +113,25 @@ const appendChannelInventoryDescription = (
 
 export const enrichRuntimeContextMcpToolWithChannelMetadata = (
   tool: McpSchema.Tool,
-  inventory: ReadonlyArray<RuntimeContextMcpChannelInventoryEntry>,
+  inventory: ReadonlyArray<RuntimeContextMcpChannelCatalogEntry>,
 ): void => {
   if (inventory.length === 0) return
   Object.assign(tool, new McpSchema.Tool({
     ...tool,
-    description: appendChannelInventoryDescription(
+    description: appendRuntimeContextMcpChannelCatalogDescription(
       tool.description,
       inventory,
     ),
-    inputSchema: withChannelInventory(tool.inputSchema, inventory),
+    inputSchema: withRuntimeContextMcpChannelCatalog(tool.inputSchema, inventory),
   }))
 }
 
 export const enrichRuntimeContextMcpToolsListWithChannelMetadata =
   Effect.gen(function* () {
     const mcpServer = yield* McpServer.McpServer
-    const channelInventory = yield* ChannelInventory
+    const channelInventory = yield* RuntimeContextMcpChannelCatalog
     const metadata = channelInventory.channels.map(channelMetadata)
-    const inventory = runtimeContextMcpChannelInventory(metadata)
+    const inventory = runtimeContextMcpChannelCatalog(metadata)
 
     const waitForTool = mcpServer.tools.find(tool => tool.name === waitForToolName)
     if (waitForTool === undefined) return

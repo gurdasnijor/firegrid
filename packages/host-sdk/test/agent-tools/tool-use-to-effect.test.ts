@@ -33,8 +33,8 @@ import { AgentToolCallPartSchema, ToolResultEventSchema } from "@firegrid/runtim
 import { RuntimeObservationStreams } from "@firegrid/runtime/streams"
 import { WaitForWorkflowLayer } from "@firegrid/runtime/workflows"
 import {
-  ChannelInventory,
-  makeChannelInventory,
+  RuntimeContextMcpChannelCatalog,
+  makeRuntimeContextMcpChannelCatalog,
   makeBidirectionalChannel,
   makeIngressChannel,
   makeCallableChannel,
@@ -185,10 +185,10 @@ class TestSourceTable extends DurableTable("agent-tools.test.source", {
 
 const TEST_EVENTS_CHANNEL = "factory.events"
 
-const TestChannelInventoryLive = (
+const TestRuntimeContextMcpChannelCatalogLive = (
   channels: Iterable<ChannelRegistration> = [],
 ) => Layer.effect(
-  ChannelInventory,
+  RuntimeContextMcpChannelCatalog,
   Effect.gen(function* () {
     const table = yield* TestSourceTable
     const factoryEvents = makeIngressChannel({
@@ -196,7 +196,7 @@ const TestChannelInventoryLive = (
       schema: TestSourceRowSchema,
       stream: table.rows.rows(),
     })
-    return makeChannelInventory([factoryEvents, ...channels])
+    return makeRuntimeContextMcpChannelCatalog([factoryEvents, ...channels])
   }),
 )
 
@@ -236,7 +236,7 @@ const buildLayer = (
     Layer.provideMerge(WaitForWorkflowLayer),
     Layer.provideMerge(TestRuntimeObservationStreamsLive),
     Layer.provideMerge(hostLayer),
-    Layer.provideMerge(TestChannelInventoryLive(channels)),
+    Layer.provideMerge(TestRuntimeContextMcpChannelCatalogLive(channels)),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
     })),

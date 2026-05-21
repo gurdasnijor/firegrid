@@ -56,11 +56,14 @@ import {
   RuntimeInputIntentDispatcherLive,
 } from "./runtime-context-workflow-runtime.ts"
 import {
-  type ChannelInventory,
+  type RuntimeContextMcpChannelCatalog,
 } from "./channel.ts"
 import {
   SessionSelfChannelsLive,
 } from "./channels/session-self/index.ts"
+import {
+  HostControlChannelsLive,
+} from "./channels/host-control/index.ts"
 import type { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
 import {
   SessionAgentOutputChannelLive,
@@ -298,7 +301,7 @@ export type FiregridHost =
   | RuntimeLocalContextResolver
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
-  | ChannelInventory
+  | RuntimeContextMcpChannelCatalog
 
 export const FiregridRuntimeHostLive = (
   options: RuntimeHostTopologyOptions,
@@ -312,13 +315,14 @@ export const FiregridRuntimeHostLive = (
   const session = currentHostSessionLayer(options)
   const namespaceScoped = namespaceScopedLayer(options)
   const hostScoped = hostScopedLayer(options)
-  const hostChannels = SessionSelfChannelsLive(options.channels)
+  const hostChannels = SessionSelfChannelsLive(options.mcpChannels)
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
   const hostPublic = RuntimeInputIntentDispatcherLive.pipe(
     Layer.provideMerge(RuntimeStartCapabilityLive),
     Layer.provideMerge(hostChannels),
+    Layer.provideMerge(HostControlChannelsLive),
   )
   const controlPlane = RuntimeControlRequestControlPlaneLive({
     durableStreamsBaseUrl: options.durableStreamsBaseUrl,
@@ -391,7 +395,7 @@ export const FiregridLocalHostLive = (
     readonly headers?: DurableTableHeaders
     readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
     readonly controlRequestReconciler?: boolean
-    readonly channels?: RuntimeHostTopologyOptions["channels"]
+    readonly mcpChannels?: RuntimeHostTopologyOptions["mcpChannels"]
   },
   envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
 ) => {
@@ -407,9 +411,9 @@ export const FiregridLocalHostLive = (
     ...(options.controlRequestReconciler === undefined
       ? {}
       : { controlRequestReconciler: options.controlRequestReconciler }),
-    ...(options.channels === undefined
+    ...(options.mcpChannels === undefined
       ? {}
-      : { channels: options.channels }),
+      : { mcpChannels: options.mcpChannels }),
   }
   return FiregridRuntimeHostWithWorkflowLive(composed, envPolicy)
 }

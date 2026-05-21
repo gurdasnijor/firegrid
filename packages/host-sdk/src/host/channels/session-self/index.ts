@@ -1,84 +1,35 @@
 import {
   RuntimeControlPlaneTable,
-  RuntimeRunEventSchema,
   type RuntimeRunEventRow,
 } from "@firegrid/protocol/launch"
+import {
+  makeIngressChannel,
+  SessionSelfCheckpointChannel,
+  SessionSelfCheckpointChannelTarget,
+  SessionSelfCheckpointEventSchema,
+  SessionSelfLifecycleChannel,
+  SessionSelfLifecycleChannelTarget,
+  SessionSelfLifecycleEventSchema,
+  type ChannelRegistration,
+  type IngressChannel,
+  type SessionSelfCheckpointEvent,
+  type SessionSelfLifecycleEvent,
+} from "@firegrid/protocol/channels"
 import type {
   WorkflowActivityRow,
   WorkflowClockWakeupRow,
   WorkflowDeferredRow,
   WorkflowExecutionRow,
 } from "@firegrid/runtime/workflow-engine"
-import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Option, Stream } from "effect"
 import {
-  ChannelInventory,
-  makeChannelInventory,
-  type IngressChannel,
-  makeIngressChannel,
-  makeChannelTarget,
-  type ChannelRegistration,
+  RuntimeContextMcpChannelCatalog,
+  makeRuntimeContextMcpChannelCatalog,
 } from "../../channel.ts"
 import {
   RuntimeContextCheckpointSource,
   type RuntimeContextWorkflowCheckpointHandle,
 } from "../../runtime-context-workflow-runtime.ts"
-
-export const SessionSelfLifecycleChannelTarget = makeChannelTarget("session.self.lifecycle")
-export const SessionSelfCheckpointChannelTarget = makeChannelTarget("session.self.checkpoint")
-
-export class SessionSelfLifecycleChannel extends Context.Tag(
-  "firegrid/host-sdk/channels/session.self.lifecycle",
-)<SessionSelfLifecycleChannel, IngressChannel<typeof SessionSelfLifecycleEventSchema>>() {}
-
-export class SessionSelfCheckpointChannel extends Context.Tag(
-  "firegrid/host-sdk/channels/session.self.checkpoint",
-)<SessionSelfCheckpointChannel, IngressChannel<typeof SessionSelfCheckpointEventSchema>>() {}
-
-export const SessionSelfLifecycleEventSchema = Schema.Struct({
-  channel: Schema.Literal("session.self.lifecycle"),
-  event: RuntimeRunEventSchema,
-})
-export type SessionSelfLifecycleEvent = Schema.Schema.Type<
-  typeof SessionSelfLifecycleEventSchema
->
-
-const SessionSelfCheckpointBaseSchema = {
-  channel: Schema.Literal("session.self.checkpoint"),
-  contextId: Schema.String,
-  workflowName: Schema.String,
-  executionId: Schema.String,
-} as const
-
-export const SessionSelfCheckpointEventSchema = Schema.Union(
-  Schema.TaggedStruct("Execution", {
-    ...SessionSelfCheckpointBaseSchema,
-    suspended: Schema.Boolean,
-    interrupted: Schema.Boolean,
-    hasFinalResult: Schema.Boolean,
-    hasCause: Schema.Boolean,
-  }),
-  Schema.TaggedStruct("Activity", {
-    ...SessionSelfCheckpointBaseSchema,
-    activityName: Schema.String,
-    attempt: Schema.Number,
-    hasResult: Schema.Boolean,
-  }),
-  Schema.TaggedStruct("Deferred", {
-    ...SessionSelfCheckpointBaseSchema,
-    deferredName: Schema.String,
-    hasExit: Schema.Boolean,
-  }),
-  Schema.TaggedStruct("ClockWakeup", {
-    ...SessionSelfCheckpointBaseSchema,
-    clockName: Schema.String,
-    deferredName: Schema.String,
-    deadlineMs: Schema.Number,
-    status: Schema.Literal("pending", "fired"),
-  }),
-)
-export type SessionSelfCheckpointEvent = Schema.Schema.Type<
-  typeof SessionSelfCheckpointEventSchema
->
 
 const lifecycleEventFromRow = (
   row: RuntimeRunEventRow,
@@ -354,9 +305,11 @@ const makeSessionSelfChannelsEffect: Effect.Effect<
   )
 
 export const SessionSelfChannelsLive = (
-  registrations: ReadonlyArray<ChannelRegistration> = [],
+  mcpChannels: ReadonlyArray<ChannelRegistration> = [],
 ): Layer.Layer<
-  SessionSelfLifecycleChannel | SessionSelfCheckpointChannel | ChannelInventory,
+  | SessionSelfLifecycleChannel
+  | SessionSelfCheckpointChannel
+  | RuntimeContextMcpChannelCatalog,
   never,
   RuntimeControlPlaneTable | RuntimeContextCheckpointSource
 > => Layer.unwrapEffect(
@@ -365,8 +318,12 @@ export const SessionSelfChannelsLive = (
       Layer.succeed(SessionSelfLifecycleChannel, lifecycle),
       Layer.succeed(SessionSelfCheckpointChannel, checkpoint),
       Layer.succeed(
-        ChannelInventory,
-        makeChannelInventory([...registrations, lifecycle, checkpoint]),
+        RuntimeContextMcpChannelCatalog,
+        makeRuntimeContextMcpChannelCatalog([
+          ...mcpChannels,
+          lifecycle,
+          checkpoint,
+        ]),
       ),
     )),
 )
