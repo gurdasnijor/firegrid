@@ -1,10 +1,9 @@
 import { type WorkflowEngine } from "@effect/workflow"
 import { Context, type Effect, Layer } from "effect"
-import type { Scope } from "effect"
 import type {
   AgentInputEvent,
   AgentOutputEvent,
-} from "../events/index.ts"
+} from "../../agent-event-pipeline/events/index.ts"
 
 interface RuntimeToolUseExecutorContext {
   readonly contextId: string
@@ -20,7 +19,7 @@ interface RuntimeToolUseExecutorService {
   ) => Effect.Effect<
     RuntimeToolResultEvent,
     never,
-    WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance | Scope.Scope
+    WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
   >
 }
 

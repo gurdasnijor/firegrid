@@ -29,7 +29,6 @@
  *  - firegrid-workflow-driven-runtime.PHASE_4_TEMPORAL_WORKFLOWS.1..3
  */
 
-import { DurableClock, type WorkflowEngine } from "@effect/workflow"
 import { Prompt } from "@effect/ai"
 import {
   ApprovalCallRequestSchema,
@@ -75,7 +74,6 @@ import {
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
 import {
-  Duration,
   Clock,
   Effect,
   Option,
@@ -89,16 +87,11 @@ import {
 } from "@firegrid/runtime/events"
 import {
   RuntimeAgentToolExecution,
-  type RuntimeAgentToolExecutionError,
-} from "@firegrid/runtime/tool-executor"
-import type {
-  RuntimeObservationSource,
-  RuntimeObservationStreams,
-} from "@firegrid/runtime/streams"
-import {
   evaluateFieldEquals,
   type FieldEqualsTrigger,
-} from "@firegrid/runtime/workflows"
+  type RuntimeAgentToolExecutionError,
+} from "@firegrid/runtime/tool-executor"
+import type { RuntimeObservationSource } from "@firegrid/runtime/streams"
 import { AgentToolHost } from "./tool-host.ts"
 import {
   ChannelInventory,
@@ -294,9 +287,7 @@ const runSleepTool = (
 ): Effect.Effect<
   SleepToolOutput,
   ToolError,
-  | RuntimeAgentToolExecution
-  | WorkflowEngine.WorkflowEngine
-  | WorkflowEngine.WorkflowInstance
+  RuntimeAgentToolExecution
 > =>
   Effect.gen(function* () {
     const execution = yield* RuntimeAgentToolExecution
@@ -317,11 +308,7 @@ const runWaitForTool = (
 ): Effect.Effect<
   WaitForToolOutput,
   ToolError,
-  | WorkflowEngine.WorkflowEngine
-  | WorkflowEngine.WorkflowInstance
-  | RuntimeAgentToolExecution
-  | RuntimeObservationStreams
-  | ChannelInventory
+  RuntimeAgentToolExecution | ChannelInventory
 > => {
   // `match` is typed `Record<string, unknown>` because schema-level
   // scalar refinement would prevent codecs from publishing the JSON shape
@@ -723,27 +710,35 @@ const runScheduleMeTool = (
 ): Effect.Effect<
   ScheduleMeToolOutput,
   ToolError,
-  AgentToolHost | WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
+  AgentToolHost | RuntimeAgentToolExecution
 > => {
   const scheduleId = scheduleIdFor(ctx.contextId, toolUseId)
   const prompt = promptFromText(input.prompt)
   return Effect.gen(function*() {
     const host = yield* AgentToolHost
+    const execution = yield* RuntimeAgentToolExecution
     const now = yield* Clock.currentTimeMillis
-    // firegrid-workflow-driven-runtime.PHASE_4_TEMPORAL_WORKFLOWS.2
-    yield* DurableClock.sleep({
-      name: scheduleId,
-      duration: Duration.millis(Math.max(0, input.when - now)),
-      inMemoryThreshold: Duration.zero,
-    })
-    yield* host.appendSessionPrompt({
+    return yield* execution.schedule({
+      contextId: ctx.contextId,
       toolUseId,
-      sessionId: ctx.contextId,
-      prompt,
-      inputId: scheduleId,
-    })
+      input,
+      scheduleId,
+      delayMs: Math.max(0, input.when - now),
+      append: host.appendSessionPrompt({
+        toolUseId,
+        sessionId: ctx.contextId,
+        prompt,
+        inputId: scheduleId,
+      }),
+    }).pipe(
+      Effect.mapError(error =>
+        runtimeAgentToolExecutionErrorToToolError(
+          toolUseId,
+          "schedule_me",
+          error,
+        )),
+    )
   }).pipe(
-    Effect.as<ScheduleMeToolOutput>({ scheduled: true, scheduleId }),
     Effect.mapError((cause) =>
       toolExecutionFailed(toolUseId, "schedule_me", cause),
     ),
@@ -834,12 +829,9 @@ const runCallTool = (
 // ---------------------------------------------------------------------------
 
 type ToolEnvironment =
-  | WorkflowEngine.WorkflowEngine
-  | WorkflowEngine.WorkflowInstance
   | ChannelInventory
   | AgentToolHost
   | RuntimeAgentToolExecution
-  | RuntimeObservationStreams
 
 /**
  * Decode `event.part.params` against the concrete `@firegrid/protocol`

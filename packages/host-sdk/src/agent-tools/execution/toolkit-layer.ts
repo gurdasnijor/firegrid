@@ -1,31 +1,23 @@
 /**
  * EXECUTION side of the agent-tool boundary
  * (`firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6`): the per-call workflow that
- * gives `toolUseToEffect` a `WorkflowEngine.WorkflowInstance`, and the
- * toolkit handler Layer that routes every registered tool through the
- * host-side lowering.
+ * gives runtime-owned tool execution a workflow instance, and the toolkit
+ * handler Layer that routes every registered tool through the host-side
+ * lowering.
  *
  * The binding values (`Tool`/`Toolkit`, failure schema, routing tag) live
  * in `../bindings`; this module composes them with host execution.
  */
 
-import { IdGenerator, Prompt } from "@effect/ai"
-import type { WorkflowEngine } from "@effect/workflow"
+import { IdGenerator } from "@effect/ai"
 import type * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
   provideRuntimeContext,
 } from "@firegrid/protocol/launch"
 import {
-  HostRuntimeObservationStreamsLive,
-  HostRuntimeObservationSubstrateLive,
-  RuntimeAgentToolExecutionLive,
-  type HostRuntimeContextExecutionEnv,
-} from "../../host/runtime-substrate.ts"
-import {
   ToolCallWorkflow,
-} from "@firegrid/runtime/workflows"
+} from "@firegrid/runtime/tool-executor"
 import { type Context, Effect, Layer } from "effect"
-import type { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
 import { toolExecutionFailed } from "../bindings/tool-error.ts"
 import {
   FiregridAgentToolContext,
@@ -33,58 +25,19 @@ import {
   type FiregridMcpToolFailure,
 } from "../bindings/tools.ts"
 import { AgentToolHost } from "./tool-host.ts"
-import { toolUseToEffect } from "./tool-use-to-effect.ts"
 import {
   RuntimeContextWorkflowRuntime,
 } from "../../host/runtime-context-workflow-runtime.ts"
 import type { ChannelInventory } from "../../host/channel.ts"
+import {
+  toolCallWorkflowSupportLayer,
+  type HostRuntimeContextExecutionEnv,
+} from "../../host/runtime-context-workflow-support.ts"
 
 const TOOL_USE_ID_PREFIX = "mcp"
 
-export { ToolCallWorkflow } from "@firegrid/runtime/workflows"
-
-export const ToolCallWorkflowLayer = ToolCallWorkflow.toLayer(
-  ({ contextId, toolUseId, toolName, input }) =>
-    toolUseToEffect(
-      { contextId },
-      {
-        _tag: "ToolUse",
-        part: Prompt.toolCallPart({
-          id: toolUseId,
-          name: toolName,
-          params: input,
-          providerExecuted: false,
-        }),
-      },
-    ),
-)
-
-const toolCallWorkflowSupportLayer = (
-  agentToolHost: AgentToolHost["Type"],
-): Layer.Layer<
-  never,
-  unknown,
-  | HostRuntimeContextExecutionEnv
-  | ChannelInventory
-  | WorkflowEngine.WorkflowEngine
-  | WorkflowEngineTable
-> =>
-  // TFIND-031 (Option Y): the ephemeral tool-call workflow body
-  // (`toolUseToEffect` — WaitForWorkflow, child workflows) genuinely
-  // requires the runtime observation substrate. Like
-  // `runtimeContextWorkflowSupportLayer`, this execution-scoped support
-  // layer must SELF-CONTAIN that substrate (one materialized store,
-  // recorder/waker cannot diverge; SDD structural proof). Omitting it
-  // only typechecked while `DurableTable.layer` leaked `any`; with
-  // precise typing the real requirement must be discharged here, not
-  // re-surfaced onto every MCP tool handler.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer still leaks any through substrate layers; the declared Layer R channel is the intended capability boundary.
-  ToolCallWorkflowLayer.pipe(
-    Layer.provideMerge(HostRuntimeObservationSubstrateLive),
-    Layer.provideMerge(HostRuntimeObservationStreamsLive),
-    Layer.provideMerge(RuntimeAgentToolExecutionLive),
-    Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
-  )
+export { ToolCallWorkflow } from "@firegrid/runtime/tool-executor"
+export { RuntimeToolCallWorkflowLayer as ToolCallWorkflowLayer } from "@firegrid/runtime/tool-executor"
 
 // TFIND-031: includes the host runtime context that deferred tool
 // handlers genuinely require. The execution-scoped observation substrate
@@ -97,9 +50,9 @@ type ToolCallHostEnvironment =
   | HostRuntimeContextExecutionEnv
 
 /**
- * Common handler shape: every tool routes through `toolUseToEffect` so
- * tool calls observe the same workflow identity, replay safety, and
- * host seams as direct codec paths.
+ * Common handler shape: every tool routes through the runtime-owned
+ * tool-call workflow so tool calls observe the same workflow identity,
+ * replay safety, and host seams as direct codec paths.
  */
 const handleTool = <Output>(
   captured: Context.Context<ToolCallHostEnvironment>,

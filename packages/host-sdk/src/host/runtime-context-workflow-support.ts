@@ -11,11 +11,24 @@ import {
 import {
   HostRuntimeObservationSubstrateLive,
   HostRuntimeObservationStreamsLive,
-  RuntimeAgentToolExecutionLive,
   type HostRuntimeContextExecutionEnv,
-  RuntimeToolUseExecutorLive,
 } from "./runtime-substrate.ts"
+import {
+  RuntimeAgentToolExecutionLive,
+  RuntimeToolCallWorkflowLayer,
+} from "@firegrid/runtime/tool-executor"
+import {
+  RuntimeToolUseExecutorLive,
+} from "../agent-tools/execution/runtime-tool-use-executor-live.ts"
 import type { ChannelInventory } from "./channel.ts"
+
+export type { HostRuntimeContextExecutionEnv }
+
+const runtimeToolUseExecutorLayer = RuntimeToolUseExecutorLive.pipe(
+  Layer.provide(HostRuntimeObservationSubstrateLive),
+  Layer.provideMerge(HostRuntimeObservationStreamsLive),
+  Layer.provideMerge(RuntimeAgentToolExecutionLive),
+)
 
 // TFIND-031 (Option Y, layer-composition-order fix): BOTH the workflow
 // body (`RuntimeContextWorkflowNativeLayer`) and the tool executor
@@ -48,13 +61,7 @@ export const runtimeContextWorkflowSupportLayer = (
   RuntimeContextWorkflowNativeLayer.pipe(
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
     Layer.provideMerge(HostRuntimeObservationStreamsLive),
-    Layer.provideMerge(
-      RuntimeToolUseExecutorLive.pipe(
-        Layer.provide(HostRuntimeObservationSubstrateLive),
-        Layer.provideMerge(HostRuntimeObservationStreamsLive),
-        Layer.provideMerge(RuntimeAgentToolExecutionLive),
-      ),
-    ),
+    Layer.provideMerge(runtimeToolUseExecutorLayer),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
     Layer.withSpan("firegrid.host.runtime_context.workflow_support.layer", {
       kind: "internal",
@@ -62,4 +69,14 @@ export const runtimeContextWorkflowSupportLayer = (
         "firegrid.context.id": contextId,
       },
     }),
+  )
+
+export const toolCallWorkflowSupportLayer = (
+  agentToolHost: AgentToolHostService,
+) =>
+  RuntimeToolCallWorkflowLayer.pipe(
+    Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+    Layer.provideMerge(HostRuntimeObservationStreamsLive),
+    Layer.provideMerge(runtimeToolUseExecutorLayer),
+    Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
   )

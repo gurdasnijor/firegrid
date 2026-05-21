@@ -283,6 +283,20 @@ export const resolveEffectiveMcpServers = (
     }),
   )
 
+const startSessionSpanAttributes = (
+  context: RuntimeContext,
+  activityAttempt: number,
+): Record<string, string | number | boolean> => {
+  const config = context.runtime.config
+  const attributes: Record<string, string | number | boolean> = {}
+  attributes["firegrid.context.id"] = context.contextId
+  attributes["firegrid.activity_attempt"] = activityAttempt
+  attributes["firegrid.runtime.agent"] = config.agent ?? ""
+  attributes["firegrid.runtime.agent_protocol"] = config.agentProtocol ?? ""
+  attributes["firegrid.runtime_context_mcp.enabled"] = config.runtimeContextMcp?.enabled === true
+  return attributes
+}
+
 export const makeCodecRuntimeContextWorkflowSessionService:
   Effect.Effect<
     RuntimeContextWorkflowSessionService,
@@ -296,13 +310,7 @@ export const makeCodecRuntimeContextWorkflowSessionService:
       _key: string,
     ) =>
         Effect.gen(function* () {
-          yield* Effect.annotateCurrentSpan({
-            "firegrid.context.id": context.contextId,
-            "firegrid.activity_attempt": activityAttempt,
-            "firegrid.runtime.agent": context.runtime.config.agent ?? "",
-            "firegrid.runtime.agent_protocol": context.runtime.config.agentProtocol ?? "",
-            "firegrid.runtime_context_mcp.enabled": context.runtime.config.runtimeContextMcp?.enabled === true,
-          })
+          yield* Effect.annotateCurrentSpan(startSessionSpanAttributes(context, activityAttempt))
           const bytes = yield* Scope.extend(
             SessionCommon.openRuntimeContextByteStream(context).pipe(Effect.provide(deps.captured)),
             deps.scope,
