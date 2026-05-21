@@ -10,10 +10,9 @@
 // the shared `@firegrid/protocol/launch` factories, the single source of
 // truth both packages consume (createOrLoad precedent).
 //
-// Per Cycle-2 synthesis §1.2 #5 / tf-cyet (Phase 3): these defaults are
-// slated for deletion once production composition routes the client through
-// host-sdk's Live Layer. They stay in tf-aago so standalone client tests
-// pass.
+// tf-cyet decision: these defaults are channel bindings, not a second public
+// request-row transport. Keep them as the standalone/non-host composition path
+// while production hosts override with host-sdk's Live Layer.
 
 import {
   HostContextsCreateChannel,

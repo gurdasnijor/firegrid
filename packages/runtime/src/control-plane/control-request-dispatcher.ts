@@ -24,6 +24,13 @@ import { withRowOtelParent } from "@firegrid/protocol/otel"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { RuntimeContextInsert, RuntimeContextRead, RuntimeControlRequests } from "../authorities/index.ts"
 
+/**
+ * Runtime-internal implementation of callable host-control channel work.
+ *
+ * Public client methods dispatch to protocol-owned channel Tags. The durable
+ * control request rows remain the runtime work queue consumed here by the host
+ * control-plane layer; they are not a separate application-facing RPC surface.
+ */
 const currentHostSession: Effect.Effect<
   CurrentHostSession["Type"],
   never,
@@ -63,14 +70,12 @@ export class RuntimeControlRequestSideEffects extends Context.Tag(
 export interface RuntimeControlRequestReconcilerOptions {
   /**
    * @deprecated The control request daemon is row-subscription driven. This
-   * no-op compatibility field is retained only while request-row callers move
-   * to the runtime-owned control-plane layer.
+   * no-op compatibility field remains only for older host topology call sites.
    */
   readonly pollIntervalMs?: number
   /**
    * @deprecated Control request ownership moved to workflow Activity claims.
-   * This remains accepted so older callers do not break while the public
-   * request-row compatibility surface settles.
+   * This remains accepted so older host topology call sites do not break.
    */
   readonly claimWindowMs?: number
   /**
@@ -88,9 +93,9 @@ type ResolvedRuntimeControlRequestReconcilerOptions = {
 }
 
 // firegrid-host-sdk.PACKAGE_GRAPH.2
-// Runtime owns the request-row dispatcher. Host-bound start/lifecycle effects
-// enter through RuntimeControlRequestSideEffects so runtime never imports
-// the host binding package.
+// Runtime owns the callable-channel request-row implementation. Host-bound
+// start/lifecycle effects enter through RuntimeControlRequestSideEffects so
+// runtime never imports the host binding package.
 type RuntimeControlRequestReconcilerEnvironment =
   | CurrentHostSession
   | RuntimeControlRequests
@@ -109,6 +114,7 @@ export interface RuntimeControlRequestReconcilerService {
   ) => Effect.Effect<never, never>
 }
 
+/** @internal Runtime host control-plane service; not an application RPC API. */
 export class RuntimeControlRequestReconciler extends Context.Tag(
   "@firegrid/runtime/RuntimeControlRequestReconciler",
 )<RuntimeControlRequestReconciler, RuntimeControlRequestReconcilerService>() {}
@@ -808,6 +814,9 @@ const RuntimeControlRequestReconcilerDaemonLive = Layer.scopedDiscard(
 export const RuntimeControlRequestControlPlaneLive = (
   options: RuntimeControlRequestControlPlaneOptions,
 ) => {
+  // Host-sdk composes this layer as the runtime-internal binding behind
+  // call(channel, request). App/client surfaces should consume the protocol
+  // channel Tags, not this reconciler service.
   const core = RuntimeControlRequestReconcilerLive.pipe(
     Layer.provideMerge(RuntimeControlRequestWorkflowEngineLive(options)),
   )
