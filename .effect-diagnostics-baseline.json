@@ -3,8 +3,8 @@
   "command": "pnpm run effect:diagnostics:baseline",
   "counts": {
     "error": 1,
-    "warning": 51,
-    "message": 124
+    "warning": 30,
+    "message": 91
   },
   "entries": [
     {
@@ -12,15 +12,6 @@
       "file": "packages/client-sdk/test/firegrid.layer-hoisting.test.ts",
       "line": 186,
       "column": 13,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/client-sdk/tsconfig.json",
-      "file": "packages/client-sdk/test/firegrid.sessions.test.ts",
-      "line": 124,
-      "column": 33,
       "severity": "warning",
       "code": "globalErrorInEffectFailure",
       "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
@@ -414,69 +405,6 @@
     },
     {
       "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/control-request-reconciler.ts",
-      "line": 111,
-      "column": 14,
-      "severity": "message",
-      "code": "leakingRequirements",
-      "message": "Methods of this Service require `AgentToolHost | ChannelInventory | CurrentHostSession | PerContextRuntimeOutputWriter | RuntimeAgentOutputAfterEvents | RuntimeContextWorkflowRuntime | RuntimeControlPlaneTable | RuntimeControlRequestWorkflowEngine | RuntimeHostConfig | RuntimeOutputTable` from every caller."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts",
-      "line": 100,
-      "column": 12,
-      "severity": "message",
-      "code": "unnecessaryFailYieldableError",
-      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/layers.ts",
-      "line": 257,
-      "column": 5,
-      "severity": "warning",
-      "code": "layerMergeAllWithDependencies",
-      "message": "This layer provides PerContextRuntimeOutputWriter which is required by another layer in the same Layer.mergeAll call. Layer.mergeAll creates layers in parallel, so dependencies between layers will not be satisfied. Consider moving this layer into a Layer.provideMerge after the Layer.mergeAll."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/layers.ts",
-      "line": 315,
-      "column": 5,
-      "severity": "warning",
-      "code": "layerMergeAllWithDependencies",
-      "message": "This layer provides RuntimeStartCapability which is required by another layer in the same Layer.mergeAll call. Layer.mergeAll creates layers in parallel, so dependencies between layers will not be satisfied. Consider moving this layer into a Layer.provideMerge after the Layer.mergeAll."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/layers.ts",
-      "line": 316,
-      "column": 5,
-      "severity": "warning",
-      "code": "layerMergeAllWithDependencies",
-      "message": "This layer provides RuntimeControlRequestReconciler which is required by another layer in the same Layer.mergeAll call. Layer.mergeAll creates layers in parallel, so dependencies between layers will not be satisfied. Consider moving this layer into a Layer.provideMerge after the Layer.mergeAll."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/layers.ts",
-      "line": 318,
-      "column": 5,
-      "severity": "warning",
-      "code": "layerMergeAllWithDependencies",
-      "message": "This layer provides SessionSelfCheckpointChannel, SessionSelfLifecycleChannel, ChannelInventory which is required by another layer in the same Layer.mergeAll call. Layer.mergeAll creates layers in parallel, so dependencies between layers will not be satisfied. Consider moving this layer into a Layer.provideMerge after the Layer.mergeAll."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/layers.ts",
-      "line": 319,
-      "column": 5,
-      "severity": "warning",
-      "code": "layerMergeAllWithDependencies",
-      "message": "This layer provides RuntimeControlRequestWorkflowEngine which is required by another layer in the same Layer.mergeAll call. Layer.mergeAll creates layers in parallel, so dependencies between layers will not be satisfied. Consider moving this layer into a Layer.provideMerge after the Layer.mergeAll."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
       "file": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
       "line": 254,
       "column": 14,
@@ -513,15 +441,6 @@
     },
     {
       "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/runtime-context-workflow-core.ts",
-      "line": 464,
-      "column": 3,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
       "file": "packages/host-sdk/src/host/runtime-context-workflow-runtime.ts",
       "line": 135,
       "column": 3,
@@ -555,240 +474,6 @@
       "severity": "message",
       "code": "unnecessaryFailYieldableError",
       "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/runtime-input-deferred.ts",
-      "line": 109,
-      "column": 33,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/runtime-input-deferred.ts",
-      "line": 150,
-      "column": 11,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/src/host/runtime-substrate.ts",
-      "line": 65,
-      "column": 5,
-      "severity": "warning",
-      "code": "layerMergeAllWithDependencies",
-      "message": "This layer provides RuntimeAgentOutputAfterEvents which is required by another layer in the same Layer.mergeAll call. Layer.mergeAll creates layers in parallel, so dependencies between layers will not be satisfied. Consider moving this layer into a Layer.provideMerge after the Layer.mergeAll."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 1013,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 1036,
-      "column": 30,
-      "severity": "warning",
-      "code": "lazyPromiseInEffectSync",
-      "message": "This `Effect.sync` thunk returns a Promise. Use `Effect.promise` or `Effect.tryPromise` to represent async work."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 1042,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 111,
-      "column": 12,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 249,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 266,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 289,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 306,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 427,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 482,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 513,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 544,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 584,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 621,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 659,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 704,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 732,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 752,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 784,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 861,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 900,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 953,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/agent-tools/tool-use-to-effect.test.ts",
-      "line": 981,
-      "column": 7,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
     },
     {
       "project": "packages/host-sdk/tsconfig.json",
@@ -861,15 +546,6 @@
       "severity": "message",
       "code": "preferSchemaOverJson",
       "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/host/control-request-reconciler.test.ts",
-      "line": 129,
-      "column": 31,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
     },
     {
       "project": "packages/host-sdk/tsconfig.json",
@@ -1053,78 +729,6 @@
     },
     {
       "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/host/runtime-context-workflow-core.test.ts",
-      "line": 210,
-      "column": 31,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/host/runtime-context-workflow-core.test.ts",
-      "line": 231,
-      "column": 31,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/host/runtime-context-workflow-core.test.ts",
-      "line": 248,
-      "column": 31,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/host/runtime-context-workflow-core.test.ts",
-      "line": 448,
-      "column": 11,
-      "severity": "warning",
-      "code": "multipleEffectProvide",
-      "message": "This expression chains multiple `Effect.provide` calls. Providing Layers in multiple calls in a chain can break service lifecycle behavior compared with a single combined provide with merged layers."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/host/runtime-context-workflow-core.test.ts",
-      "line": 530,
-      "column": 11,
-      "severity": "warning",
-      "code": "multipleEffectProvide",
-      "message": "This expression chains multiple `Effect.provide` calls. Providing Layers in multiple calls in a chain can break service lifecycle behavior compared with a single combined provide with merged layers."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/host/runtime-context-workflow-core.test.ts",
-      "line": 791,
-      "column": 39,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/host/runtime-context-workflow-core.test.ts",
-      "line": 926,
-      "column": 39,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
-      "file": "packages/host-sdk/test/host/runtime-observation-sources.test.ts",
-      "line": 85,
-      "column": 37,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
-    },
-    {
-      "project": "packages/host-sdk/tsconfig.json",
       "file": "packages/host-sdk/test/host/start-runtime.test.ts",
       "line": 155,
       "column": 7,
@@ -1243,7 +847,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 251,
+      "line": 254,
       "column": 45,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1252,7 +856,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 277,
+      "line": 280,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1261,7 +865,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 283,
+      "line": 286,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1270,7 +874,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 289,
+      "line": 292,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1279,7 +883,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 295,
+      "line": 298,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1288,7 +892,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 301,
+      "line": 304,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1297,7 +901,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 307,
+      "line": 310,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1306,7 +910,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 313,
+      "line": 316,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1315,7 +919,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 319,
+      "line": 322,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1324,7 +928,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/session-facade/schema.ts",
-      "line": 338,
+      "line": 341,
       "column": 58,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -1413,24 +1017,6 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/durable-tools/internal/wait-for.ts",
-      "line": 80,
-      "column": 24,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/durable-tools/internal/wait-for.ts",
-      "line": 85,
-      "column": 26,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
       "file": "packages/runtime/src/streams/sources.ts",
       "line": 13,
       "column": 51,
@@ -1467,33 +1053,6 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/verified-webhook-ingest/adapter.ts",
-      "line": 210,
-      "column": 14,
-      "severity": "message",
-      "code": "unnecessaryFailYieldableError",
-      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/verified-webhook-ingest/adapter.ts",
-      "line": 234,
-      "column": 16,
-      "severity": "message",
-      "code": "preferSchemaOverJson",
-      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/verified-webhook-ingest/adapter.ts",
-      "line": 376,
-      "column": 12,
-      "severity": "message",
-      "code": "unnecessaryFailYieldableError",
-      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
       "file": "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts",
       "line": 27,
       "column": 58,
@@ -1512,48 +1071,12 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/workflow-engine/workflows/wait-for.ts",
-      "line": 26,
-      "column": 50,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/workflow-engine/workflows/wait-for.ts",
-      "line": 31,
-      "column": 52,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
       "file": "packages/runtime/test/codecs/stdio-jsonl/index.test.ts",
       "line": 74,
       "column": 25,
       "severity": "message",
       "code": "preferSchemaOverJson",
       "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/durable-tools/WaitFor.test.ts",
-      "line": 123,
-      "column": 3,
-      "severity": "warning",
-      "code": "layerMergeAllWithDependencies",
-      "message": "This layer provides RuntimeAgentOutputEvents which is required by another layer in the same Layer.mergeAll call. Layer.mergeAll creates layers in parallel, so dependencies between layers will not be satisfied. Consider moving this layer into a Layer.provideMerge after the Layer.mergeAll."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/durable-tools/WaitFor.test.ts",
-      "line": 138,
-      "column": 3,
-      "severity": "warning",
-      "code": "layerMergeAllWithDependencies",
-      "message": "This layer provides RuntimeRuns which is required by another layer in the same Layer.mergeAll call. Layer.mergeAll creates layers in parallel, so dependencies between layers will not be satisfied. Consider moving this layer into a Layer.provideMerge after the Layer.mergeAll."
     },
     {
       "project": "packages/runtime/tsconfig.json",
@@ -1581,15 +1104,6 @@
       "severity": "warning",
       "code": "globalErrorInEffectFailure",
       "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/workflow-engine/workflows/wait-for-workflow.test.ts",
-      "line": 35,
-      "column": 3,
-      "severity": "warning",
-      "code": "layerMergeAllWithDependencies",
-      "message": "This layer provides RuntimeObservationStreams which is required by another layer in the same Layer.mergeAll call. Layer.mergeAll creates layers in parallel, so dependencies between layers will not be satisfied. Consider moving this layer into a Layer.provideMerge after the Layer.mergeAll."
     }
   ]
 }

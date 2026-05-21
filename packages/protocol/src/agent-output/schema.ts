@@ -100,3 +100,47 @@ export const AgentOutputEventSchema = Schema.Union(
   AgentTerminatedEventSchema,
 )
 export type AgentOutputEvent = Schema.Schema.Type<typeof AgentOutputEventSchema>
+
+// tf-8s7d — forward-compatibility fallback for unknown `_tag` variants.
+//
+// Per the tf-ypq9 schema-evolution policy
+// (`docs/cannon/architecture/schema-evolution-and-error-ownership.md`),
+// replay-facing row families must accept "old rows continue to decode"
+// — and the symmetric case, "new rows decode on older readers", is the
+// load-bearing property for cross-version replay safety.
+//
+// `AgentOutputEventSchema` is intentionally STRICT for known `_tag`
+// variants (the schema-evolution policy's "new literal variants may be
+// added only when older projections can ignore or preserve them"
+// clause). This sibling schema gives older readers the
+// preserve-not-crash behavior: a row carrying a future `_tag` decodes
+// to `AgentUnknownEvent`, carrying the original tag in
+// `unknownTag` and the rest of the event payload in `payload` for
+// downstream consumers that choose to surface or audit it.
+//
+// Use through `tryDecodeRuntimeAgentOutputEnvelope` in
+// `@firegrid/protocol/session-facade`: strict decode first, fallback
+// only on strict failure. Known tags continue to produce typed
+// `AgentOutputEvent` values; only genuinely unknown tags produce
+// `AgentUnknownEvent`.
+export const AgentUnknownEventSchema = Schema.TaggedStruct(
+  "AgentOutputUnknown",
+  {
+    unknownTag: Schema.String.pipe(Schema.minLength(1)),
+    payload: Schema.optional(Schema.Unknown),
+  },
+).annotations({
+  identifier: "firegrid.agentOutput.unknownEvent",
+  title: "Forward-compat fallback for an unknown AgentOutputEvent _tag",
+  description:
+    "Terminal fallback emitted by tryDecodeRuntimeAgentOutputEnvelope when a stored envelope's event carries a _tag this version's AgentOutputEventSchema does not know. Preserves the original _tag (in unknownTag) and the original event payload so older readers can audit, surface, or drop without losing the row.",
+})
+export type AgentUnknownEvent = Schema.Schema.Type<typeof AgentUnknownEventSchema>
+
+export const AgentOutputEventOrUnknownSchema = Schema.Union(
+  AgentOutputEventSchema,
+  AgentUnknownEventSchema,
+)
+export type AgentOutputEventOrUnknown = Schema.Schema.Type<
+  typeof AgentOutputEventOrUnknownSchema
+>
