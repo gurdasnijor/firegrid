@@ -194,6 +194,95 @@ It appends a `RuntimeStartRequestRow` and returns a request acknowledgement, not
 a terminal process result. Host/server code that needs a synchronous terminal
 result should use `@firegrid/host-sdk` `startRuntime({ contextId })`.
 
+## Attaching External MCP Tools
+
+To give an agent provider tools (Linear, GitHub, Slack, Notion, your own
+servers), attach external MCP servers through the runtime's `mcpServers` config.
+This is the paved road — it already exists; there is nothing else to build. Each
+entry is a `{ name, server: { type: "url", url, headers? } }` declaration that
+Firegrid passes through to the agent's session (the ACP `newSession` call). The
+agent connects to those MCP servers and calls their tools directly; Firegrid
+wraps that tool use with durable sessions, observation, permissioning, waits, and
+replay.
+
+```ts
+const session = yield* firegrid.sessions.createOrLoad({
+  externalKey: { source: "linear.issue", id: "LIN-123" },
+  runtime: local.jsonl({
+    argv: ["node", "planner.mjs"],
+    agentProtocol: "stdio-jsonl",
+    mcpServers: [
+      {
+        name: "linear",
+        server: {
+          type: "url",
+          url: "https://mcp.example.com/linear",
+          headers: { authorization: "Bearer <provider-token>" },
+        },
+      },
+    ],
+  }),
+  createdBy: "factory",
+})
+```
+
+`mcpServers` is **client-owned config**: the caller authors the URL + headers
+end-to-end, and Firegrid carries them as launch intent without interpreting them.
+No provider semantics live in `@firegrid/protocol` — there is no
+`linear.*`/`github.*` channel in the protocol catalog. The protocol stays a
+neutral substrate; provider tools are described entirely by the MCP servers you
+attach.
+
+### Hosted MCP connections (Smithery, etc.)
+
+A hosted MCP provider that bundles many connections behind one endpoint — e.g. a
+[Smithery](https://smithery.ai/docs/use/connect) namespace
+(`https://mcp.smithery.run/{namespace}`) — is **one** `mcpServers` entry: the
+namespace endpoint as `url`, plus a scoped service token as a header. Connection
+management (OAuth flows, token refresh, config collection, per-user scoping) is
+the hosted provider's job, not Firegrid's. Firegrid attaches the endpoint and
+observes the resulting tool use.
+
+```ts
+mcpServers: [
+  {
+    name: "smithery",
+    server: {
+      type: "url",
+      url: "https://mcp.smithery.run/my-app",
+      headers: { authorization: "Bearer <scoped-service-token>" },
+    },
+  },
+]
+```
+
+### Credential boundary
+
+Provider auth travels in the entry's `headers`. Per Firegrid's secret discipline,
+**provider secrets should not be embedded as literal values in durable launch
+intent** — the same rule the env surface enforces, where
+`RuntimeEnvBinding { name, ref }` stores a *reference* to a host env var and "the
+durable plane never sees the value" (literal secret values are rejected by
+`LaunchSecretEnvCliValueSchema`). The MCP-header equivalent (a ref form so header
+secrets resolve at spawn from a non-durable source rather than landing in durable
+rows/traces) is being enforced under bead `tf-sk6i`; once it lands, supply MCP
+header secrets by reference, not literal. Until then, source provider tokens from
+a non-durable place (host env, a hosted provider's scoped token) and avoid
+committing literal provider secrets into persisted launch config.
+
+### Provider actions are MCP tools first
+
+A provider action (create a Linear comment, open a PR, post to Slack) is an **MCP
+tool the agent calls** by default — Firegrid journals the call + result as durable
+agent-output observations for replay/audit, and can gate it with a permission
+request. Promote a provider action into a Firegrid durable channel **only** when
+there is concrete pressure for Firegrid-owned durability around the side effect
+itself (claim-before-side-effect, durable evidence rows, retries, or a waitable
+completion receipt). The one-line test: *if the agent crashed mid-action, does
+Firegrid need to own knowing whether the side effect happened?* No → MCP tool;
+yes → durable channel. See the design rationale in
+`docs/proposals/tf-x1jx-external-mcp-attachment-design.md`.
+
 ## Lower-Level Operations
 
 `firegrid.launch` and `firegrid.open(contextId).snapshot` remain available for
