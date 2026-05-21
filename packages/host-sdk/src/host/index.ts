@@ -6,6 +6,13 @@ export type {
 } from "./types.ts"
 
 export {
+  AcpStdioEdge,
+  AcpStdioEdgeLive,
+  type AcpStdioEdgeOptions,
+  type AcpStdioEdgeService,
+  type AcpStdioSessionRuntimeRequest,
+} from "./acp-stdio-edge.ts"
+export {
   UnknownChannelTarget,
   channelMetadata,
   findRuntimeContextMcpChannel,
