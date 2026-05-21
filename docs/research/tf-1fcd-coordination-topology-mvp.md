@@ -1,33 +1,52 @@
 # tf-1fcd Coordination Topology MVP
 
-This tiny-firegrid simulation shows the same deterministic item bench through
-three coordination shapes:
+This tiny-firegrid simulation is the runnable scaffold for
+`docs/research/agent-orchestration-vs-choreography-experiment.md`.
 
-- `monolithic`: one participant waits on item events, calls the worker action
-  tool, emits reports, and writes the score row.
-- `orchestrated`: a supervisor participant observes item events and sends
-  dispatch rows; worker participants observe only their dispatch rows and
-  report; a supervisor scoring participant gathers reports and writes the
-  score row.
-- `choreographed`: peer participants watch shared item-event and claim channels
-  with `wait_for_any`, emit claim/observed rows from local decisions, call the
-  worker action tool for claimed items, and report. A peer scoring participant
-  gathers claimed rows and reports before writing the score row.
+The headline path is a live frontier-model experiment. Enable it explicitly:
 
-The host defines one DurableTable-backed bench substrate and exposes typed
-channels for item events, dispatches, claims, reports, scores, and worker
-actions. The driver does not read or write channel bindings; it launches bounded
-participant sessions, uses one seed participant per arm to publish external item
-events, and observes participant-produced done markers.
+```bash
+FIREGRID_COORDINATION_EXPERIMENT_LIVE=1 \
+ANTHROPIC_API_KEY=... \
+pnpm --filter @firegrid/tiny-firegrid simulate:run coordination-topology
+```
 
-Participant behavior is implemented by deterministic stdio-jsonl agents that
-interact through the locked primitive runtime-context MCP profile from tf-t47b:
-`wait_for`, `wait_for_any`, `send`, and `call`. This keeps the simulation
-agent-agnostic while exercising the same public client/session and tool surface
-that a provider-backed tool-use agent would use.
+With live mode enabled, the simulation runs the minimum A/B/C arms from the
+experiment design:
 
-Current MVP finding: long-running mutually blocking participants are not a good
-fit for this tiny-firegrid runner path yet, so the scenario is phase-bounded
-(seed, act, score) rather than fully concurrent. The coordination semantics
-still live inside participant sessions; the harness only sequences launch
-phases and waits for final artifacts.
+- A `single`: one Claude ACP participant owns the whole task packet and must use
+  Firegrid tools before its final marker.
+- B `developer-authored-orchestration`: the driver defines a fixed
+  investigator -> builder -> reviewer graph. Agents do not choose the topology,
+  and there is no manager-agent participant.
+- C `choreography`: peer Claude ACP participants share claims and artifacts;
+  each peer receives a role prompt, observes the workspace, claims work, and
+  publishes artifacts from local decisions.
+
+The host defines the experiment substrate inline: claims, reports, artifacts,
+scores, and a deterministic worker-action callable channel. Participants launch
+through `Firegrid.sessions.createOrLoad(...).prompt(...).start()` with the
+locked runtime-context MCP primitive profile enabled. The participant-facing
+contract is the one from the experiment doc: observe workspace, claim work,
+publish findings/artifacts, record review, and produce a final artifact.
+
+CI and credential-less local runs use `fixture-smoke` mode. That path launches a
+deterministic stdio-jsonl fixture only to validate public session launch and
+channel-tool plumbing. It is deliberately labeled non-experiment output and must
+not be used as the agentic-patterns result.
+
+Validation run on 2026-05-21:
+
+```txt
+live run: 2026-05-21T08-01-14-041Z__coordination-topology
+simulate:show: spans=39814 traces=1 errored=0 mode=live-frontier
+participant evidence:
+  single/single-agent: call+send
+  developer-authored-orchestration/investigator: send
+  developer-authored-orchestration/builder: send+wait_for
+  developer-authored-orchestration/reviewer: send+wait_for
+  choreography/planner-peer: send+wait_for_any
+  choreography/builder-peer: send+wait_for_any
+  choreography/reviewer-peer: send+wait_for_any
+simulate:perf window: 197228ms
+```

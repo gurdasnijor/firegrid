@@ -23,24 +23,33 @@ import {
 import type { TinyFiregridHostEnv } from "../../types.ts"
 
 export const coordinationTopologyItemCount = 3
-export const coordinationTopologyWorkerCount = 2
+export const coordinationTopologyWorkerCount = 3
 
-export const coordinationTopologyItemEventsTarget = "coordination.item_events"
+const coordinationTopologyItemEventsTarget = "coordination.item_events"
 export const coordinationTopologyWorkerActionTarget = "coordination.worker_action"
-export const coordinationTopologyDispatchTarget = "coordination.dispatch"
+const coordinationTopologyDispatchTarget = "coordination.dispatch"
 export const coordinationTopologyClaimsTarget = "coordination.claims"
 export const coordinationTopologyReportsTarget = "coordination.reports"
+export const coordinationTopologyArtifactsTarget = "coordination.artifacts"
 export const coordinationTopologyScoresTarget = "coordination.scores"
 
 export type CoordinationTopologyArm =
-  | "monolithic"
-  | "orchestrated"
-  | "choreographed"
+  | "single"
+  | "developer-authored-orchestration"
+  | "choreography"
+  | "fixture-smoke"
+
+const CoordinationArmSchema = Schema.Literal(
+  "single",
+  "developer-authored-orchestration",
+  "choreography",
+  "fixture-smoke",
+)
 
 const CoordinationItemEventRowSchema = Schema.Struct({
   eventId: Schema.String.pipe(DurableTable.primaryKey),
   runId: Schema.String,
-  arm: Schema.Literal("monolithic", "orchestrated", "choreographed"),
+  arm: CoordinationArmSchema,
   itemId: Schema.String,
   value: Schema.Number.pipe(Schema.int()),
   producedBy: Schema.String,
@@ -49,7 +58,7 @@ const CoordinationItemEventRowSchema = Schema.Struct({
 
 const CoordinationWorkerActionRequestSchema = Schema.Struct({
   runId: Schema.String,
-  arm: Schema.Literal("monolithic", "orchestrated", "choreographed"),
+  arm: CoordinationArmSchema,
   itemId: Schema.String,
   inputValue: Schema.Number.pipe(Schema.int()),
   workerId: Schema.String,
@@ -63,7 +72,7 @@ const CoordinationWorkerActionResponseSchema = Schema.Struct({
 const CoordinationDispatchRowSchema = Schema.Struct({
   dispatchId: Schema.String.pipe(DurableTable.primaryKey),
   runId: Schema.String,
-  arm: Schema.Literal("orchestrated"),
+  arm: Schema.Literal("developer-authored-orchestration"),
   itemId: Schema.String,
   value: Schema.Number.pipe(Schema.int()),
   supervisorId: Schema.String,
@@ -74,10 +83,11 @@ const CoordinationDispatchRowSchema = Schema.Struct({
 const CoordinationClaimRowSchema = Schema.Struct({
   claimId: Schema.String.pipe(DurableTable.primaryKey),
   runId: Schema.String,
-  arm: Schema.Literal("choreographed"),
+  arm: Schema.Literal("choreography", "fixture-smoke"),
   itemId: Schema.String,
   workerId: Schema.String,
-  value: Schema.Number.pipe(Schema.int()),
+  value: Schema.optional(Schema.Number.pipe(Schema.int())),
+  title: Schema.optional(Schema.String),
   decision: Schema.Literal("claimed", "observed"),
   createdAt: Schema.String,
 })
@@ -85,33 +95,50 @@ const CoordinationClaimRowSchema = Schema.Struct({
 const CoordinationReportRowSchema = Schema.Struct({
   reportId: Schema.String.pipe(DurableTable.primaryKey),
   runId: Schema.String,
-  arm: Schema.Literal("monolithic", "orchestrated", "choreographed"),
+  arm: CoordinationArmSchema,
   itemId: Schema.String,
   workerId: Schema.String,
-  resultValue: Schema.Number.pipe(Schema.int()),
+  resultValue: Schema.optional(Schema.Number.pipe(Schema.int())),
+  summary: Schema.optional(Schema.String),
   path: Schema.Array(Schema.String),
+  createdAt: Schema.String,
+})
+
+const CoordinationArtifactRowSchema = Schema.Struct({
+  artifactId: Schema.String.pipe(DurableTable.primaryKey),
+  runId: Schema.String,
+  arm: CoordinationArmSchema,
+  participantId: Schema.String,
+  artifactType: Schema.Literal(
+    "investigation",
+    "implementation",
+    "review",
+    "final",
+    "finding",
+    "smoke",
+  ),
+  title: Schema.String,
+  body: Schema.String,
   createdAt: Schema.String,
 })
 
 const CoordinationScoreRowSchema = Schema.Struct({
   scoreId: Schema.String.pipe(DurableTable.primaryKey),
   runId: Schema.String,
-  arm: Schema.Literal("monolithic", "orchestrated", "choreographed"),
+  arm: CoordinationArmSchema,
   itemCount: Schema.Number.pipe(Schema.int()),
   workerCount: Schema.Number.pipe(Schema.int()),
   dispatchCount: Schema.Number.pipe(Schema.int()),
   claimCount: Schema.Number.pipe(Schema.int()),
+  artifactCount: Schema.Number.pipe(Schema.int()),
   reportCount: Schema.Number.pipe(Schema.int()),
   totalResultValue: Schema.Number.pipe(Schema.int()),
   topology: Schema.String,
 })
-export type CoordinationScoreRow = Schema.Schema.Type<
-  typeof CoordinationScoreRowSchema
->
-
 class CoordinationTopologyBenchTable extends DurableTable(
   "coordinationTopologyBench",
   {
+    artifacts: CoordinationArtifactRowSchema,
     claims: CoordinationClaimRowSchema,
     dispatches: CoordinationDispatchRowSchema,
     itemEvents: CoordinationItemEventRowSchema,
@@ -129,6 +156,7 @@ interface CoordinationTopologyChannels {
   readonly dispatches: BidirectionalChannel<typeof CoordinationDispatchRowSchema>
   readonly claims: BidirectionalChannel<typeof CoordinationClaimRowSchema>
   readonly reports: BidirectionalChannel<typeof CoordinationReportRowSchema>
+  readonly artifacts: BidirectionalChannel<typeof CoordinationArtifactRowSchema>
   readonly scores: BidirectionalChannel<typeof CoordinationScoreRowSchema>
 }
 
@@ -151,7 +179,10 @@ const coordinationEnvPolicy = (
   env: NodeJS.ProcessEnv,
 ): Layer.Layer<RuntimeEnvResolverPolicy> =>
   RuntimeEnvResolverPolicy.withPolicy({
-    authorizedBindings: [],
+    authorizedBindings: [
+      ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
+      ["OPENAI_API_KEY", "OPENAI_API_KEY"],
+    ],
     lookupEnv: name => env[name],
   })
 
@@ -196,6 +227,13 @@ const makeChannels = (
     stream: table.reports.rows(),
     append: row => table.reports.insertOrGet(row).pipe(Effect.asVoid),
   })
+  const artifacts = makeBidirectionalChannel({
+    target: coordinationTopologyArtifactsTarget,
+    schema: CoordinationArtifactRowSchema,
+    sourceClasses: ["static-source", "predicate-eligible"],
+    stream: table.artifacts.rows(),
+    append: row => table.artifacts.insertOrGet(row).pipe(Effect.asVoid),
+  })
   const scores = makeBidirectionalChannel({
     target: coordinationTopologyScoresTarget,
     schema: CoordinationScoreRowSchema,
@@ -203,7 +241,15 @@ const makeChannels = (
     stream: table.scores.rows(),
     append: row => table.scores.insertOrGet(row).pipe(Effect.asVoid),
   })
-  return { itemEvents, workerAction, dispatches, claims, reports, scores }
+  return {
+    itemEvents,
+    workerAction,
+    dispatches,
+    claims,
+    reports,
+    artifacts,
+    scores,
+  }
 }
 
 const channelRegistrations = (
@@ -214,6 +260,7 @@ const channelRegistrations = (
   channels.dispatches,
   channels.claims,
   channels.reports,
+  channels.artifacts,
   channels.scores,
 ]
 
@@ -247,6 +294,9 @@ export const coordinationTopologyHost = (
           }
           if (stream === coordinationTopologyReportsTarget) {
             return table.reports.rows()
+          }
+          if (stream === coordinationTopologyArtifactsTarget) {
+            return table.artifacts.rows()
           }
           if (stream === coordinationTopologyScoresTarget) {
             return table.scores.rows()

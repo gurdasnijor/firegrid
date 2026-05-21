@@ -1,32 +1,38 @@
 feature:
   name: agentic-patterns-coordination-topology
   product: firegrid
-  description: Demonstrate coordination-topology arms over the Firegrid agentic-patterns primitive profile.
+  description: Run the agent orchestration vs choreography experiment over Firegrid primitives with live frontier-model participants.
 
 components:
   BENCH_SUBSTRATE:
     requirements:
-      1: The simulation uses one DurableTable-backed bench substrate for item events, dispatch rows, report rows, and score rows.
-      2: Item events, worker actions, dispatch, claims, reports, and scores are exposed as channel contracts instead of direct table access from participant code.
-      3: The driver seeds external task events and observes final participant artifacts without reading or writing host channel bindings.
+      1: The simulation uses one DurableTable-backed experiment substrate for task events, claims, reports, artifacts, and score rows.
+      2: Task events, worker actions, claims, reports, artifacts, and scores are exposed as channel contracts instead of direct table access from participant code.
+      3: The live experiment driver seeds prompts and observes participant artifacts without reading or writing host channel bindings.
 
   TOPOLOGY_ARMS:
     requirements:
-      1: The simulation runs monolithic, orchestrated worker, and choreographed peer arms over the same deterministic item set.
-      2: The orchestrated arm delegates work through dispatch rows and gathers worker report rows.
-      3: The choreographed arm lets peers coordinate from shared item-event rows without a supervisor dispatch row.
-      4: Choreographed peers emit claim rows before worker actions and decide locally whether to report each item.
+      1: The live experiment runs A single-agent, B developer-authored orchestration, and C choreography arms over the same task packet.
+      2: The developer-authored orchestration arm uses a fixed graph, fixed handoff path, and fixed merge/review order without a manager agent.
+      3: The choreography arm lets peer agents coordinate through shared claims and artifacts without central assignment.
+      4: Choreographed peers emit claim rows before publishing artifacts and decide locally what to inspect, build, review, or hand off.
 
   OBSERVABILITY:
     requirements:
-      1: A default run completes at least three items for every topology arm.
-      2: Each topology arm writes one deterministic score row.
+      1: A live run completes at least the A, B, and C arms when frontier-model credentials are enabled.
+      2: Each live topology arm emits deterministic scoring evidence derived from trace, participant markers, and artifact-channel use.
       3: The runner trace contains readable arm and participant spans for simulate:show.
-      4: The run output includes participant-produced evidence for reports, claims, actions, and score rows.
+      4: The run output includes participant-produced evidence for claims, artifacts, tool calls, and final markers.
+
+  FIXTURE_SMOKE:
+    requirements:
+      1: Deterministic fixture participants are isolated to a clearly labeled non-experiment smoke path for CI and regression validation.
+      2: The fixture smoke validates public session launch and channel-tool plumbing without being reported as the experiment result.
 
 constraints:
   PUBLIC_SURFACE:
     requirements:
-      1: Participant sessions launch through the public Firegrid client session surface with the locked primitive runtime-context MCP profile enabled.
+      1: Participant sessions launch through the public Firegrid client session surface with a live frontier-model ACP runtime and the locked primitive runtime-context MCP profile enabled.
       2: The simulation host composes its channels inline and does not import product configurations or host runtime internals.
       3: Participant behavior uses the public primitive tool surface (`wait_for`, `wait_for_any`, `send`, and `call`) instead of host-sdk/runtime/kernel internals.
+      4: Live experiment execution is gated behind explicit environment opt-in and provider credentials; CI may run only the non-experiment fixture smoke.

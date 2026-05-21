@@ -5,7 +5,7 @@ import { coordinationTopologyHost } from "./host.ts"
 export default defineSimulation({
   id: "coordination-topology",
   description:
-    "Runs monolithic, orchestrated-worker, and choreographed-peer coordination arms over Firegrid channels.",
+    "Runs the live frontier-model single/orchestration/choreography experiment, with fixture-smoke fallback.",
   host: coordinationTopologyHost,
   driver: coordinationTopologyDriver,
 })
