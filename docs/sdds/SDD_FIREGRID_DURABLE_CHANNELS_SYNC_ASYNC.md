@@ -148,10 +148,10 @@ machinery is owned by the callable binding, not re-derived per operation.
 (`HostSessionsCreateOrLoadChannel.binding.call`). Yet callers historically
 needed a separate `whenReady` barrier before they could `prompt`.
 
-That happened because the call binding acked the request - returning a
-`contextId` - instead of completing the **handshake** by blocking until the
-context was materialized. `whenReady` is the hand-rolled "wait for reflection"
-that a true sync handshake absorbs.
+That happened because the request path acked identity - returning a
+`contextId` - while the dependent operation still needed reflected context
+state. `whenReady` is the hand-rolled "wait for reflection" that the
+result-gates-next-action boundary absorbs.
 
 ```ts
 // Today: call acks, then a bespoke barrier.
@@ -159,14 +159,16 @@ const session = yield* firegrid.sessions.createOrLoad({ ... })
 yield* session.whenReady
 yield* session.prompt({ ... })
 
-// createOrLoad as a true sync handshake.
+// The dependent operation owns the reflection barrier.
 const session = yield* firegrid.sessions.createOrLoad({ ... })
 yield* session.prompt({ ... })
 ```
 
-`whenReady` disappears not by deleting a check, but because `createOrLoad` is a
-`call`, and a `call` means "return only when reflected." The barrier was a leak
-of the handshake semantics the call channel should own.
+`whenReady` disappears from this path not by deleting a check, but because the
+dependent operation (`prompt`, and similarly `start`) waits for reflected
+context state before it writes. Identity-only `createOrLoad` callers are not
+handshakes by the "answer gates the next step" rule, so they still receive the
+deterministic handle immediately.
 
 **This is no longer an assertion - the tf-lfxs spike proved it (GREEN,
 2026-05-21).** The spike wrapped the existing `HostSessionsCreateOrLoad`
@@ -199,9 +201,10 @@ Both modes were proven against the existing substrate in the one-trace
   contract was added.
 
 The production follow-up is intentionally separate: move request-reflection
-semantics into compat-gated callable bindings where the result gates the next
-client action, beginning with `createOrLoad`. The spike does **not** migrate
-production behavior by itself.
+semantics into compat-gated callable/dependent-operation bindings where the
+result gates the next client action, beginning with `createOrLoad -> prompt`
+and `createOrLoad -> start`. The spike does **not** migrate production behavior
+by itself.
 
 ## Decision guide
 

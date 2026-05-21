@@ -34,7 +34,7 @@ import {
 import {
   makeRuntimeContextRequestRow,
 } from "@firegrid/protocol/launch"
-import { Effect, Layer, Option, Stream } from "effect"
+import { Effect, Fiber, Layer, Option, Stream } from "effect"
 import type * as Scope from "effect/Scope"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { TestStreamServer } from "../../effect-durable-operators/test/harness.ts"
@@ -432,6 +432,41 @@ describe("Firegrid session facade", () => {
       idempotencyKey: "turn-1",
     })
     expect(stored).toMatchObject(result.intent)
+  })
+
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2 createOrLoad -> prompt waits for reflected context without explicit whenReady", async () => {
+    const fixture = makeFixture()
+
+    const result = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        const session = yield* firegrid.sessions.createOrLoad({
+          externalKey: { source: "linear", id: "LIN-prompt-barrier" },
+          runtime: runtimeConfig(),
+        })
+        const prompt = yield* session.prompt({
+          payload: { text: "barrier turn" },
+          idempotencyKey: "barrier-turn",
+        }).pipe(Effect.fork)
+        yield* Effect.sleep("50 millis")
+        yield* materializeContextRequest(fixture.hostSession, session.contextId)
+        const exit = yield* prompt.await
+        return { contextId: session.contextId, exit }
+      }),
+    )
+
+    expect(result.exit._tag).toBe("Success")
+    if (result.exit._tag !== "Success") return
+    const stored = await readRuntimeInputIntent(
+      fixture.hostSession,
+      result.exit.value.intentId,
+    )
+    expect(stored).toMatchObject({
+      contextId: result.contextId,
+      payload: { text: "barrier turn" },
+      idempotencyKey: "barrier-turn",
+    })
   })
 
   it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6 firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-1 whenReady completes from RuntimeContext projection state before prompt append", async () => {
@@ -852,7 +887,10 @@ describe("Firegrid session facade", () => {
       const attached = yield* firegrid.sessions.attach({
         sessionId: session.sessionId,
       })
-      const ack = yield* attached.start()
+      const start = yield* attached.start().pipe(Effect.fork)
+      yield* Effect.sleep("50 millis")
+      yield* materializeContextRequest(fixture.hostSession, session.contextId)
+      const ack = yield* Fiber.join(start)
       const table = yield* RuntimeControlPlaneTable
       const request = yield* table.startRequests.get(ack.requestId)
       return { ack, request }
