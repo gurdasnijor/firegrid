@@ -1,6 +1,11 @@
 # SDD: Firegrid Typed Wait Source Redesign
 
-Status: draft corrective design
+Doc-Class: historical-reference
+Status: historical — `durable-tools` was deleted (PR #519) and durable
+suspension is now owned by the one-substrate workflow engine
+(`docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`). Retained for
+the wait-source rationale only; do not dispatch from it. Not in
+`docs/cannon/README.md`.
 Created: 2026-05-16
 Owner: Firegrid Runtime
 

@@ -1,8 +1,18 @@
 # Firegrid Docs
 
+Doc-Class: dispatchable
+Status: active
+
 This directory holds Firegrid design documents, generated architecture
 evidence, review packets, research notes, and historical context. Use this
 index to avoid mixing current architecture with older substrate/lab-era plans.
+
+Every doc here carries a class. Read
+[`contributing/docs-taxonomy-and-lifecycle.md`](contributing/docs-taxonomy-and-lifecycle.md)
+first: it defines `public-narrative` / `internal-contract` /
+`historical-reference` / `dispatchable`, the lifecycle status words, and the
+rule that **`cannon/README.md` is the dispatch allowlist** — anything not linked
+there is `historical-reference` by default, even if it looks current.
 
 The Acai feature files in `../features/firegrid/` are the formal contract. Code
 and tests reference stable ACIDs from those feature files; design docs explain
@@ -10,28 +20,30 @@ the intent and trade-offs behind those requirements.
 
 ## Current Direction
 
-**Start with `cannon/README.md`.** The `docs/cannon/` tree is the compact
-canonical source-of-truth set for the current host-sdk/runtime boundary, agent
-body plan, one-substrate workflow engine, private-beta convergence state, and
-active next-step proposals. Older docs in `docs/sdds/`, `docs/research/`, and
-`docs/proposals/` are historical unless promoted or linked from
-`docs/cannon/README.md`.
+**Start with [`cannon/README.md`](cannon/README.md).** The `docs/cannon/` tree
+is the compact canonical source-of-truth set for the current host-sdk/runtime
+boundary, agent body plan, one-substrate workflow engine, host-plane channel
+router, durable sync/async semantics, private-beta convergence state, and active
+next-step proposals. It is the dispatch allowlist: docs in `docs/sdds/`,
+`docs/research/`, and `docs/proposals/` are `historical-reference` unless
+promoted or linked from `docs/cannon/README.md`.
 
-Read these first for the current shape of Firegrid:
+> The previous "read these first" table that lived here pointed at the durable
+> launch runtime operator, workflow-driven runtime planes (`firegrid-durable-tools`),
+> and per-edge launch tracer proposals as current direction. Those predate the
+> deletion of `durable-tools` and the channel-router/ACP-edge cutover, so they
+> are now `historical-reference`. Do not dispatch from them; use
+> `cannon/README.md`. The files still exist under `docs/proposals/` and
+> `docs/research/` as historical rationale.
 
-| Area | Document | Primary Specs |
+Still-useful operational entry points (not architecture direction):
+
+| Area | Document | Class |
 | --- | --- | --- |
-| Durable launch runtime operator | `proposals/SDD_FIREGRID_DURABLE_LAUNCH_RUNTIME_OPERATOR.md` | `firegrid-durable-launch-runtime-operator`, `workflow-engine-durable-state` |
-| Product-neutral agent runtime substrate | `proposals/SDD_FIREGRID_AGENT_RUNTIME_SUBSTRATE.md` | `firegrid-agent-runtime-substrate`, `firegrid-platform-invariants` |
-| Workflow-driven runtime planes | `proposals/SDD_FIREGRID_WORKFLOW_DRIVEN_RUNTIME_PLANES.md` | `workflow-engine-durable-state`, `firegrid-durable-tools` |
-| Synchronous Firegrid run smoke | `runbooks/firegrid-run-sync-mvp.md` | `firegrid-workflow-driven-runtime` |
-| Runtime environment boundary | `architecture/runtime-env-boundary.md` | `firegrid-workflow-driven-runtime` |
-| Runtime context eligibility model | `proposals/PROPOSAL_RUNTIME_CONTEXT_SCHEMA_ELIGIBILITY_MODEL_2026-05-13.md` | `firegrid-workflow-driven-runtime`, `firegrid-durable-launch-runtime-operator` |
-| Effect Workflow backed by Durable Streams State | `research/workflow-engine-integration.md` | `workflow-engine-durable-state` |
-| Flamecast clean-room tracer over Firegrid | `proposals/SDD_FLAMECAST_FIREGRID_LAUNCH_TRACER.md` | `firegrid-durable-launch-runtime-operator` |
-| Flamecast replatforming research | `replatforming/README.md` | n/a |
-| Tooling, verification, and generated dependency evidence | `TOOLING.md` | `firegrid-remediation-hardening`, `firegrid-architecture-boundary`, `firegrid-package-migration` |
-| Agent development recommendations | `contributing/agent-development-recommendations-2026-05-13.md` | n/a |
+| Tooling, verification, and generated dependency evidence | [`TOOLING.md`](TOOLING.md) | dispatchable |
+| Agent development recommendations | [`contributing/agent-development-recommendations-2026-05-13.md`](contributing/agent-development-recommendations-2026-05-13.md) | internal-contract |
+| Docs taxonomy and lifecycle rule | [`contributing/docs-taxonomy-and-lifecycle.md`](contributing/docs-taxonomy-and-lifecycle.md) | internal-contract |
+| Flamecast replatforming research | [`replatforming/README.md`](replatforming/README.md) | historical-reference |
 
 Doc categories:
 
@@ -44,12 +56,14 @@ Doc categories:
 
 The current implementation shape is:
 
-- `packages/protocol` — browser-safe launch schemas and Durable Streams State
-  schema.
+- `packages/protocol` — browser-safe launch + channel schemas, channel
+  contracts/Tags, and Durable Streams State schema.
 - `packages/client` — browser/app-facing launch client; must not import runtime
   code.
-- `packages/runtime` — server-side durable workflow engine and durable launch
-  runtime implementation.
+- `packages/runtime` — server-side durable workflow engine, channel route
+  implementations, and durable launch runtime implementation.
+- `packages/host-sdk` — host-author composition; composes the host-plane channel
+  router and edges. Must not own durable route bodies.
 - `apps/flamecast` — clean-room tracer app that exercises Firegrid without
   copying legacy Flamecast architecture.
 

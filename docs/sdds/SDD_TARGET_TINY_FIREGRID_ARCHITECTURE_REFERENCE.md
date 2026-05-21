@@ -1,5 +1,6 @@
 # SDD: Target Tiny-Firegrid Architecture Reference
 
+Doc-Class: dispatchable
 Status: draft architecture
 Bead: `tf-3w1e`, reconciled by `tf-qnq9`
 Created: 2026-05-21
