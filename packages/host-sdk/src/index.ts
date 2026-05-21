@@ -37,11 +37,6 @@ export {
   FiregridRuntimeContextMcpBaseUrlLive,
   type FiregridRuntimeContextMcpBase,
 } from "./host/runtime-context-mcp-base-url.ts"
-// TODO(tf-8oaq): migrate the remaining smoke-test consumer to a narrow
-// codec-adapter test seam, then remove this helper from the root barrel.
-export {
-  resolveEffectiveMcpServers,
-} from "./host/runtime-context-session/codec-adapter.ts"
 
 // Agent-tool bindings (protocol → Effect AI Tool/Toolkit) and execution
 // (lowering, AgentToolHost seam, scheduled-input workflow). Kept split

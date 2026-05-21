@@ -82,13 +82,6 @@ export {
 } from "@firegrid/protocol/launch"
 
 export { RuntimeIngressError } from "@firegrid/runtime/errors"
-// CallerOwnedFactStreams is a host-side capability: the host provides
-// the implementation, runtime observation consumers resolve CallerFact
-// streams through it. Hosts (including tests / sims that compose a host
-// layer) need this tag to bind their durable streams at the workflow boundary.
-// TODO(tf-8oaq): migrate public-barrel consumers to @firegrid/runtime/streams
-// or a narrow host composition subpath, then remove this bridge export.
-export { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 export {
   localProcessSpawnEnvFromHostEnv,
   type LocalProcessSandboxProviderOptions,

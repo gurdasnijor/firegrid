@@ -8,7 +8,6 @@
 
 import type { ServeError } from "@effect/platform/HttpServerError"
 import {
-  CallerOwnedFactStreams,
   durableStreamUrl,
   ensurePathInput,
   FiregridEnvBindingsFromEnv,
@@ -16,6 +15,7 @@ import {
   FiregridLocalProcessFromEnv,
   type FiregridHost,
 } from "@firegrid/host-sdk"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import { Effect, Layer, Schema, Stream } from "effect"
 import {
   DurableTable,

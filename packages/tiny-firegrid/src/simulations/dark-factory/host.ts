@@ -4,7 +4,6 @@ import {
   ApprovalCallRequestSchema,
 } from "@firegrid/protocol/agent-tools"
 import {
-  CallerOwnedFactStreams,
   ChannelInventoryLive,
   dmChannel,
   eventChannelTarget,
@@ -26,6 +25,7 @@ import {
   RuntimeEnvResolverPolicy,
   durableStreamUrl,
 } from "@firegrid/host-sdk"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import { Context, Effect, Layer, Schema, Stream } from "effect"
 import {
   DurableTable,
