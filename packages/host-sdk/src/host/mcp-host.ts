@@ -14,26 +14,26 @@
  *  - SDD_FIREGRID_AGENT_TOOLS_MCP_BRIDGE.md §"V1: Host-Owned Localhost MCP Server"
  *
  * Implements (feature spec):
- *  - firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.1..10
+ *  - firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.1..11
  *  - firegrid-workflow-driven-runtime.VALIDATION.5
+ *  - firegrid-host-sdk.MCP_AND_TOOLS.4
  *
  * Runtime-context routing scope:
  *  The listener mounts Effect AI's MCP HTTP protocol at
  *  `/mcp/runtime-context/:contextId`. The route parameter is the
  *  request authority; it is not an env var and not a tool argument.
- *  Tool calls resolve that route value through `requireLocalContext`
- *  before any workflow, sandbox, or host tool service is touched.
+ *  Tool calls resolve that route value through the runtime-owned
+ *  `RuntimeLocalContextResolver` capability before any workflow, sandbox,
+ *  or host tool service is touched.
  */
 
 import { IdGenerator, McpServer } from "@effect/ai"
 import { HttpMiddleware, HttpRouter, HttpServerResponse } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
+import { ContextNotFound } from "@firegrid/protocol/launch"
 import {
-  ContextNotFound,
-  requireLocalContext,
-  type CurrentHostSession,
-  type RuntimeControlPlaneTable,
-} from "@firegrid/protocol/launch"
+  RuntimeLocalContextResolver,
+} from "@firegrid/runtime/control-plane"
 import { RpcSerialization, RpcServer } from "@effect/rpc"
 import { Config, Effect, Layer, Logger, Option } from "effect"
 // The MCP HTTP server lifetime is Effect-owned via Layer.scopedDiscard
@@ -112,17 +112,17 @@ export const runtimeContextMcpPath = (
 const FiregridMcpRouteContextLayer = Layer.effect(
   FiregridAgentToolContext,
   Effect.gen(function* () {
-    // Capture only host-scope services here. `HttpRouter.params` is
+    // Capture only the runtime-owned local-context resolver here.
+    // `HttpRouter.params` is
     // intentionally read inside `resolve`, so Effect AI's request
     // fiber supplies the current `/runtime-context/:contextId` route
     // parameter for each tools/call instead of memoizing one context
     // into the shared MCP server layer.
-    const captured = yield* Effect.context<
-      CurrentHostSession | RuntimeControlPlaneTable
-    >()
+    const localContextResolver = yield* RuntimeLocalContextResolver
     return {
       // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1
       // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.3
+      // firegrid-host-sdk.MCP_AND_TOOLS.4
       resolve: Effect.gen(function* () {
         const params = yield* HttpRouter.params
         const contextId = yield* Option.match(Option.fromNullable(params.contextId), {
@@ -130,9 +130,7 @@ const FiregridMcpRouteContextLayer = Layer.effect(
             Effect.fail(new ContextNotFound({ contextId: "<missing-mcp-route-context>" })),
           onSome: Effect.succeed,
         })
-        const runtimeContext = yield* requireLocalContext(contextId).pipe(
-          Effect.provide(captured),
-        )
+        const runtimeContext = yield* localContextResolver.requireLocalContext(contextId)
         yield* Effect.annotateCurrentSpan({
           "firegrid.context.id": contextId,
           "firegrid.runtime.agent": runtimeContext.runtime.config.agent ?? "",
@@ -140,7 +138,6 @@ const FiregridMcpRouteContextLayer = Layer.effect(
         })
         return { contextId, runtimeContext }
       }).pipe(
-        Effect.provide(captured),
         Effect.withSpan("firegrid.mcp.runtime_context.resolve", {
           kind: "server",
         }),
@@ -169,6 +166,7 @@ const FiregridMcpRouteContextLayer = Layer.effect(
  *     binder
  *
  * Caller must provide the host runtime layer that owns RuntimeContext executions.
+ * firegrid-host-sdk.MCP_AND_TOOLS.4
  */
 // firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1
 //

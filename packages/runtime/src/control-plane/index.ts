@@ -3,10 +3,12 @@ export {
   RuntimeContexts,
   RuntimeContextInsert,
   RuntimeContextInsertLive,
+  RuntimeLocalContextResolver,
   RuntimeContextRead,
   RuntimeRuns,
   RuntimeRunAppendAndGet,
   type RuntimeContextInsertService,
+  type RuntimeLocalContextResolverService,
   type RuntimeContextReadService,
   type RuntimeRunAppendAndGetService,
 } from "../authorities/index.ts"

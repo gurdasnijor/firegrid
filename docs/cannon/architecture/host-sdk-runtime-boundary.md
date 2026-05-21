@@ -346,12 +346,27 @@ through protocol. If it is a capability implementation, keep it runtime.
 | `agent-tools/execution/toolkit-layer.ts` | split | MCP/Effect-AI toolkit projection belongs in host-sdk. Its workflow/tool execution support should depend on runtime-owned capability tags, not import `host/runtime-substrate.ts`. |
 | `runtime/authorities/*` | runtime | Narrow Effect capability providers over durable table families. This is substrate, not public API; export tags/layers and prevent table facades from leaking upward. |
 | `runtime/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts` | move within runtime | Defines a runtime tool-execution service tag, not a subscriber driver. It should live under tool-execution/workflow seams; `subscribers/` should remain scoped observation drivers. |
-| MCP server / Effect AI toolkit | host-sdk | This is host binding and route exposure. It projects protocol schemas into MCP/Effect AI surfaces. |
+| MCP server / Effect AI toolkit | host-sdk | Disposition (a): this is a named binding-edge projection-server exception. Host-sdk owns loopback listener installation, route exposure, Effect AI toolkit projection, and generated HTTP spans, but it must consume runtime-provided capability tags for context resolution and execution. It must not own durable table, workflow-engine, or substrate authority. |
 | Session-handle / client facade helpers | client-sdk + protocol | Client SDK owns app-safe methods. Protocol owns schemas and normalized observations. Runtime supplies capabilities, never direct client imports. |
 | Durable Streams substrate access | runtime | Provider internals touch tables/streams. Host SDK consumes narrow tags or channel bindings; client SDK consumes protocol-safe transport/read capabilities. |
 | Verified webhook ingestion | runtime implementation, host/app channel binding | Signature verification and durable fact insert belong in runtime. Exposing those facts as `Channel<LinearWebhook>` is a host/app channel binding. |
 | Webhook route installation | host-sdk or app integration | HTTP route/server binding is deployment composition. It calls runtime ingestion and provides a channel binding; it does not own verification substrate. |
 | `RuntimeStartCapability` | protocol tag, runtime/host implementation | The service shape is protocol-owned authority. Host/runtime composition provides the live implementation. |
+
+### MCP Host HTTP Server Placement
+
+`packages/host-sdk/src/host/mcp-host.ts` stays in `@firegrid/host-sdk` under
+disposition (a): a narrow binding-edge projection-server exception. The MCP
+listener is how a host-local agent reaches the host plane, so the Node HTTP
+server bind, MCP route shape, Effect AI `McpServer` composition, and toolkit
+projection are binding concerns.
+
+The exception is conditional: the MCP host must not own durable substrate
+authority. Route-scoped context checks and tool execution flow through
+runtime-owned capability tags, with host-sdk only composing those capabilities
+into the server layer. If a future MCP change needs direct durable table,
+workflow-engine, or adapter-session access, that body belongs below the runtime
+line instead of widening this exception.
 
 ## Dark-Factory / Consumer Story
 

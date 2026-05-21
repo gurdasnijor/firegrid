@@ -4,10 +4,12 @@ export {
   RuntimeContexts,
   RuntimeContextInsertLive,
   RuntimeContextInsert,
+  RuntimeLocalContextResolver,
   RuntimeContextRead,
   RuntimeRuns,
   RuntimeRunAppendAndGet,
   type RuntimeContextInsertService,
+  type RuntimeLocalContextResolverService,
   type RuntimeContextReadService,
   type RuntimeRunAppendAndGetService,
 } from "./runtime-control-plane-recorder.ts"

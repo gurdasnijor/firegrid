@@ -365,6 +365,11 @@ Package placement rule:
   surface, but byte-stream conversion, workflow/session execution, durable
   row authority, and cross-process adapter bodies belong below the binding
   line.
+- `packages/host-sdk/src/host/mcp-host.ts` is disposition (a): a named
+  binding-edge projection-server exception. It may bind the loopback MCP HTTP
+  listener and project Effect AI tools, but local context resolution and tool
+  execution must flow through runtime-provided capabilities rather than direct
+  durable table or workflow-engine authority.
 
 ### 2. In-memory coordination
 

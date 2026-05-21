@@ -3,6 +3,7 @@ import {
   RuntimeControlPlaneTable,
   makeLocalRuntimeContextForHostSession,
   makeRuntimeControlRequestCompletionRow,
+  requireLocalContext,
   type HostSessionRow,
   type RuntimeContextRequestRow,
   type RuntimeContext,
@@ -54,6 +55,12 @@ export interface RuntimeContextReadService {
   readonly readContext: (
     contextId: string,
   ) => Effect.Effect<Option.Option<RuntimeContext>, unknown>
+}
+
+export interface RuntimeLocalContextResolverService {
+  readonly requireLocalContext: (
+    contextId: string,
+  ) => Effect.Effect<RuntimeContext, unknown>
 }
 
 export interface RuntimeRunAppendAndGetService {
@@ -403,6 +410,24 @@ const contextReadFromTable = (
     ),
 })
 
+const localContextResolverFromTable = (
+  table: RuntimeControlPlaneTable["Type"],
+  session: HostSessionRow,
+): RuntimeLocalContextResolverService => ({
+  // firegrid-host-sdk.MCP_AND_TOOLS.4
+  requireLocalContext: contextId =>
+    requireLocalContext(contextId).pipe(
+      Effect.provideService(RuntimeControlPlaneTable, table),
+      Effect.provideService(CurrentHostSession, session),
+      Effect.withSpan("firegrid.runtime_control_plane.context.require_local", {
+        kind: "consumer",
+        attributes: {
+          "firegrid.context.id": contextId,
+        },
+      }),
+    ),
+})
+
 const runtimeRunAppendAndGetFromTable = (
   table: RuntimeControlPlaneTable["Type"],
 ): RuntimeRunAppendAndGetService => ({
@@ -427,6 +452,10 @@ export class RuntimeContextInsert extends Context.Tag(
 export class RuntimeContextRead extends Context.Tag(
   "@firegrid/runtime/RuntimeContextRead",
 )<RuntimeContextRead, RuntimeContextReadService>() {}
+
+export class RuntimeLocalContextResolver extends Context.Tag(
+  "@firegrid/runtime/RuntimeLocalContextResolver",
+)<RuntimeLocalContextResolver, RuntimeLocalContextResolverService>() {}
 
 export class RuntimeRunAppendAndGet extends Context.Tag(
   "@firegrid/runtime/RuntimeRunAppendAndGet",
@@ -462,6 +491,14 @@ export const RuntimeControlPlaneRecorderLive = Layer.mergeAll(
   Layer.effect(
     RuntimeContextRead,
     Effect.map(RuntimeControlPlaneTable, contextReadFromTable),
+  ),
+  Layer.effect(
+    RuntimeLocalContextResolver,
+    Effect.gen(function* () {
+      const table = yield* RuntimeControlPlaneTable
+      const session = yield* CurrentHostSession
+      return localContextResolverFromTable(table, session)
+    }),
   ),
   Layer.effect(
     RuntimeRunAppendAndGet,

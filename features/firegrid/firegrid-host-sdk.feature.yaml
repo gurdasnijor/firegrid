@@ -59,6 +59,7 @@ components:
       1: The Host SDK lets apps explicitly install the host-owned route-scoped MCP server through FiregridMcpServerLayer when needed.
       2: The default Firegrid MCP server declaration can be injected into launched agent configs by the shared launch substrate when the selected protocol supports MCP setup.
       3: The SDK does not expose Durable Streams tokens, provider session handles, sandbox handles, host credentials, or runtime context authority as agent-visible tool arguments.
+      4: "Disposition (a): the host-owned MCP HTTP server is a narrow binding-edge projection-server exception; host-sdk may own the loopback Node HTTP listener and MCP route projection, but it must consume runtime-provided capabilities for local context resolution and execution instead of owning durable table, workflow-engine, or substrate authority."
 
   TOOL_EXECUTOR_SEAM:
     requirements:
