@@ -14,7 +14,7 @@ import {
   type FiregridHost,
 } from "@firegrid/host-sdk"
 import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
-import { Deferred, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Effect, Layer, Schema, Stream } from "effect"
 import {
   DurableTable,
   type DurableTableError,
@@ -24,10 +24,13 @@ import type { TinyFiregridHostEnv } from "../../types.ts"
 
 export const coordinationTopologyItemCount = 3
 export const coordinationTopologyWorkerCount = 2
-const coordinationTopologyItemEventsTarget = "coordination.item_events"
-const coordinationTopologyWorkerActionTarget = "coordination.worker_action"
-const coordinationTopologyDispatchTarget = "coordination.dispatch"
-const coordinationTopologyReportsTarget = "coordination.reports"
+
+export const coordinationTopologyItemEventsTarget = "coordination.item_events"
+export const coordinationTopologyWorkerActionTarget = "coordination.worker_action"
+export const coordinationTopologyDispatchTarget = "coordination.dispatch"
+export const coordinationTopologyClaimsTarget = "coordination.claims"
+export const coordinationTopologyReportsTarget = "coordination.reports"
+export const coordinationTopologyScoresTarget = "coordination.scores"
 
 export type CoordinationTopologyArm =
   | "monolithic"
@@ -43,11 +46,9 @@ const CoordinationItemEventRowSchema = Schema.Struct({
   producedBy: Schema.String,
   createdAt: Schema.String,
 })
-export type CoordinationItemEventRow = Schema.Schema.Type<
-  typeof CoordinationItemEventRowSchema
->
 
 const CoordinationWorkerActionRequestSchema = Schema.Struct({
+  runId: Schema.String,
   arm: Schema.Literal("monolithic", "orchestrated", "choreographed"),
   itemId: Schema.String,
   inputValue: Schema.Number.pipe(Schema.int()),
@@ -69,9 +70,17 @@ const CoordinationDispatchRowSchema = Schema.Struct({
   workerId: Schema.String,
   createdAt: Schema.String,
 })
-export type CoordinationDispatchRow = Schema.Schema.Type<
-  typeof CoordinationDispatchRowSchema
->
+
+const CoordinationClaimRowSchema = Schema.Struct({
+  claimId: Schema.String.pipe(DurableTable.primaryKey),
+  runId: Schema.String,
+  arm: Schema.Literal("choreographed"),
+  itemId: Schema.String,
+  workerId: Schema.String,
+  value: Schema.Number.pipe(Schema.int()),
+  decision: Schema.Literal("claimed", "observed"),
+  createdAt: Schema.String,
+})
 
 const CoordinationReportRowSchema = Schema.Struct({
   reportId: Schema.String.pipe(DurableTable.primaryKey),
@@ -83,9 +92,6 @@ const CoordinationReportRowSchema = Schema.Struct({
   path: Schema.Array(Schema.String),
   createdAt: Schema.String,
 })
-export type CoordinationReportRow = Schema.Schema.Type<
-  typeof CoordinationReportRowSchema
->
 
 const CoordinationScoreRowSchema = Schema.Struct({
   scoreId: Schema.String.pipe(DurableTable.primaryKey),
@@ -94,6 +100,7 @@ const CoordinationScoreRowSchema = Schema.Struct({
   itemCount: Schema.Number.pipe(Schema.int()),
   workerCount: Schema.Number.pipe(Schema.int()),
   dispatchCount: Schema.Number.pipe(Schema.int()),
+  claimCount: Schema.Number.pipe(Schema.int()),
   reportCount: Schema.Number.pipe(Schema.int()),
   totalResultValue: Schema.Number.pipe(Schema.int()),
   topology: Schema.String,
@@ -105,6 +112,7 @@ export type CoordinationScoreRow = Schema.Schema.Type<
 class CoordinationTopologyBenchTable extends DurableTable(
   "coordinationTopologyBench",
   {
+    claims: CoordinationClaimRowSchema,
     dispatches: CoordinationDispatchRowSchema,
     itemEvents: CoordinationItemEventRowSchema,
     reports: CoordinationReportRowSchema,
@@ -119,30 +127,10 @@ interface CoordinationTopologyChannels {
     typeof CoordinationWorkerActionResponseSchema
   >
   readonly dispatches: BidirectionalChannel<typeof CoordinationDispatchRowSchema>
+  readonly claims: BidirectionalChannel<typeof CoordinationClaimRowSchema>
   readonly reports: BidirectionalChannel<typeof CoordinationReportRowSchema>
+  readonly scores: BidirectionalChannel<typeof CoordinationScoreRowSchema>
 }
-
-export interface CoordinationTopologyApi {
-  readonly runId: string
-  readonly channels: CoordinationTopologyChannels
-  readonly writeScore: (
-    row: CoordinationScoreRow,
-  ) => Effect.Effect<void, unknown, never>
-  readonly getScore: (
-    scoreId: string,
-  ) => Effect.Effect<CoordinationScoreRow, unknown, never>
-}
-
-const apiDeferred = Effect.runSync(
-  Deferred.make<CoordinationTopologyApi>(),
-)
-
-export const awaitCoordinationTopologyApi = Deferred.await(apiDeferred)
-
-const publishCoordinationTopologyApi = (
-  api: CoordinationTopologyApi,
-): Effect.Effect<void> =>
-  Deferred.complete(apiDeferred, Effect.succeed(api)).pipe(Effect.asVoid)
 
 const benchLayerOptions = (options: {
   readonly baseUrl: string
@@ -165,15 +153,6 @@ const coordinationEnvPolicy = (
   RuntimeEnvResolverPolicy.withPolicy({
     authorizedBindings: [],
     lookupEnv: name => env[name],
-  })
-
-const firstScore = (
-  value: Option.Option<CoordinationScoreRow>,
-  scoreId: string,
-) =>
-  Option.match(value, {
-    onNone: () => Effect.fail(new Error(`score row not found: ${scoreId}`)),
-    onSome: row => Effect.succeed(row),
   })
 
 const makeChannels = (
@@ -203,6 +182,13 @@ const makeChannels = (
     stream: table.dispatches.rows(),
     append: row => table.dispatches.insertOrGet(row).pipe(Effect.asVoid),
   })
+  const claims = makeBidirectionalChannel({
+    target: coordinationTopologyClaimsTarget,
+    schema: CoordinationClaimRowSchema,
+    sourceClasses: ["static-source", "predicate-eligible"],
+    stream: table.claims.rows(),
+    append: row => table.claims.insertOrGet(row).pipe(Effect.asVoid),
+  })
   const reports = makeBidirectionalChannel({
     target: coordinationTopologyReportsTarget,
     schema: CoordinationReportRowSchema,
@@ -210,7 +196,14 @@ const makeChannels = (
     stream: table.reports.rows(),
     append: row => table.reports.insertOrGet(row).pipe(Effect.asVoid),
   })
-  return { itemEvents, workerAction, dispatches, reports }
+  const scores = makeBidirectionalChannel({
+    target: coordinationTopologyScoresTarget,
+    schema: CoordinationScoreRowSchema,
+    sourceClasses: ["static-source", "predicate-eligible"],
+    stream: table.scores.rows(),
+    append: row => table.scores.insertOrGet(row).pipe(Effect.asVoid),
+  })
+  return { itemEvents, workerAction, dispatches, claims, reports, scores }
 }
 
 const channelRegistrations = (
@@ -219,7 +212,9 @@ const channelRegistrations = (
   channels.itemEvents,
   channels.workerAction,
   channels.dispatches,
+  channels.claims,
   channels.reports,
+  channels.scores,
 ]
 
 export const coordinationTopologyHost = (
@@ -247,20 +242,17 @@ export const coordinationTopologyHost = (
           if (stream === coordinationTopologyDispatchTarget) {
             return table.dispatches.rows()
           }
+          if (stream === coordinationTopologyClaimsTarget) {
+            return table.claims.rows()
+          }
           if (stream === coordinationTopologyReportsTarget) {
             return table.reports.rows()
           }
+          if (stream === coordinationTopologyScoresTarget) {
+            return table.scores.rows()
+          }
           return Stream.empty
         },
-      })
-      yield* publishCoordinationTopologyApi({
-        runId: env.runId,
-        channels,
-        writeScore: row => table.scores.insertOrGet(row).pipe(Effect.asVoid),
-        getScore: scoreId =>
-          table.scores.get(scoreId).pipe(
-            Effect.flatMap(score => firstScore(score, scoreId)),
-          ),
       })
 
       return FiregridRuntimeHostLive(
