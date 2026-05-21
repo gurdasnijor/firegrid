@@ -37,6 +37,12 @@ export {
   type TypedStreamBinding,
 } from "./channel.ts"
 export {
+  SessionPermissionAutoApproveLayer,
+  SessionPermissionChannelLive,
+  SessionPermissionDecisionMissing,
+  makeSessionPermissionChannel,
+} from "./channels/session-permission/index.ts"
+export {
   SessionSelfChannelsLive,
   SessionSelfCheckpointChannel,
   SessionSelfCheckpointChannelTarget,

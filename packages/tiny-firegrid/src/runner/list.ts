@@ -35,35 +35,63 @@ const isHidden = (folder: string): boolean =>
   hiddenFolders.has(folder) || folder.startsWith("_") || folder.startsWith(".")
 
 export const listSimulations = Effect.gen(function*() {
-  const entries = yield* Effect.promise(() =>
-    readdir(simulationsUrl, { withFileTypes: true }),
-  )
-  const directories = entries
-    .filter(entry => entry.isDirectory() && !isHidden(entry.name))
-    .map(entry => entry.name)
-    .sort()
+  const candidates = yield* discoverSimulationCandidates(simulationsUrl)
 
-  return yield* Effect.forEach(directories, directory =>
+  return yield* Effect.forEach(candidates, candidate =>
     Effect.gen(function*() {
-      const moduleUrl = new URL(`${directory}/index.ts`, simulationsUrl)
       const module = yield* Effect.promise(
-        () => import(moduleUrl.href) as Promise<{ readonly default?: unknown }>,
+        () => import(candidate.moduleUrl.href) as Promise<{ readonly default?: unknown }>,
       )
       if (!isSimulation(module.default)) {
         return yield* Effect.fail(new SimulationFolderInvalid({
-          folder: directory,
+          folder: candidate.folder,
           reason: "missing default export of simulation shape",
         }))
       }
-      if (module.default.id !== directory) {
+      if (module.default.id !== candidate.directory) {
         return yield* Effect.fail(new SimulationFolderInvalid({
-          folder: directory,
+          folder: candidate.folder,
           reason: `id ${module.default.id} does not match folder`,
         }))
       }
       return module.default
     }))
 })
+
+interface SimulationCandidate {
+  readonly directory: string
+  readonly folder: string
+  readonly moduleUrl: URL
+}
+
+const discoverSimulationCandidates = (
+  directoryUrl: URL,
+  parts: ReadonlyArray<string> = [],
+): Effect.Effect<ReadonlyArray<SimulationCandidate>> =>
+  Effect.gen(function*() {
+    const entries = yield* Effect.promise(() =>
+      readdir(directoryUrl, { withFileTypes: true }),
+    )
+    const visibleDirectories = entries
+      .filter(entry => entry.isDirectory() && !isHidden(entry.name))
+      .map(entry => entry.name)
+      .sort()
+    const hasIndex = entries.some(entry => entry.isFile() && entry.name === "index.ts")
+    const current = hasIndex && parts.length > 0
+      ? [{
+        directory: parts[parts.length - 1] ?? "",
+        folder: parts.join("/"),
+        moduleUrl: new URL("index.ts", directoryUrl),
+      }]
+      : []
+    const nested = yield* Effect.forEach(visibleDirectories, directory =>
+      discoverSimulationCandidates(
+        new URL(`${directory}/`, directoryUrl),
+        [...parts, directory],
+      ), { concurrency: "unbounded" })
+
+    return current.concat(nested.flat())
+  })
 
 // Resolve a simulation by id; on miss, fail with the available ids so the
 // CLI error message lists them. There is no "default simulation" — running

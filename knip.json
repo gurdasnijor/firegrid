@@ -50,7 +50,8 @@
     "packages/tiny-firegrid": {
       "entry": [
         "src/index.ts",
-        "src/simulations/*/index.ts"
+        "src/simulations/*/index.ts",
+        "src/simulations/*/*/index.ts"
       ],
       "project": [
         "src/**/*.ts"
