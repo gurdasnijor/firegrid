@@ -1,680 +1,468 @@
 # SDD: Target Tiny-Firegrid Architecture Reference
 
 Status: draft architecture
-Bead: `tf-3w1e`
+Bead: `tf-3w1e`, reconciled by `tf-qnq9`
 Created: 2026-05-21
+Last amended: 2026-05-21
 Owner: Firegrid Architecture
 Extends:
 - `SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md`
 - `SDD_FIREGRID_DURABLE_CHANNELS_SYNC_ASYNC.md`
-- `docs/cannon/architecture/transactional-cutover-rule.md`
+- `SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md`
 - `features/firegrid/firegrid-workflow-driven-runtime.feature.yaml`
 
 ## Problem
 
-The production code is carrying several historical architectures at once. That
-makes every brownfield improvement do two jobs:
+The current runtime architecture repeatedly grows bridging machinery around
+workflow input:
 
-1. discover the target architecture;
-2. migrate old runtime, host-sdk, protocol, table, and route machinery toward
-   that target without breaking production.
+```text
+channel or client input
+  -> public or semi-public intent row
+  -> dispatcher/reconciler
+  -> appendRuntimeInputDeferred
+  -> numbered workflow deferred
+  -> workflow awaits input/N
+```
 
-That coupling is now slowing the architecture work. The current host-control
-surface shows the failure mode: a simple lifecycle state machine over a host or
-session resource has grown into separate request-row families, claim rows,
-completion rows, route bodies, dispatchers, and helper APIs. Each new operation
-risks adding another table, another daemon arm, and another public-ish durable
-row shape.
+That shape preserves the channel API, but it still treats workflow input as a
+mailbox built out of deferred names. It creates extra concepts that are not the
+application state:
 
-Firegrid needs an executable reference implementation that answers the target
-composition questions in clean room:
+- request rows;
+- claim rows;
+- completion rows;
+- input-intent rows;
+- numbered deferred rows as mail slots;
+- dispatcher fibers;
+- reconciliation passes;
+- helper APIs that expose engine/deferred mechanics.
 
-- how production client/edge APIs dispatch through a channel router;
-- how channel route bodies lower to workflows without exposing workflow
-  internals;
-- how a host/kernel workflow launches and owns child session workflows;
-- how child workflows receive prompt/cancel/close/resume inputs;
-- how resource state is represented without one table per CRUD operation;
-- how edge completion receipts are derived from route metadata and resource
-  state.
+The big architectural question for this reference is intentionally narrow:
 
-This reference belongs in `packages/tiny-firegrid/`, because the transactional
-cutover rule explicitly allows partial evidence and prototype shapes there. It
-must not become a parallel Firegrid API.
+> Can channels write and read workflow-owned `DurableTable` state directly,
+> while an individual workflow runs as a state machine over that same table?
+
+The target tiny-firegrid reference exists to answer that question in a clean
+room before production migration work keeps fighting historical layers.
 
 ## Decision
 
-Build a **target tiny-firegrid architecture reference**: an API-compatible,
-clean-room implementation of the desired Firegrid host/runtime shape.
-
-The reference uses production contracts at every external seam:
-
-- production protocol schemas, channel targets, route descriptor types,
-  channel read payloads, and completion metadata;
-- production client/session APIs for drivers;
-- production edge wire shapes for ACP/MCP-style dispatch where exercised;
-- production `FiregridHost`-shaped host output where the tiny runner requires
-  a host layer.
-
-The reference replaces only the implementation behind those contracts:
+Build a compact executable reference under `packages/tiny-firegrid` where:
 
 ```text
-production client / edge surface
-  -> production protocol route + channel contract
-  -> tiny host-plane channel router
-  -> tiny channel binding / kernel authority
-  -> tiny host workflow consuming channel inputs
-  -> tiny workflow-owned durable resource state machine
-  -> tiny child workflow instances
-  -> production-shaped channel reads, receipts, and trace evidence
+production-compatible channel contract
+  -> channel router
+  -> channel binding
+  -> workflow-owned DurableTable write/read
+  -> workflow body reads table state and applies transitions
+  -> channel reads expose production-compatible observations
 ```
 
-The goal is not to rewrite Firegrid in tiny-firegrid. The goal is to create a
-small, readable, executable architecture specimen that production migrations can
-compare against.
+The reference must not introduce a second workflow command API, a workflow
+inbox service, a kernel authority layer, Host-to-child workflow orchestration,
+or a router inside the workflow engine.
+
+The seam is the workflow-owned table:
+
+```text
+channels are the public semantic surface
+DurableTable is the durable state surface
+workflow is the state machine over that table
+engine wires table + workflow lifecycle
+```
+
+`appendRuntimeInputDeferred` is treated as the production bridge this reference
+is trying to make unnecessary for ordinary semantic workflow input.
 
 ## Non-Goals
 
-This SDD does not:
+This reference does not:
 
 - replace production `packages/runtime` or `packages/host-sdk`;
-- fork production public APIs into `toyCreateSession`, `toyPrompt`, or similar;
-- validate provider integrations, real ACP agents, auth, or sandbox policy;
-- introduce a second public channel/router abstraction;
-- require production packages to cut over before the reference proves the
-  shape.
+- define simulation-only public APIs;
+- expose workflow handles, engine handles, stream URLs, or table handles to
+  callers;
+- model provider execution, sandbox policy, remote hosts, auth, or failover;
+- add an authority model;
+- add Host-to-child workflow orchestration;
+- add a workflow-engine semantic router;
+- preserve request/claim/completion/deferred row families as the default
+  implementation pattern.
 
-## Clean-Room Boundary
+Host workflow ownership, child session workflow launch, authority, placement,
+failover, and cross-host routing are later questions. This SDD is Phase 0A:
+one workflow, one workflow-owned table seam.
 
-The reference may import production **contracts**:
+## Architecture Rule
 
-- `@firegrid/protocol` schemas, route targets, channel descriptors, and receipt
-  shapes;
-- public type-only host/client surface types needed by the tiny runner;
-- generic durable substrate libraries such as `effect-durable-operators` and
-  `@effect/workflow`;
-- Effect and test/runner utilities.
+The reference has one rule:
 
-The reference must not import production **implementation modules** as the
-behavior under test:
+> A workflow declares and owns its durable table. Channels bind to that table.
+> The workflow reads that table and transitions table state.
 
-- no production host-control route bodies;
-- no production control-request dispatcher;
-- no production runtime-context workflow implementation;
-- no production host-sdk command helpers;
-- no production control-plane DurableTable families as the state model;
-- no production kernel barrels as a dependency shortcut.
+This replaces both outer and inner mailbox shapes:
 
-If the reference needs a production type for compatibility, prefer a narrow
-type import or a small local adapter that proves the same public shape. If it
-needs production behavior, the reference is no longer clean-room enough to
-answer the target architecture question.
+```text
+not: channel -> input intent -> dispatcher -> deferredDone -> await input/N
+yes: channel -> table write -> workflow reads table rows/state
+```
+
+The channel binding may use `DurableTable.insertOrGet`, `upsert`, `get`,
+`query`, or `rows`. It must not complete workflow deferreds, assign deferred
+names, call workflow methods as a public command surface, or expose low-level
+table/engine handles to the caller.
 
 ## Minimum Primitives
 
-The reference should be built from the few primitives Firegrid already agreed
-on. Do not add new conceptual layers unless the implementation proves they are
-unavoidable.
-
-### Durable Resource
-
-A typed durable record with identity, status, revision, and domain fields. This
-is the state. Examples: host, session, run, channel mailbox. A resource should
-not split into separate request, claim, and completion table families just
-because it has multiple operations.
-
-### Workflow
-
-The state machine that owns transitions for its durable resource. It receives
-operations through injected channel services, reads the current resource state,
-applies transitions, and may start child workflows or activities. Parent
-workflows may launch or coordinate child workflows, but they do not mutate the
-child workflow's resource rows directly.
-
 ### Channel
 
-The semantic API boundary. Callers and edge adapters interact through channel
-verbs:
+A production-compatible semantic target plus schema. It is the API callers and
+edge adapters use.
 
-- `call` for durable request/response handshakes;
-- `send` for durable append or fire-and-continue behavior;
-- `wait_for` for semantic reads over ingress channels.
-
-Channels hide DurableTable handles, output tables, workflow handles,
-deferred rows, and low-level stream coordinates. A channel route may lower to
-any runtime-owned mechanism named by the host-plane router SDD: a workflow
-mailbox/signal, a durable row bridge, a future engine primitive, or a direct
-in-process service in a single-host test. That lowering is private to the
-runtime implementation.
-
-Channel cardinality should follow durable capability boundaries, not CRUD
-method count. The current production bridge has several operation-shaped
-host-control channels because it is migrating old request-row surfaces. The
-target reference should not preserve that as an axiom. Prefer a small
-resource/control capability with a typed command union when operations share
-the same owner, durability, and completion semantics. Split channels only when
-the direction, visibility, owner, or completion contract is actually different.
-
-For session I/O, prompt input and event output are one logical capability from
-the product point of view, but they are two channel registrations in the
-current channel model because they have opposite direction and different
-schemas. The target reference should name that as a single `session.exchange`
-or `session.io` capability in the architecture, with an egress prompt side and
-an ingress event side. Do not introduce separate architectural concepts just
-because the router needs separate typed bindings for asymmetric directions.
-
-### Router
-
-The edge dispatch boundary over channels. It decodes, validates, authorizes,
-and traces `target + verb + payload`, then invokes the matching typed channel
-binding. It does not know about workflow names, workflow handles, lifecycle,
-claims, retries, completion, child workflow ownership, or durable resource
-state.
-
-The target shape is:
+Examples for the reference:
 
 ```text
-edge/client
-  -> router
-  -> channel binding
-  -> host workflow-owned transition
-  -> channel call/read observes semantic state
+session.prompt   send prompt input
+session.events   wait/read session-visible output
+session.snapshot call point-in-time session state
 ```
 
-The anti-shape is:
+Prompt and events may remain separate channel registrations because they have
+different direction and schema. Architecturally they are one session I/O
+capability over the same workflow-owned table.
+
+### Channel Router
+
+The edge dispatch surface. It decodes `target + verb + payload`, validates the
+route, emits dispatch spans, and invokes the typed channel binding.
+
+The router does not know workflow names, execution ids, deferred names, table
+collection names, stream URLs, or resource transition logic.
+
+### Channel Binding
+
+The implementation of a channel. In this reference, bindings are intentionally
+thin:
 
 ```text
-edge/client
-  -> public request table
-  -> claim table
-  -> dispatcher
-  -> completion table
-  -> output/state helper
-  -> semantic API
+send/call binding -> write or read SessionTable
+wait_for binding  -> stream/query SessionTable
 ```
 
-## State Model
+Bindings are allowed to know the workflow-owned table service because they are
+below the channel boundary. Callers are not.
 
-The reference treats workflows as state machines over durable resources.
+### Workflow-Owned DurableTable
 
-For host-like and session-like resources, the durable model is:
+The table is the workflow's durable state and input surface. The reference uses
+one small table for the session vertical slice.
+
+The table should include:
+
+- a session/resource row;
+- append-only input rows;
+- append-only event/output rows if the reference needs observable output.
+
+The table should not include:
+
+- request rows per operation;
+- claim rows for ordinary lifecycle transitions;
+- completion rows for ordinary route receipts;
+- deferred rows as numbered input mail slots.
+
+### Workflow Body
+
+The workflow is the state machine over the table. It reads unprocessed inputs,
+applies state transitions, records output/event rows, and advances its durable
+cursor.
+
+The cursor lives in table state, not in memory, not in a deferred name, and not
+in a dispatcher-local registry.
+
+### Engine Wiring
+
+The engine's role is lifecycle and wiring:
+
+- acquire the workflow's `DurableTable` layer for the execution stream;
+- provide that table to the workflow body;
+- start/resume/replay workflow execution;
+- optionally resume when table writes occur, if the implementation needs an
+  explicit wakeup during the reference.
+
+The engine does not route semantic channel targets.
+
+## Complexity Ground Rules
+
+This reference is allowed to be small. Its job is to prove the table seam, not
+to grow a production-ready runtime around it.
+
+The implementation must stop and re-evaluate the SDD before continuing if it
+needs any of these above the workflow-owned table seam:
+
+- a new public abstraction or API surface;
+- a request, claim, completion, input-intent, or deferred bridge;
+- a registry/catalog broader than the channel router;
+- a side-effect adapter subsystem;
+- host authority, placement, failover, or cross-host routing;
+- parent/child workflow orchestration;
+- generic repository/helper layers over `DurableTable`;
+- more than the five reference files without a clear reason tied to the seam
+  proof.
+
+The expected implementation size should stay boring. If the simulation starts
+needing hundreds of lines outside `session.ts`, `binding.ts`, and `layer.ts`,
+that is evidence the reference is drifting away from the intended claim:
 
 ```text
-HostResource {
-  hostId
-  status: "created" | "running" | "closing" | "closed" | "failed"
-  activeSessionIds
-  revision
-  updatedAt
-}
-
-SessionResource {
-  sessionId
-  hostId
-  status: "empty" | "created" | "starting" | "running" | "cancelling" |
-          "closed" | "exited" | "failed"
-  currentRunId?
-  revision
-  updatedAt
-}
-
+channel -> table write/read -> workflow reads table state
 ```
 
-Each workflow owns transitions of its own resource's `status` and `revision`.
-The host workflow updates host rows. The child session workflow updates session
-rows. Simulation evidence is captured by OTel traces emitted by the
-tiny-firegrid runner, not by durable scenario/e2e assertion rows.
+In that case the next step is not to keep coding. The next step is to name the
+missing primitive or invalid assumption in the SDD.
 
-This is the core rule:
+## Target State Model
 
-> A new operation should normally be a transition on an existing resource
-> record, not a new request table plus a new claim table plus a new completion
-> table.
+The initial reference should prove a single session workflow. Host and
+parent/child workflow composition can be added after the table seam is proven,
+using the same pattern with a host-owned table.
 
-Acceptable durable shapes:
-
-- one resource table per durable aggregate such as host, session, run, or
-  channel mailbox;
-- channel-visible read state only through production-shaped channel payloads;
-- workflow-engine state for idempotent workflow execution, activities,
-  private deferred completions, and durable sleeps;
-- explicit queue rows only when the operation is truly a queue with claim/ack
-  or work-stealing semantics.
-
-Rejected reference shapes:
-
-- `contextRequests`, `startRequests`, `lifecycleRequests`,
-  `controlRequestClaims`, and `controlRequestCompletions` as the default way to
-  express lifecycle transitions;
-- one DurableTable family per route verb;
-- public protocol row families for kernel-private state;
-- route bodies that implement ownership by scanning tables or writing terminal
-  completion rows directly.
-
-## Concrete Mechanism Sketch
-
-The channel abstraction is above resource storage. The reference should not put
-invented resource accessors in route code, and it should not make route bodies
-execute workflows directly. The concrete mechanism has three layers:
-
-1. edge/router code dispatches to typed channel bindings;
-2. the host workflow is started by host topology and consumes typed channel
-   services through Effect `Context`;
-3. only workflow/resource modules touch `DurableTable` operations.
-
-Illustrative resource modules, private to `runtime/resources/`:
+The schema below is the reference's concrete instantiation. The architectural
+claim is the seam shape, not this exact column list or collection count.
 
 ```ts
-// runtime/resources/host-resource.ts
-import { DurableTable } from "effect-durable-operators"
-import { Schema } from "effect"
-
-export class TinyHostResourceTable extends DurableTable("tinyReference.host", {
-  hosts: Schema.Struct({
-    hostId: Schema.String.pipe(DurableTable.primaryKey),
-    status: Schema.Literal("created", "running", "closing", "closed", "failed"),
-    activeSessionIds: Schema.Array(Schema.String),
-    revision: Schema.Number,
-    updatedAt: Schema.Number,
-  }),
-}) {}
-
-// runtime/resources/session-resource.ts
-export class TinySessionResourceTable extends DurableTable("tinyReference.session", {
+class SessionTable extends DurableTable("tinyReference.session", {
   sessions: Schema.Struct({
     sessionId: Schema.String.pipe(DurableTable.primaryKey),
-    hostId: Schema.String,
     status: Schema.Literal(
       "created",
-      "starting",
       "running",
       "cancelling",
       "closed",
-      "exited",
       "failed",
     ),
-    currentRunId: Schema.optional(Schema.String),
+    nextInputSequence: Schema.Number,
     revision: Schema.Number,
     updatedAt: Schema.Number,
+  }),
+
+  inputs: Schema.Struct({
+    inputKey: Schema.String.pipe(DurableTable.primaryKey),
+    sessionId: Schema.String,
+    sequence: Schema.Number,
+    kind: Schema.Literal("prompt", "cancel", "close"),
+    payload: Schema.Unknown,
+    createdAt: Schema.Number,
+  }),
+
+  events: Schema.Struct({
+    eventKey: Schema.String.pipe(DurableTable.primaryKey),
+    sessionId: Schema.String,
+    sequence: Schema.Number,
+    kind: Schema.Literal("accepted", "text", "closed", "failed"),
+    payload: Schema.Unknown,
+    createdAt: Schema.Number,
   }),
 }) {}
 ```
 
-Illustrative Effect-native composition:
+For the tiny reference, the driver supplies `sequence` per session. The
+reference does not allocate sequences server-side; that would reintroduce
+coordination the table seam is trying to eliminate. The important property is
+that the workflow's durable cursor is `sessions.nextInputSequence`.
+
+The workflow consumes input by table state:
 
 ```ts
-// protocol/host-control.ts
-export const HostControlCommand = Schema.Union(
-  Schema.TaggedStruct("CreateSession", { sessionId: Schema.String }),
-  Schema.TaggedStruct("StartSession", { sessionId: Schema.String }),
-  Schema.TaggedStruct("CancelSession", { sessionId: Schema.String }),
-  Schema.TaggedStruct("CloseSession", { sessionId: Schema.String }),
-)
-
-export const HostControlRequest = Schema.Struct({
-  hostId: Schema.String,
-  requestId: Schema.String,
-  command: HostControlCommand,
-})
-
-export class HostControlChannel extends Context.Tag(
-  "firegrid/protocol/channels/host.control",
-)<HostControlChannel, CallableChannel<typeof HostControlRequest, typeof HostControlReceipt>>() {}
-
-// runtime/channels/host-control-live.ts
-export const TinyHostControlChannelLive = Layer.effect(
-  HostControlChannel,
-  Effect.gen(function*() {
-    const kernel = yield* HostKernelControlPlane
-
-    return makeCallableChannel({
-      target: HostControlChannelTarget,
-      requestSchema: HostControlRequest,
-      responseSchema: HostControlReceipt,
-      call: request => kernel.submit(request),
-    })
-  }),
-)
-
-// runtime/channels/router-live.ts
-export const TinyHostPlaneChannelRouterLive = Layer.effect(
-  HostPlaneChannelRouter,
-  Effect.gen(function*() {
-    const hostControl = yield* HostControlChannel
-    const sessionExchange = yield* SessionExchangeChannel
-
-    return makeRuntimeChannelRouter([
-      runtimeRouteFromChannel(hostControl),
-      runtimeRouteFromFactoryChannel({
-        target: SessionPromptChannelTarget,
-        field: "sessionId",
-        inputSchema: SessionPromptRouteInputSchema,
-        channel: sessionExchange.promptForSession,
-        payload: input => input.prompt,
-      }),
-      runtimeRouteFromFactoryChannel({
-        target: SessionEventsChannelTarget,
-        field: "sessionId",
-        inputSchema: SessionEventsRouteInputSchema,
-        channel: sessionExchange.eventsForSession,
-        payload: input => input.filter,
-      }),
-    ])
-  }),
-)
+const nextInputForSession = (
+  table: SessionTable["Type"],
+  session: SessionRow,
+) =>
+  table.inputs.query(coll =>
+    coll.toArray
+      .filter(row =>
+        row.sessionId === session.sessionId &&
+        row.sequence === session.nextInputSequence)
+      .sort((a, b) => a.sequence - b.sequence)[0])
 ```
 
-This intentionally differs from the current production bridge, where
-`RuntimeHostControlChannelsLive` wires separate operation-shaped channels such
-as `HostContextsCreateChannel`, `HostSessionsStartChannel`, `HostPromptChannel`,
-and `SessionPromptChannel`. Those are migration-era public contracts over old
-request-row families. The target reference should prove the cleaner shape:
-one host-control capability for host/session lifecycle commands that share the
-same host workflow owner, plus separate channels for truly different
-capabilities. Session prompt input and session event reads are better modeled
-as two directional bindings of one session exchange capability, not as two
-unrelated concepts.
-
-The router Layer consumes channel services. It does not import `HostWorkflow`,
-call `HostWorkflow.execute`, or know how the channel binding is implemented.
-
-Illustrative workflow ownership, with only concrete channel/storage operations:
+After processing an input, the workflow updates the same table:
 
 ```ts
-// runtime/workflows/host-workflow.ts
-export const HostWorkflowLayer = HostWorkflow.toLayer(() =>
-  Effect.gen(function*() {
-    const commandChannel = yield* HostKernelCommandChannel
-    const hostTable = yield* TinyHostResourceTable
+yield* table.sessions.upsert({
+  ...nextSession,
+  nextInputSequence: input.sequence + 1,
+  revision: session.revision + 1,
+  updatedAt: now,
+})
+```
 
-    const command = yield* commandChannel.binding.stream.pipe(
-      Stream.runHead,
-      Effect.flatMap(Option.match({
-        onNone: () => Effect.never,
-        onSome: command => Effect.succeed(command),
-      })),
-    )
-    const host = yield* hostTable.hosts.get(command.hostId)
+This is the core proof: replay reconstructs progress from table state.
 
-    yield* hostTable.hosts.upsert({
-      ...Option.getOrThrow(host),
-      status: command.nextHostStatus,
-      revision: Option.getOrThrow(host).revision + 1,
-      updatedAt: Date.now(),
-    })
+## Channel Binding Sketch
 
-    if (command._tag === "CreateSession") {
-      yield* SessionWorkflow.execute({
-        sessionId: command.sessionId,
-        hostId: command.hostId,
+The prompt route writes the workflow-owned table. It does not call the
+workflow, complete a deferred, or write an intent row.
+
+```ts
+const sessionPromptChannel = makeEgressChannel({
+  target: SessionPromptTarget,
+  schema: SessionPromptSchema,
+  append: input =>
+    Effect.gen(function*() {
+      const table = yield* SessionTable
+
+      yield* table.inputs.insertOrGet({
+        inputKey: `${input.sessionId}/${input.sequence}`,
+        sessionId: input.sessionId,
+        sequence: input.sequence,
+        kind: "prompt",
+        payload: input.prompt,
+        createdAt: input.createdAt,
       })
+    }),
+})
+```
+
+The event route reads the same table:
+
+```ts
+const sessionEventsChannelFor = (sessionId: string) =>
+  makeIngressChannel({
+    target: SessionEventsTarget,
+    schema: SessionEventSchema,
+    stream: Stream.unwrap(
+      Effect.map(SessionTable, table =>
+        table.events.rows().pipe(
+          Stream.filter(event => event.sessionId === sessionId),
+        ))
+    ),
+  })
+```
+
+If the current channel factory requires one static target per registration,
+the route descriptor can adapt the `sessionId` input into a table filter. That
+is router/channel plumbing, not workflow-engine routing. The multi-session
+ingress factoring question is separate from the table-seam claim: the
+reference should pick one route shape, record any production router gap as a
+finding, and keep moving.
+
+## Workflow Sketch
+
+The workflow body owns transition logic and durable cursor advancement.
+
+```ts
+const SessionWorkflowLive = SessionWorkflow.toLayer(({ sessionId }) =>
+  Effect.gen(function*() {
+    const table = yield* SessionTable
+
+    while (true) {
+      const session = yield* readSessionOrCreate(table, sessionId)
+      const input = yield* waitForNextInput(table, session)
+
+      const transitioned = transitionSession(session, input)
+
+      yield* table.sessions.upsert(transitioned.session)
+      yield* table.events.insertOrGet(transitioned.event)
     }
   }))
 ```
 
-`HostKernelCommandChannel` is not a public Firegrid concept. It is the private
-workflow-input binding behind production channel contracts. In the reference it
-may be a `makeBidirectionalChannel`/`makeIngressChannel`-shaped service backed
-by a tiny DurableTable mailbox, or a direct in-process service for single-host
-tests. That choice is below the router. The public facts remain: edges see a
-router, the router invokes `binding.call` / `binding.append` /
-`binding.stream`, and workflows own resource transitions.
-
-Reads follow the same rule. A session snapshot or stream channel binding may
-read `TinySessionResourceTable` internally and encode the result as a
-production-shaped channel payload. The router exposes the channel target and
-decoded payload, not a table handle or workflow handle.
-
-## Channels, Router, And Workflows
-
-The channel router is the edge/system-call boundary. It decodes wire payloads,
-checks target/verb validity, emits dispatch spans, and calls typed channel
-bindings. The router is composed with channel services through Effect `Layer`
-and `Context` in the same style as the production `HostPlaneChannelRouter`
-service.
-
-Channel bindings are the seam between edge dispatch and kernel/workflow
-ownership. They may lower to a workflow inbox/signal, a durable row bridge, a
-future engine primitive, or a direct in-process service in a single-host test.
-That lowering mechanism stays below the channel/router boundary. Do not
-promote `signal`, `mailbox`, `deferred`, request-row, or workflow-engine
-vocabulary into the semantic API.
-
-```text
-tiny router
-  -> typed channel binding
-  -> private kernel/workflow input mechanism
-  -> host/session workflow-owned transition
-  -/-> public DurableTable handles
-  -/-> public workflow handles
-  -/-> public request/claim/completion rows
-```
-
-The reference should prove that route behavior can be tested through production
-channel contracts, and that workflow behavior can be tested as resource state
-transitions without importing edge adapters or coupling route bodies to
-workflow execution handles.
-
-## Dispatch Flow
-
-The minimum dispatch flow is:
-
-```text
-edge/client request
-  -> router.dispatch.call/send(target, unknown)
-  -> Schema.decodeUnknown(route request schema)
-  -> channel binding accepts or awaits the operation
-  -> HostKernelWorkflow consumes the channel input
-  -> HostKernelWorkflow applies one resource state transition
-  -> optional child SessionWorkflow execute or input delivery
-  -> resource status/revision update
-  -> channel read routes expose updated state where applicable
-  -> channel call returns production-shaped receipt/response
-```
-
-The channel binding returns receipts from operation metadata plus terminal or
-accepted resource state. The router only dispatches. Callers do not pass
-`sync`, `awaitMode`, or `isComplete` flags.
-
-## HostKernelWorkflow
-
-The reference `HostKernelWorkflow` is one workflow per host identity. It owns:
-
-- host singleton identity for the reference host;
-- host resource transitions;
-- child session workflow launch and coordination;
-- session create/load by invoking the child session workflow;
-- start routing to the child session workflow;
-- prompt delivery to the child workflow through injected channel services;
-- cancel, close, and resume transitions;
-- duplicate request identity;
-- terminal receipt state.
-
-It does not own:
-
-- edge decoding;
-- protocol schema definitions;
-- transport-specific ACP/MCP response encoding;
-- public table family definitions.
-
-Any side effect needed by a transition is owned by the workflow instance that
-performs the transition. The reference may implement that side effect as a
-small activity inside the workflow module, but it should not introduce a
-top-level adapter subsystem in the architecture reference.
-
-Duplicate identity is workflow-owned. Replaying the same route request with the
-same idempotency key must resolve to the existing resource revision or receipt
-instead of enqueueing another operation.
-
-## Child SessionWorkflow
-
-The reference child workflow is intentionally small. It proves ownership and
-channel-to-workflow lowering, not real provider execution.
-
-Responsibilities:
-
-- start once for a session id;
-- consume prompt inputs delivered by channel route lowering;
-- record session-visible facts as resource state exposed only through channels;
-- respond to cancel/close/resume from the parent workflow;
-- expose enough state through ingress or callable channel routes for
-  `session.wait.*`, `wait_for`, or snapshot-style calls to see the result.
-
-The child workflow may use deterministic fake agent behavior. That is allowed
-because this SDD is about architecture wiring, not model/provider quality.
-
-## API Compatibility Requirement
-
-The reference is useful only if callers cannot tell it is a toy from the public
-API shape.
-
-Required compatibility:
-
-- drivers use production `@firegrid/client-sdk` session methods where the tiny
-  runner supports them;
-- edge probes use production route targets and production request/response
-  schemas;
-- route descriptors use production channel router metadata types;
-- channel read payloads and terminal receipts decode through production schemas
-  or production-compatible schemas;
-- host layer output is assignable to the production public host surface needed
-  by the tiny runner.
-
-Rejected compatibility shortcuts:
-
-- simulation-only client methods;
-- alternate target names;
-- direct workflow handles in driver code;
-- direct DurableTable handles in driver code;
-- route implementations that expose tiny-only receipt shapes.
+`waitForNextInput` is workflow-local table observation. Prefer
+`table.inputs.rows()` filtered to the session's `nextInputSequence`; this
+matches the workflow's replay-from-table-state model and avoids introducing
+polling intervals. It is not a public API and not an activity.
 
 ## Reference Layout
 
-The reference layout must mirror the desired production package boundaries. It
-is not organized as "one simulation with helper files." The simulation is only
-a thin runner adapter around an architecture-shaped miniature package graph.
-
-Recommended layout inside tiny-firegrid:
+Use a deliberately small layout for the first simulation:
 
 ```text
 packages/tiny-firegrid/src/simulations/target-architecture-reference/
-  index.ts                         # simulation registration only
-
-  protocol/
-    channels.ts                    # production channel targets/schemas re-exported or aliased
-    routes.ts                      # production route descriptor/receipt/read contracts
-
-  runtime/
-    resources/
-      host-resource.ts             # tiny durable host aggregate
-      session-resource.ts          # tiny durable aggregate records
-    channels/
-      routes.ts                    # call/send/wait_for route implementations
-      router-live.ts               # dispatch interpreter / spans
-    workflows/
-      host-workflow.ts             # parent resource state machine
-      session-workflow.ts          # child resource state machine
-  host-sdk/
-    host-live.ts                   # host topology: runtime + router + edges
-    edges/
-      in-memory-edge.ts            # tiny edge adapter over production route contracts
-
-  client-sdk/
-    client-live.ts                 # only if the production client cannot target the tiny host directly
-
-  simulation/
-    driver.ts                      # tiny runner adapter, not architecture
-    artifacts.ts                   # native artifact readers/assertion helpers
+  index.ts       # simulation registration
+  channels.ts    # production-compatible targets and schemas, plus local aliases only when production lacks a neutral contract
+  session.ts     # SessionTable, SessionWorkflow, transitionSession, cursor logic
+  binding.ts     # channel registrations backed by SessionTable writes/reads
+  layer.ts       # router + table + workflow composition
 ```
 
-The folder names are deliberate. They should make the target production split
-visible:
+This layout is intentionally flatter than production. It is a reference for the
+target dependency direction, not a package-boundary rehearsal.
 
-| Tiny reference folder | Production boundary it represents |
-| --- | --- |
-| `protocol/` | `@firegrid/protocol`: schemas, targets, route contracts, receipts, and channel read payloads |
-| `runtime/resources/` | runtime/kernel-private durable resource state |
-| `runtime/channels/` | `@firegrid/runtime/channels`: channel route implementations and dispatch interpreter |
-| `runtime/workflows/` | `@firegrid/runtime/kernel` / workflow modules: workflow-owned lifecycle/control state |
-| `host-sdk/` | `@firegrid/host-sdk`: topology, config, drivers, and edge installation |
-| `client-sdk/` | `@firegrid/client-sdk`: optional transport adapter only, not semantic contracts |
-| `simulation/` | tiny-firegrid runner glue only |
+Expected dependency direction:
 
-`protocol/` imports production schemas and names local aliases only where the
-production package does not yet expose the desired neutral contract. If a local
-alias is needed, it is a finding against the production contract surface.
+```text
+channels.ts -> production protocol contracts
+session.ts  -> DurableTable + workflow primitives
+binding.ts  -> channels.ts + session.ts
+layer.ts    -> binding.ts + session.ts + router composition
+index.ts    -> layer.ts
+```
 
-`runtime/resources/` owns the tiny durable resource records. It should remain
-small enough to read in one sitting and must not grow request/claim/completion
-table families per operation. OTel spans are the simulation evidence; durable
-resource tables are the modeled runtime state.
+Forbidden dependency direction:
 
-`runtime/channels/routes.ts` builds route descriptors and route bodies. It may
-lower route calls into workflow-owned resource transitions, but it must not
-expose workflow handles, DurableTable handles, output tables, request rows,
-claim rows, or completion rows to callers.
+```text
+session.ts -> binding.ts
+session.ts -> any router module
+index.ts -> SessionTable handle
+```
 
-Reads are also channels. Streaming reads are ingress channels (`wait_for` /
-subscribe-style projections) and point-in-time reads are callable routes. The
-reference should model the architectural signal from existing channel code:
-durable/resource state is hidden behind a channel contract, and callers see
-channel targets plus decoded payloads, not table handles or workflow internals.
+Forbidden symbol references anywhere in the reference:
 
-`runtime/workflows/host-workflow.ts` and
-`runtime/workflows/session-workflow.ts` own workflow bodies. They do not import
-edge adapters and do not define public route contracts. Side effects belong to
-the workflow transition implementation that needs them; they are not modeled as
-a separate reference package boundary.
+```text
+appendRuntimeInputDeferred
+WorkflowEngineTable.deferreds
+RuntimeInputIntentDispatcherLive
+RuntimeControlPlaneTable.inputIntents
+```
 
-`host-sdk/host-live.ts` composes the tiny host layer, selected router, runtime
-kernel implementation, and edge adapters. It should look like the target
-production host-sdk composition, not like a runtime owner.
+## Validation
 
-`simulation/driver.ts` drives the public surface and records no verdict
-language. It exists to run the reference through tiny-firegrid; it is not part
-of the target host/runtime architecture.
+The first simulation should prove the PHASE_0 target-reference ACIDs:
 
-## Validation Plan
+- `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.1`
+- `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.2`
+- `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.3`
+- `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.4`
+- `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.5`
+- `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.6`
+- `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.7`
 
-The first implementation should prove these facts with native tiny-firegrid
-artifacts:
+Concrete checks:
 
-1. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.1` - the driver
-   enters through production-compatible client or edge contracts.
-2. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.2` - static
-   imports show the reference does not depend on production host-sdk/runtime
-   implementation modules for behavior.
-3. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.3` - route tests
-   exercise production channel contracts while proving route bodies hide
-   workflow and DurableTable mechanics from callers.
-4. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.4` - durable
-   artifacts contain resource records and workflow state, not per-operation
-   request/claim/completion table families.
-5. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.5` - a run proves
-   create/load, start, prompt, cancel, and one of close/resume with duplicate
-   request identity and child workflow ownership.
+1. A public driver creates or starts a session, then sends prompt/cancel/close
+   through channel/router contracts.
+2. The prompt channel writes `SessionTable.inputs`.
+3. The workflow advances `SessionTable.sessions.nextInputSequence`.
+4. Session-visible output is read from `SessionTable.events` through a channel.
+5. Duplicate input identity converges through `insertOrGet`.
+6. Static import checks reject `appendRuntimeInputDeferred`, production
+   runtime-context workflow modules, production host-control route bodies, and
+   production request/claim/completion row implementations.
+7. Trace output contains `firegrid.channel.dispatch` and
+   `firegrid.tiny_reference.session.transition` spans.
+8. Trace output does not contain spans for input-intent dispatch,
+   request-row reconciliation, or runtime input deferred append.
 
-Trace expectations:
+## Production Migration Signal
 
-- `firegrid.channel.dispatch` spans with target, verb, and direction;
-- `firegrid.tiny_reference.host_workflow.transition` spans;
-- `firegrid.tiny_reference.child_workflow.*` spans;
-- no spans that imply production dispatcher/request-row bridges are involved.
+This reference is useful only as a comparison point. A production migration is
+moving toward the target when it:
 
-## Migration Use
+- makes channels the public semantic surface;
+- makes workflow-owned `DurableTable` state the implementation seam;
+- removes deferred names as the way ordinary workflow input is addressed;
+- removes request/claim/completion table families where a state transition on
+  one workflow-owned table is sufficient;
+- keeps workflow transition logic inside workflow modules;
+- keeps edge/router code ignorant of engine and table internals.
 
-The reference is not a production replacement by itself. It becomes the review
-oracle for production migration PRs.
+For `RuntimeContextWorkflowRuntime`, the migration is moving toward the target
+when the active-execution map, workflow-support registry, reconcile pass, and
+intent dispatcher each have a clear replacement in workflow-owned table
+mechanics or have been deleted.
 
-When a production PR touches host-control routes, kernel workflows, channel
-router dispatch, or control-plane row families, reviewers should ask:
-
-- Does this production change move closer to the reference dependency graph?
-- Does it reduce request/claim/completion table sprawl?
-- Does route code expose only channel contracts and keep workflow lowering
-  private?
-- Does workflow code own lifecycle transitions?
-- Is the public API still the production API used by the reference driver?
-
-If the answer is no, the PR must explain why production needs a bridge that the
-reference deliberately avoided.
+The reference is not saying every production deferred is wrong. Durable waits,
+clocks, and Effect workflow internals may still use deferreds where the
+primitive is actually a suspended wait. The reference rejects deferreds as the
+ordinary mailbox for semantic workflow input.
