@@ -98,15 +98,23 @@ const summary = (spans: ReadonlyArray<SpanRecord>): string => {
     .join("  ")
 }
 
+export const formatShowOutput = (
+  runDir: string,
+  spans: ReadonlyArray<SpanRecord>,
+): string =>
+  [
+    `run: ${path.basename(runDir)}`,
+    `dir: ${runDir}`,
+    summary(spans),
+    "",
+    buildTree(spans),
+  ].join("\n")
+
 export const showRun = (runId: string | undefined) =>
   Effect.gen(function*() {
     const runDir = yield* resolveRunDir(runId)
     const spans = yield* readTraceSpans(runDir)
-    yield* Console.log(`run: ${path.basename(runDir)}`)
-    yield* Console.log(`dir: ${runDir}`)
-    yield* Console.log(summary(spans))
-    yield* Console.log("")
-    yield* Console.log(buildTree(spans))
+    yield* Console.log(formatShowOutput(runDir, spans))
   })
 
 // A "run" is a folder that contains `trace.jsonl`. Legacy folders left by

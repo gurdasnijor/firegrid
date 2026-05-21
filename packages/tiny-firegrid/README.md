@@ -20,6 +20,20 @@ The driver only receives the `Firegrid` client service. Host configuration stays
 behind the `host(env)` layer so simulations exercise the same network-separated
 client boundary as production callers.
 
+## Experiment Ergonomics
+
+Experiment authors can import `@firegrid/tiny-firegrid/experiment` for two
+thin helpers:
+
+- participant launch and prompt helpers that use the public Firegrid
+  client/session surface and describe channel metadata without exact JSON
+  echo prompts.
+- post-run artifact helpers that load native `trace.jsonl`, `simulate:show`,
+  `simulate:perf`, and caller-supplied durable row sources for assertions.
+
+These helpers do not compute experiment verdicts. They keep drivers focused on
+launching participants and leave analysis to native artifacts after the run.
+
 ## Commands
 
 ```bash
