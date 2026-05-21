@@ -301,3 +301,71 @@ in-flight beads.
 - tf-bffo (impl — consumes this design); tf-pisb (codec/byte adapter relocation,
   Bucket C); tf-zd8s (ChannelInventory retirement, Bucket C); tf-aq4d (snapshot
   output-read extraction, overlaps per-context-runtime-output)
+
+## §9 Slice-3 consumer audit (read-only; de-risks the export-surface narrowing)
+
+Mirrors tf-aago's consumer-audit method. Full authority-Tag set audited:
+**control-plane** — `RuntimeContextInsert(Live)`, `RuntimeContextRead`,
+`RuntimeLocalContextResolver`, `RuntimeRunAppendAndGet`, `RuntimeControlRequests`,
+`RuntimeContexts`, `RuntimeRuns`, `RuntimeControlPlaneRecorderLive`;
+**observation** — `RuntimeAgentOutputEvents(Layer)`, `RuntimeAgentOutputAfterEvents`.
+
+### §9.0 The headline finding
+
+**The true above-box doorway is ALREADY channel-clean.** `@firegrid/client-sdk`
+and `@firegrid/cli` have ZERO authority-Tag usage in `src/` (only one client-sdk
+*test* reads `RuntimeAgentOutputAfterEvents` as a harness shortcut). `apps/factory`
+does not exist. So Slice 3 is NOT a large external-consumer migration — the
+channel-collapse wave (tf-aago/tf-qu7l/tf-jbtu/tf-05jj) already moved the
+app-facing surface onto channels. What remains are monorepo-internal consumers:
+box-internal code, host-sdk host-adapter glue, the Bucket-B files, and a small
+reach-past tail.
+
+### §9.1 Consumer classification
+
+| Consumer (src) | Tags used | Role | Disposition |
+| --- | --- | --- | --- |
+| `runtime/src/{authorities,control-plane,agent-event-pipeline/authorities,workflow-engine/workflows/runtime-context*,streams/runtime-observation-streams}` | all (define + use) | **Box-interior** | No migration. Slices 1–2 relocate them inside `substrate/`; imports re-point. |
+| `runtime/src/index.ts` | re-exports the full set | **The export surface** | THIS is what Slice 3 narrows: stop re-exporting authority Tags as upper-runtime API. The single load-bearing change. |
+| `host-sdk/src/host/layers.ts`, `config-live.ts` | `RuntimeControlPlaneRecorderLive`, `RuntimeLocalContextResolver`, `RuntimeAgentOutputEvents` | **Host-adapter glue / topology composition** (firewall-permitted: "Live Layers for runtime-defined capability Tags") | KEEP. Re-point imports to `substrate/`. Composition must wire the substrate Live Layers somewhere; this is the legitimate host composition root, not doorway-as-API. |
+| `host-sdk/src/host/agent-tool-host-live.ts` | `RuntimeContextInsert`, `RuntimeContextRead`, `RuntimeAgentOutputAfterEvents` | **Host-adapter glue** (captures services for AgentToolHost) | KEEP (re-point). The `RuntimeAgentOutputAfterEvents` read overlaps Bucket B / per-context-output (channel-migration tail, §9.2). |
+| `host-sdk/src/host/commands.ts`, `internal/runtime-context-helpers.ts` | `RuntimeContextRead` | **Host-execution read** (ingress/start context resolution) | KEEP as host-adapter (re-point). Optional later: route through a context-read channel; NOT required for Slice 3. |
+| `host-sdk/src/host/mcp-host.ts` | `RuntimeLocalContextResolver` | **MCP-edge route resolution** (tf-r8ib classified) | KEEP (re-point). |
+| `host-sdk/src/host/runtime-substrate.ts`, `per-context-runtime-output.ts` | `RuntimeControlPlaneRecorderLive`, `RuntimeAgentOutputAfterEvents` | **Bucket B (substrate-internal re-exposed by host-sdk)** | MOVE below the box (already in §4 Bucket B / §5 Slice 4). |
+| `tiny-firegrid/src/simulations/{inv1-stream-zip-body,phase0-wave-2b-stream-zip-restart-replay}/host.ts` | `RuntimeAgentOutputAfterEvents` (read), `RuntimeControlPlaneRecorderLive` (compose) | **Sim host: legitimate compose + a reach-past READ** | The compose is fine (sim is a host). The direct `yield* RuntimeAgentOutputAfterEvents` READ is a reach-past → should use the `SessionAgentOutputChannel` (channel-migration tail, §9.2). |
+| `host-sdk/src/host/sync-run.ts` | — | **FALSE POSITIVE** (comment mentions `RuntimeContextInsert`; no import/use) | None. |
+| Tests: `runtime/test/authorities/provider-uniqueness.test.ts`, `host-sdk/test/host/{sync-run-integration,authority-context,runtime-context-workflow-core}.test.ts`, `client-sdk/test/firegrid.layer-hoisting.test.ts` | various | **Test harness** | Re-point imports. Test-harness reads of the Tags are acceptable (white-box). The client-sdk test reading `RuntimeAgentOutputAfterEvents` is a harness shortcut, not a product-surface leak. |
+
+### §9.2 Channel-migration candidates (the small tail, NOT box-internal)
+
+Only these genuinely *should go through a channel* rather than re-pointing:
+1. The two sim hosts' direct `RuntimeAgentOutputAfterEvents` READ → migrate to the
+   `SessionAgentOutputChannel` ingress stream (the same surface client-sdk already
+   uses post-Sim 1). Bounded: 2 sim files.
+2. `agent-tool-host-live.ts`'s `RuntimeAgentOutputAfterEvents` read + any residual
+   direct control-row writes → route through the relevant channel bindings as the
+   host-adapter channelization completes (overlaps Bucket B + the post-tf-aago
+   channelization). Bounded: 1 file.
+
+Everything else is either box-interior, legitimate host-adapter composition
+(re-point only), or already-scheduled Bucket B.
+
+### §9.3 Sizing verdict — SUB-BEAD of tf-bffo (answers Q1)
+
+**Slice 3 is a sub-bead of tf-bffo, not its own bead.** Rationale:
+- The app-facing doorway is already channel-clean (client-sdk/cli/app = zero), so
+  there is no large external-consumer migration to project-manage separately.
+- The dominant work is mechanical: re-point box-interior + host-adapter imports to
+  the `substrate/` path (rides along with Slices 1–2) and stop re-exporting the
+  Tags from `runtime/src/index.ts` (one file).
+- The genuine channel-migration tail is 3 files (2 sim hosts + 1 host-adapter
+  read), all using an already-existing channel (`SessionAgentOutputChannel`).
+- The Bucket-B relocation is already its own Slice 4.
+
+So Slice 3 = "narrow `runtime/src/index.ts` exports + re-point host-adapter imports
++ migrate the 3-file reach-past tail to `SessionAgentOutputChannel`." That fits
+inside tf-bffo as a sub-step; minting a separate bead would add coordination
+overhead disproportionate to a 3-file channel-migration + an export-surface trim.
+(If Gurdas prefers isolation for the export-surface trim specifically — because it
+is the one behavior-surface change vs the cosmetic renames — it could be a thin
+sub-bead; but it does not need to be a peer of tf-bffo.)
