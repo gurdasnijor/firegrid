@@ -1,8 +1,8 @@
 // tf-aago / tf-qu7l: client-sdk standalone-default Live Layer for the
 // host-control channels — write paths (contexts.create / prompt /
 // session.prompt / sessions.start / permissions.respond) and the contexts
-// ingress read path (HostContextsChannel, tf-qu7l: backs watchContexts +
-// whenReady).
+// ingress read path (HostContextsChannel, tf-qu7l: backs watchContexts and the
+// internal context-materialization barrier).
 //
 // Production hosts compose the host-sdk-owned `HostControlChannelsLive`
 // (which also serves the read/ingress/snapshot channels). This default

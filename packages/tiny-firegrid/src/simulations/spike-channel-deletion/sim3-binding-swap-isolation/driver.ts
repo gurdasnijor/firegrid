@@ -238,11 +238,7 @@ export const sim3BindingSwapIsolationDriver: Effect.Effect<
     createdBy: "tiny-firegrid-simulation",
   })
 
-  yield* Effect.all([
-    sessionA.whenReady,
-    sessionB.whenReady,
-  ], { concurrency: "unbounded" })
-
+  // tf-2osu: snapshot() owns its bounded materialization wait.
   const [sessionASnapshot, sessionBSnapshot] = yield* Effect.all([
     sessionA.snapshot(),
     sessionB.snapshot(),

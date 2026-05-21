@@ -271,7 +271,7 @@ is carried entirely by tiny-firegrid simulations exercising the public
 client / channel surface.) After the channel-collapse wave the client
 surface is channelized: `firegrid.sessions.createOrLoad`,
 `session.prompt`/`start`, `permissions.respond`, `watchContexts`,
-`whenReady`, and `wait.forAgentOutput` all dispatch through protocol-
+and `wait.forAgentOutput` all dispatch through protocol-
 owned channel contracts (`@firegrid/protocol/channels`), not bespoke
 substrate pokes. Concrete sims ground the capabilities: the external-
 trigger loop is exercised by `linear-webhook-cookbook-composition` (a
@@ -455,7 +455,7 @@ this section is the strategic summary.*
 **Substrate state.** The client/host boundary is merged and the public
 client surface is now **channelized**: `firegrid.sessions.createOrLoad`,
 `session.prompt`/`start`, `permissions.respond`, `watchContexts`,
-`whenReady`, and `wait.forAgentOutput` dispatch through protocol-owned
+and `wait.forAgentOutput` dispatch through protocol-owned
 channel contracts (`@firegrid/protocol/channels`) rather than bespoke
 substrate pokes. The webhook external-trigger loop landed (verified
 webhook fact channel). Provider actions are MCP-tools-first (attach via

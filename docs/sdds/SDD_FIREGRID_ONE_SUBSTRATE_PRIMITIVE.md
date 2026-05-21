@@ -460,7 +460,6 @@ every current public client method:
 | `firegrid.permissions.respond({...})` | `call(HostPermissionRespond, req)` | `responses.byRequestId.insertOrGet(...)` |
 | `firegrid.watchContexts(pred)` | `wait_for(HostContexts, {match: pred})` | `contexts.rows().filter(pred)` |
 | `firegrid.open(contextId)` | (synchronous handle factory, no I/O) | — |
-| `session.whenReady` | `wait_for(SessionLifecycle, {match: Ready})` | `lifecycle.rows().filter().runHead` |
 | `session.start()` | `call(HostSessionsStart, {sessionId})` | request + completion pattern |
 | `session.prompt({...})` | `send(SessionPrompt, payload)` | `intents.insert(...)` |
 | `session.snapshot()` | `call(HostSessionSnapshot, {sessionId})` | `get` + `query` over N tables |

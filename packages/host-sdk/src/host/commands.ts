@@ -13,7 +13,7 @@ import {
   type RuntimeIngressRequest,
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer } from "effect"
+import { Duration, Effect, Layer, Stream } from "effect"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import type { StartRuntimeOptions } from "./types.ts"
 import {
@@ -131,6 +131,36 @@ const insertRuntimeInputIntent = (
     return stored._tag === "Found" ? stored.row : intent
   })
 
+// tf-2osu: bounded "context materialized" barrier for host ops that require a
+// local context (startRuntime, appendRuntimeIngress). The CLI used to gate
+// these with the public client `whenReady`; that primitive is deleted, so the
+// host op owns its own readiness. createOrLoad writes a context-request row
+// that the reconciler materializes asynchronously, so we wait on the contexts
+// projection stream until the row appears, bounded. On timeout we simply
+// proceed and the caller's existing requireLocalContext / readRuntimeContext
+// surfaces the real not-found error (no behavior change for an
+// already-materialized context — the stream yields it immediately — and no
+// fast-fail regression for a genuinely absent one, only a bounded wait first).
+const contextMaterializationTimeout = Duration.seconds(30)
+
+const awaitContextMaterialized = (
+  contextId: string,
+): Effect.Effect<void, never, RuntimeControlPlaneTable> =>
+  Effect.gen(function*() {
+    const control = yield* runtimeControlPlaneTable
+    // Subscription-driven (NOT fixed polling): the contexts projection stream
+    // emits current rows + live changes, so we wait for the first row matching
+    // this contextId. Bounded by an explicit deadline.
+    yield* control.contexts.rows().pipe(
+      Stream.filter(context => context.contextId === contextId),
+      Stream.runHead,
+      Effect.timeout(contextMaterializationTimeout),
+      // On timeout (never materialized) or a transient stream error, proceed —
+      // the caller's require/read step surfaces the authoritative error.
+      Effect.ignore,
+    )
+  })
+
 const readRuntimeContextForIngress = (
   request: RuntimeIngressRequest,
 ): Effect.Effect<void, RuntimeIngressError, RuntimeContextRead> =>
@@ -169,6 +199,9 @@ export const startRuntime = (
   // RuntimeControlPlaneTable + CurrentHostSession from this same host
   // scope; it is not a tool-arg or env-var check.
   Effect.gen(function* () {
+    // tf-2osu: own the readiness barrier instead of relying on a caller-side
+    // whenReady. Bounded; no-op once the context is materialized.
+    yield* awaitContextMaterialized(options.contextId)
     const context = yield* requireLocalContext(options.contextId)
     const runtime = yield* RuntimeContextWorkflowRuntime
     const agentToolHost = yield* AgentToolHost
@@ -227,7 +260,10 @@ export const RuntimeStartCapabilityLive = Layer.effect(
 export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,
 ): Effect.Effect<RuntimeIngressInputRow, RuntimeIngressError, RuntimeIngressAppendEnvironment> =>
-  readRuntimeContextForIngress(request).pipe(
+  // tf-2osu: own the readiness barrier (bounded) before requiring the context;
+  // the CLI no longer gates this with whenReady.
+  awaitContextMaterialized(request.contextId).pipe(
+    Effect.zipRight(readRuntimeContextForIngress(request)),
     Effect.zipRight(runtimeControlPlaneTable),
     Effect.flatMap(control => insertRuntimeInputIntent(request, control)),
     Effect.map(row => makePendingRuntimeIngressInput(request, row)),

@@ -60,9 +60,6 @@ export const waitPreAttachDriver: Effect.Effect<void, unknown, Firegrid> = Effec
     createdBy: "tiny-firegrid-simulation",
   })
 
-  // Required before the forked autoApprove loop: it resolves the context
-  // eagerly and dies with PreloadError if the context is not yet materialized.
-  yield* session.whenReady
   yield* session.permissions.autoApprove("allow", { timeoutMs: 30_000 })
   yield* session.prompt({
     payload: promptForWaitForCall,

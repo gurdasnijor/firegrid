@@ -192,15 +192,9 @@ export interface FiregridSessionPermissionsClient {
 export interface FiregridSessionHandle {
   readonly sessionId: FiregridSessionId
   readonly contextId: string
-  /**
-   * Explicit, intentionally-unbounded "context materialized" readiness wait.
-   * NOT required before `prompt` / `start` — those self-barrier (tf-1r3h #587);
-   * use it before read/observe or host-execution paths that need a materialized
-   * context. See `SDD_FIREGRID_DURABLE_CHANNELS_SYNC_ASYNC.md`. A provably-absent
-   * context id still waits unboundedly here — an existence floor is tracked by
-   * tf-5sb7.
-   */
-  readonly whenReady: Effect.Effect<void, PreloadError>
+  // tf-2osu: no public `whenReady`. "Context materialized" is a substrate
+  // detail; the operations that need it (prompt/start, the wait/observe reads,
+  // snapshot) own a bounded materialization barrier internally.
   readonly prompt: (
     request: SessionHandlePromptInput,
   ) => Effect.Effect<RuntimeInputIntentRow, PromptInputError | AppendError>
@@ -544,11 +538,11 @@ const make = (config: ResolvedConfig) =>
     const sessionPromptChannel = yield* SessionPromptChannel
     const hostSessionsStartChannel = yield* HostSessionsStartChannel
     const hostPermissionRespondChannel = yield* HostPermissionRespondChannel
-    // tf-qu7l: read-path ingress. watchContexts + whenReady consume the
-    // HostContextsChannel binding.stream (the RuntimeContext ProjectionStream
-    // over control.contexts.rows()) instead of poking control.contexts
-    // directly. whenReady routes here (NOT SessionLifecycle): its contract is
-    // "context materialized" (contexts.rows), confirmed by CLIENT_SESSION.6.
+    // tf-qu7l: read-path ingress. watchContexts and the internal
+    // awaitContextMaterialized barrier consume the HostContextsChannel
+    // binding.stream (the RuntimeContext ProjectionStream over
+    // control.contexts.rows()) instead of poking control.contexts directly.
+    // The "context materialized" signal is contexts.rows (NOT SessionLifecycle).
     const hostContextsChannel = yield* HostContextsChannel
 
     // tf-ivl6 / tf-tw49 concern #1: per-contextId RuntimeOutputTable
@@ -621,6 +615,10 @@ const make = (config: ResolvedConfig) =>
       contextId: string,
     ): Effect.Effect<RuntimeContextSnapshot, PreloadError> =>
       Effect.gen(function* () {
+        // tf-2osu: snapshot owns its readiness — bounded wait for the context
+        // to materialize (callers no longer gate this with whenReady). A
+        // provably-absent id errors bounded rather than hanging.
+        yield* awaitContextMaterializedForRead(contextId)
         const context = yield* resolveContext(contextId)
         const runs = yield* control.runs.query((coll) =>
           coll.toArray.filter(row => row.contextId === contextId)).pipe(
@@ -684,6 +682,11 @@ const make = (config: ResolvedConfig) =>
       LaunchInputError | PreloadError
     > =>
       Effect.gen(function* () {
+        // tf-2osu: the wait/observe read owns its readiness — bounded wait for
+        // the context to materialize before resolving the output stream. This
+        // is why a forked permissions.autoApprove loop no longer needs an
+        // explicit whenReady before it; a provably-absent id errors bounded.
+        yield* awaitContextMaterializedForRead(contextId)
         const context = yield* resolveContext(contextId)
         if (context === undefined) {
           return yield* new PreloadError({
@@ -777,23 +780,22 @@ const make = (config: ResolvedConfig) =>
         Effect.mapError(cause => new PreloadError({ cause })),
       )
 
-    const awaitSessionDependentContext = (
+    // tf-2osu: internal substrate plumbing — NOT exported, NOT a public
+    // readiness primitive (that was `whenReady`, now deleted). The operations
+    // that need a materialized context (prompt/start, the wait/observe reads,
+    // snapshot) call this internally so callers never wait on "context
+    // materialized" themselves.
+    //
+    // tf-1r3h (#587): BOUNDED. A real in-flight context materializes within the
+    // window and the wait completes normally; an unknown/typo context id never
+    // materializes, so an unbounded wait would hang forever. On timeout we do
+    // one authoritative control-plane read: present (projection merely lagged
+    // the table) -> proceed; absent -> fail with ContextNotFound so the calling
+    // op surfaces a bounded error instead of hanging. (Subsumes tf-5sb7: with no
+    // public whenReady, there is no unbounded absent-id readiness wait left.)
+    const awaitContextMaterialized = (
       contextId: string,
     ): Effect.Effect<void, AppendError> =>
-      // firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2
-      //
-      // tf-1r3h (#587 review): the reflected-context barrier is BOUNDED. A
-      // real in-flight context materializes within the window and the wait
-      // completes normally; an unknown/typo context id never materializes,
-      // so an unbounded wait would hang forever (the README-hang failure
-      // class). On timeout we do one authoritative control-plane read:
-      //   - present (projection merely lagged the table) -> proceed;
-      //   - absent -> fail with the same ContextNotFound the append path
-      //     produces, so every dependent write (prompt / sessions.prompt /
-      //     session.prompt / session.start) surfaces a bounded error instead
-      //     of hanging. session.start in particular has no append-side
-      //     existence check, so the barrier is the only guard against an
-      //     orphan start-request row for a context that will never exist.
       Effect.gen(function* () {
         const ready = yield* Effect.timeoutOption(
           waitUntilContextReady(contextId),
@@ -810,6 +812,15 @@ const make = (config: ResolvedConfig) =>
           })
         }
       })
+
+    // PreloadError-typed view for read/observe paths (snapshot, waits) whose
+    // error channel is PreloadError; preserves the ContextNotFound cause.
+    const awaitContextMaterializedForRead = (
+      contextId: string,
+    ): Effect.Effect<void, PreloadError> =>
+      awaitContextMaterialized(contextId).pipe(
+        Effect.mapError(error => new PreloadError({ cause: error.cause })),
+      )
 
     const appendHostPrompt = (
       request: PublicPromptRequest,
@@ -864,8 +875,7 @@ const make = (config: ResolvedConfig) =>
         // driver loop ("give me the next agent output") actually waits
         // instead of immediately re-matching the first observation. An
         // explicit request.afterSequence still overrides the tracked value
-        // so callers can rewind/replay. Mirrors the structural readiness
-        // pattern of whenReady (PR #435).
+        // so callers can rewind/replay (structural readiness pattern, PR #435).
         const lastAgentOutputSequence = yield* Ref.make<number | undefined>(undefined)
         const forAgentOutput = (
           request?: SessionAgentOutputWaitInput,
@@ -932,18 +942,12 @@ const make = (config: ResolvedConfig) =>
           // firegrid-session-fact-client-surfaces.CLIENT_SESSION.4
           sessionId,
           contextId: sessionId,
-          // firegrid-session-fact-client-surfaces.CLIENT_SESSION.6
-          whenReady: withClientSpan("firegrid.client.session.when_ready", {
-            "firegrid.session.id": sessionId,
-            "firegrid.context.id": sessionId,
-            "firegrid.wait.bucket": "projection",
-          }, waitUntilContextReady(sessionId)),
           prompt: request =>
             withClientSpan("firegrid.client.session.prompt", {
               "firegrid.session.id": sessionId,
             }, Effect.gen(function* () {
               const decoded = yield* decodeSessionHandlePromptInput(request)
-              yield* awaitSessionDependentContext(sessionId)
+              yield* awaitContextMaterialized(sessionId)
               yield* Effect.annotateCurrentSpan({
                 "firegrid.context.id": sessionId,
                 "firegrid.input.idempotency_key": decoded.idempotencyKey ?? "",
@@ -955,7 +959,7 @@ const make = (config: ResolvedConfig) =>
               "firegrid.session.id": sessionId,
               "firegrid.context.id": sessionId,
             }, Effect.gen(function*() {
-              yield* awaitSessionDependentContext(sessionId)
+              yield* awaitContextMaterialized(sessionId)
               return yield* hostSessionsStartChannel.binding.call({ sessionId }).pipe(
                 Effect.mapError(cause => new AppendError({ contextId: sessionId, cause })),
               )
@@ -1033,10 +1037,7 @@ const make = (config: ResolvedConfig) =>
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
         const decoded = yield* decodePublicPromptRequest(request)
-        // tf-1r3h: bounded reflected-context barrier (see
-        // awaitSessionDependentContext). Unknown ids fail bounded with
-        // ContextNotFound rather than hanging.
-        yield* awaitSessionDependentContext(decoded.contextId)
+        yield* awaitContextMaterialized(decoded.contextId)
         return yield* appendHostPrompt(decoded)
       }),
       sessions: {
@@ -1046,7 +1047,7 @@ const make = (config: ResolvedConfig) =>
           "firegrid.session.id": request.sessionId,
         }, Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)
-          yield* awaitSessionDependentContext(decoded.sessionId)
+          yield* awaitContextMaterialized(decoded.sessionId)
           const inputId = decoded.inputId ?? `input_${crypto.randomUUID()}`
           yield* Effect.annotateCurrentSpan({
             "firegrid.context.id": decoded.sessionId,

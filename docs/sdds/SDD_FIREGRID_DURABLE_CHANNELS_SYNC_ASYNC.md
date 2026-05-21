@@ -142,7 +142,7 @@ world to reflect it" is precisely `call`: the call should not return until the
 action is reflected. Naming the mode means the blocking-until-reflected
 machinery is owned by the callable binding, not re-derived per operation.
 
-### Worked instance: `whenReady` was a symptom as a pre-prompt barrier
+### Worked instance: `whenReady` was a substrate leak, now deleted
 
 `firegrid.sessions.createOrLoad` already dispatches through a callable channel
 (`HostSessionsCreateOrLoadChannel.binding.call`). Yet callers historically
@@ -150,43 +150,38 @@ needed a separate `whenReady` barrier before they could `prompt`.
 
 That happened because the request path acked identity - returning a
 `contextId` - while the dependent operation still needed reflected context
-state. `whenReady` is the hand-rolled "wait for reflection" that the
-result-gates-next-action boundary absorbs.
+state. `whenReady` was the hand-rolled "wait for reflection" — and exposing it
+publicly leaked a substrate detail ("context materialized") through the client
+abstraction as a caller-visible ceremony.
 
 ```ts
-// Today: call acks, then a bespoke barrier.
+// Was: call acks, then a bespoke public barrier (substrate leak).
 const session = yield* firegrid.sessions.createOrLoad({ ... })
 yield* session.whenReady
 yield* session.prompt({ ... })
 
-// The dependent operation owns the reflection barrier.
+// Now: the dependent operation owns the (internal, bounded) barrier.
 const session = yield* firegrid.sessions.createOrLoad({ ... })
 yield* session.prompt({ ... })
 ```
 
-`whenReady` disappears from this path not by deleting a check, but because the
-dependent operation (`prompt`, and similarly `start`) waits for reflected
-context state before it writes. Identity-only `createOrLoad` callers are not
-handshakes by the "answer gates the next step" rule, so they still receive the
-deterministic handle immediately.
+**`whenReady` is deleted from the public surface (tf-2osu).** "Context
+materialized" is substrate detail, not something a caller should know or wait
+for. Every operation that needs a materialized context now owns a bounded
+internal materialization barrier (`awaitContextMaterialized`):
 
-**`whenReady` is removed as pre-prompt/start ceremony, not deleted as a
-primitive (tf-2osu).** It was a symptom *only where a dependent client write
-followed it*. It remains a legitimate, public, intentionally-unbounded
-readiness primitive for the paths the dependent-write barrier does not cover:
-read/observe before materialization (`snapshot` / `watchContexts`),
-host-execution flows that append/start through host-sdk surfaces
-(`appendRuntimeIngress` / `startRuntime`) rather than the client `prompt` /
-`start` channels, and gating an eagerly-resolving concurrent consumer (e.g. a
-forked `permissions.autoApprove` loop). The rule is sharp: *if a dependent
-client write follows, drop `whenReady` (the write self-barriers); otherwise it
-is the correct explicit readiness wait.*
+- `prompt` / `start` — the #587 dependent-write barrier;
+- `snapshot` and the `wait` / observe reads — own the same bounded wait, so a
+  reader no longer gates them with a ceremony (and a forked
+  `permissions.autoApprove` loop no longer races materialization);
+- the CLI host path (`appendRuntimeIngress` / `startRuntime`) owns the bounded
+  barrier host-side, so it needs no client ceremony either.
 
-One residual: `whenReady` is unbounded even for a context id that is provably
-absent (no context row and no context-request row), so a typo'd id waits
-forever. The dependent-write barrier already has an absent-id floor (tf-1r3h);
-giving `whenReady` the same floor — fail bounded when provably absent, stay
-unbounded when existing-but-slow — is tracked by tf-5sb7.
+Identity-only `createOrLoad` callers are not handshakes by the "answer gates the
+next step" rule, so they still receive the deterministic handle immediately. The
+internal barrier is bounded, so a provably-absent context id errors instead of
+hanging — which subsumes the earlier absent-id-floor concern (no public
+`whenReady` means no unbounded readiness wait anywhere).
 
 **This is no longer an assertion - the tf-lfxs spike proved the shape, and
 tf-1r3h closed the production semantics.** The spike wrapped the existing
