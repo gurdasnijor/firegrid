@@ -77,6 +77,7 @@ components:
       8: "Env config for the MCP server is limited to listener topology (FIREGRID_MCP_ENABLED, FIREGRID_MCP_HOST, FIREGRID_MCP_PORT, FIREGRID_MCP_PATH); the durable-tools stream URL is derived from the existing DURABLE_STREAMS_BASE_URL and FIREGRID_RUNTIME_NAMESPACE, not a separate FIREGRID_MCP_AGENT_TOOLS_STREAM_URL knob."
       9: "Auto-mounting the MCP server inside the firegrid:host entrypoint from env config is deferred until either route-based FiregridAgentToolContext injection or a durable host/session/local-agent authority record (in runtime-host or control-plane shape, not agent-tools) is available; the V1 PR ships the composition primitive and smoke, not the auto-mount."
       10: "Durable invocation/result facts, cross-retry idempotency, process-restart recovery for in-flight MCP tool calls, and remote/authenticated bridge behavior are later durable-indirect bridge work, not required for the first host-owned localhost MCP server."
+      11: "OAuth authorization-server well-known discovery probes against the host-owned MCP server return HTTP 404 when OAuth is not configured without making the server span fail; the 404 is protocol negotiation evidence, not an MCP host error."
 
 constraints:
   BOUNDARIES:
@@ -112,6 +113,7 @@ constraints:
       8: Runtime input intent tests prove a client or non-owner host can append an intent and the owning host's local dispatcher completes the active RuntimeContext workflow deferred without appendRuntimeIngressToOwner or owner-host workflow stream URL routing.
       9: The runtime control request reconciler daemon continues polling and can activate a newly appended context start request while a prior long-running RuntimeContextWorkflow start request remains active.
       10: The workflow-core-paths simulation gate fails if legacy durable-tools wait-router spans are present and requires trace evidence for runtime-context body execution, durable state transitions, agent-tool wait_for workflow execution, workflow Activity execution, DurableDeferred.raceAll completion, and DurableClock.sleep scheduling.
+      11: A host-sdk MCP HTTP test proves /.well-known/oauth-authorization-server returns 404 while its firegrid.mcp.http span exits successfully.
 
   AGENT_TOOL_BOUNDARIES:
     requirements:

@@ -26,7 +26,7 @@
  */
 
 import { IdGenerator, McpServer } from "@effect/ai"
-import { HttpMiddleware, HttpRouter } from "@effect/platform"
+import { HttpMiddleware, HttpRouter, HttpServerResponse } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
 import {
   ContextNotFound,
@@ -205,10 +205,39 @@ const runtimeContextMcpSpanName = (url: string, method: string): string => {
   return `firegrid.mcp.http ${method}`
 }
 
+const oauthAuthorizationServerDiscoveryPath = "/.well-known/oauth-authorization-server"
+const oauthDiscoveryProbeNotConfigured = Effect.succeed(
+  HttpServerResponse.empty({ status: 404 }),
+)
+
+const oauthAuthorizationServerDiscoveryProbePaths = (
+  basePath: HttpRouter.PathInput,
+): ReadonlyArray<HttpRouter.PathInput> => {
+  const runtimeRoute = runtimeContextMcpPath(basePath)
+  return [
+    oauthAuthorizationServerDiscoveryPath,
+    `${oauthAuthorizationServerDiscoveryPath}${runtimeRoute}`,
+    `${runtimeRoute}${oauthAuthorizationServerDiscoveryPath}` as HttpRouter.PathInput,
+  ]
+}
+
+const registerExpectedOAuthDiscoveryProbeRoutes = (
+  basePath: HttpRouter.PathInput,
+) =>
+  HttpRouter.Default.use(router =>
+    Effect.all(
+      oauthAuthorizationServerDiscoveryProbePaths(basePath).map(path =>
+        router.get(path, oauthDiscoveryProbeNotConfigured),
+      ),
+      { discard: true },
+    ))
+
 export const FiregridMcpServerLayer = (
   options: FiregridMcpServerLayerOptions,
 ) =>
   Layer.mergeAll(
+    // firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.11
+    registerExpectedOAuthDiscoveryProbeRoutes(options.path),
     Layer.scopedDiscard(
       Effect.gen(function* () {
         yield* McpServer.registerToolkit(FiregridAgentToolkit)
