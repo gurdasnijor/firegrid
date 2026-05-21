@@ -147,6 +147,14 @@ mailbox/signal, a durable row bridge, a future engine primitive, or a direct
 in-process service in a single-host test. That lowering is private to the
 runtime implementation.
 
+Channel cardinality should follow durable capability boundaries, not CRUD
+method count. The current production bridge has several operation-shaped
+host-control channels because it is migrating old request-row surfaces. The
+target reference should not preserve that as an axiom. Prefer a small
+resource/control capability with a typed command union when operations share
+the same owner, durability, and completion semantics. Split channels only when
+the direction, visibility, owner, or completion contract is actually different.
+
 ### Router
 
 The edge dispatch boundary over channels. It decodes, validates, authorizes,
@@ -287,32 +295,79 @@ export class TinySessionResourceTable extends DurableTable("tinyReference.sessio
 Illustrative Effect-native composition:
 
 ```ts
+// protocol/host-control.ts
+export const HostControlCommand = Schema.Union(
+  Schema.TaggedStruct("CreateSession", { sessionId: Schema.String }),
+  Schema.TaggedStruct("StartSession", { sessionId: Schema.String }),
+  Schema.TaggedStruct("CancelSession", { sessionId: Schema.String }),
+  Schema.TaggedStruct("CloseSession", { sessionId: Schema.String }),
+)
+
+export const HostControlRequest = Schema.Struct({
+  hostId: Schema.String,
+  requestId: Schema.String,
+  command: HostControlCommand,
+})
+
+export class HostControlChannel extends Context.Tag(
+  "firegrid/protocol/channels/host.control",
+)<HostControlChannel, CallableChannel<typeof HostControlRequest, typeof HostControlReceipt>>() {}
+
+// runtime/channels/host-control-live.ts
+export const TinyHostControlChannelLive = Layer.effect(
+  HostControlChannel,
+  Effect.gen(function*() {
+    const kernel = yield* HostKernelControlPlane
+
+    return makeCallableChannel({
+      target: HostControlChannelTarget,
+      requestSchema: HostControlRequest,
+      responseSchema: HostControlReceipt,
+      call: request => kernel.submit(request),
+    })
+  }),
+)
+
 // runtime/channels/router-live.ts
 export const TinyHostPlaneChannelRouterLive = Layer.effect(
   HostPlaneChannelRouter,
   Effect.gen(function*() {
-    const createOrLoad = yield* HostSessionsCreateOrLoadChannel
-    const start = yield* HostSessionsStartChannel
-    const prompt = yield* SessionPromptChannel
+    const hostControl = yield* HostControlChannel
+    const sessionPrompt = yield* SessionPromptChannel
+    const sessionEvents = yield* SessionEventsChannel
 
     return makeRuntimeChannelRouter([
-      runtimeRouteFromChannel(createOrLoad),
-      runtimeRouteFromChannel(start),
+      runtimeRouteFromChannel(hostControl),
       runtimeRouteFromFactoryChannel({
         target: SessionPromptChannelTarget,
         field: "sessionId",
         inputSchema: SessionPromptRouteInputSchema,
-        channel: prompt.forSession,
+        channel: sessionPrompt.forSession,
         payload: input => input.prompt,
+      }),
+      runtimeRouteFromFactoryChannel({
+        target: SessionEventsChannelTarget,
+        field: "sessionId",
+        inputSchema: SessionEventsRouteInputSchema,
+        channel: sessionEvents.forSession,
+        payload: input => input.filter,
       }),
     ])
   }),
 )
 ```
 
-The router Layer consumes channel services. It does not import
-`HostWorkflow`, call `HostWorkflow.execute`, or know how the channel binding is
-implemented.
+This intentionally differs from the current production bridge, where
+`RuntimeHostControlChannelsLive` wires separate operation-shaped channels such
+as `HostContextsCreateChannel`, `HostSessionsStartChannel`, `HostPromptChannel`,
+and `SessionPromptChannel`. Those are migration-era public contracts over old
+request-row families. The target reference should prove the cleaner shape:
+one host-control capability for host/session lifecycle commands that share the
+same host workflow owner, plus separate channels for truly different
+capabilities such as session prompt input or session event reads.
+
+The router Layer consumes channel services. It does not import `HostWorkflow`,
+call `HostWorkflow.execute`, or know how the channel binding is implemented.
 
 Illustrative workflow ownership, with only concrete channel/storage operations:
 
