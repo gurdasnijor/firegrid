@@ -26,53 +26,123 @@ flowchart TB
   subgraph Orchestration["Orchestration — most agent frameworks"]
     direction TB
     O0[Developer authors the flow]
-    O1[planner node]
-    O2{router}
-    O3[critic node]
-    O4[executor node]
+    O1[Step A]
+    O2{Conditional router}
+    O3[Step B]
+    O4[Step C]
+    O5[Manual retry / exactly-once logic]
+    O6[Manual restart + state persistence]
     O0 --> O1 --> O2
     O2 -->|cond A| O3
     O2 -->|cond B| O4
-    O3 --> O2
-    O4 --> O2
+    O3 --> O5
+    O4 --> O5
+    O5 --> O6
   end
 
   subgraph Choreography["Choreography — Firegrid"]
     direction TB
-    S[("Durable Substrate<br/>(typed channels over rows)")]
-    P1[Planner agent]
-    P2[Reviewer agent]
-    P3[Linear webhook]
-    P4[Human approval]
-    P5[Tool execution]
-    P6[Audit logger]
-    P1 <-->|wait_for / send| S
-    P2 <-->|wait_for / send| S
-    P3 ---->|emits fact| S
-    P4 ---->|emits fact| S
-    P5 <-->|call / send| S
-    S -.->|read-only| P6
+    S[("Durable Substrate<br/>━━━━━━━━━━━━━━━<br/>typed channels over durable rows<br/><br/>guarantees inherited from<br/>durable streams + workflow engine:<br/>• exactly-once delivery<br/>• ordering<br/>• replay + restart safety<br/>• durable scheduling<br/>• no central scheduler required")]
+
+    A1["Agent<br/><i>any LLM / codec / runtime</i>"]
+    A2["Agent<br/><i>any LLM / codec / runtime</i>"]
+    Sv["Service / Worker"]
+
+    W["Webhook / External event<br/><b>(ingress)</b>"]
+    H["Human approval<br/><b>(ingress)</b>"]
+    Sched["Scheduled job / cron<br/><b>(ingress)</b>"]
+    T["Tool / Sandbox call<br/><b>(egress)</b>"]
+    N["Notification / Slack / Email<br/><b>(egress)</b>"]
+    Obs["Observer / Audit / Dashboard<br/><b>(read-only)</b>"]
+
+    W -->|fact arrives| S
+    H -->|fact arrives| S
+    Sched -->|fact arrives| S
+    A1 <-->|wait_for / send / call| S
+    A2 <-->|wait_for / send / call| S
+    Sv <-->|wait_for / send| S
+    S -->|drives| T
+    S -->|drives| N
+    S -.->|observe-only| Obs
   end
 
   classDef o fill:#fee,stroke:#c44
   classDef c fill:#efe,stroke:#494
-  classDef sub fill:#fed,stroke:#a52
+  classDef sub fill:#fed,stroke:#a52,font-weight:bold
   class Orchestration o
   class Choreography c
   class S sub
 ```
 
 **Orchestration**: the developer authors a directed graph upfront. The
-framework routes work between nodes according to that graph.
-Predictable. Hard to extend. Brittle under external events.
+framework routes work between nodes according to that graph. The
+specific roles (planner / router / executor / critic) are
+illustrative — every orchestrator imposes SOME authored shape.
+Predictable. Hard to extend. Brittle under external events. Retry,
+exactly-once, restart-safety are your code to write.
 
-**Choreography**: participants subscribe to a shared substrate of typed
-events. No one routes; no one orchestrates. Coordination emerges from
-each participant acting on what it observes. Adding a new participant
-is subscribing to a channel; removing one is unsubscribing.
+**Choreography**: participants are peers reading and writing typed
+events to a shared durable substrate. No one routes; no one
+orchestrates. Coordination emerges from each participant acting on
+what it observes. **Ingress (webhooks, humans, schedulers) and
+egress (tools, notifications, side effects) are the same shape** —
+both are channel participants. Adding a new participant is registering
+a channel binding; removing one is unregistering.
 
 The participants don't know each other exists. They share the
 environment.
+
+### What you'd build yourself vs. what the substrate provides
+
+| In an orchestration framework, you'd build | Firegrid's substrate provides |
+| --- | --- |
+| Central scheduler / job runner | Workflow engine over durable streams |
+| Exactly-once delivery logic | `DurableTable.insertOrGet` primary-key fencing |
+| Retry + restart logic | Workflow replay over durable rows |
+| Event ordering coordination | Stream ordering guarantees |
+| State persistence after crash | All state IS durable rows |
+| Late-event reconciliation | Substrate keeps all events; participants observe when ready |
+| Scheduled / delayed work | `DurableClock` primitives |
+| Cross-process / cross-host state | DurableTable rows survive any single process |
+
+These guarantees are **inherited by every participant** — agents,
+services, webhooks, schedulers — by writing to typed channels. You don't
+implement them. You don't configure a scheduler. You don't stand up a
+separate retry framework. The substrate gives them to you by being the
+substrate.
+
+---
+
+## You Run The Agent. Firegrid Runs The Substrate.
+
+**Firegrid is not an agent SDK.** It does not ask you to use its LLM
+client, its inference loop, or its tool-calling convention. You bring
+whatever agent you already run — and Firegrid presents a small set of
+**durable tools** the agent can call.
+
+From the agent's perspective, Firegrid is a tool server it talks to
+over MCP (or equivalent transport). From your perspective, those tool
+calls land as durable substrate operations: `wait_for` survives a host
+restart, `send` pins a fact for any participant to observe,
+`schedule_me` persists across crashes.
+
+| Agent | Where it runs | How it talks to Firegrid |
+| --- | --- | --- |
+| `claude-agent-acp` | local subprocess | ACP over stdio |
+| Codex CLI | local subprocess | stdio-jsonl codec |
+| Your custom tool-using LLM | local process | MCP over HTTP/stdio |
+| Hosted Claude on Anthropic's API | remote | MCP / your client wrapper |
+| Effect AI agent | in-process | direct Effect composition |
+| Any agent that speaks MCP | wherever it runs | MCP server endpoint |
+
+**The same agent program can run on different hosts at different times.**
+Firegrid's durability lives at the substrate layer; agent processes
+come and go. An agent that started on host A this morning can resume
+on host B tonight against the same substrate state — because the
+state isn't in the agent's memory, it's in the typed durable rows.
+
+Bring your own agent. Bring more than one. They don't need to know
+about each other; they coordinate through the substrate.
 
 ---
 
