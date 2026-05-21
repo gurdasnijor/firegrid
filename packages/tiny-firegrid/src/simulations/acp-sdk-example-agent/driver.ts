@@ -87,6 +87,9 @@ export const acpSdkExampleAgentDriver: Effect.Effect<
     createdBy: "tiny-firegrid-simulation",
   })
 
+  // tf-2osu KEEP: this gates read/observe paths (attach + snapshot +
+  // watchContexts below), which return an empty journal until the context
+  // materializes — they are NOT covered by the tf-1r3h prompt/start barrier.
   yield* session.whenReady
   const attached = yield* firegrid.sessions.attach({ sessionId: session.sessionId })
   if (attached.contextId !== session.contextId) {

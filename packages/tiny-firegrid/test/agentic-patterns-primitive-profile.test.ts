@@ -137,7 +137,9 @@ describe("agentic-patterns primitive profile", () => {
           }),
         })
         expect(session.contextId).toBe(expectedContextId)
-        yield* session.whenReady
+        // tf-2osu: no explicit whenReady — session.prompt/session.start own the
+        // bounded reflected-context barrier (tf-1r3h #587). This test now also
+        // proves the dependent ops succeed without the explicit barrier.
         yield* session.prompt({
           payload: "tf-t47b primitive profile smoke",
           idempotencyKey: `tf-t47b:${runId}:initial`,

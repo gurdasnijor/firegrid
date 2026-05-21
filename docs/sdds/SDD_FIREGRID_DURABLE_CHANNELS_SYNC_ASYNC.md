@@ -142,7 +142,7 @@ world to reflect it" is precisely `call`: the call should not return until the
 action is reflected. Naming the mode means the blocking-until-reflected
 machinery is owned by the callable binding, not re-derived per operation.
 
-### Worked instance: `whenReady` is a symptom, not a primitive
+### Worked instance: `whenReady` was a symptom as a pre-prompt barrier
 
 `firegrid.sessions.createOrLoad` already dispatches through a callable channel
 (`HostSessionsCreateOrLoadChannel.binding.call`). Yet callers historically
@@ -169,6 +169,18 @@ dependent operation (`prompt`, and similarly `start`) waits for reflected
 context state before it writes. Identity-only `createOrLoad` callers are not
 handshakes by the "answer gates the next step" rule, so they still receive the
 deterministic handle immediately.
+
+**`whenReady` is removed as pre-prompt/start ceremony, not deleted as a
+primitive (tf-2osu).** It was a symptom *only where a dependent client write
+followed it*. It remains a legitimate, public, intentionally-unbounded
+readiness primitive for the paths the dependent-write barrier does not cover:
+read/observe before materialization (`snapshot` / `watchContexts`),
+host-execution flows that append/start through host-sdk surfaces
+(`appendRuntimeIngress` / `startRuntime`) rather than the client `prompt` /
+`start` channels, and gating an eagerly-resolving concurrent consumer (e.g. a
+forked `permissions.autoApprove` loop). The rule is sharp: *if a dependent
+client write follows, drop `whenReady` (the write self-barriers); otherwise it
+is the correct explicit readiness wait.*
 
 **This is no longer an assertion - the tf-lfxs spike proved the shape, and
 tf-1r3h closed the production semantics.** The spike wrapped the existing

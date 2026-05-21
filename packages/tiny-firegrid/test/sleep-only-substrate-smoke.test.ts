@@ -171,6 +171,9 @@ describe("dark-factory sleep + wait_for substrate smoke", () => {
         expect(session.contextId).toBe(expectedContextId)
         expect(session.contextId).not.toBe("dark-factory")
 
+        // tf-2osu KEEP: gates the snapshot() read below (asserts
+        // snapshot.context is defined), a read path not covered by the
+        // tf-1r3h prompt/start barrier.
         yield* session.whenReady
         const snapshot = yield* session.snapshot()
         expect(snapshot.contextId).toBe(expectedContextId)

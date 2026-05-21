@@ -192,6 +192,26 @@ export interface FiregridSessionPermissionsClient {
 export interface FiregridSessionHandle {
   readonly sessionId: FiregridSessionId
   readonly contextId: string
+  /**
+   * Explicit "context materialized" readiness wait (first contexts-projection
+   * match on this contextId).
+   *
+   * tf-2osu: this is NOT required before `prompt` / `start` — those dependent
+   * writes own a bounded reflected-context barrier internally (tf-1r3h #587),
+   * so the pre-prompt `whenReady` ceremony is redundant and has been removed
+   * from those call paths. `whenReady` remains a public primitive for the
+   * paths the dependent-write barrier does NOT cover:
+   *   - read/observe before a dependent write (e.g. `snapshot()` /
+   *     `open(...).snapshot`, which return an empty journal until the context
+   *     materializes);
+   *   - host-execution flows that append/start through host-sdk surfaces
+   *     (`appendRuntimeIngress` / `startRuntime`) rather than the client
+   *     `prompt` / `start` channels;
+   *   - gating an eagerly-resolving concurrent consumer such as a forked
+   *     `permissions.autoApprove` loop before the context exists.
+   * Unlike the dependent-write barrier it is intentionally **unbounded** — the
+   * caller opted in to "block until ready".
+   */
   readonly whenReady: Effect.Effect<void, PreloadError>
   readonly prompt: (
     request: SessionHandlePromptInput,
