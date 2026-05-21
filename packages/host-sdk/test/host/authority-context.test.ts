@@ -35,7 +35,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeContextInsert,
   RuntimeContextInsertLive,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/control-plane"
 import {
   ContextNotFound,
   ContextNotLocal,

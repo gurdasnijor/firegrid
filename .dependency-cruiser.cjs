@@ -5,6 +5,8 @@ const sanctionedRuntimeCapabilitySubpaths = [
   // sanctioned for host-sdk binding composition by
   // docs/architecture/host-sdk-runtime-boundary.md.
   "runtime-errors\\.ts$",
+  "channels/index\\.ts$",
+  "agent-event-pipeline/authorities/per-context-output\\.ts$",
   "agent-event-pipeline/tool-execution/index\\.ts$",
   "authorities/index\\.ts$",
   "control-plane/index\\.ts$",

@@ -18,7 +18,6 @@ export {
 export * from "@firegrid/protocol/channels"
 export {
   SessionAgentOutputChannelLive,
-  sessionAgentOutputChannel,
 } from "./channels/session-agent-output/index.ts"
 export {
   SessionPermissionAutoApproveLayer,

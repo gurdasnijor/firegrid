@@ -137,6 +137,34 @@ boundary reconciliation pass with three concrete outcomes:
 3. decide which `waits/` pieces are runtime-specific and which need a separate
    `effect-durable-operators` extraction SDD.
 
+tf-bffo adds a `channels/` top-level folder holding durable channel Live
+implementations co-located below the substrate boundary: protocol owns the
+channel contracts/Tags, the runtime owns these durable Live bindings, and
+host-sdk only COMPOSES them by injecting host topology config. This ratchets
+toward "channels are the only above-box doorway". The canonical end-state is the
+Host-Plane Channel Router
+([`SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md`](./SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md),
+tf-rd3d): protocol owns route contracts, runtime/kernel owns route
+implementations, host-sdk composes the router (`FiregridHostChannelRouterLive`) +
+edges. The carveouts below are route implementations that belong on the runtime
+side of that router.
+
+The first cutover (PR #589) relocates the SessionAgentOutput channel, the
+per-context `RuntimeOutputTable` wiring, the control-request durable arm, the
+SessionPermission durable response, and the HostControl snapshot/lifecycle reads.
+Named REMAINING CARVEOUTS, deferred to blocking follow-up beads (transactional
+cutover rule — no undocumented coexistence):
+
+- `HostControlChannelsLive` still constructs the contexts.create / prompt /
+  session.prompt / sessions.start / permissions.respond request-row channel
+  lives from `RuntimeControlPlaneTable` via the `@firegrid/protocol/launch`
+  factories — those table-bound channel lives still sit above the runtime
+  channels box. The end-to-end router implementation that relocates these
+  durable route bodies below host-sdk and replaces `HostControlChannelsLive` is
+  tf-9x11 (host-sdk must not own durable route bodies in the end state).
+- the `session-self` checkpoint channel (workflow-engine durable reads) and the
+  `RuntimeAgentOutputAfterEvents` reach-past (tf-77ab).
+
 The first implementation PR should break folder cycles because it is the
 lowest-risk change that unlocks cleaner host extraction. The waits extraction
 is design work first; do not move wait internals to another package until that
