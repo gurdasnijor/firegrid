@@ -33,8 +33,6 @@ export const agenticPatternsPrimitiveProfileDriver: Effect.Effect<
       }),
     })
 
-    // tf-2osu: no explicit whenReady — session.prompt/session.start own the
-    // bounded reflected-context barrier (tf-1r3h #587).
     yield* session.prompt({
       payload: "tf-t47b primitive profile launch smoke",
       idempotencyKey: "tf-t47b:agentic-patterns-primitive-profile",

@@ -41,8 +41,6 @@ export const codexAcpToolCallDriver: Effect.Effect<void, unknown, Firegrid> =
       createdBy: "tiny-firegrid-simulation",
     })
 
-    // tf-2osu: no explicit whenReady — session.prompt/session.start own the
-    // bounded reflected-context barrier (tf-1r3h #587).
     yield* session.prompt({
       payload: promptForToolCall,
       idempotencyKey: "codex-acp-tool-calls:turn-1",

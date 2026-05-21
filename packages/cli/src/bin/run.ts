@@ -253,10 +253,6 @@ const executeRun = (config: LaunchConfig, externalKey: CliExternalKey) =>
       `firegrid:run: launched context ${session.contextId} (${config.agentArgv.join(" ")})`,
     )
 
-    // tf-2osu KEEP: this path appends/starts through host-sdk surfaces
-    // (appendRuntimeIngress / startRuntime), NOT the client prompt/start
-    // channels, so it is not covered by the tf-1r3h dependent-write barrier.
-    // whenReady gates host execution on the context being materialized.
     yield* session.whenReady
     const initialPrompt = runConfigToIngressRequest(config, session.contextId)
     if (initialPrompt !== undefined) {
@@ -402,10 +398,6 @@ const seedContextAndPrintReady = (
       runtime: launchConfigToPublicRuntimeIntent(runConfig),
       createdBy: startCreatedBy,
     })
-    // tf-2osu KEEP: host-sdk append path (appendRuntimeIngress, no
-    // session.start here), not the client prompt/start channels — not covered
-    // by the tf-1r3h dependent-write barrier. whenReady gates the host append
-    // and the "ready" record on context materialization.
     yield* session.whenReady
     const initialPrompt = runConfigToIngressRequest(runConfig, session.contextId)
     if (initialPrompt !== undefined) {

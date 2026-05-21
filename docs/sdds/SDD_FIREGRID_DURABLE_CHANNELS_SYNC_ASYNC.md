@@ -182,6 +182,12 @@ forked `permissions.autoApprove` loop). The rule is sharp: *if a dependent
 client write follows, drop `whenReady` (the write self-barriers); otherwise it
 is the correct explicit readiness wait.*
 
+One residual: `whenReady` is unbounded even for a context id that is provably
+absent (no context row and no context-request row), so a typo'd id waits
+forever. The dependent-write barrier already has an absent-id floor (tf-1r3h);
+giving `whenReady` the same floor — fail bounded when provably absent, stay
+unbounded when existing-but-slow — is tracked by tf-5sb7.
+
 **This is no longer an assertion - the tf-lfxs spike proved the shape, and
 tf-1r3h closed the production semantics.** The spike wrapped the existing
 `HostSessionsCreateOrLoad` callable binding with a request-reflection barrier

@@ -238,9 +238,6 @@ export const sim3BindingSwapIsolationDriver: Effect.Effect<
     createdBy: "tiny-firegrid-simulation",
   })
 
-  // tf-2osu KEEP: gates the snapshot() reads below (which require a
-  // materialized context for host.streamPrefix) — a read path, not covered by
-  // the tf-1r3h prompt/start barrier.
   yield* Effect.all([
     sessionA.whenReady,
     sessionB.whenReady,

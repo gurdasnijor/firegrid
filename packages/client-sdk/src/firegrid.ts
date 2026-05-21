@@ -193,24 +193,12 @@ export interface FiregridSessionHandle {
   readonly sessionId: FiregridSessionId
   readonly contextId: string
   /**
-   * Explicit "context materialized" readiness wait (first contexts-projection
-   * match on this contextId).
-   *
-   * tf-2osu: this is NOT required before `prompt` / `start` — those dependent
-   * writes own a bounded reflected-context barrier internally (tf-1r3h #587),
-   * so the pre-prompt `whenReady` ceremony is redundant and has been removed
-   * from those call paths. `whenReady` remains a public primitive for the
-   * paths the dependent-write barrier does NOT cover:
-   *   - read/observe before a dependent write (e.g. `snapshot()` /
-   *     `open(...).snapshot`, which return an empty journal until the context
-   *     materializes);
-   *   - host-execution flows that append/start through host-sdk surfaces
-   *     (`appendRuntimeIngress` / `startRuntime`) rather than the client
-   *     `prompt` / `start` channels;
-   *   - gating an eagerly-resolving concurrent consumer such as a forked
-   *     `permissions.autoApprove` loop before the context exists.
-   * Unlike the dependent-write barrier it is intentionally **unbounded** — the
-   * caller opted in to "block until ready".
+   * Explicit, intentionally-unbounded "context materialized" readiness wait.
+   * NOT required before `prompt` / `start` — those self-barrier (tf-1r3h #587);
+   * use it before read/observe or host-execution paths that need a materialized
+   * context. See `SDD_FIREGRID_DURABLE_CHANNELS_SYNC_ASYNC.md`. A provably-absent
+   * context id still waits unboundedly here — an existence floor is tracked by
+   * tf-5sb7.
    */
   readonly whenReady: Effect.Effect<void, PreloadError>
   readonly prompt: (

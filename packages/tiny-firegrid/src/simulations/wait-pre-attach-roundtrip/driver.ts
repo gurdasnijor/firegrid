@@ -60,10 +60,8 @@ export const waitPreAttachDriver: Effect.Effect<void, unknown, Firegrid> = Effec
     createdBy: "tiny-firegrid-simulation",
   })
 
-  // tf-2osu KEEP: gates the forked permissions.autoApprove loop, which eagerly
-  // resolves the context and would die with PreloadError if it ran before the
-  // context materialized. autoApprove has no internal readiness barrier (it is
-  // not a prompt/start dependent write), so this is not covered by tf-1r3h.
+  // Required before the forked autoApprove loop: it resolves the context
+  // eagerly and dies with PreloadError if the context is not yet materialized.
   yield* session.whenReady
   yield* session.permissions.autoApprove("allow", { timeoutMs: 30_000 })
   yield* session.prompt({
