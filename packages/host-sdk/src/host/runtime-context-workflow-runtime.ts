@@ -33,7 +33,7 @@ interface ActiveRuntimeContextExecution {
   readonly table: WorkflowEngineTable["Type"]
 }
 
-export interface RuntimeContextWorkflowCheckpointHandle {
+interface RuntimeContextWorkflowCheckpointHandle {
   readonly context: RuntimeContext
   readonly executionId: string
   readonly table: WorkflowEngineTable["Type"]

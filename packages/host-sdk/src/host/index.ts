@@ -27,7 +27,6 @@ export {
 } from "./channels/session-permission/index.ts"
 export {
   SessionSelfChannelsLive,
-  makeSessionSelfChannels,
 } from "./channels/session-self/index.ts"
 export {
   HostSessionsCreateOrLoadChannelLive,

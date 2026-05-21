@@ -10,3 +10,8 @@ export {
   makeHostControlSnapshot,
   type HostControlSnapshotConfig,
 } from "./host-control.ts"
+export {
+  makeSessionSelfChannels,
+  type SessionSelfCheckpointHandle,
+  type SessionSelfCheckpointSource,
+} from "./session-self.ts"
