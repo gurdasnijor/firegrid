@@ -237,7 +237,7 @@ const testLayer = (state: {
   )
 
 describe("RawRuntimeContextWorkflowSessionLive", () => {
-  it("keeps stdin Queue local to RawAdapter while preserving send ordering", async () => {
+  it("firegrid-host-sdk.PACKAGE_BOUNDARIES.8 keeps raw stdin delivery ordered through runtime byte-stream ownership", async () => {
     const state = {
       events: [] as Array<RuntimeEventRow>,
       logs: [] as Array<RuntimeLogLineRow>,

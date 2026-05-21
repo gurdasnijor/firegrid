@@ -12,6 +12,7 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "streams/index\\.ts$",
   "agent-event-pipeline/events/index\\.ts$",
   "agent-event-pipeline/codecs/index\\.ts$",
+  "agent-event-pipeline/session-byte-stream-adapter\\.ts$",
   "agent-adapters/index\\.ts$",
   "agent-event-pipeline/sources/sandbox/index\\.ts$",
 ].join("|")

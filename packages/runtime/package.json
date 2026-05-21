@@ -45,6 +45,10 @@
       "types": "./src/agent-event-pipeline/codecs/index.ts",
       "default": "./src/agent-event-pipeline/codecs/index.ts"
     },
+    "./session-byte-stream-adapter": {
+      "types": "./src/agent-event-pipeline/session-byte-stream-adapter.ts",
+      "default": "./src/agent-event-pipeline/session-byte-stream-adapter.ts"
+    },
     "./agent-adapters": {
       "types": "./src/agent-adapters/index.ts",
       "default": "./src/agent-adapters/index.ts"

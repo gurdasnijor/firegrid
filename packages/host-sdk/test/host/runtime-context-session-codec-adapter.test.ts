@@ -224,7 +224,7 @@ const testLayer = (state: {
   )
 
 describe("CodecRuntimeContextWorkflowSessionLive", () => {
-  it("lazily reattaches from send and writes through AgentSession byte stdin", async () => {
+  it("firegrid-host-sdk.PACKAGE_BOUNDARIES.8 lazily reattaches from send and writes through runtime-owned AgentSession byte stdin", async () => {
     const state = {
       events: [] as Array<RuntimeEventRow>,
       logs: [] as Array<RuntimeLogLineRow>,
