@@ -45,20 +45,18 @@ import {
   type RuntimeIngressRequest,
 } from "../runtime-ingress/schema.ts"
 import {
-  FiregridSessionIdSchema,
-  RuntimeContextIdSchema,
   SessionHandlePromptInputSchema,
 } from "../session-facade/schema.ts"
 import {
-  makeRuntimeContextRequestRow,
   makeRuntimeStartRequestAck,
   makeRuntimeStartRequestRow,
 } from "./control-request.ts"
+import { requestRuntimeContextCreate } from "./host-context-request-binding.ts"
 import { ContextNotFound } from "./host-context-authority.ts"
 import {
   type RuntimeControlPlaneTableService,
 } from "./table.ts"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option } from "effect"
 
 const appendInputIntent = (
   control: RuntimeControlPlaneTableService,
@@ -96,25 +94,7 @@ export const makeHostContextsCreateChannel = (
     requestSchema: HostContextsCreateRequestSchema,
     responseSchema: HostContextsCreateResponseSchema,
     call: (request) =>
-      Effect.gen(function*() {
-        const stamped = yield* stampRowOtel(
-          makeRuntimeContextRequestRow({
-            contextId: request.contextId,
-            runtime: request.runtime,
-            ...(request.createdBy === undefined
-              ? {}
-              : { createdBy: request.createdBy }),
-          }),
-        )
-        yield* control.contextRequests.insertOrGet(stamped)
-        const sessionId = yield* Schema.decodeUnknown(FiregridSessionIdSchema)(
-          request.contextId,
-        )
-        const contextId = yield* Schema.decodeUnknown(RuntimeContextIdSchema)(
-          request.contextId,
-        )
-        return { sessionId, contextId }
-      }).pipe(
+      requestRuntimeContextCreate(control, request).pipe(
         Effect.withSpan("firegrid.channel.host.contexts.create.call", {
           kind: "internal",
           attributes: {

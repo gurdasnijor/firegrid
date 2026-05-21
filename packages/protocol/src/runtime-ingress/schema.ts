@@ -124,6 +124,13 @@ export const runtimeIngressInputIdForIdempotencyKey = (
 
 const nowIso = (): string => new Date().toISOString()
 
+const optionalRuntimeIngressPayloadFields = (
+  request: Pick<RuntimeIngressRequest, "idempotencyKey" | "metadata">,
+) => ({
+  ...(request.idempotencyKey === undefined ? {} : { idempotencyKey: request.idempotencyKey }),
+  ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+})
+
 export const inputIdForRuntimeIngressRequest = (
   request: RuntimeIngressRequest,
 ): string =>
@@ -139,8 +146,7 @@ export const promptToRuntimeIngressRequest = (
   kind: "message",
   authoredBy: "client",
   payload: request.payload,
-  ...(request.idempotencyKey === undefined ? {} : { idempotencyKey: request.idempotencyKey }),
-  ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+  ...optionalRuntimeIngressPayloadFields(request),
 })
 
 const runtimeIngressPayloadFromRequest = (
@@ -150,8 +156,7 @@ const runtimeIngressPayloadFromRequest = (
   kind: request.kind,
   authoredBy: request.authoredBy,
   payload: request.payload,
-  ...(request.idempotencyKey === undefined ? {} : { idempotencyKey: request.idempotencyKey }),
-  ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+  ...optionalRuntimeIngressPayloadFields(request),
 })
 
 export const makeRuntimeIngressInputRow = (
@@ -195,6 +200,5 @@ export const runtimeInputIntentToRuntimeIngressRequest = (
   kind: intent.kind,
   authoredBy: intent.authoredBy,
   payload: intent.payload,
-  ...(intent.idempotencyKey === undefined ? {} : { idempotencyKey: intent.idempotencyKey }),
-  ...(intent.metadata === undefined ? {} : { metadata: intent.metadata }),
+  ...optionalRuntimeIngressPayloadFields(intent),
 })
