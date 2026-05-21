@@ -4,6 +4,12 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "
 import process from "node:process"
 import { join } from "node:path"
 
+const DOC_ROOTS = ["README.md", "docs", "features"]
+const DOC_EXTENSIONS = new Set([".md", ".yaml"])
+const DOC_CONFLICT_MARKER = /<<<<<<<|>>>>>>>|=======/
+const DOC_TRAILING_WHITESPACE = /[ \t]$/
+
+// firegrid-quality-gates.DOCS.3
 const ARCH_EXCLUDE =
   "(^|/)(.*\\.test\\.(ts|tsx|mts)|__tests__|dist|build|coverage)(/|$)"
 const EFFECT_DIAGNOSTICS_BASELINE = ".effect-diagnostics-baseline.json"
@@ -39,6 +45,67 @@ const archTargets = {
     paths: ["packages/runtime/src"],
     output: "docs/dependency-graph-runtime-detail.mmd",
   },
+}
+
+const run = (command, args, options = {}) => {
+  const result = spawnSync(command, args, {
+    stdio: "inherit",
+    env: process.env,
+    ...options,
+  })
+
+  if (result.error !== undefined) {
+    error(result.error.message)
+    process.exit(1)
+  }
+
+  if (result.status !== 0) process.exit(result.status ?? 1)
+}
+
+const collectDocs = (path) => {
+  const info = statSync(path)
+  if (info.isFile()) {
+    if ([...DOC_EXTENSIONS].some(extension => path.endsWith(extension))) {
+      return [path]
+    }
+    return []
+  }
+
+  return readdirSync(path)
+    .flatMap(entry => collectDocs(join(path, entry)))
+}
+
+const checkDocs = () => {
+  let failed = false
+  for (const file of DOC_ROOTS.flatMap(collectDocs)) {
+    const lines = readFileSync(file, "utf8").split(/\r?\n/)
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]
+      if (DOC_TRAILING_WHITESPACE.test(line)) {
+        error(`${file}:${String(index + 1)}: trailing whitespace`)
+        failed = true
+      }
+      if (DOC_CONFLICT_MARKER.test(line)) {
+        error(`${file}:${String(index + 1)}: merge conflict marker`)
+        failed = true
+      }
+    }
+  }
+  if (failed) process.exit(1)
+}
+
+const checkSpecs = () => {
+  run("ruby", [
+    "-e",
+    "require \"yaml\"; ARGV.each { |f| YAML.load_file(f); puts \"ok #{File.basename(f)}\" }",
+    ...readdirSync("features", { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .flatMap(entry =>
+        readdirSync(join("features", entry.name))
+          .filter(file => file.endsWith(".feature.yaml"))
+          .map(file => join("features", entry.name, file))
+      ),
+  ])
 }
 
 const emptyEffectCounts = () => ({ error: 0, warning: 0, message: 0 })
@@ -267,7 +334,9 @@ const archDeps = (target) => {
 
 const [group, command, target] = process.argv.slice(2)
 
-if (group === "effect" && command === "diagnostics") effectDiagnostics(target)
+if (group === "check" && command === "specs") checkSpecs()
+else if (group === "check" && command === "docs") checkDocs()
+else if (group === "effect" && command === "diagnostics") effectDiagnostics(target)
 else if (group === "arch" && command === "deps" && target !== undefined) {
   archDeps(target)
 } else {
