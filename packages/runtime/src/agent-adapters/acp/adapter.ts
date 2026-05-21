@@ -223,6 +223,9 @@ const makeAcpAgentAdapter = (
         ),
       )
 
+    const failCurrent = (error: AiError.AiError): Effect.Effect<void> =>
+      offerToCurrent({ _tag: "Fail", error })
+
     const client: acp.Client = {
       // firegrid-effect-ai-native-agents.ACP_ADAPTER.6
       // firegrid-effect-ai-native-agents.ACP_ADAPTER.12
@@ -240,10 +243,7 @@ const makeAcpAgentAdapter = (
             onSome: state => state.turnId,
           })
           await runPromise(
-            offerToCurrent({
-              _tag: "Fail",
-              error: permissionRequiredError(params.toolCall.toolCallId, turnId),
-            }),
+            failCurrent(permissionRequiredError(params.toolCall.toolCallId, turnId)),
           )
         } catch {
           // Adapter runtime is gone; nothing to notify. Fall through
@@ -306,16 +306,7 @@ const makeAcpAgentAdapter = (
     const sessionId = session.sessionId
 
     yield* Effect.addFinalizer(() =>
-      Ref.get(currentTurnRef).pipe(
-        Effect.flatMap(maybe =>
-          Option.match(maybe, {
-            onNone: () => Effect.void,
-            onSome: turn =>
-              Queue.offer(turn.queue, { _tag: "Fail", error: cancelledError() }).pipe(
-                Effect.asVoid,
-              ),
-          }),
-        ),
+      failCurrent(cancelledError()).pipe(
         Effect.zipRight(
           Effect.tryPromise(() => connection.cancel({ sessionId })).pipe(Effect.ignore),
         ),

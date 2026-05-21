@@ -296,6 +296,25 @@ const linearWebhookExternalEntityKey = (
   payload: LinearWebhookPayload,
 ): string | undefined => stringAtPath(payload, ["data", "id"])
 
+const verifiedFactFields = <Payload>(
+  request: VerifiedWebhookIngestRequest,
+  headers: Readonly<Record<string, string>>,
+  payload: Payload,
+  timestamp: string,
+  payloadSha256: string,
+) => ({
+  receivedAt: request.receivedAt ?? timestamp,
+  verifiedAt: timestamp,
+  signatureScheme,
+  payloadSha256,
+  selectedHeaders: selectedHeaders(
+    headers,
+    request.config.signatureHeaderName ?? defaultSignatureHeaderName,
+    request.config.selectedHeaderNames,
+  ),
+  payload,
+})
+
 const makeLinearFact = (
   request: VerifiedWebhookIngestRequest,
   headers: Readonly<Record<string, string>>,
@@ -310,16 +329,7 @@ const makeLinearFact = (
     externalEventKey: payload.webhookId,
     ...optionalField("externalEntityKey", externalEntityKey),
     eventType: linearWebhookEventType(payload),
-    receivedAt: request.receivedAt ?? timestamp,
-    verifiedAt: timestamp,
-    signatureScheme,
-    payloadSha256,
-    selectedHeaders: selectedHeaders(
-      headers,
-      request.config.signatureHeaderName ?? defaultSignatureHeaderName,
-      request.config.selectedHeaderNames,
-    ),
-    payload,
+    ...verifiedFactFields(request, headers, payload, timestamp, payloadSha256),
     action: payload.action,
     type: payload.type,
     webhookId: payload.webhookId,
@@ -371,18 +381,9 @@ const makeFact = (
     factKey: [request.source, externalEventKey],
     source: request.source,
     externalEventKey,
-    ...(externalEntityKey === undefined ? {} : { externalEntityKey }),
+    ...optionalField("externalEntityKey", externalEntityKey),
     eventType,
-    receivedAt: request.receivedAt ?? timestamp,
-    verifiedAt: timestamp,
-    signatureScheme,
-    payloadSha256,
-    selectedHeaders: selectedHeaders(
-      headers,
-      request.config.signatureHeaderName ?? defaultSignatureHeaderName,
-      request.config.selectedHeaderNames,
-    ),
-    payload,
+    ...verifiedFactFields(request, headers, payload, timestamp, payloadSha256),
   })
 }
 

@@ -4,13 +4,12 @@ import {
   HostSessionsCreateOrLoadResponseSchema,
 } from "../channels/host-sessions-create-or-load.ts"
 import { makeCallableChannel } from "../channels/core.ts"
-import { stampRowOtel } from "../otel/row-otel.ts"
 import {
   sessionContextIdForExternalKey,
   type SessionCreateOrLoadInput,
   type SessionHandleReference,
 } from "../session-facade/schema.ts"
-import { makeRuntimeContextRequestRow } from "./control-request.ts"
+import { requestRuntimeContextCreate } from "./host-context-request-binding.ts"
 import {
   RuntimeControlPlaneTable,
   type RuntimeControlPlaneTableService,
@@ -27,20 +26,7 @@ export const requestHostSessionCreateOrLoad = (
   Effect.gen(function*() {
     const control = yield* RuntimeControlPlaneTable
     const contextId = sessionContextIdForExternalKey(request.externalKey)
-    const stamped = yield* stampRowOtel(
-      makeRuntimeContextRequestRow({
-        contextId,
-        runtime: request.runtime,
-        ...(request.createdBy === undefined
-          ? {}
-          : { createdBy: request.createdBy }),
-      }),
-    )
-    yield* control.contextRequests.insertOrGet(stamped)
-    return {
-      sessionId: contextId,
-      contextId,
-    }
+    return yield* requestRuntimeContextCreate(control, { ...request, contextId })
   }).pipe(
     Effect.withSpan("firegrid.channel.host.sessions.create_or_load.call", {
       kind: "internal",

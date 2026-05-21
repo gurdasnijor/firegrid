@@ -13,6 +13,7 @@ import type {
   WorkflowActivityClaimRow,
   WorkflowClockWakeupRow,
   WorkflowEngineTableService,
+  WorkflowExecutionRow,
 } from "./table.ts"
 
 const orDieTable = <A>(
@@ -155,11 +156,25 @@ export const makeWorkflowEngine = (
         Effect.map(row => Option.getOrUndefined(row)?.interrupted === true),
       ))
 
+    const getExecutionRow = (
+      executionId: string,
+    ): Effect.Effect<WorkflowExecutionRow | undefined> =>
+      orDieTable(table.executions.get(executionId).pipe(
+        Effect.map(Option.getOrUndefined),
+      ))
+
+    const currentWorkflowInstanceWithSpanAnnotations = Effect.gen(function*() {
+      const instance = yield* WorkflowEngine.WorkflowInstance
+      yield* Effect.annotateCurrentSpan({
+        "firegrid.workflow.execution_id": instance.executionId,
+        "firegrid.workflow.name": instance.workflow.name,
+      })
+      return instance
+    })
+
     const resume = (executionId: string) =>
       Effect.gen(function*() {
-        const row = yield* orDieTable(table.executions.get(executionId).pipe(
-          Effect.map(Option.getOrUndefined),
-        ))
+        const row = yield* getExecutionRow(executionId)
         if (!row || row.finalResult !== undefined) return
         const entry = workflows.get(row.workflowName)
         if (!entry) return
@@ -193,9 +208,7 @@ export const makeWorkflowEngine = (
           Effect.provideService(WorkflowEngine.WorkflowEngine, engine),
           Effect.tap(result =>
             Effect.gen(function* () {
-              const latest = (yield* orDieTable(table.executions.get(executionId).pipe(
-                Effect.map(Option.getOrUndefined),
-              ))) ?? row
+              const latest = (yield* getExecutionRow(executionId)) ?? row
               const finalResult = result._tag === "Complete"
                 ? yield* encodeWorkflowResult(entry.workflow, result)
                 : undefined
@@ -249,9 +262,7 @@ export const makeWorkflowEngine = (
         ),
       execute: (workflow, options) =>
         Effect.gen(function*() {
-          const existing = yield* orDieTable(table.executions.get(options.executionId).pipe(
-            Effect.map(Option.getOrUndefined),
-          ))
+          const existing = yield* getExecutionRow(options.executionId)
           if (existing?.finalResult !== undefined) {
             return (yield* decodeWorkflowResult(workflow, existing.finalResult)) as never
           }
@@ -276,9 +287,7 @@ export const makeWorkflowEngine = (
             return undefined as never
           }
           if (fiber) return (yield* Fiber.join(fiber)) as never
-          const afterResume = yield* orDieTable(table.executions.get(options.executionId).pipe(
-            Effect.map(Option.getOrUndefined),
-          ))
+          const afterResume = yield* getExecutionRow(options.executionId)
           if (afterResume?.finalResult !== undefined) {
             return (yield* decodeWorkflowResult(workflow, afterResume.finalResult)) as never
           }
@@ -296,9 +305,7 @@ export const makeWorkflowEngine = (
         ),
       poll: (_workflow, executionId) =>
         Effect.gen(function* () {
-          const row = yield* orDieTable(table.executions.get(executionId).pipe(
-            Effect.map(Option.getOrUndefined),
-          ))
+          const row = yield* getExecutionRow(executionId)
           return row?.finalResult === undefined
             ? undefined
             : yield* decodeWorkflowResult(_workflow, row.finalResult)
@@ -314,9 +321,7 @@ export const makeWorkflowEngine = (
         ),
       interrupt: (_workflow, executionId) =>
         Effect.gen(function* () {
-          const row = yield* orDieTable(table.executions.get(executionId).pipe(
-            Effect.map(Option.getOrUndefined),
-          ))
+          const row = yield* getExecutionRow(executionId)
           if (!row) return
           yield* orDieTable(table.executions.upsert({ ...row, interrupted: true }))
           const current = running.get(executionId)
@@ -338,11 +343,7 @@ export const makeWorkflowEngine = (
       resume: (_workflow, executionId) => resume(executionId),
       activityExecute: (activity, attempt) =>
         Effect.gen(function*() {
-          const instance = yield* WorkflowEngine.WorkflowInstance
-          yield* Effect.annotateCurrentSpan({
-            "firegrid.workflow.execution_id": instance.executionId,
-            "firegrid.workflow.name": instance.workflow.name,
-          })
+          const instance = yield* currentWorkflowInstanceWithSpanAnnotations
           const activityKey = `${instance.executionId}/${activity.name}/${attempt}`
           const row = yield* orDieTable(table.activities.get(activityKey).pipe(
             Effect.map(Option.getOrUndefined),
@@ -413,11 +414,7 @@ export const makeWorkflowEngine = (
         ),
       deferredResult: deferred =>
         Effect.gen(function*() {
-          const instance = yield* WorkflowEngine.WorkflowInstance
-          yield* Effect.annotateCurrentSpan({
-            "firegrid.workflow.execution_id": instance.executionId,
-            "firegrid.workflow.name": instance.workflow.name,
-          })
+          const instance = yield* currentWorkflowInstanceWithSpanAnnotations
           const key = `${instance.executionId}/${deferred.name}`
           const row = yield* orDieTable(table.deferreds.get(key).pipe(
             Effect.map(Option.getOrUndefined),

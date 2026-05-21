@@ -25,5 +25,5 @@
   "output": "./.jscpd-report",
   "absolute": false,
   "gitignore": true,
-  "threshold": 48
+  "threshold": 0
 }
