@@ -30,6 +30,18 @@ components:
       3: Permission requests surface through explicit ACP/adapter permission handling and are not auto-granted by the base model path.
       4: The current AcpCodec ClientSideConnection implementation is not reused directly for Zed because it represents Firegrid-as-client to an ACP subprocess, the opposite ACP role.
 
+  ACP_STDIO_EDGE:
+    requirements:
+      1: The production ACP stdio edge is a host-sdk Effect layer that composes with the normal Firegrid host and does not construct FiregridStandaloneLive or call the client SDK.
+      2: ACP newSession dispatches through the host-plane channel router to create a RuntimeContext while keeping ACP session identity adapter-local.
+      3: ACP prompt dispatches prompt and start through host-plane channel routes, forwards Firegrid agent output as ACP sessionUpdate notifications, resolves only after TurnComplete, and keeps the session reusable for later prompts.
+      4: ACP methods without current Firegrid host primitives fail explicitly instead of pretending to work, and follow-up beads track the missing primitives.
+
+  CLI_HELPER:
+    requirements:
+      1: A CLI helper composes the local Firegrid host with AcpStdioEdgeLive, routes process stdin/stdout as the ACP transport, and keeps stdout reserved for ACP frames.
+      2: The CLI helper accepts a normal local runtime command preset for the RuntimeContexts created by ACP newSession.
+
 constraints:
   MCP_BOUNDARY:
     requirements:
@@ -49,3 +61,4 @@ constraints:
       2: The smoke proves stdout contains only ACP frames and stderr may contain diagnostics.
       3: The smoke proves the spawned ACP process binds to a Firegrid RuntimeContext and does not require test-local stream URL wiring.
       4: A tiny-firegrid host-topology spike configures an ACP stdio edge with injectable streams, drives it from an in-memory ACP client through the real ACP TypeScript SDK, maps initialize, newSession, prompt, and sessionUpdate over public Firegrid client/channel operations, and proves prompt completion follows TurnComplete while the Firegrid session remains alive.
+      5: A production host-sdk smoke drives AcpStdioEdgeLive with an in-memory ACP client through initialize, newSession, two prompt turns, sessionUpdate text projection, TurnComplete completion, and session reuse.

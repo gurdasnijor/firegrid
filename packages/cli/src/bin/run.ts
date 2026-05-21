@@ -57,6 +57,8 @@ import {
 // @firegrid/runtime substrate or rely on client-sdk durable-table writes.
 import {
   appendRuntimeIngress,
+  AcpStdioEdge,
+  AcpStdioEdgeLive,
   ensurePathInput,
   FiregridLocalHostLive,
   FiregridMcpServerLayer,
@@ -66,9 +68,11 @@ import {
   runConfigToIngressRequest,
   runtimeContextMcpPath,
   startRuntime,
+  type AcpStdioSessionRuntimeRequest,
 } from "@firegrid/host-sdk"
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk/firegrid"
-import { Cause, Console, Data, Effect, Either, Exit, Layer, Option, ParseResult } from "effect"
+import { Cause, Console, Context, Data, Effect, Either, Exit, Layer, Option, ParseResult } from "effect"
+import { Readable, Writable } from "node:stream"
 
 class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
   readonly message: string
@@ -98,6 +102,11 @@ interface StartConfig {
   readonly mcpHost: string
   readonly mcpPort: number
   readonly mcpPath: string
+  readonly runConfig: LaunchConfig
+}
+
+interface AcpConfig {
+  readonly namespace: string
   readonly runConfig: LaunchConfig
 }
 
@@ -379,6 +388,23 @@ const printReadyRecord = (
   return Console.log(JSON.stringify(record))
 }
 
+const firegridLocalHostLayer = (
+  durableStreams: DurableStreamsEndpoint,
+  namespace: string,
+  runConfig: LaunchConfig,
+  headers: DurableTableHeaders | undefined,
+) =>
+  FiregridLocalHostLive(
+    {
+      durableStreamsBaseUrl: durableStreams.baseUrl,
+      namespace,
+      input: true,
+      ...(headers === undefined ? {} : { headers }),
+      localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+    },
+    envPolicyLayer(runConfig.authorizedBindings ?? []),
+  )
+
 const seedContextAndPrintReady = (
   durableStreams: DurableStreamsEndpoint,
   config: StartConfig,
@@ -436,15 +462,11 @@ const hostMcpLayer = (
       path: ensurePathInput(config.mcpPath),
     }).pipe(
       Layer.provideMerge(FiregridLive.pipe(Layer.provide(clientConfigLayer))),
-      Layer.provideMerge(FiregridLocalHostLive(
-        {
-          durableStreamsBaseUrl: durableStreams.baseUrl,
-          namespace: config.namespace,
-          input: true,
-          ...(headers === undefined ? {} : { headers }),
-          localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
-        },
-        envPolicyLayer(config.runConfig.authorizedBindings ?? []),
+      Layer.provideMerge(firegridLocalHostLayer(
+        durableStreams,
+        config.namespace,
+        config.runConfig,
+        headers,
       )),
     )
     // The workspace package export resolves at runtime through the source
@@ -494,6 +516,52 @@ const runWithMcp = (
     }),
   )
 
+const acpRuntimeIntent = (
+  config: LaunchConfig,
+  request: AcpStdioSessionRuntimeRequest,
+) =>
+  launchConfigToPublicRuntimeIntent({
+    ...config,
+    ...(config.cwd === undefined ? { cwd: request.request.cwd } : {}),
+  })
+
+const processInputStream = (): ReadableStream<Uint8Array> =>
+  Readable.toWeb(globalThis.process.stdin) as ReadableStream<Uint8Array>
+
+const processOutputStream = (): WritableStream<Uint8Array> =>
+  Writable.toWeb(globalThis.process.stdout) as WritableStream<Uint8Array>
+
+const hostAcpLayer = (
+  durableStreams: DurableStreamsEndpoint,
+  config: AcpConfig,
+) => {
+  const headers = durableTableHeadersFromEnv()
+  return AcpStdioEdgeLive({
+    input: processInputStream(),
+    output: processOutputStream(),
+    runtime: request => acpRuntimeIntent(config.runConfig, request),
+  }).pipe(
+    Layer.provideMerge(firegridLocalHostLayer(
+      durableStreams,
+      config.namespace,
+      config.runConfig,
+      headers,
+    )),
+  )
+}
+
+const runAcpStdio = (
+  durableStreams: DurableStreamsEndpoint,
+  config: AcpConfig,
+) =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const context = yield* Layer.build(hostAcpLayer(durableStreams, config))
+      const edge = Context.get(context, AcpStdioEdge)
+      yield* edge.closed
+    }),
+  )
+
 const helpWithDetails = (
   help: {
     readonly description: string
@@ -510,6 +578,7 @@ const rootHelp = `Run Firegrid agents or start a route-scoped local host/MCP ser
 
 Common workflows:
   pnpm firegrid -- start
+  pnpm firegrid -- acp --agent codex-acp --agent-protocol acp -- npx -y @zed-industries/codex-acp@0.14.0
   pnpm firegrid -- run --prompt "Summarize this repository" -- node agent.mjs
   pnpm firegrid -- run --agent codex-acp --agent-protocol acp -- npx -y @zed-industries/codex-acp@0.14.0
   pnpm firegrid -- run --secret-env ANTHROPIC_API_KEY -- node agent.mjs`
@@ -535,6 +604,15 @@ Examples:
   pnpm firegrid -- start
   pnpm firegrid -- start --namespace firegrid-local --mcp-port 3333
   pnpm firegrid -- start --prompt "Wait for MCP input" -- node agent.mjs`
+
+const acpHelp = `Start Firegrid as a long-running ACP stdio agent.
+
+The command reserves stdout for ACP JSON-RPC frames and routes ACP newSession
+and prompt requests into Firegrid host-plane channel routes.
+
+Examples:
+  pnpm firegrid -- acp --agent codex-acp --agent-protocol acp -- npx -y @zed-industries/codex-acp@0.14.0
+  pnpm firegrid -- acp --cwd "$PWD" -- node agent.mjs`
 
 const runArgv = Args.text({ name: "agent-argv" }).pipe(
   Args.withDescription(helpWithDetails(LaunchCliHelp.agentArgv)),
@@ -668,9 +746,44 @@ const startCommand = Command.make(
     }).pipe(Effect.scoped),
 ).pipe(Command.withDescription(startHelp))
 
+const acpCommand = Command.make(
+  "acp",
+  {
+    namespace: namespaceOption,
+    agent: agentOption,
+    agentProtocol: agentProtocolOption,
+    cwd: cwdOption,
+    secretEnv: secretEnvOption,
+    agentArgv: runArgv,
+  },
+  ({ agent, agentArgv, agentProtocol, cwd, namespace, secretEnv }) =>
+    Effect.gen(function*() {
+      const raw = yield* rawRunConfigFromCli({
+        agentArgv,
+        agent,
+        agentProtocol,
+        cwd,
+        prompt: Option.none(),
+        secretEnv,
+        allowEmptyAgentArgv: false,
+      })
+      const runConfig = yield* decodeCliRunConfig(raw, "firegrid acp")
+      const durableStreams = yield* durableStreamsEndpoint
+      const namespaceFromEnv = globalThis.process.env["FIREGRID_RUNTIME_NAMESPACE"]
+      const config: AcpConfig = {
+        namespace: Option.getOrElse(namespace, () =>
+          namespaceFromEnv === undefined || namespaceFromEnv.length === 0
+            ? defaultNamespace
+            : namespaceFromEnv),
+        runConfig,
+      }
+      yield* runAcpStdio(durableStreams, config)
+    }).pipe(Effect.scoped),
+).pipe(Command.withDescription(acpHelp))
+
 const rootCommand = Command.make("firegrid").pipe(
   Command.withDescription(rootHelp),
-  Command.withSubcommands([runCommand, startCommand]),
+  Command.withSubcommands([runCommand, startCommand, acpCommand]),
 )
 
 const cli = Command.run(rootCommand, {
