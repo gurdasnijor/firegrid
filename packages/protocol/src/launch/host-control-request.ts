@@ -50,10 +50,11 @@ import {
   makeRuntimeStartRequestAck,
   makeRuntimeStartRequestRow,
 } from "./control-request.ts"
+import { ContextNotFound } from "./host-context-authority.ts"
 import {
   type RuntimeControlPlaneTableService,
 } from "./table.ts"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 
 const appendInputIntent = (
   control: RuntimeControlPlaneTableService,
@@ -198,6 +199,17 @@ export const makeHostPermissionRespondChannel = (
     responseSchema: HostPermissionRespondChannelResponseSchema,
     call: (request) =>
       Effect.gen(function*() {
+        // tf-aago regression guard (#560 review): do NOT record a permission
+        // response for a nonexistent context. The pre-channel client path
+        // guarded this via resolveContext in appendRuntimeInputIntent; the
+        // channel binding must preserve it, otherwise a missing context
+        // creates an orphan required_action_result intent AND falsely
+        // returns responded:true. Fail fast with a not-found error instead;
+        // the client projection maps it to AppendError (no false success).
+        const context = yield* control.contexts.get(request.contextId)
+        if (Option.isNone(context)) {
+          return yield* new ContextNotFound({ contextId: request.contextId })
+        }
         const row = yield* appendInputIntent(
           control,
           permissionResponseInput(request),
