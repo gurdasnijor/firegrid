@@ -44,6 +44,7 @@ import {
 import {
   RuntimeControlPlaneRecorderLive,
 } from "@firegrid/runtime/control-plane"
+import type { RuntimeLocalContextResolver } from "@firegrid/runtime/control-plane"
 import {
   makeCodecRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/codec-adapter.ts"
@@ -294,6 +295,7 @@ export type FiregridHost =
   | RuntimeStartCapability
   | SessionAgentOutputChannel
   | CurrentHostSession
+  | RuntimeLocalContextResolver
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
   | ChannelInventory
