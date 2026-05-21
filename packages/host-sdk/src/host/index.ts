@@ -79,17 +79,15 @@ export {
   hostOwnedStreamUrl,
   provideRuntimeContext,
   requireLocalContext,
-  runtimeControlPlaneStreamUrl,
 } from "@firegrid/protocol/launch"
 
-export type {
-  RuntimeAgentOutputObservation,
-} from "@firegrid/runtime/runtime-output"
 export { RuntimeIngressError } from "@firegrid/runtime/errors"
 // CallerOwnedFactStreams is a host-side capability: the host provides
 // the implementation, runtime observation consumers resolve CallerFact
 // streams through it. Hosts (including tests / sims that compose a host
 // layer) need this tag to bind their durable streams at the workflow boundary.
+// TODO(tf-8oaq): migrate public-barrel consumers to @firegrid/runtime/streams
+// or a narrow host composition subpath, then remove this bridge export.
 export { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 export {
   localProcessSpawnEnvFromHostEnv,
@@ -113,18 +111,11 @@ export {
   startRuntime,
 } from "./commands.ts"
 export {
+  // TODO(tf-9sx9): lane 2 is migrating current consumers; keep this export until
+  // that PR lands and the public-barrel compatibility window can close.
   hostProjectionObserver,
   type HostProjectionObserverOptions,
 } from "./projection-observer.ts"
-export {
-  HostRuntimeObservationStreamsLive,
-} from "./runtime-substrate.ts"
-export {
-  RuntimeAgentToolExecutionLive,
-} from "@firegrid/runtime/tool-executor"
-export {
-  RuntimeToolUseExecutorLive,
-} from "../agent-tools/execution/runtime-tool-use-executor-live.ts"
 export {
   EventChannelSourceClasses,
   eventChannel,
