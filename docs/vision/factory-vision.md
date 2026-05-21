@@ -167,12 +167,12 @@ intended public surface that just hasn't been documented as such; the
 toy's discipline is what adjudicates the difference.
 
 That's the criterion `tiny-firegrid` is converging toward. The toy's
-configurations exist to validate, one capability at a time, that the
-surface the factory needs is real and expressible. When a configuration
+simulations exist to validate, one capability at a time, that the
+surface the factory needs is real and expressible. When a simulation
 that wires the factory's minimal slice — a trigger, a parent context, a
 planner with the choreography tools, a permission gate, a delegated
 child, a durable observation surface — passes through the public client
-SDK without reach-pasts, the platform is factory-ready.
+SDK / channel surface without reach-pasts, the platform is factory-ready.
 
 The factory itself is one application of this substrate. There will be
 others. A research factory, an analyst factory, a customer-support
@@ -264,39 +264,38 @@ payload hash. The durable boundary starts at the fact row, not at the
 HTTP edge. This is the first capability in §7 — external events as
 durable verified facts — expressed as working code today.
 
-**`apps/factory`** is an in-flight implementation of the dark factory
-app. Several of the capabilities §7 enumerates are exercised in it
-through public-shaped boundaries: it composes its own `DarkFactoryTable`
-with `facts` and `runs` collections using the same `DurableTable`
-primitive the runtime itself uses; it maps an external trigger to a
-single durable planner participant through
-`firegrid.sessions.createOrLoad` keyed by external source and entity;
-it waits on its own app-owned fact collection through Effect `Stream`
-operations over `table.facts.rows()`; and it observes runtime state
-through `session.snapshot()` and `session.wait.forPermissionRequest`.
-The factory app is a real consumer of the substrate, not a test fixture.
-When it works cleanly, that is evidence the public surface expresses
-the capability. When it has to import lower-level pieces to get
-something done, that is a candidate finding — a question the toy's
-discipline can adjudicate.
+**`packages/tiny-firegrid` simulations** are the real-consumer-over-the-
+public-surface evidence. (An earlier draft pointed at an `apps/factory`
+app; that app does not exist in this checkout — the real-consumer role
+is carried entirely by tiny-firegrid simulations exercising the public
+client / channel surface.) After the channel-collapse wave the client
+surface is channelized: `firegrid.sessions.createOrLoad`,
+`session.prompt`/`start`, `permissions.respond`, `watchContexts`,
+`whenReady`, and `wait.forAgentOutput` all dispatch through protocol-
+owned channel contracts (`@firegrid/protocol/channels`), not bespoke
+substrate pokes. Concrete sims ground the capabilities: the external-
+trigger loop is exercised by `linear-webhook-cookbook-composition` (a
+product-owned signed Linear webhook route writes verified facts; the
+generic `firegrid.verifiedWebhooks` channel makes them `wait_for`-
+observable; a deterministic planner waits on source/eventType/webhookId);
+cross-agent delegation/choreography by `inv5-cross-agent-event-
+choreography`; idempotent intent→participant by
+`idempotent-one-intent-pipeline`; and the sync/async durable-channel
+modes by `durable-channels-sync-async-spike`.
 
-The factory app's own README is candid about places it currently
-composes layers directly rather than going through the intended public
-entrypoint, and names a follow-up to route more of the smoke through a
-single composition surface. That kind of self-aware reach-past is
-exactly what the toy's discipline is meant to surface systematically:
-some such imports are gaps; some are intended public surface that
-simply isn't documented as such; only investigation can tell which is
-which.
+When a sim expresses a capability cleanly through the public surface,
+that is evidence the surface is real. When it has to reach past the
+public surface into private pieces, that is a candidate finding — a
+question the toy's discipline adjudicates. The same self-aware reach-past
+tracking applies; the difference from the earlier framing is that there
+is no separate factory app, and findings are tracked as beads (below),
+not markdown ledgers.
 
-The relationship between these artifacts and `tiny-firegrid` is
-complementary. The factory app validates *practicability* — can a real
-consumer build the factory today, and where does it have to reach below
-the public surface to do so. The toy validates *expressibility* — can
-each capability be wired through the public surface in isolation,
-without any factory-specific scaffolding. Both produce findings. The
-toy is the systematic version; the factory app is the production target
-the toy is converging toward.
+The toy validates *expressibility* — each capability wired through the
+public surface in isolation. The production target the toy converges
+toward is the factory-ready capstone (§5): a single trace, over public
+channels, from external trigger to reviewed action. That capstone — not
+a separate app — is the integrative practicability proof.
 
 ## §7 — What the substrate needs to make this work
 
@@ -358,23 +357,25 @@ exposed.
 `tiny-firegrid` is a small package inside the Firegrid monorepo whose
 only job is to prove the capabilities in §7 are real and accessible
 through Firegrid's public surface. It does this by writing
-configurations — small TypeScript files that wire a specific capability
-through public boundaries and assert externally visible behavior.
+*simulations* — small folders (`src/simulations/<id>/{host,driver,
+index}.ts`) that wire a specific capability through public boundaries
+and assert externally visible behavior. (An earlier draft called these
+"configurations"; the current runner shape is simulations discovered by
+`simulate:list`.)
 
-The shape of a configuration is: take a real production Firegrid host,
-drive it through the public client SDK as a real consumer would, and
-check that the resulting behavior matches what the factory needs. A
-configuration is *buildable* when the public surface can express the
-capability cleanly. A configuration is *failing* when expressing the
-capability requires reaching past the public surface into private
-internals — that failure is information, recorded as a finding, and
-points to where the substrate is incomplete.
+The shape of a simulation is: take a real production Firegrid host,
+drive it through the public client SDK / channel surface as a real
+consumer would, and check that the resulting behavior matches what the
+factory needs. A simulation is *buildable* when the public surface can
+express the capability cleanly. A simulation is *failing* when
+expressing the capability requires reaching past the public surface into
+private internals — that failure is information, recorded as a finding,
+and points to where the substrate is incomplete.
 
 The toy is therefore an executable specification of the substrate's
-surface. When every capability in §7 has at least one configuration
-that exercises it through public APIs without reach-pasts, the
-substrate is provably factory-ready. The toy retires at that point; its
-job is done.
+surface. When every capability in §7 has at least one simulation that
+exercises it through public APIs without reach-pasts, the substrate is
+provably factory-ready. The toy retires at that point; its job is done.
 
 This is not a test suite. The toy isn't validating Firegrid's
 correctness — Firegrid has its own tests for that. The toy is validating
@@ -382,28 +383,28 @@ Firegrid's *expressibility*. The question it answers is "can a real
 consumer build the factory using only the public surface," not "does
 the substrate work internally."
 
-The toy's investigation runs in parallel with the factory app's. Both
-surface findings; both point at the same target. The toy's findings
-tend to be capability-shaped and architecturally clean — "this primitive
-can't be expressed this way through the public surface." The factory
-app's findings tend to be ergonomic and integration-shaped — "this
-capability is expressible but the consumer has to write more glue than
-they should, or has to reach below the intended surface to wire it up."
-Both kinds matter. Both feed the same `FINDINGS.md`.
+The toy's simulations surface two kinds of findings. Capability-shaped
+ones are architecturally clean — "this primitive can't be expressed this
+way through the public surface." Ergonomic/integration ones are softer —
+"this capability is expressible but the consumer writes more glue than
+they should, or reaches below the intended surface to wire it up." Both
+kinds matter; both feed the bead ledger.
 
 ## §9 — The operational hook
 
-The toy's findings and configurations are tracked in two operational
-documents alongside this one: `FINDINGS.md` (the authoritative ledger
-of every gap or capability claim) and `CONFIGS.md` (the index of
-configurations, their status, and what they prove).
+The toy's findings and simulations are tracked as **beads** (the `br`
+issue tracker), not standalone markdown ledgers. (Earlier drafts
+referenced `FINDINGS.md` and `CONFIGS.md` inside `packages/tiny-firegrid`;
+those were retired into beads. `bv --robot-triage` / `br` are the
+authority; findings carry channel/spike/`tfind:` labels.)
 
-Each entry in those documents carries a factory-relevance tag:
+Each finding bead carries a factory-relevance disposition:
 **gates** (the factory cannot be expressed until this is resolved),
 **supports** (the factory benefits but isn't blocked), or **off-path**
-(valid platform work, but not on the factory critical path). The tag is
-assigned during triage and updated as evidence accrues. It is the
-operational signal that connects per-finding work to the North Star.
+(valid platform work, but not on the factory critical path). The
+disposition is assigned during triage and updated as evidence accrues.
+It is the operational signal that connects per-finding work to the North
+Star.
 
 That signal is the only operational obligation this document creates.
 Everything else — dispatch order, framing reviews, signoff bundles —
@@ -417,72 +418,73 @@ For the architectural contracts the factory and the toy depend on:
   contract
 - `docs/sdds/SDD_FIREGRID_FACTORY_ALIGNED_AGENT_TOOL_WORKSTREAM.md` —
   the tool surface the factory needs
-- `vault/canon/concepts/choreography-vs-orchestration.md` — the
-  philosophical grounding
+- `docs/sdds/SDD_CHOREOGRAPHY_FACADE.md` — the choreography grounding
+- `docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md` +
+  `docs/sdds/SDD_FIREGRID_DURABLE_CHANNELS_SYNC_ASYNC.md` — the channel
+  substrate the public surface now projects through
 
 For the artifacts grounding §6.5:
 
 - `packages/runtime/src/verified-webhook-ingest/` — runtime-owned
   webhook fact ingest adapter (see its `README.md` for the
   product-vs-substrate boundary)
-- `apps/factory/` — in-flight dark factory app (see its `README.md` and
-  the hosted-smoke runbook it references)
+- `packages/protocol/src/channels/` + `packages/host-sdk/src/host/channels/`
+  — the channel contracts + bindings the public surface projects through
+- `packages/tiny-firegrid/src/simulations/` — the public-surface
+  capability simulations (the real-consumer evidence; no separate
+  `apps/factory` exists)
 
 For operational state:
 
-- `packages/tiny-firegrid/FINDINGS.md` — the findings ledger
-- `packages/tiny-firegrid/CONFIGS.md` — the configurations index
-
-For current operational state — active threads, in-flight findings,
-configuration progress — see `FINDINGS.md` and `CONFIGS.md`. This
-document is the strategic frame; those are the operational ledgers.
+- Findings + simulations are tracked as **beads** (`br` / `bv
+  --robot-triage`), not markdown ledgers. The retired
+  `packages/tiny-firegrid/FINDINGS.md` + `CONFIGS.md` are gone.
+- The §7 capability → current-state delivery map lives in the tf-d6s9
+  capability map (`docs/handoffs/tf-d6s9-factory-vision-capability-map.md`)
+  — the operational current-state companion to this strategic frame.
 
 ---
 
 ## §A — Where we are right now
 
-*Snapshot as of 2026-05-18. For current state, see `FINDINGS.md` and
-`CONFIGS.md`.*
+*Snapshot as of 2026-05-21 (post channel-collapse wave). The
+authoritative §7-capability → current-state map is the tf-d6s9
+capability map (`docs/handoffs/tf-d6s9-factory-vision-capability-map.md`);
+this section is the strategic summary.*
 
-**Substrate prerequisites.** #332 client/host boundary is merged. #326
-type-precision keystone is in flight; its co-gates (TFIND-044 Option B,
-TFIND-045 enumeration) are merged. On #326 flip, the cascade unblocks
-TFIND-007-step2 and TFIND-029 / #328.
+**Substrate state.** The client/host boundary is merged and the public
+client surface is now **channelized**: `firegrid.sessions.createOrLoad`,
+`session.prompt`/`start`, `permissions.respond`, `watchContexts`,
+`whenReady`, and `wait.forAgentOutput` dispatch through protocol-owned
+channel contracts (`@firegrid/protocol/channels`) rather than bespoke
+substrate pokes. The webhook external-trigger loop landed (verified
+webhook fact channel). Provider actions are MCP-tools-first (attach via
+`RuntimeConfig.mcpServers`), not eagerly encoded as protocol channels.
+The control-request dispatcher is a runtime-internal callable binding
+(SDD Pattern 1), no longer a separately-named architectural concept.
 
-**Capability evidence — substrate side.** Parent context identity
-substrate is ready (TFIND-010, TFIND-011 buildable; multi-context
-configuration in flight to confirm). Tool execution path is realized
-via #343. Permission cycle is framing-active (TFIND-015 ready;
-TFIND-048 drafting). Observation projection substrate is ready
-post-keystone (TFIND-044 resolved; TFIND-046, TFIND-047 are ergonomic
-gaps, not blockers). Adapter-driven launch is production-deferred
-(TFIND-049 / Slice 4) and off the factory critical path.
+**Capability evidence (per the tf-d6s9 map).** Five of the seven §7
+capabilities are DELIVERED through the public surface: external verified
+facts (1), durable participant identity (2), one-intent→one-participant
+(3), wait-for (5), and observe-the-event-stream (7). Two are PARTIAL:
+delegation (4) is proven via the agent-tool surface + the
+`inv5-cross-agent-event-choreography` sim, with the public-surface
+delegation proof owned by tf-o3x4; and take-action-and-remember (6) is
+PARTIAL by design — action = MCP tool + durable observation evidence
+(per the tf-x1jx framing), with a durable action-receipt path gated on
+concrete crash-durability pressure rather than built speculatively. No
+capability is a hard beta blocker on substrate grounds.
 
-**Capability evidence — real consumer side.** `apps/factory` exercises
-several capabilities cleanly through public-shaped boundaries: external
-trigger to durable run identity through `firegrid.sessions.createOrLoad`
-keyed by external source and entity; app-owned durable facts and runs
-through the public `DurableTable` primitive; waiting on app-owned facts
-through Effect `Stream` operations over `table.facts.rows()`; runtime
-observation through `session.snapshot()` and
-`session.wait.forPermissionRequest`. The factory app's `host.ts` also
-imports several runtime/protocol/host-sdk helpers — host composition
-helpers, a permission-observation projection helper, a runtime ingress
-append helper — and the app's README is candid that the hosted smoke
-currently composes layers directly rather than routing through a single
-public entrypoint. Each of those imports is a candidate finding: some
-will turn out to be reach-pasts the substrate should close with a
-consumer-facing accessor, and some will turn out to be intended public
-surface that just hasn't been documented as such. The toy's discipline
-is what tells the difference.
+**Real-consumer evidence.** Carried by `packages/tiny-firegrid`
+simulations over the public channel surface (no separate `apps/factory`).
+`linear-webhook-cookbook-composition` exercises the signed-route→verified-
+fact→`wait_for` half of the trigger loop today.
 
-**Active threads.** #326 keystone rebase/flip. TFIND-048 framing draft.
-Permission-flow framing complete and bundle-ready. Multi-context
-substrate validation in flight.
-
-**Distance to factory-ready.** Substrate prerequisites + two framing
-signoffs + configurations covering the seven capabilities + a capstone
-integration configuration validating the minimal slice. The factory
-app's existing implementation is partial evidence the slice is close;
-the toy's job is to convert "close" into "expressible without
-reach-pasts."
+**Distance to factory-ready.** The remaining work is: tf-7ecs (this
+operational refresh), tf-o3x4 (public-surface delegation proof closing
+capability 4), and tf-l5cg (the capstone simulation — one trace, over
+public channels, from external trigger to reviewed action, chaining
+capabilities 1→7). The Cap-6 durable-action-receipt promotion fires only
+if the capstone demonstrates a waitable-receipt need. The factory-ready
+capstone — tiny-firegrid over public channels — replaces the earlier
+`apps/factory` end-to-end as the integrative acceptance artifact.
