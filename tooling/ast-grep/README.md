@@ -37,6 +37,7 @@ across files, or compare two type-union memberships, it is **ts-morph
 | 6 double-launder cast | `double-launder-cast` | syntactic ✓ |
 | 7 manual scope mgmt | `manual-scope-buildwithscope` | syntactic ✓ |
 | 8 TFIND / spec anchors | `tfind-anchor-comment` | syntactic ✓ — read as a per-file density heat map, not line-by-line |
+| Workflow identity inventory | `workflow-make-inventory` | syntactic ✓ — blocking admission is enforced by Semgrep; this rule is the architecture-archaeology footprint |
 
 Findings 2, 4, 9, 10 and all of Deliverable 2 (composition graphs) are
 Phase 2/3 (ts-morph) — **not built**; gated on the Phase 1 evaluation.

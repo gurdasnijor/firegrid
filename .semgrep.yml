@@ -440,6 +440,39 @@ rules:
       Resolve through requireLocalContext before executing local host services.
     pattern: $ENGINE.execute(RuntimeContextWorkflow, ...)
 
+  - id: firegrid-no-unclassified-workflow-make
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION.1
+      quality-acid: firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION.2
+      category: workflow-architecture
+      rationale: |
+        Production workflow identities are reserved for owned durable resources
+        or long-running process state machines. One-shot commands, lifecycle
+        requests, tool calls, waits, and routing bridges should lower through
+        the owning workflow's channel/table seam or an explicitly named engine
+        primitive instead of minting another Workflow.make definition.
+      fix-hint: |
+        Do not add a new Workflow.make wrapper for an operation. Route through
+        the owning workflow state machine, or update the SDD and the static
+        inventory if this is a true durable owner workflow.
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      New production Workflow.make definitions require explicit owner/resource
+      justification. Operation-shaped workflows are migration debt, not a
+      default abstraction.
+    pattern: Workflow.make(...)
+
   - id: firegrid-runtime-owned-table-writes-use-authorities
     languages: [typescript]
     severity: ERROR
