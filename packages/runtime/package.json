@@ -29,6 +29,10 @@
       "types": "./src/streams/index.ts",
       "default": "./src/streams/index.ts"
     },
+    "./verified-webhook-ingest": {
+      "types": "./src/verified-webhook-ingest/index.ts",
+      "default": "./src/verified-webhook-ingest/index.ts"
+    },
     "./workflow-engine": {
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"
