@@ -34,6 +34,56 @@ process staying alive.
 
 ---
 
+## Quickstart
+
+From a source checkout:
+
+```bash
+pnpm install
+```
+
+Run a local smoke test:
+
+```bash
+pnpm firegrid -- run -- node -e 'console.log("hello from firegrid")'
+```
+
+Run Codex through the ACP bridge:
+
+```bash
+pnpm firegrid -- run \
+  --agent codex-acp \
+  --agent-protocol acp \
+  --secret-env OPENAI_API_KEY \
+  --prompt "Use the Firegrid sleep tool once, then summarize what happened." \
+  -- npx -y @zed-industries/codex-acp@0.14.0
+```
+
+Run Claude through the ACP bridge:
+
+```bash
+pnpm firegrid -- run \
+  --agent claude-acp \
+  --agent-protocol acp \
+  --secret-env ANTHROPIC_API_KEY \
+  --prompt "Use the Firegrid sleep tool once, then summarize what happened." \
+  -- npx -y @agentclientprotocol/claude-agent-acp@0.36.1
+```
+
+`--secret-env NAME` authorizes the launched agent process to receive that host
+environment variable. The `--` separates Firegrid options from the agent command
+and its arguments.
+
+To keep a local Firegrid host and MCP route alive for another client:
+
+```bash
+pnpm firegrid -- start --mcp-port 3333
+```
+
+The CLI prints a `firegrid.start.ready` JSON record with the generated MCP URL.
+
+---
+
 ## Why
 
 Real agent work does not happen in one clean function call.
