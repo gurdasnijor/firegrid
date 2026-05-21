@@ -133,28 +133,30 @@ const specimenReplay = (
     // Volatile cursor: reconstructed from scratch each replay (THE BUG).
     const volatilePos = yield* Ref.make(-1)
     const head = log.length - 1
-    for (const seq of range(head + 1)) {
-      const pos = yield* Ref.get(volatilePos)
-      if (seq <= pos) continue
-      // Live, non-memoized read of one more log element (full-walk per resume).
-      yield* Ref.update(counters, c => ({
-        ...c,
-        logReads: c.logReads + 1,
-        observeAttempts: c.observeAttempts + 1,
+    // Sequential walk from 0..head every replay (Effect.forEach is sequential).
+    yield* Effect.forEach(range(head + 1), seq =>
+      Effect.gen(function*() {
+        const pos = yield* Ref.get(volatilePos)
+        if (seq <= pos) return
+        // Live, non-memoized read of one more log element (full-walk per resume).
+        yield* Ref.update(counters, c => ({
+          ...c,
+          logReads: c.logReads + 1,
+          observeAttempts: c.observeAttempts + 1,
+        }))
+        if (emitSpans) {
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.phase0b.read.strategy": "specimen",
+            "firegrid.phase0b.read.sequence": seq,
+            "firegrid.phase0b.read.replay": replayIndex,
+            "firegrid.phase0b.read.memoized": false,
+          }).pipe(
+            Effect.withSpan("firegrid.phase0b.oracle.log_read"),
+          )
+        }
+        yield* Ref.set(volatilePos, seq)
+        yield* deliver(journal, counters, durablePos, log[seq]!, emitSpans)
       }))
-      if (emitSpans) {
-        yield* Effect.annotateCurrentSpan({
-          "firegrid.phase0b.read.strategy": "specimen",
-          "firegrid.phase0b.read.sequence": seq,
-          "firegrid.phase0b.read.replay": replayIndex,
-          "firegrid.phase0b.read.memoized": false,
-        }).pipe(
-          Effect.withSpan("firegrid.phase0b.oracle.log_read"),
-        )
-      }
-      yield* Ref.set(volatilePos, seq)
-      yield* deliver(journal, counters, durablePos, log[seq]!, emitSpans)
-    }
   })
 
 /**
