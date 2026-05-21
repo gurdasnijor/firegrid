@@ -73,6 +73,7 @@ import {
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk/firegrid"
 import {
   FiregridOtelLive,
+  resolveFiregridOtelActiveExporter,
   resolveFiregridOtelFileDestination,
   type FiregridOtelDestination,
 } from "@firegrid/observability/node"
@@ -646,7 +647,10 @@ The command reserves stdout for ACP JSON-RPC frames and routes ACP newSession
 and prompt requests into Firegrid host-plane channel routes.
 
 Tracing is quiet by default. Use --otel-file or FIREGRID_OTEL_FILE to append
-ended spans as JSONL without writing diagnostics to stdout.
+ended spans as JSONL without writing diagnostics to stdout. A relative
+--otel-file resolves against --cwd when supplied (else the process cwd), so
+under an editor like Zed pass --cwd "$PWD" (or an absolute --otel-file) to pin
+the trace to your repo. The resolved absolute path is printed to stderr.
 
 Examples:
   pnpm firegrid -- acp --agent codex-acp --agent-protocol acp -- npx -y @zed-industries/codex-acp@0.14.0
@@ -817,10 +821,41 @@ const acpCommand = Command.make(
       const durableStreams = yield* durableStreamsEndpoint
       const namespaceFromEnv = globalThis.process.env["FIREGRID_RUNTIME_NAMESPACE"]
       const cliFilePath = Option.getOrUndefined(otelFile)
+      // tf-r1gz: a RELATIVE --otel-file (e.g. the documented
+      // `.firegrid/acp-trace.jsonl`) used to resolve against the firegrid
+      // PROCESS cwd. Under Zed the agent is launched from Zed's own cwd, not
+      // the repo, so the trace silently landed at <zed-cwd>/.firegrid/... and
+      // never appeared where operators looked. Pass the operator-supplied
+      // --cwd (the project root the documented config pairs it with), else the
+      // process cwd, as the resolution base so the resolver pins the trace to
+      // an absolute, repo-correct path. Announce it on stderr (stdout stays
+      // reserved for ACP JSON-RPC frames) so the location is never a guess.
+      // firegrid-zed-acp-stdio-external-agent.CLI_HELPER.4
       const otelDestination = resolveFiregridOtelFileDestination({
         ...(cliFilePath === undefined ? {} : { filePath: cliFilePath }),
         env: globalThis.process.env,
+        baseDir: Option.getOrUndefined(cwd) ?? globalThis.process.cwd(),
       })
+      // Announce the exporter that will ACTUALLY run. OTEL_EXPORTER_OTLP_ENDPOINT
+      // takes precedence over the file destination in FiregridOtelLive, so a
+      // file announcement here would lie (and recreate the "trace file never
+      // appears" confusion) whenever OTLP is configured.
+      const activeOtelExporter = resolveFiregridOtelActiveExporter({
+        destination: otelDestination,
+        env: globalThis.process.env,
+      })
+      if (activeOtelExporter._tag === "file") {
+        yield* Console.error(
+          `firegrid acp: writing OTEL spans to ${activeOtelExporter.filePath}`,
+        )
+      } else if (activeOtelExporter._tag === "otlp") {
+        const ignoredFile = otelDestination !== undefined && otelDestination._tag === "file"
+          ? ` (--otel-file ${otelDestination.filePath} is ignored while OTEL_EXPORTER_OTLP_ENDPOINT is set)`
+          : ""
+        yield* Console.error(
+          `firegrid acp: exporting OTEL spans to OTLP endpoint ${activeOtelExporter.endpoint}${ignoredFile}`,
+        )
+      }
       const config: AcpConfig = {
         namespace: Option.getOrElse(namespace, () =>
           namespaceFromEnv === undefined || namespaceFromEnv.length === 0

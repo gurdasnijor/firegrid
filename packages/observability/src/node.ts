@@ -42,7 +42,9 @@ export interface FiregridOtelLayerOptions {
   readonly spanProcessors?: ReadonlyArray<SpanProcessor>
 }
 
-const OtlpEndpointConfig = Config.string("OTEL_EXPORTER_OTLP_ENDPOINT").pipe(
+export const FIREGRID_OTEL_OTLP_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_ENDPOINT"
+
+const OtlpEndpointConfig = Config.string(FIREGRID_OTEL_OTLP_ENDPOINT_ENV).pipe(
   Config.option,
 )
 const OtlpHeadersConfig = Config.hashMap(
@@ -58,13 +60,48 @@ export const resolveFiregridOtelFileDestination = (
     readonly filePath?: string
     readonly env?: NodeJS.ProcessEnv
     readonly envName?: string
+    // tf-r1gz: base directory a RELATIVE filePath resolves against. Callers
+    // pass the operator-supplied --cwd (the project root), so the trace lands
+    // in the repo rather than wherever the host process was launched (e.g.
+    // Zed's cwd). When omitted, the raw path is returned unchanged. Keeping
+    // the resolution here (a pure function of its inputs) instead of reading
+    // process.cwd() inline makes it unit-testable.
+    readonly baseDir?: string
   },
 ): FiregridOtelDestination | undefined => {
   // firegrid-observability.HOST_PROCESS_EXPORTERS.3
   const envName = options.envName ?? "FIREGRID_OTEL_FILE"
   const filePath = nonEmpty(options.filePath) ?? nonEmpty(options.env?.[envName])
   if (filePath === undefined) return undefined
-  return { _tag: "file", filePath }
+  const baseDir = nonEmpty(options.baseDir)
+  return {
+    _tag: "file",
+    filePath: baseDir === undefined ? filePath : path.resolve(baseDir, filePath),
+  }
+}
+
+// tf-r1gz: the exporter that will actually run. This mirrors the precedence in
+// `FiregridOtelLive` (OTLP wins over the file/console destination when
+// OTEL_EXPORTER_OTLP_ENDPOINT is set) and the fact that the OTel layer is only
+// installed once a destination is resolved. Callers use it to announce what
+// will actually happen — a file announcement must NOT print when spans really
+// go to OTLP, which would recreate the "trace file never appears" confusion.
+export type FiregridOtelActiveExporter =
+  | { readonly _tag: "otlp"; readonly endpoint: string }
+  | { readonly _tag: "file"; readonly filePath: string }
+  | { readonly _tag: "console" }
+  | { readonly _tag: "none" }
+
+export const resolveFiregridOtelActiveExporter = (
+  options: {
+    readonly destination: FiregridOtelDestination | undefined
+    readonly env?: NodeJS.ProcessEnv
+  },
+): FiregridOtelActiveExporter => {
+  if (options.destination === undefined) return { _tag: "none" }
+  const endpoint = nonEmpty(options.env?.[FIREGRID_OTEL_OTLP_ENDPOINT_ENV])
+  if (endpoint !== undefined) return { _tag: "otlp", endpoint }
+  return options.destination
 }
 
 export const spanToJsonLine = (span: ReadableSpan): string => {
@@ -123,15 +160,41 @@ export class JsonlFileSpanExporter implements SpanExporter {
   }
 }
 
+export type FiregridOtelFlushMode = "immediate" | "batched"
+
+// firegrid-observability.HOST_PROCESS_EXPORTERS.3
+// tf-r1gz: the file flush strategy is a real tradeoff, so it is a knob with a
+// safe default rather than a hardcode. `immediate` (SimpleSpanProcessor, the
+// default — matching the console destination) writes each ended span as it
+// completes, so a long-running ACP process populates the JSONL artifact
+// continuously and an abrupt editor disconnect cannot discard a pending batch.
+// `batched` (BatchSpanProcessor) restores 5s/512-span batching for high-span-
+// rate non-interactive hosts that prefer throughput over per-span latency.
+const FlushModeConfig: Config.Config<FiregridOtelFlushMode> = Config.literal(
+  "immediate",
+  "batched",
+)("FIREGRID_OTEL_FILE_FLUSH").pipe(Config.withDefault("immediate"))
+
+const fileSpanProcessor = (
+  filePath: string,
+  flushMode: FiregridOtelFlushMode,
+): SpanProcessor => {
+  const exporter = new JsonlFileSpanExporter(filePath)
+  return flushMode === "batched"
+    ? new BatchSpanProcessor(exporter)
+    : new SimpleSpanProcessor(exporter)
+}
+
 const fileTelemetryLive = (
   options: FiregridOtelLayerOptions & {
     readonly destination: { readonly _tag: "file"; readonly filePath: string }
+    readonly flushMode: FiregridOtelFlushMode
   },
 ) =>
   NodeSdk.layer(() => ({
     resource: options.resource,
     spanProcessor: [
-      new BatchSpanProcessor(new JsonlFileSpanExporter(options.destination.filePath)),
+      fileSpanProcessor(options.destination.filePath, options.flushMode),
       ...(options.spanProcessors ?? []),
     ],
   }))
@@ -173,11 +236,14 @@ export const FiregridOtelLive = (
             ...options,
             destination: options.destination,
           })
-        case "file":
+        case "file": {
+          const flushMode = yield* FlushModeConfig
           return fileTelemetryLive({
             ...options,
             destination: options.destination,
+            flushMode,
           })
+        }
       }
     }),
   )
