@@ -6,12 +6,12 @@ import {
   local,
 } from "@firegrid/client-sdk/firegrid"
 import {
-  resolveEffectiveMcpServers,
-  type FiregridRuntimeContextMcpBaseUrl,
+  FiregridRuntimeContextMcpBaseUrl,
+  runtimeContextMcpPath,
   type FiregridHost,
 } from "@firegrid/host-sdk"
 import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { darkFactoryHost } from "../src/simulations/dark-factory/host.ts"
 import type { TinyFiregridHostEnv } from "../src/types.ts"
@@ -179,17 +179,22 @@ describe("dark-factory sleep + wait_for substrate smoke", () => {
           return
         }
 
-        const mcpServers = yield* resolveEffectiveMcpServers(snapshot.context)
-        const runtimeContextMcp = mcpServers?.find(server =>
-          server.name === "firegrid-runtime-context",
-        )
-        expect(runtimeContextMcp).toBeDefined()
-        if (runtimeContextMcp === undefined) {
+        const mcpBaseUrl = yield* FiregridRuntimeContextMcpBaseUrl
+        const mcpBase = yield* mcpBaseUrl.get
+        expect(Option.isSome(mcpBase)).toBe(true)
+        if (Option.isNone(mcpBase)) {
           return
         }
+        const runtimeContextMcpUrl = new URL(
+          runtimeContextMcpPath(mcpBase.value.basePath).replace(
+            ":contextId",
+            encodeURIComponent(snapshot.contextId),
+          ),
+          mcpBase.value.address,
+        ).toString()
 
         yield* Effect.promise(() =>
-          postJsonRpc(runtimeContextMcp.server.url, {
+          postJsonRpc(runtimeContextMcpUrl, {
             jsonrpc: "2.0",
             id: 1,
             method: "initialize",
@@ -203,13 +208,13 @@ describe("dark-factory sleep + wait_for substrate smoke", () => {
             },
           }))
         yield* Effect.promise(() =>
-          postJsonRpc(runtimeContextMcp.server.url, {
+          postJsonRpc(runtimeContextMcpUrl, {
             jsonrpc: "2.0",
             method: "notifications/initialized",
             params: {},
           }))
         const toolsList = yield* Effect.promise(() =>
-          postJsonRpc(runtimeContextMcp.server.url, {
+          postJsonRpc(runtimeContextMcpUrl, {
             jsonrpc: "2.0",
             id: 2,
             method: "tools/list",
@@ -230,7 +235,7 @@ describe("dark-factory sleep + wait_for substrate smoke", () => {
         ]))
 
         const sleepResult = yield* Effect.promise(() =>
-          postJsonRpc(runtimeContextMcp.server.url, {
+          postJsonRpc(runtimeContextMcpUrl, {
             jsonrpc: "2.0",
             id: 3,
             method: "tools/call",
@@ -246,7 +251,7 @@ describe("dark-factory sleep + wait_for substrate smoke", () => {
         })
 
         const waitForResult = yield* Effect.promise(() =>
-          postJsonRpc(runtimeContextMcp.server.url, {
+          postJsonRpc(runtimeContextMcpUrl, {
             jsonrpc: "2.0",
             id: 4,
             method: "tools/call",

@@ -25,9 +25,9 @@ import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
 import type { WorkflowEngine } from "@effect/workflow"
 import {
-  type CallerOwnedFactStreams,
   durableStreamUrl,
 } from "@firegrid/host-sdk"
+import type { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import { Effect, Layer, Logger, Schema } from "effect"
 // durable-lint-allow-control-plane: NodeHttpServer.layer listener factory.

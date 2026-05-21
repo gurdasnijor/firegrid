@@ -1,8 +1,8 @@
 import {
-  CallerOwnedFactStreams,
   durableStreamUrl,
   type FiregridHost,
 } from "@firegrid/host-sdk"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,

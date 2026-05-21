@@ -1,11 +1,11 @@
 import {
-  CallerOwnedFactStreams,
   durableStreamUrl,
   FiregridEnvBindingsFromEnv,
   FiregridLocalHostLive,
   FiregridLocalProcessFromEnv,
   type FiregridHost,
 } from "@firegrid/host-sdk"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import { Effect, Layer, Schema, Stream } from "effect"
 import {
   DurableTable,
