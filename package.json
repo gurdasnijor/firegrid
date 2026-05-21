@@ -22,6 +22,7 @@
     "firegrid:start": "tsx packages/cli/src/bin/run.ts start",
     "firegrid:start:env": "node --env-file-if-exists=.env --import tsx packages/cli/src/bin/run.ts start",
     "format": "eslint . --fix",
+    "publish:oss": "bash scripts/publish-oss.sh",
     "lint": "eslint . --max-warnings 0 && node scripts/effect-native-production-cutover-check.mjs && node scripts/runtime-public-surface-check.mjs && node scripts/test-layout-check.mjs && pnpm run effect:diagnostics",
     "lint:test-layout": "node scripts/test-layout-check.mjs",
     "lint:dead": "node scripts/knip-check-baseline.mjs",
