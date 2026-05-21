@@ -59,12 +59,29 @@ they use.
 
 ```mermaid
 flowchart LR
-  AgentA[Agent session] -->|send event| State[(Firegrid durable workspace)]
-  AgentB[Agent session] -->|wait for event| State
-  Human[Human approval UI] -->|record approval| State
-  Webhook[Webhook handler] -->|record external event| State
-  Tool[Tool worker] -->|write tool result| State
-  State -->|observable history| Dashboard[Dashboard / audit]
+  Webhook[Webhook arrives]
+  Human[Human approves]
+  Tool[Tool returns result]
+
+  State[(Firegrid durable workspace)]
+
+  Planner[Planner agent]
+  Researcher[Research agent]
+  Builder[Builder agent]
+  Reviewer[Reviewer agent]
+
+  Outcome[Work moves forward]
+
+  Webhook -->|records event| State
+  Human -->|records decision| State
+  Tool -->|records result| State
+
+  Planner <-->|reads and writes| State
+  Researcher <-->|reads and writes| State
+  Builder <-->|reads and writes| State
+  Reviewer <-->|reads and writes| State
+
+  State -->|plan, claims, outputs, approvals| Outcome
 ```
 
 The participants do not need to know about each other directly. They coordinate
@@ -78,28 +95,13 @@ right channels.
 
 ## Choreography, Not A Central Graph
 
-In an orchestration framework, the application usually owns the plan.
+In an orchestration framework, the application usually owns the plan: call the
+researcher, route to the coder, wait for review, then move to the next step.
 
-```mermaid
-flowchart TB
-  App[Developer-written workflow] --> Plan[Plan step]
-  Plan --> Route{Router}
-  Route --> Research[Research agent]
-  Route --> Code[Code agent]
-  Code --> Review[Review step]
-  Review --> Done[Done]
-```
-
-In Firegrid, agents can coordinate by reading and writing shared durable state.
-
-```mermaid
-flowchart TB
-  State[(Shared durable workspace)]
-  Planner[Planner session] -->|writes plan.ready| State
-  Researcher[Research session] -->|waits for plan.ready; writes research.done| State
-  Coder[Coder session] -->|waits for research.done; writes patch.ready| State
-  Reviewer[Reviewer or human] -->|writes approval / feedback| State
-```
+Firegrid keeps that logic out of the center by default. Agents can publish
+facts, wait for facts, claim work, call tools, and react to approvals through
+shared durable state. The plan can emerge from the participants instead of
+being frozen into one central graph.
 
 You can still build orchestration on top. Firegrid is lower level: events,
 waits, calls, sessions, and recovery.
@@ -124,9 +126,13 @@ These are coordination primitives, not a workflow DSL. There is no
 
 ---
 
-## Small Example
+## Low-Level Primitive Example
 
-An agent can leave work for the rest of the system:
+You do not have to model your whole system this way. This is the raw channel
+surface for cases where you want maximum control, or when you are building a
+small adapter on top of Firegrid.
+
+One participant can leave a durable fact:
 
 ```ts
 yield* send("plan.ready", {
@@ -135,7 +141,7 @@ yield* send("plan.ready", {
 })
 ```
 
-Another participant can wait for that state:
+Another participant can react when that fact appears:
 
 ```ts
 const plan = yield* wait_for("plan.ready", {
@@ -155,8 +161,10 @@ if (approval.approved) {
 }
 ```
 
-The key property is not the syntax. The key property is that waits, events,
-calls, approvals, and results are durable.
+This is intentionally just the lower level building block. The point is not to
+turn your app into hand-written routing code. The point is that when agents,
+tools, webhooks, and humans do coordinate, the waits, events, calls, approvals,
+and results are durable.
 
 ---
 
