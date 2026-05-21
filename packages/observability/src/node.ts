@@ -42,7 +42,9 @@ export interface FiregridOtelLayerOptions {
   readonly spanProcessors?: ReadonlyArray<SpanProcessor>
 }
 
-const OtlpEndpointConfig = Config.string("OTEL_EXPORTER_OTLP_ENDPOINT").pipe(
+export const FIREGRID_OTEL_OTLP_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_ENDPOINT"
+
+const OtlpEndpointConfig = Config.string(FIREGRID_OTEL_OTLP_ENDPOINT_ENV).pipe(
   Config.option,
 )
 const OtlpHeadersConfig = Config.hashMap(
@@ -76,6 +78,30 @@ export const resolveFiregridOtelFileDestination = (
     _tag: "file",
     filePath: baseDir === undefined ? filePath : path.resolve(baseDir, filePath),
   }
+}
+
+// tf-r1gz: the exporter that will actually run. This mirrors the precedence in
+// `FiregridOtelLive` (OTLP wins over the file/console destination when
+// OTEL_EXPORTER_OTLP_ENDPOINT is set) and the fact that the OTel layer is only
+// installed once a destination is resolved. Callers use it to announce what
+// will actually happen — a file announcement must NOT print when spans really
+// go to OTLP, which would recreate the "trace file never appears" confusion.
+export type FiregridOtelActiveExporter =
+  | { readonly _tag: "otlp"; readonly endpoint: string }
+  | { readonly _tag: "file"; readonly filePath: string }
+  | { readonly _tag: "console" }
+  | { readonly _tag: "none" }
+
+export const resolveFiregridOtelActiveExporter = (
+  options: {
+    readonly destination: FiregridOtelDestination | undefined
+    readonly env?: NodeJS.ProcessEnv
+  },
+): FiregridOtelActiveExporter => {
+  if (options.destination === undefined) return { _tag: "none" }
+  const endpoint = nonEmpty(options.env?.[FIREGRID_OTEL_OTLP_ENDPOINT_ENV])
+  if (endpoint !== undefined) return { _tag: "otlp", endpoint }
+  return options.destination
 }
 
 export const spanToJsonLine = (span: ReadableSpan): string => {

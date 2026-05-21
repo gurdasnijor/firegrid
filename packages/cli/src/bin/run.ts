@@ -73,6 +73,7 @@ import {
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk/firegrid"
 import {
   FiregridOtelLive,
+  resolveFiregridOtelActiveExporter,
   resolveFiregridOtelFileDestination,
   type FiregridOtelDestination,
 } from "@firegrid/observability/node"
@@ -835,9 +836,24 @@ const acpCommand = Command.make(
         env: globalThis.process.env,
         baseDir: Option.getOrUndefined(cwd) ?? globalThis.process.cwd(),
       })
-      if (otelDestination !== undefined && otelDestination._tag === "file") {
+      // Announce the exporter that will ACTUALLY run. OTEL_EXPORTER_OTLP_ENDPOINT
+      // takes precedence over the file destination in FiregridOtelLive, so a
+      // file announcement here would lie (and recreate the "trace file never
+      // appears" confusion) whenever OTLP is configured.
+      const activeOtelExporter = resolveFiregridOtelActiveExporter({
+        destination: otelDestination,
+        env: globalThis.process.env,
+      })
+      if (activeOtelExporter._tag === "file") {
         yield* Console.error(
-          `firegrid acp: writing OTEL spans to ${otelDestination.filePath}`,
+          `firegrid acp: writing OTEL spans to ${activeOtelExporter.filePath}`,
+        )
+      } else if (activeOtelExporter._tag === "otlp") {
+        const ignoredFile = otelDestination !== undefined && otelDestination._tag === "file"
+          ? ` (--otel-file ${otelDestination.filePath} is ignored while OTEL_EXPORTER_OTLP_ENDPOINT is set)`
+          : ""
+        yield* Console.error(
+          `firegrid acp: exporting OTEL spans to OTLP endpoint ${activeOtelExporter.endpoint}${ignoredFile}`,
         )
       }
       const config: AcpConfig = {

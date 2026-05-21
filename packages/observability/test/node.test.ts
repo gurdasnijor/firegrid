@@ -1,4 +1,5 @@
 import {
+  resolveFiregridOtelActiveExporter,
   resolveFiregridOtelFileDestination,
   spanToJsonLine,
 } from "../src/node.ts"
@@ -44,6 +45,38 @@ describe("@firegrid/observability node helpers", () => {
     expect(resolveFiregridOtelFileDestination({
       filePath: ".firegrid/acp-trace.jsonl",
     })).toEqual({ _tag: "file", filePath: ".firegrid/acp-trace.jsonl" })
+  })
+
+  it("tf-r1gz active exporter reflects OTLP precedence over the file destination", () => {
+    const fileDest = { _tag: "file" as const, filePath: "/repo/.firegrid/acp-trace.jsonl" }
+
+    // No OTLP env: the file destination is what actually runs.
+    expect(resolveFiregridOtelActiveExporter({ destination: fileDest, env: {} }))
+      .toEqual(fileDest)
+
+    // OTLP env set: OTLP wins, so the file announcement must NOT claim a file.
+    expect(resolveFiregridOtelActiveExporter({
+      destination: fileDest,
+      env: { OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.example/v1/traces" },
+    })).toEqual({ _tag: "otlp", endpoint: "https://otlp.example/v1/traces" })
+
+    // Empty OTLP env is treated as unset.
+    expect(resolveFiregridOtelActiveExporter({
+      destination: fileDest,
+      env: { OTEL_EXPORTER_OTLP_ENDPOINT: "" },
+    })).toEqual(fileDest)
+
+    // No destination resolved: the OTel layer is never installed.
+    expect(resolveFiregridOtelActiveExporter({
+      destination: undefined,
+      env: { OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.example/v1/traces" },
+    })).toEqual({ _tag: "none" })
+
+    // Console destination follows the same OTLP precedence.
+    expect(resolveFiregridOtelActiveExporter({
+      destination: { _tag: "console" },
+      env: { OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.example/v1/traces" },
+    })).toEqual({ _tag: "otlp", endpoint: "https://otlp.example/v1/traces" })
   })
 
   it("firegrid-observability.HOST_PROCESS_EXPORTERS.2 serializes ended spans as one JSONL record", () => {
