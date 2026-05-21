@@ -1,7 +1,6 @@
 import {
   type HostStreamPrefix,
   RuntimeOutputTable,
-  runtimeContextOutputStreamUrl,
   type RuntimeContext,
   type RuntimeEventRow,
   type RuntimeLogLineRow,
@@ -14,6 +13,7 @@ import {
   runtimeAgentOutputObservationFromRow,
   type AgentOutputEvent,
 } from "../events/index.ts"
+import { runtimeContextOutputTableLayerForContext as perContextRuntimeOutputTableLayer } from "../../channels/output-table-layer.ts"
 import type { RuntimeAgentOutputAfterEvents } from "./runtime-output-public.ts"
 
 // tf-bffo: the durable per-context RuntimeOutputTable wiring lives in the runtime
@@ -42,25 +42,6 @@ export interface PerContextRuntimeOutputWriterService {
     row: RuntimeLogLineRow,
   ) => Effect.Effect<RuntimeLogLineRow, unknown>
 }
-
-const perContextRuntimeOutputTableLayer = (
-  config: PerContextRuntimeOutputConfig,
-  context: {
-    readonly contextId: string
-    readonly host: Pick<RuntimeContext["host"], "streamPrefix">
-  },
-) =>
-  RuntimeOutputTable.layer({
-    streamOptions: {
-      url: runtimeContextOutputStreamUrl({
-        baseUrl: config.durableStreamsBaseUrl,
-        prefix: context.host.streamPrefix,
-        contextId: context.contextId,
-      }),
-      contentType: "application/json",
-      ...(config.headers === undefined ? {} : { headers: config.headers }),
-    },
-  })
 
 const appendEventRow = (
   config: PerContextRuntimeOutputConfig,

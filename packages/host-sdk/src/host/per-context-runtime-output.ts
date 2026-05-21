@@ -12,8 +12,6 @@ import { RuntimeHostConfig } from "./config.ts"
 // @firegrid/runtime/per-context-output. host-sdk only COMPOSES it — these Layers
 // resolve the host topology config + CurrentHostSession and delegate to the
 // runtime factories. host-sdk owns no durable-state wiring here.
-export type { PerContextRuntimeOutputWriterService }
-
 export class PerContextRuntimeOutputWriter extends Context.Tag(
   "@firegrid/host-sdk/PerContextRuntimeOutputWriter",
 )<PerContextRuntimeOutputWriter, PerContextRuntimeOutputWriterService>() {}

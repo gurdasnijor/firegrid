@@ -469,6 +469,7 @@ rules:
         - "/packages/runtime/src/authorities/**"
         - "/packages/runtime/src/agent-event-pipeline/authorities/**"
         - "/packages/runtime/src/channels/**"
+        - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
     message: |
       Runtime-owned DurableTable writes must go through the owning runtime
@@ -642,6 +643,7 @@ rules:
         - "/packages/runtime/src/authorities/**"
         - "/packages/runtime/src/agent-event-pipeline/authorities/**"
         - "/packages/runtime/src/channels/**"
+        - "/packages/runtime/src/control-plane/**"
     message: |
       Durable capability tag provided outside its authority module. Use the
       owning provider layer instead.
@@ -702,6 +704,7 @@ rules:
         - "/packages/runtime/src/authorities/**"
         - "/packages/runtime/src/agent-event-pipeline/authorities/**"
         - "/packages/runtime/src/channels/**"
+        - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/host/index.ts"
         - "/packages/runtime/src/host/observation-sources.ts"
         - "/packages/runtime/src/agent-tools/mcp-host.ts"
@@ -896,6 +899,7 @@ rules:
         - "/packages/runtime/src/authorities/**"
         - "/packages/runtime/src/agent-event-pipeline/authorities/**"
         - "/packages/runtime/src/channels/**"
+        - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
         - "/packages/runtime/src/durable-tools/internal/table.ts"
     message: |
