@@ -134,6 +134,29 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     expect(contents).not.toContain("runtime-context-engine-registry")
   })
 
+  it("firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5 firegrid-host-sdk.PACKAGE_BOUNDARIES.9 firegrid-agent-body-plan.SESSION_LOG.5 keeps runtime workflow and session-log implementation out of host-sdk", async () => {
+    const removedHostRuntimeFiles = [
+      "../../src/host/runtime-context-workflow-core.ts",
+      "../../src/host/runtime-context-workflow-runtime.ts",
+      "../../src/host/internal/run-context-workflow.ts",
+      "../../src/host/internal/runtime-context-helpers.ts",
+      "../../src/host/session-log-channel.ts",
+    ]
+
+    await Promise.all(
+      removedHostRuntimeFiles.map(file =>
+        expect(access(new URL(file, import.meta.url))).rejects.toThrow(),
+      ),
+    )
+
+    await expect(
+      access(new URL("../../../runtime/src/kernel/runtime-context-workflow-runtime.ts", import.meta.url)),
+    ).resolves.toBeUndefined()
+    await expect(
+      access(new URL("../../../runtime/src/channels/session-log.ts", import.meta.url)),
+    ).resolves.toBeUndefined()
+  })
+
   it("firegrid-workflow-driven-runtime.BOUNDARIES.6-1 each host writes workflow rows only to its host-owned workflow stream", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `two-host-${crypto.randomUUID()}`

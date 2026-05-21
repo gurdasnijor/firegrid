@@ -6,10 +6,11 @@ import {
 } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
-  channelMetadata,
-  SessionLogRowSchema,
   sessionLogChannelFromCollection,
-} from "../../src/host/index.ts"
+} from "../../src/channels/index.ts"
+import {
+  SessionLogRowSchema,
+} from "@firegrid/protocol/channels"
 
 class SessionLogTestTable extends DurableTable("sessionLogChannelTest", {
   rows: SessionLogRowSchema,
@@ -51,26 +52,20 @@ const runWithTable = <A, E>(
   )
 
 describe("session.log channel", () => {
-  it("firegrid-agent-body-plan.SESSION_LOG.1 firegrid-agent-body-plan.SESSION_LOG.2 firegrid-agent-body-plan.SESSION_LOG.3 firegrid-agent-body-plan.SESSION_LOG.4 registers an egress-only durable session log channel", async () => {
+  it("firegrid-agent-body-plan.SESSION_LOG.1 firegrid-agent-body-plan.SESSION_LOG.2 firegrid-agent-body-plan.SESSION_LOG.3 firegrid-agent-body-plan.SESSION_LOG.4 firegrid-agent-body-plan.SESSION_LOG.5 registers an egress-only durable session log channel", async () => {
     const program = Effect.gen(function* () {
       const table = yield* SessionLogTestTable
       const channel = sessionLogChannelFromCollection({
         collection: table.rows,
       })
       const registered = channel
-      const metadata = channelMetadata(channel)
 
       expect(channel.target).toBe("session.log")
       expect(channel.kind).toBe("session.log")
       expect(channel.storage).toBe("durable-table")
       expect(registered.direction).toBe("egress")
-      expect(metadata.direction).toBe("egress")
-      if (metadata.direction !== "egress") {
-        return
-      }
-      expect(metadata.schema).toBe(SessionLogRowSchema)
+      expect(registered.schema).toBe(SessionLogRowSchema)
       expect("stream" in registered.binding).toBe(false)
-      expect("binding" in metadata).toBe(false)
 
       yield* registered.binding.append({
         logId: "log-1",

@@ -7,7 +7,7 @@ import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import type { RuntimeChannelRouter } from "./channel.ts"
 import { startRuntime } from "./commands.ts"
 import { PerContextRuntimeOutputWriter } from "./per-context-runtime-output.ts"
-import { RuntimeContextWorkflowRuntime } from "./runtime-context-workflow-runtime.ts"
+import { RuntimeContextWorkflowRuntime } from "@firegrid/runtime/kernel"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 
 // tf-bffo: the durable arm (RuntimeControlPlaneTable runs query/upsert + terminal

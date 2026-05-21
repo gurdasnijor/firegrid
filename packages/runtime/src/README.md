@@ -3,7 +3,7 @@
 This directory keeps the agent event-pipeline grouped under
 `agent-event-pipeline/`. The target from
 [`SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md`](../../../docs/sdds/SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md)
-is to keep clean event-pipeline roles together while host, waits, tools,
+is to keep clean event-pipeline roles together while host, kernel, waits, tools,
 workflow-engine, adapters, and verified ingest remain adjacent bounded
 contexts.
 
@@ -69,6 +69,10 @@ These are intentionally not agent event-pipeline stages:
 - `channels/`: public runtime channel router capabilities. The implementation
   lives in runtime authority/provider modules; this folder is the stable import
   surface for route metadata and dispatch composition.
+- `kernel/`: runtime-context host-kernel services that own workflow execution
+  helpers, host-scoped workflow engine lifecycle, runtime host config, and
+  input dispatch state. Host packages compose these services but do not own
+  their durable workflow/runtime implementation.
 - `workflow-engine/`: workflow substrate adapter and runtime-owned workflow
   definitions (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
   Host packages install live workflow Layers and provide topology; they do not

@@ -102,7 +102,7 @@ export {
 export {
   sessionLogChannel,
   sessionLogChannelFromCollection,
-} from "./session-log-channel.ts"
+} from "@firegrid/runtime/channels"
 export {
   FiregridEnvBindingsFromEnv,
   FiregridLocalHostLive,

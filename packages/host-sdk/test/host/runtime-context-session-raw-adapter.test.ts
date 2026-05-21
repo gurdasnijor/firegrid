@@ -35,7 +35,7 @@ import {
 import {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
-} from "../../src/host/runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/workflows"
 
 const context = (
   contextId: string,

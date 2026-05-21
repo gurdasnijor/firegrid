@@ -40,7 +40,7 @@ import {
   RuntimeContextWorkflowNativeLayer,
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
-} from "../../src/host/runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/workflows"
 import { WorkflowEngine } from "@effect/workflow"
 import {
   appendRuntimeInputDeferred,
@@ -57,8 +57,8 @@ import { RuntimeHostConfig } from "../../src/host/config.ts"
 import {
   PerContextRuntimeOutputWriter,
 } from "../../src/host/per-context-runtime-output.ts"
-import { executeRuntimeContextWorkflow } from "../../src/host/internal/run-context-workflow.ts"
-import { runtimeContextWorkflowExecutionId } from "../../src/host/internal/runtime-context-helpers.ts"
+import { executeRuntimeContextWorkflow } from "@firegrid/runtime/kernel"
+import { runtimeContextWorkflowExecutionId } from "@firegrid/runtime/kernel"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

@@ -28,7 +28,7 @@ import {
 import { AgentToolHost } from "./tool-host.ts"
 import {
   RuntimeContextWorkflowRuntime,
-} from "../../host/runtime-context-workflow-runtime.ts"
+} from "@firegrid/runtime/kernel"
 import type { RuntimeChannelRouter } from "../../host/channel.ts"
 import {
   toolCallWorkflowSupportLayer,

@@ -705,6 +705,7 @@ rules:
         - "/packages/runtime/src/agent-event-pipeline/authorities/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
+        - "/packages/runtime/src/kernel/**"
         - "/packages/runtime/src/host/index.ts"
         - "/packages/runtime/src/host/observation-sources.ts"
         - "/packages/runtime/src/agent-tools/mcp-host.ts"

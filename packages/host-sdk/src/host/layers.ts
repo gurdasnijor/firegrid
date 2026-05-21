@@ -28,7 +28,7 @@ import {
 } from "./runtime-context-mcp-base-url.ts"
 import {
   RuntimeContextWorkflowSession,
-} from "./runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/kernel"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
   PerContextRuntimeOutputWriterLive,
@@ -54,7 +54,7 @@ import {
 import {
   RuntimeContextWorkflowRuntimeLive,
   RuntimeInputIntentDispatcherLive,
-} from "./runtime-context-workflow-runtime.ts"
+} from "@firegrid/runtime/kernel"
 import {
   type RuntimeChannelRouter,
 } from "./channel.ts"

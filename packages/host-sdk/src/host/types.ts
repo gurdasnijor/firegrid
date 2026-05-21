@@ -2,13 +2,6 @@ import type { DurableTableHeaders } from "effect-durable-operators"
 import type { LocalProcessSandboxProviderOptions } from "@firegrid/runtime/sources/sandbox"
 import type { ChannelRegistration } from "@firegrid/protocol/channels"
 
-export interface RuntimeHostConfigValue {
-  readonly inputEnabled: boolean
-  readonly durableStreamsBaseUrl: string
-  readonly namespace: string
-  readonly headers?: DurableTableHeaders
-}
-
 export interface StartRuntimeOptions {
   readonly contextId: string
 }

@@ -68,6 +68,7 @@ components:
       2: "The `session.log` schema carries a durable log row with context id, message, and optional payload metadata."
       3: "The `session.log` binding persists rows through a DurableTable collection supplied by host composition."
       4: "`session.log` exposes no ingress/read binding to the agent surface."
+      5: "The durable `session.log` channel constructor is owned by @firegrid/runtime; @firegrid/host-sdk may re-export or compose it but must not own the durable binding implementation."
 
   EVENT_CHANNEL:
     requirements:

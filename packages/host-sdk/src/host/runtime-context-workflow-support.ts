@@ -7,7 +7,7 @@ import {
 } from "../agent-tools/execution/tool-host.ts"
 import {
   RuntimeContextWorkflowNativeLayer,
-} from "./runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/kernel"
 import {
   HostRuntimeObservationSubstrateLive,
   HostRuntimeObservationStreamsLive,
