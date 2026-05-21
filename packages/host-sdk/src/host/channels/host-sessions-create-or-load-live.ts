@@ -21,17 +21,15 @@ import {
   HostSessionsCreateOrLoadChannel,
 } from "@firegrid/protocol/channels"
 import {
+  makeHostSessionsCreateOrLoadRequestRowChannel,
   RuntimeControlPlaneTable,
 } from "@firegrid/protocol/launch"
-import {
-  makeRuntimeHostSessionsCreateOrLoadChannel,
-} from "@firegrid/runtime/channels"
 import { Effect, Layer } from "effect"
 
 export const HostSessionsCreateOrLoadChannelLive = Layer.effect(
   HostSessionsCreateOrLoadChannel,
   Effect.gen(function*() {
     const control = yield* RuntimeControlPlaneTable
-    return makeRuntimeHostSessionsCreateOrLoadChannel(control)
+    return makeHostSessionsCreateOrLoadRequestRowChannel(control)
   }),
 )

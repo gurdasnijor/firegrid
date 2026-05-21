@@ -11,11 +11,13 @@ import {
   type HostContextsCreateChannel,
   type HostPermissionRespondChannel,
   type HostPromptChannel,
+  type HostSessionsCreateOrLoadChannel,
   type HostSessionsStartChannel,
   type SessionLifecycleChannel,
   type SessionPromptChannel,
 } from "@firegrid/protocol/channels"
 import {
+  type CurrentHostSession,
   RuntimeControlPlaneTable,
 } from "@firegrid/protocol/launch"
 import {
@@ -23,6 +25,9 @@ import {
   makeHostControlSnapshot,
   type HostPlaneChannelRouter,
 } from "@firegrid/runtime/channels"
+import {
+  type HostKernelControlPlane,
+} from "@firegrid/runtime/kernel"
 import { Effect, Layer } from "effect"
 import { RuntimeHostConfig } from "../../config.ts"
 
@@ -34,6 +39,7 @@ type HostControlChannels =
   | HostContextsCreateChannel
   | HostPromptChannel
   | SessionPromptChannel
+  | HostSessionsCreateOrLoadChannel
   | HostSessionsStartChannel
   | HostContextSnapshotChannel
   | HostSessionSnapshotChannel
@@ -80,5 +86,8 @@ export const HostControlChannelsLive =
   ) as Layer.Layer<
     HostControlChannels,
     never,
-    RuntimeControlPlaneTable | RuntimeHostConfig
+    | RuntimeControlPlaneTable
+    | RuntimeHostConfig
+    | CurrentHostSession
+    | HostKernelControlPlane
   >

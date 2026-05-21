@@ -1,19 +1,18 @@
 import { Activity, DurableDeferred, Workflow, WorkflowEngine } from "@effect/workflow"
 import {
-  RuntimeContextIntentSchema,
   type RuntimeContext,
-  type RuntimeContextIntent,
 } from "@firegrid/protocol/launch"
+import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
+import type { Context, Scope } from "effect"
 import {
-  RuntimeIngressRequestSchema,
-  type RuntimeIngressRequest,
-} from "@firegrid/protocol/runtime-ingress"
-import { Cause, Context, Effect, Either, Exit, Layer, Match, Option, Schema } from "effect"
-import type { Scope } from "effect"
-import {
+  HostKernelControlPlane,
+  HostKernelIntentDecisionSchema,
+  HostKernelIntentSchema,
   RuntimeContextInsert,
   RuntimeContextRead,
   RuntimeRunAppendAndGet,
+  type HostKernelIntent,
+  type HostKernelIntentDecision,
 } from "../../authorities/index.ts"
 import {
   appendRuntimeInputDeferred,
@@ -35,74 +34,15 @@ export type HostKernelWorkflowPayload = Schema.Schema.Type<
   typeof HostKernelWorkflowPayloadSchema
 >
 
-export const HostKernelCreateLoadIntentSchema = Schema.TaggedStruct("CreateLoad", {
-  requestId: Schema.String.pipe(Schema.minLength(1)),
-  contextId: Schema.String.pipe(Schema.minLength(1)),
-  runtime: RuntimeContextIntentSchema,
-  createdBy: Schema.optional(Schema.String),
-})
-
-export const HostKernelStartIntentSchema = Schema.TaggedStruct("Start", {
-  requestId: Schema.String.pipe(Schema.minLength(1)),
-  contextId: Schema.String.pipe(Schema.minLength(1)),
-})
-
-export const HostKernelPromptIntentSchema = Schema.TaggedStruct("Prompt", {
-  requestId: Schema.String.pipe(Schema.minLength(1)),
-  contextId: Schema.String.pipe(Schema.minLength(1)),
-  request: RuntimeIngressRequestSchema,
-})
-
-export const HostKernelCancelIntentSchema = Schema.TaggedStruct("Cancel", {
-  requestId: Schema.String.pipe(Schema.minLength(1)),
-  contextId: Schema.String.pipe(Schema.minLength(1)),
-})
-
-export const HostKernelIntentSchema = Schema.Union(
-  HostKernelCreateLoadIntentSchema,
-  HostKernelStartIntentSchema,
-  HostKernelPromptIntentSchema,
-  HostKernelCancelIntentSchema,
-)
-export type HostKernelIntent = Schema.Schema.Type<typeof HostKernelIntentSchema>
-
-export const HostKernelIntentAckSchema = Schema.Struct({
-  hostId: Schema.String,
-  sequence: Schema.Number,
-  requestId: Schema.String,
-  accepted: Schema.Boolean,
-})
-export type HostKernelIntentAck = Schema.Schema.Type<typeof HostKernelIntentAckSchema>
-
-export const HostKernelIntentDecisionSchema = Schema.Struct({
-  hostId: Schema.String,
-  sequence: Schema.Number,
-  requestId: Schema.String,
-  contextId: Schema.String,
-  intent: Schema.Literal("CreateLoad", "Start", "Prompt", "Cancel"),
-  status: Schema.Literal(
-    "created_or_loaded",
-    "started",
-    "prompted",
-    "cancelled",
-    "failed",
-  ),
-  message: Schema.optional(Schema.String),
-})
-export type HostKernelIntentDecision = Schema.Schema.Type<
-  typeof HostKernelIntentDecisionSchema
->
-
-export interface HostKernelControlPlaneService {
-  readonly signal: (
-    hostId: string,
-    intent: HostKernelIntent,
-  ) => Effect.Effect<HostKernelIntentAck, unknown>
-}
-
-export class HostKernelControlPlane extends Context.Tag(
-  "@firegrid/runtime/HostKernelControlPlane",
-)<HostKernelControlPlane, HostKernelControlPlaneService>() {}
+class HostKernelWorkflowError extends Schema.TaggedError<HostKernelWorkflowError>()(
+  "HostKernelWorkflowError",
+  {
+    op: Schema.String,
+    contextId: Schema.String,
+    message: Schema.String,
+    cause: Schema.optional(Schema.Unknown),
+  },
+) {}
 
 export type HostKernelWorkflowExecutionEnv =
   | RuntimeContextInsert
@@ -144,27 +84,6 @@ const sequenceFromDeferredName = (
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
-const reviveExit = (value: unknown): Exit.Exit<unknown, unknown> => {
-  const record = value as {
-    readonly _tag?: string
-    readonly value?: unknown
-    readonly cause?: unknown
-  }
-  if (record?._tag === "Success") return Exit.succeed(record.value)
-  if (record?._tag === "Failure") return Exit.failCause(record.cause as Cause.Cause<unknown>)
-  return value as Exit.Exit<unknown, unknown>
-}
-
-const decodeStoredIntent = (value: unknown): Option.Option<HostKernelIntent> =>
-  Exit.match(reviveExit(value), {
-    onFailure: () => Option.none(),
-    onSuccess: success =>
-      Match.value(Schema.decodeUnknownEither(HostKernelIntentSchema)(success)).pipe(
-        Match.when(Either.isRight, decoded => Option.some(decoded.right)),
-        Match.orElse(() => Option.none()),
-      ),
-  })
-
 const readContext = (
   contextId: string,
 ): Effect.Effect<RuntimeContext, unknown, RuntimeContextRead> =>
@@ -172,7 +91,11 @@ const readContext = (
     const reader = yield* RuntimeContextRead
     const context = yield* reader.readContext(contextId)
     if (Option.isSome(context)) return context.value
-    return yield* Effect.fail(new Error(`runtime context not found: ${contextId}`))
+    return yield* new HostKernelWorkflowError({
+      op: "host-kernel.context.read",
+      contextId,
+      message: `runtime context not found: ${contextId}`,
+    })
   })
 
 const createOrLoadContext = (
@@ -379,7 +302,6 @@ const hostKernelMailboxRows = (
       .map(row => ({
         row,
         sequence: sequenceFromDeferredName(hostId, row.deferredName),
-        intent: decodeStoredIntent(row.exit),
       }))).pipe(
     Effect.withSpan("firegrid.host_kernel.mailbox.query", {
       kind: "internal",
@@ -392,13 +314,9 @@ const hostKernelMailboxRows = (
 const nextIntentSequence = (
   table: WorkflowEngineTable["Type"],
   hostId: string,
-  intent: HostKernelIntent,
 ): Effect.Effect<number, unknown> =>
   Effect.gen(function*() {
     const rows = yield* hostKernelMailboxRows(table, hostId)
-    const duplicate = rows.find(row =>
-      Option.isSome(row.intent) && row.intent.value.requestId === intent.requestId)
-    if (duplicate?.sequence !== undefined) return duplicate.sequence
     return rows.reduce(
       (max, row) => row.sequence === undefined ? max : Math.max(max, row.sequence + 1),
       0,
@@ -418,7 +336,7 @@ export const HostKernelControlPlaneLive = Layer.effect(
             payload: { hostId },
             discard: true,
           }).pipe(Effect.ignore)
-          const sequence = yield* nextIntentSequence(table, hostId, intent)
+          const sequence = yield* nextIntentSequence(table, hostId)
           yield* engine.deferredDone(
             hostKernelIntentDeferredFor(hostId, sequence),
             {

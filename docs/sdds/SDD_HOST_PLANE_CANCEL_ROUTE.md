@@ -38,29 +38,40 @@ The slice adds a runtime-kernel prototype, exported through
 `@firegrid/runtime/kernel`, not the root runtime barrel:
 
 - `HostKernelWorkflow`: one long-running workflow per host identity.
-- `HostKernelControlPlaneLive`: a narrow signal service that appends intents to
-  workflow-native durable deferred mailbox slots.
+- `HostKernelControlPlane`: the injected runtime authority used by host-control
+  channels to signal workflow-owned intents.
+- `HostKernelControlPlaneLive`: the validation signal service that appends
+  intents to workflow-native durable deferred mailbox slots.
 - Intent family: `CreateLoad`, `Start`, `Prompt`, `Cancel`.
 - Child ownership: `Start` executes `RuntimeContextWorkflowNative`; `Prompt`
   appends the runtime input deferred for that child; `Cancel` interrupts the
   child workflow and writes public terminal run evidence.
+- `packages/runtime/src/channels/host-control-routes.ts`: create/load and
+  start channel bindings now decode public route payloads and dispatch typed
+  intents into `HostKernelControlPlane` when that injected signal authority is
+  installed; that injected path does not append `contextRequests` or
+  `startRequests`.
 
-The router is deliberately not involved in this slice. The proof isolates the
-load-bearing question: can lifecycle/control ownership move into a workflow
-without host-control route bodies appending lifecycle/control rows?
+The route proof is deliberately narrow. It covers the public channel-router
+edge for create/load and start with `HostKernelControlPlane` injected, while
+prompt/cancel still remain under the broader follow-up boundary work. Legacy
+request-row bindings remain as a migration tail for compositions that have not
+installed HostKernel yet; deleting that fallback is gated below.
 
 ## Native Evidence
 
 Test:
 `packages/runtime/test/workflow-engine/host-kernel-workflow.test.ts`
+and `packages/runtime/test/channels/host-control-router.test.ts`
 
 Command:
 
 ```bash
 pnpm --filter @firegrid/runtime exec vitest run test/workflow-engine/host-kernel-workflow.test.ts
+pnpm --filter @firegrid/runtime exec vitest run test/channels/host-control-router.test.ts
 ```
 
-Result: `1 passed`.
+Result: both pass.
 
 The test asserts native durable artifacts, not a bespoke evidence harness:
 
@@ -79,6 +90,8 @@ The test asserts native durable artifacts, not a bespoke evidence harness:
 - captured spans for `firegrid.host_kernel.intent.signal`,
   `firegrid.host_kernel.workflow.intent.apply`,
   `firegrid.host_kernel.child.start`, and `firegrid.host_kernel.child.cancel`.
+- host-control router dispatch for create/load and start calls the injected
+  kernel signal authority rather than protocol request-row factories.
 
 Typecheck:
 
@@ -112,16 +125,43 @@ edge/system-call intent
   -> public context + run observation rows
 ```
 
-The comparison is clean for the covered create/load, start, prompt, and cancel
-happy path: the kernel workflow produces the native workflow and public
-observation evidence without the dispatcher request-row/claim/completion
-families.
+The comparison is clean for the covered kernel create/load, start, prompt, and
+cancel happy path, and for router -> kernel dispatch of create/load and start
+when HostKernel is injected: the kernel workflow produces native workflow and
+public observation evidence without the dispatcher request-row/claim/completion
+families, and those two public routes can bypass control request rows from
+route bodies.
 
 The comparison is not yet complete for multi-host failover, retries after host
 death, duplicate edge request identity across process restart, close/resume, or
 public router contract acks.
 
-## Prune Plan If The Slice Expands Cleanly
+## Explicit Gate Before Any Deletion
+
+No deletion of the current dispatcher/request-row path is allowed until a
+follow-up proof covers all of these gates:
+
+- router -> workflow dispatch: prompt, cancel, close, and resume routes still
+  need the same decode/authorize/dispatch-only proof now shown for create/load
+  and start;
+- restart replay: a restarted host resumes `HostKernelWorkflow` and recovers
+  accepted-but-unprocessed mailbox state;
+- duplicate/concurrent signal gate: duplicate and concurrently delivered
+  request identities produce one serialized kernel decision, not duplicate
+  child lifecycle effects;
+- host singleton / failover: one host-kernel owner is active for a host
+  authority scope, with explicit behavior for stale ownership and takeover;
+- close / resume: the signal contract covers more than cancel;
+- protocol control-row relocation: public protocol exports are reduced to
+  route/channel contracts while any remaining row state moves under
+  kernel-private ownership;
+- workflow signal abstraction: `HostKernelWorkflow` is driven by an injected
+  signal/mailbox or channel-router-style kernel service, not by workflow bodies
+  directly depending on low-level durable table mechanics.
+
+These gates are prune preconditions, not work for this PR.
+
+## Prune Plan If The Gate Passes
 
 Prune candidates after follow-up coverage:
 
@@ -147,10 +187,11 @@ has replacement coverage for restart/failover and idempotency.
 Clean for the narrow validation slice. `HostKernelWorkflow` can be the
 exclusive lifecycle/control owner for a small set of `RuntimeContextWorkflow`
 children using native workflow durable artifacts and public observation rows,
-without route-owned lifecycle/control request rows.
+and the channel router can dispatch create/load and start into the injected
+kernel signal authority without route-owned control request rows.
 
 Not yet clean enough for broad deletion. The next proof must add router
-decode/authorize/dispatch-intent, duplicate request id semantics, restart
-replay, and close/resume coverage. `tf-8aw5` and `tf-rqyh` remain blocked on
-that HostKernelWorkflow signal boundary rather than on direct lifecycle-route
-wiring.
+decode/authorize/dispatch-intent for the remaining control intents, duplicate
+request id semantics, restart replay, and close/resume coverage. `tf-8aw5` and
+`tf-rqyh` remain blocked on that HostKernelWorkflow signal boundary rather than
+on direct lifecycle-route wiring.

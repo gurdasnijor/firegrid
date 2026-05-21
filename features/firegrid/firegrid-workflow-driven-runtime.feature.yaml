@@ -48,6 +48,7 @@ components:
       3: HostWorkflow does not start child context workflows from retained context rows until the control-plane model can distinguish eligible work from already-observed context evidence.
       4: HostKernelWorkflow accepts create/load, start, prompt, and cancel intents through a workflow-native signal or mailbox contract and serializes lifecycle decisions for its RuntimeContextWorkflow children.
       5: HostKernelWorkflow validation proves native workflow durable artifacts and public runtime rows without writing lifecycle request, claim, or completion rows through host-control router bodies.
+      6: Host-control channel routes dispatch create/load and start requests into the HostKernelWorkflow signal boundary instead of appending public durable control request rows from router bodies.
 
   PHASE_6_AGENT_TOOLS:
     requirements:

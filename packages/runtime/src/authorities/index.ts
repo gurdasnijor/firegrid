@@ -1,4 +1,18 @@
 export {
+  HostKernelCancelIntentSchema,
+  HostKernelControlPlane,
+  HostKernelCreateLoadIntentSchema,
+  HostKernelIntentAckSchema,
+  HostKernelIntentDecisionSchema,
+  HostKernelIntentSchema,
+  HostKernelPromptIntentSchema,
+  HostKernelStartIntentSchema,
+  type HostKernelControlPlaneService,
+  type HostKernelIntent,
+  type HostKernelIntentAck,
+  type HostKernelIntentDecision,
+} from "./host-kernel-control-plane.ts"
+export {
   RuntimeControlPlaneRecorderLive,
   RuntimeControlRequests,
   RuntimeContexts,

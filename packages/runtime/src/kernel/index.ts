@@ -15,26 +15,28 @@ export {
 export {
   HostKernelCancelIntentSchema,
   HostKernelControlPlane,
-  HostKernelControlPlaneLive,
   HostKernelCreateLoadIntentSchema,
   HostKernelIntentAckSchema,
   HostKernelIntentDecisionSchema,
   HostKernelIntentSchema,
   HostKernelPromptIntentSchema,
   HostKernelStartIntentSchema,
+  type HostKernelControlPlaneService,
+  type HostKernelIntent,
+  type HostKernelIntentAck,
+  type HostKernelIntentDecision,
+} from "../authorities/index.ts"
+export {
+  HostKernelControlPlaneLive,
   HostKernelWorkflow,
   HostKernelWorkflowLayer,
   HostKernelWorkflowPayloadSchema,
   hostKernelIntentDeferredFor,
   hostKernelIntentDeferredName,
   hostKernelWorkflowExecutionId,
-  type HostKernelControlPlaneService,
-  type HostKernelIntent,
-  type HostKernelIntentAck,
-  type HostKernelIntentDecision,
   type HostKernelWorkflowExecutionEnv,
   type HostKernelWorkflowPayload,
-} from "../workflow-engine/workflows/index.ts"
+} from "../workflow-engine/workflows/host-kernel.ts"
 export {
   executeRuntimeContextWorkflow,
 } from "./internal/run-context-workflow.ts"

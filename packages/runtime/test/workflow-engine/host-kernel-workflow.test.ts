@@ -194,7 +194,12 @@ const hostKernelTestLayer = (input: {
     readonly starts: Array<string>
     readonly sends: Array<RuntimeContextSessionCommand>
   }
-}) =>
+}): Layer.Layer<
+  HostKernelControlPlane | RuntimeControlPlaneTable | WorkflowEngineTable,
+  unknown,
+  never
+> =>
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable-backed workflow engine layer leaks any through test composition; the declared services are the intended test boundary.
   Layer.mergeAll(
     HostKernelControlPlaneLive,
     HostKernelWorkflowLayer,
