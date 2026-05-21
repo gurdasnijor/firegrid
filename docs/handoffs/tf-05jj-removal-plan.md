@@ -1,7 +1,6 @@
 # tf-05jj — Session/Output Observation Channel-Surface Removal Plan
 
-Status: Slice A executing after `tf-zd8s`; Slice B remains on hold until
-`tf-aago` lands.
+Status: Slice A landed after `tf-zd8s`; Slice B landed after `tf-aago`.
 Owner: lane 1
 Bead: `tf-05jj`
 
@@ -87,8 +86,9 @@ Current state on this branch:
 
 - The old `hostProjectionObserver` path has already been removed from the Sim
   1 host source, but the FINDING remains as historical evidence.
-- The remaining direct runtime and raw-table paths are regression-harness
-  proof paths from the spike, not product surfaces.
+- The remaining direct runtime and raw-table paths were regression-harness
+  proof paths from the spike, not product surfaces. Slice B replaces them with
+  `SessionAgentOutputChannel`.
 
 Replacement:
 
@@ -240,7 +240,8 @@ Sequencing consequence:
 4. Delete `projection-observer.ts` and the host barrel export. Slice A landed
    this deletion after `tf-zd8s`.
 5. Remove or channelize Sim 1's direct `RuntimeAgentOutputAfterEvents` and raw
-   `RuntimeOutputTable.events.rows()` harness paths.
+   `RuntimeOutputTable.events.rows()` harness paths. Slice B replaced both
+   with a single `SessionAgentOutputChannel` observer.
 6. Preserve the client public session wait facade as the product path unless
    `tf-aago` has replaced its internal helper with an equivalent channel helper.
 7. Run focused tests for host-sdk and the Sim 1 tiny-firegrid path, then run
