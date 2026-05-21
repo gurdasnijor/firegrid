@@ -42,6 +42,8 @@ components:
       6: The run subcommand accepts an opaque --agent NAME selector and preserves it in the schema-decoded launch config without introducing an agent registry or ACP-specific public schema.
       7: A public-command smoke scaffold covers the intended codex-acp launch shape with default Firegrid MCP attachment; full ACP execution may remain pending on the runtime codec integration lane.
       8: ACP-backed Claude Agent runs scope Claude Code setting sources to project configuration so local sim runs do not load user-level Skills or settings from the operator's home directory.
+      9: MCP server header declarations reject literal strings for secret-bearing header names or secret-shaped values before a durable RuntimeContext launch config is written; credential headers must use refs.
+      10: MCP server header refs of shape {ref:"env:VAR"} may be durably persisted and resolve to concrete header values only at host session attach/spawn time.
 
   CLI_HELP:
     requirements:

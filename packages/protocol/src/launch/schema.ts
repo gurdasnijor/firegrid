@@ -112,18 +112,70 @@ export const LaunchSecretEnvCliValueSchema = Schema.String.annotations({
   examples: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY=PARENT_OPENAI_API_KEY"],
 })
 
-export const McpServerUrlDeclarationSchema = Schema.Struct({
+export const McpServerHeaderRefSchema = Schema.Struct({
+  ref: Schema.String.pipe(Schema.minLength(1)),
+}).annotations({
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type McpServerHeaderRef = Schema.Schema.Type<typeof McpServerHeaderRefSchema>
+
+export const McpServerHeaderValueSchema = Schema.Union(
+  Schema.String,
+  McpServerHeaderRefSchema,
+)
+export type McpServerHeaderValue = Schema.Schema.Type<typeof McpServerHeaderValueSchema>
+
+const SECRET_HEADER_NAME_RE =
+  /(^|[-_])(authorization|api[-_]?key|token|secret|credential|session|cookie)([-_]|$)/i
+const SECRET_HEADER_VALUE_RE =
+  /^(Bearer|Basic|Token)\s+\S+|^(sk|pk|ghp|gho|github_pat|pat|xox[baprs]|ya29)[-_A-Za-z0-9]{8,}/i
+
+export const isMcpServerHeaderRef = (
+  value: McpServerHeaderValue,
+): value is McpServerHeaderRef =>
+  typeof value === "object" && value !== null && "ref" in value
+
+export const isMcpServerHeaderLiteralSecret = (
+  name: string,
+  value: string,
+): boolean =>
+  SECRET_HEADER_NAME_RE.test(name) || SECRET_HEADER_VALUE_RE.test(value)
+
+const validateMcpServerLiteralHeaders = (
+  headers: Readonly<Record<string, McpServerHeaderValue>> | undefined,
+): string | undefined => {
+  if (headers === undefined) return undefined
+  const entries = Object.entries(headers)
+  let index = 0
+  while (index < entries.length) {
+    const [name, value] = entries[index]!
+    if (typeof value === "string" && isMcpServerHeaderLiteralSecret(name, value)) {
+      return `mcpServers header "${name}" carries a literal secret-shaped value; use { ref: "env:VAR" } instead`
+    }
+    index += 1
+  }
+  return undefined
+}
+
+const McpServerUrlDeclarationBaseSchema = Schema.Struct({
   type: Schema.Literal("url"),
   url: Schema.String,
   headers: Schema.optional(Schema.Record({
     key: Schema.String,
-    value: Schema.String,
+    value: McpServerHeaderValueSchema,
   })),
 }).annotations({
   parseOptions: {
     onExcessProperty: "error",
   },
 })
+
+export const McpServerUrlDeclarationSchema = McpServerUrlDeclarationBaseSchema.pipe(
+  // firegrid-local-mcp-run.LAUNCH_CONFIG.9
+  Schema.filter(declaration => validateMcpServerLiteralHeaders(declaration.headers)),
+)
 export type McpServerUrlDeclaration = Schema.Schema.Type<typeof McpServerUrlDeclarationSchema>
 
 export const McpServerDeclarationSchema = Schema.Struct({

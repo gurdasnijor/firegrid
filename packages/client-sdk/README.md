@@ -239,7 +239,9 @@ const session = yield* firegrid.sessions.createOrLoad({
         server: {
           type: "url",
           url: "https://mcp.example.com/linear",
-          headers: { authorization: "Bearer <provider-token>" },
+          headers: {
+            authorization: { ref: "env:LINEAR_MCP_TOKEN" },
+          },
         },
       },
     ],
@@ -248,12 +250,12 @@ const session = yield* firegrid.sessions.createOrLoad({
 })
 ```
 
-`mcpServers` is **client-owned config**: the caller authors the URL + headers
-end-to-end, and Firegrid carries them as launch intent without interpreting them.
-No provider semantics live in `@firegrid/protocol` — there is no
-`linear.*`/`github.*` channel in the protocol catalog. The protocol stays a
-neutral substrate; provider tools are described entirely by the MCP servers you
-attach.
+`mcpServers` is **client-owned config**: the caller authors the URL, non-secret
+headers, and secret header refs end-to-end, and Firegrid carries that as launch
+intent without interpreting provider semantics. No provider semantics live in
+`@firegrid/protocol` — there is no `linear.*`/`github.*` channel in the protocol
+catalog. The protocol stays a neutral substrate; provider tools are described
+entirely by the MCP servers you attach.
 
 ### Hosted MCP connections (Smithery, etc.)
 
@@ -272,7 +274,9 @@ mcpServers: [
     server: {
       type: "url",
       url: "https://mcp.smithery.run/my-app",
-      headers: { authorization: "Bearer <scoped-service-token>" },
+      headers: {
+        authorization: { ref: "env:SMITHERY_SERVICE_TOKEN" },
+      },
     },
   },
 ]
@@ -280,17 +284,23 @@ mcpServers: [
 
 ### Credential boundary
 
-Provider auth travels in the entry's `headers`. Per Firegrid's secret discipline,
-**provider secrets should not be embedded as literal values in durable launch
-intent** — the same rule the env surface enforces, where
-`RuntimeEnvBinding { name, ref }` stores a *reference* to a host env var and "the
-durable plane never sees the value" (literal secret values are rejected by
-`LaunchSecretEnvCliValueSchema`). The MCP-header equivalent (a ref form so header
-secrets resolve at spawn from a non-durable source rather than landing in durable
-rows/traces) is being enforced under bead `tf-sk6i`; once it lands, supply MCP
-header secrets by reference, not literal. Until then, source provider tokens from
-a non-durable place (host env, a hosted provider's scoped token) and avoid
-committing literal provider secrets into persisted launch config.
+Provider auth travels in the entry's `headers`, but provider secrets must not be
+embedded as literal values in durable launch intent. Secret-bearing MCP headers
+use the same ref discipline as `RuntimeEnvBinding { name, ref }`: the durable
+row stores a reference and the host resolves it when attaching/spawning the
+session.
+
+Use a header value of `{ ref: "env:VAR_NAME" }` for secret-bearing headers:
+
+```ts
+headers: {
+  authorization: { ref: "env:SMITHERY_SERVICE_TOKEN" },
+}
+```
+
+The host must authorize the exact header ref before resolution. Public,
+non-secret headers may still be literal strings, but literal secret-shaped MCP
+header values are rejected before they enter the durable plane.
 
 ### Provider actions are MCP tools first
 

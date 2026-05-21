@@ -15,7 +15,12 @@
 // by being persisted. The same policy service owns the env lookup callback
 // so this module never touches globalThis.process.env directly.
 
-import type { RuntimeEnvBinding } from "@firegrid/protocol/launch"
+import {
+  isMcpServerHeaderLiteralSecret,
+  isMcpServerHeaderRef,
+  type McpServerHeaderValue,
+  type RuntimeEnvBinding,
+} from "@firegrid/protocol/launch"
 import { Context, Effect, Layer, Schema } from "effect"
 
 const ENV_REF_PREFIX = "env:"
@@ -35,6 +40,19 @@ export class ResolveEnvBindingError extends Schema.TaggedError<ResolveEnvBinding
     message: Schema.String,
   },
 ) {}
+
+const resolveError = (
+  op: string,
+  bindingName: string | undefined,
+  envName: string | undefined,
+  message: string,
+): ResolveEnvBindingError =>
+  new ResolveEnvBindingError({
+    op,
+    ...(bindingName === undefined ? {} : { bindingName }),
+    ...(envName === undefined ? {} : { envName }),
+    message,
+  })
 
 export type EnvLookup = (name: string) => string | undefined
 
@@ -90,22 +108,118 @@ interface EnvRef {
   readonly envName: string
 }
 
+const parseEnvRef = (
+  input: {
+    readonly op: string
+    readonly bindingName: string
+    readonly ref: string
+  },
+): Effect.Effect<EnvRef, ResolveEnvBindingError> =>
+  input.ref.startsWith(ENV_REF_PREFIX)
+    ? Effect.succeed({
+      kind: "env" as const,
+      envName: input.ref.slice(ENV_REF_PREFIX.length),
+    })
+    : Effect.fail(
+      resolveError(
+        input.op,
+        input.bindingName,
+        undefined,
+        `unsupported env binding ref shape: "${input.ref}". Only "env:VAR" refs are supported in v1.`,
+      ),
+    )
+
 const parseRef = (
   binding: RuntimeEnvBinding,
 ): Effect.Effect<EnvRef, ResolveEnvBindingError> =>
-  binding.ref.startsWith(ENV_REF_PREFIX)
-    ? Effect.succeed({
-      kind: "env" as const,
-      envName: binding.ref.slice(ENV_REF_PREFIX.length),
-    })
-    : Effect.fail(
-      new ResolveEnvBindingError({
-        op: "parseRef",
-        bindingName: binding.name,
-        message:
-          `unsupported env binding ref shape: "${binding.ref}". Only "env:VAR" refs are supported in v1.`,
-      }),
-    )
+  parseEnvRef({
+    op: "parseRef",
+    bindingName: binding.name,
+    ref: binding.ref,
+  })
+
+export const mcpHeaderSecretBindingName = (
+  serverName: string,
+  headerName: string,
+): string => `mcp:${serverName}:${headerName}`
+
+const authorizeAndLookupEnvRef = (
+  input: {
+    readonly op: string
+    readonly bindingName: string
+    readonly ref: string
+  },
+): Effect.Effect<string, ResolveEnvBindingError, RuntimeEnvResolverPolicy> =>
+  Effect.gen(function*() {
+    const policy = yield* RuntimeEnvResolverPolicy
+    const parsed = yield* parseEnvRef(input)
+    const authorizedEnvName = policy.authorizedBindings.get(input.bindingName)
+    if (authorizedEnvName === undefined) {
+      return yield* resolveError(
+        input.op,
+        input.bindingName,
+        parsed.envName,
+        `secret ref ${input.bindingName}=env:${parsed.envName} is not authorized by the runtime host; refusing to resolve.`,
+      )
+    }
+    if (authorizedEnvName !== parsed.envName) {
+      return yield* resolveError(
+        input.op,
+        input.bindingName,
+        parsed.envName,
+        `secret ref ${input.bindingName}=env:${parsed.envName} does not match the authorized pair ${input.bindingName}=env:${authorizedEnvName}; refusing to resolve.`,
+      )
+    }
+    const value = policy.lookupEnv(parsed.envName)
+    if (value === undefined) {
+      return yield* resolveError(
+        input.op,
+        input.bindingName,
+        parsed.envName,
+        `secret ref ${input.bindingName} is authorized but host env var ${parsed.envName} is not set in the host process; cannot resolve.`,
+      )
+    }
+    return value
+  })
+
+// firegrid-local-mcp-run.LAUNCH_CONFIG.9
+// firegrid-local-mcp-run.LAUNCH_CONFIG.10
+export const resolveMcpServerHeaders = (
+  serverName: string,
+  headers: Readonly<Record<string, McpServerHeaderValue>> | undefined,
+): Effect.Effect<
+  Record<string, string> | undefined,
+  ResolveEnvBindingError,
+  RuntimeEnvResolverPolicy
+> =>
+  Effect.gen(function*() {
+    if (headers === undefined) return undefined
+    const out: Record<string, string> = {}
+    const entries = Object.entries(headers)
+    let index = 0
+    while (index < entries.length) {
+      const [headerName, value] = entries[index]!
+      if (typeof value === "string") {
+        if (isMcpServerHeaderLiteralSecret(headerName, value)) {
+          return yield* resolveError(
+            "resolveMcpServerHeaders",
+            mcpHeaderSecretBindingName(serverName, headerName),
+            undefined,
+            `mcpServers header ${serverName}.${headerName} carries a literal secret-shaped value; use { ref: "env:VAR" } instead.`,
+          )
+        }
+        out[headerName] = value
+      } else if (isMcpServerHeaderRef(value)) {
+        out[headerName] = yield* authorizeAndLookupEnvRef({
+          op: "resolveMcpServerHeaders",
+          bindingName: mcpHeaderSecretBindingName(serverName, headerName),
+          ref: value.ref,
+        })
+      }
+      index += 1
+    }
+    return out
+  })
 
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
@@ -128,23 +242,20 @@ export const resolveSpawnEnvVars = (
       // string in `name`. Reject anything that isn't a POSIX-ish env-var
       // identifier so a malformed name can never reach `Command.env(...)`.
       if (!ENV_NAME_PATTERN.test(binding.name)) {
-        return yield* Effect.fail(
-          new ResolveEnvBindingError({
-            op: "resolveSpawnEnvVars",
-            bindingName: binding.name,
-            message:
-              `env binding target name "${binding.name}" is not a valid env-var identifier; refusing to resolve.`,
-          }),
+        return yield* resolveError(
+          "resolveSpawnEnvVars",
+          binding.name,
+          undefined,
+          `env binding target name "${binding.name}" is not a valid env-var identifier; refusing to resolve.`,
         )
       }
 
       if (seen.has(binding.name)) {
-        return yield* Effect.fail(
-          new ResolveEnvBindingError({
-            op: "resolveSpawnEnvVars",
-            bindingName: binding.name,
-            message: `duplicate env binding target name: ${binding.name}`,
-          }),
+        return yield* resolveError(
+          "resolveSpawnEnvVars",
+          binding.name,
+          undefined,
+          `duplicate env binding target name: ${binding.name}`,
         )
       }
       seen.add(binding.name)
@@ -157,37 +268,28 @@ export const resolveSpawnEnvVars = (
       // when only ANTHROPIC_API_KEY=$(env:ANTHROPIC_API_KEY) was granted).
       const authorizedEnvName = policy.authorizedBindings.get(binding.name)
       if (authorizedEnvName === undefined) {
-        return yield* Effect.fail(
-          new ResolveEnvBindingError({
-            op: "resolveSpawnEnvVars",
-            bindingName: binding.name,
-            envName: parsed.envName,
-            message:
-              `env binding target ${binding.name} is not authorized by the runtime host; refusing to resolve. Authorize the exact (target,source) pair at the host boundary (e.g. firegrid:run --secret-env ${binding.name}=${parsed.envName}).`,
-          }),
+        return yield* resolveError(
+          "resolveSpawnEnvVars",
+          binding.name,
+          parsed.envName,
+          `env binding target ${binding.name} is not authorized by the runtime host; refusing to resolve. Authorize the exact (target,source) pair at the host boundary (e.g. firegrid:run --secret-env ${binding.name}=${parsed.envName}).`,
         )
       }
       if (authorizedEnvName !== parsed.envName) {
-        return yield* Effect.fail(
-          new ResolveEnvBindingError({
-            op: "resolveSpawnEnvVars",
-            bindingName: binding.name,
-            envName: parsed.envName,
-            message:
-              `env binding ${binding.name}=env:${parsed.envName} does not match the authorized pair ${binding.name}=env:${authorizedEnvName}; refusing to resolve.`,
-          }),
+        return yield* resolveError(
+          "resolveSpawnEnvVars",
+          binding.name,
+          parsed.envName,
+          `env binding ${binding.name}=env:${parsed.envName} does not match the authorized pair ${binding.name}=env:${authorizedEnvName}; refusing to resolve.`,
         )
       }
       const value = policy.lookupEnv(parsed.envName)
       if (value === undefined) {
-        return yield* Effect.fail(
-          new ResolveEnvBindingError({
-            op: "resolveSpawnEnvVars",
-            bindingName: binding.name,
-            envName: parsed.envName,
-            message:
-              `env binding ${binding.name} is authorized but host env var ${parsed.envName} is not set in the host process; cannot resolve.`,
-          }),
+        return yield* resolveError(
+          "resolveSpawnEnvVars",
+          binding.name,
+          parsed.envName,
+          `env binding ${binding.name} is authorized but host env var ${parsed.envName} is not set in the host process; cannot resolve.`,
         )
       }
       out[binding.name] = value
