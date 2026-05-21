@@ -29,7 +29,7 @@ import {
 import {
   RuntimeContextCheckpointSource,
   type RuntimeContextWorkflowCheckpointHandle,
-} from "../../runtime-context-workflow-runtime.ts"
+} from "@firegrid/runtime/kernel"
 
 const lifecycleEventFromRow = (
   row: RuntimeRunEventRow,

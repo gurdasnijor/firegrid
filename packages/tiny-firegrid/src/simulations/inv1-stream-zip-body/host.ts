@@ -65,7 +65,7 @@ import {
 } from "../../../../host-sdk/src/agent-tools/bindings/tool-error.ts"
 import {
   executeRuntimeContextWorkflow,
-} from "../../../../host-sdk/src/host/internal/run-context-workflow.ts"
+} from "@firegrid/runtime/kernel"
 import {
   allocateRuntimeActivityAttempt,
   agentInputEventFromRuntimeIngressRow,
@@ -82,10 +82,10 @@ import {
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
-} from "../../../../host-sdk/src/host/internal/runtime-context-helpers.ts"
+} from "@firegrid/runtime/kernel"
 import {
   RuntimeContextWorkflowRuntime,
-} from "../../../../host-sdk/src/host/runtime-context-workflow-runtime.ts"
+} from "@firegrid/runtime/kernel"
 import {
   RuntimeAgentToolExecutionLive,
 } from "@firegrid/runtime/tool-executor"
@@ -100,7 +100,7 @@ import {
 import {
   RuntimeContextWorkflowSession,
   runtimeInputDeferredFor,
-} from "../../../../host-sdk/src/host/runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/workflows"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 
 const RuntimeContextSessionStartedEvidenceSchema = Schema.Struct({

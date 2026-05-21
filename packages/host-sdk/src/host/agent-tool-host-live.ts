@@ -35,16 +35,16 @@ import {
   requireLocalRuntimeContextWithHostSession,
   runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
-} from "./internal/runtime-context-helpers.ts"
+} from "@firegrid/runtime/kernel"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 import {
   RuntimeContextWorkflowRuntime,
-} from "./runtime-context-workflow-runtime.ts"
-import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
+} from "@firegrid/runtime/kernel"
+import { executeRuntimeContextWorkflow } from "@firegrid/runtime/kernel"
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
-} from "./runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/kernel"
 import {
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"

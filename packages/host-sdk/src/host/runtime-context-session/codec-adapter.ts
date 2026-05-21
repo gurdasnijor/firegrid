@@ -41,10 +41,10 @@ import {
 import {
   RuntimeContextWorkflowNative,
   type RuntimeContextWorkflowSessionService,
-} from "../runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/kernel"
 import {
   runtimeContextWorkflowExecutionId,
-} from "../internal/runtime-context-helpers.ts"
+} from "@firegrid/runtime/kernel"
 import * as SessionCommon from "./common.ts"
 import { runtimeContextMcpPath } from "../mcp-host.ts"
 import {

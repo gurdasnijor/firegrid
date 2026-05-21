@@ -21,10 +21,10 @@ import {
   type RuntimeContextError,
 } from "@firegrid/runtime/errors"
 import { Context, Effect, Exit, Layer, Option, Ref, Scope, Stream, type Tracer } from "effect"
-import { RuntimeHostConfig } from "./config.ts"
+import { RuntimeHostConfig } from "./runtime-host-config.ts"
 import {
   runtimeContextWorkflowExecutionId,
-} from "./internal/runtime-context-helpers.ts"
+} from "./runtime-context-helpers.ts"
 
 interface ActiveRuntimeContextExecution {
   readonly context: RuntimeContext
@@ -135,12 +135,10 @@ const deregisterActiveExecution = (
   executions: Ref.Ref<Map<string, ActiveRuntimeContextExecution>>,
   contextId: string,
 ) =>
-  Effect.gen(function*() {
-    yield* Ref.update(executions, map => {
-      const next = new Map(map)
-      next.delete(contextId)
-      return next
-    })
+  Ref.update(executions, map => {
+    const next = new Map(map)
+    next.delete(contextId)
+    return next
   }).pipe(
     Effect.withSpan("firegrid.host.runtime_context.execution.deregister", {
       kind: "internal",
@@ -170,7 +168,6 @@ const appendIntentToExecution = (
         intent.contextId,
         cause,
       )),
-  ).pipe(
     Effect.withSpan("firegrid.host.runtime_context.input.append_intent", {
       kind: "internal",
       attributes: {
@@ -273,12 +270,12 @@ export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
           "firegrid.runtime_context.execution.existing": false,
         })
         if (context.host.hostId !== hostSession.hostId) {
-          return yield* Effect.fail(asRuntimeContextError(
+          return yield* asRuntimeContextError(
             "runtime-context.execution.ensure",
             "runtime context is not owned by this host",
             context.contextId,
             { hostId: context.host.hostId, currentHostId: hostSession.hostId },
-          ))
+          )
         }
         const handle: ActiveRuntimeContextExecution = {
           context,

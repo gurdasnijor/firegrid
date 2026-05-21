@@ -25,7 +25,7 @@ import {
 import {
   RuntimeContextCheckpointSource,
   RuntimeContextWorkflowRuntime,
-} from "../../src/host/runtime-context-workflow-runtime.ts"
+} from "@firegrid/runtime/kernel"
 
 const FactoryEventRowSchema = Schema.Struct({
   eventType: Schema.String,

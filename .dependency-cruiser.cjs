@@ -19,6 +19,7 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "agent-event-pipeline/session-byte-stream-adapter\\.ts$",
   "agent-adapters/index\\.ts$",
   "agent-event-pipeline/sources/sandbox/index\\.ts$",
+  "kernel/index\\.ts$",
 ].join("|")
 
 const currentHostSdkSubstrateDebt = [

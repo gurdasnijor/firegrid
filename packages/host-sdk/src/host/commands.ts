@@ -14,18 +14,18 @@ import {
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { Duration, Effect, Layer, Stream } from "effect"
-import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
+import { executeRuntimeContextWorkflow } from "@firegrid/runtime/kernel"
 import type { StartRuntimeOptions } from "./types.ts"
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
-} from "./runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/kernel"
 import {
   readRuntimeContext,
   requireLocalRuntimeContextWithHostSession,
   runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
-} from "./internal/runtime-context-helpers.ts"
+} from "@firegrid/runtime/kernel"
 import { RuntimeContextRead } from "@firegrid/runtime/control-plane"
 import {
   runtimeIngressError,
@@ -33,7 +33,7 @@ import {
 } from "@firegrid/runtime/errors"
 import {
   RuntimeContextWorkflowRuntime,
-} from "./runtime-context-workflow-runtime.ts"
+} from "@firegrid/runtime/kernel"
 import {
   AgentToolHost,
   type AgentToolHostService,

@@ -61,11 +61,11 @@ import {
   Cause,
 } from "effect"
 // nosemgrep: firegrid-runtime-no-host-internal-imports-outside-host -- simulation intentionally probes private runtime-context workflow composition before production promotion.
-import { RuntimeHostConfig } from "../../../../host-sdk/src/host/config.ts"
+import { RuntimeHostConfig } from "@firegrid/runtime/kernel"
 // nosemgrep: firegrid-runtime-no-host-internal-imports-outside-host -- simulation intentionally probes private runtime-context workflow composition before production promotion.
 import {
   executeRuntimeContextWorkflow,
-} from "../../../../host-sdk/src/host/internal/run-context-workflow.ts"
+} from "@firegrid/runtime/kernel"
 // nosemgrep: firegrid-runtime-no-host-internal-imports-outside-host -- simulation intentionally probes private runtime-context workflow composition before production promotion.
 import {
   RuntimeContextWorkflowPayload,
@@ -84,7 +84,7 @@ import {
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
-} from "../../../../host-sdk/src/host/internal/runtime-context-helpers.ts"
+} from "@firegrid/runtime/kernel"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
   PerContextRuntimeOutputWriter,
@@ -93,7 +93,7 @@ import {
 import {
   RuntimeContextWorkflowSession,
   runtimeInputDeferredFor,
-} from "../../../../host-sdk/src/host/runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/workflows"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 
 const hostId = "host-a" as HostId

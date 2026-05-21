@@ -21,6 +21,7 @@ components:
       6: Verified webhook ingest is classified as a tracer-era host/integration adapter candidate or retirement candidate, not runtime execution substrate; its SourceCollections-based wait integration is stale after typed runtime wait-source cutover.
       7: "@firegrid/cli owns the command binding: @effect/cli command definitions, help text, flags, examples, local developer defaults, process exit behavior, and Node-only command execution wiring."
       8: Runtime-context session byte-stream conversion and stdin write effects are owned by @firegrid/runtime; @firegrid/host-sdk may select and compose the raw or codec session adapter layers.
+      9: Runtime-context workflow runtime services, execute helpers, and durable workflow engine lifecycle wiring are owned by @firegrid/runtime; @firegrid/host-sdk may compose those services into the host layer but must not own their implementation files.
 
   PROJECTION_BINDINGS:
     requirements:

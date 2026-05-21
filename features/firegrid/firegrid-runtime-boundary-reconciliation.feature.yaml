@@ -65,7 +65,7 @@ components:
       2: Host topology and codec-path tool lowering share one host runtime-observation/tool substrate layer instead of maintaining parallel provideMerge chains.
       3: Codec-path tool lowering preserves the pre-split host-coupled tool-host capabilities unless an explicit behavior change lands with tests and ACIDs.
       4: Local runtime-context ownership checks used by startRuntime, RuntimeStartCapabilityLive, and host-coupled tool services are factored through one host-internal helper.
-      5: Runtime context workflow modules export workflow definitions and layers, while reusable execution-id, clock, and context-read helpers live in a host-internal helper module when sibling files need them.
+      5: Runtime context workflow modules export workflow definitions and layers, while reusable execution-id, clock, context-read helpers, and host-scoped workflow runtime services live under the runtime kernel boundary when host composition needs them.
       6: Host hardening remains behavior-preserving and is validated by runtime host, prompt-routing, sync-run, two-host isolation, and codec event-plane tests.
 
   CODEC_SESSION:

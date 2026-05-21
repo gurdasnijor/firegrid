@@ -25,10 +25,10 @@ import {
 import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
 import {
   runtimeInputDeferredName,
-} from "../../src/host/runtime-context-workflow-core.ts"
+} from "@firegrid/runtime/workflows"
 import {
   runtimeContextWorkflowExecutionId,
-} from "../../src/host/internal/runtime-context-helpers.ts"
+} from "@firegrid/runtime/kernel"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
