@@ -117,6 +117,13 @@ export {
   requestHostSessionCreateOrLoad,
 } from "./host-session-create-or-load-request.ts"
 export {
+  makeHostContextsCreateChannel,
+  makeHostPermissionRespondChannel,
+  makeHostPromptChannel,
+  makeHostSessionsStartChannel,
+  makeSessionPromptChannelForSession,
+} from "./host-control-request.ts"
+export {
   RuntimeStartCapability,
   RuntimeStartOptionsSchema,
   RuntimeStartResultSchema,

@@ -668,6 +668,61 @@ describe("Firegrid session facade", () => {
     })
   })
 
+  it("tf-aago #560 regression: permissions.respond for a NONEXISTENT context fails and creates NO orphan input intent", async () => {
+    const fixture = makeFixture()
+    // Deliberately do NOT materialize the context row (no
+    // materializeContextRequest): the context does not exist. The
+    // pre-channel client path guarded this via resolveContext; the channel
+    // rewire must preserve the guard so a missing context cannot mint an
+    // orphan required_action_result intent + falsely return responded:true.
+    const contextId = "ctx_nonexistent_tf_aago_560"
+    const permissionRequestId = "permission-orphan-guard"
+
+    const outcome = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        return yield* firegrid.permissions.respond({
+          contextId,
+          permissionRequestId,
+          decision: { _tag: "Allow", optionId: "allow" },
+        }).pipe(Effect.either)
+      }),
+    )
+
+    // 1. Must NOT report success — the guard fails the respond with an
+    // AppendError whose cause names the missing context.
+    expect(outcome._tag).toBe("Left")
+    if (outcome._tag === "Right") return
+    const error = outcome.left as {
+      _tag?: string
+      contextId?: string
+      cause?: { _tag?: string; contextId?: string }
+    }
+    expect(error._tag).toBe("AppendError")
+    expect(error.contextId).toBe(contextId)
+    // The guard fails with a protocol-owned tagged ContextNotFound, wrapped
+    // by the client projection into AppendError.cause.
+    expect(error.cause?._tag).toBe("ContextNotFound")
+    expect(error.cause?.contextId).toBe(contextId)
+
+    // 2. Must NOT have created an orphan input-intent row. The intent id is
+    // deterministic from the request, so its absence proves no row landed.
+    const orphanIntentId = inputIdForRuntimeIngressRequest({
+      contextId,
+      kind: "required_action_result",
+      authoredBy: "client",
+      payload: {
+        _tag: "PermissionResponse",
+        permissionRequestId,
+        decision: { _tag: "Allow", optionId: "allow" },
+      },
+      idempotencyKey: `permission-response:${contextId}:${permissionRequestId}`,
+    })
+    const stored = await readRuntimeInputIntent(fixture.hostSession, orphanIntentId)
+    expect(stored).toBeUndefined()
+  })
+
   it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.7 autoApprove allow policy responds to PermissionRequest observations", async () => {
     const fixture = makeFixture()
 

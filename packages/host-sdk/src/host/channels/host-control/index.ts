@@ -5,58 +5,37 @@ import {
   HostContextsChannel,
   HostContextsChannelTarget,
   HostContextsCreateChannel,
-  HostContextsCreateChannelTarget,
-  HostContextsCreateRequestSchema,
-  HostContextsCreateResponseSchema,
   HostPermissionRespondChannel,
-  HostPermissionRespondChannelRequestSchema,
-  HostPermissionRespondChannelResponseSchema,
-  HostPermissionRespondChannelTarget,
   HostPromptChannel,
-  HostPromptChannelTarget,
   HostSessionSnapshotChannel,
   HostSessionSnapshotChannelTarget,
   HostSessionSnapshotRequestSchema,
   HostSessionsStartChannel,
-  HostSessionsStartChannelTarget,
-  HostSessionsStartRequestSchema,
-  HostSessionsStartResponseSchema,
   RuntimeContextSnapshotSchema,
   SessionLifecycleChannel,
   SessionLifecycleChannelTarget,
   SessionPromptChannel,
-  SessionPromptChannelTarget,
   makeCallableChannel,
-  makeEgressChannel,
   makeIngressChannel,
-  type HostPermissionRespondChannelRequest,
 } from "@firegrid/protocol/channels"
 import {
   RuntimeControlPlaneTable,
   RuntimeContextSchema,
   RuntimeOutputTable,
   RuntimeRunEventSchema,
-  makeRuntimeContextRequestRow,
-  makeRuntimeStartRequestAck,
-  makeRuntimeStartRequestRow,
+  makeHostContextsCreateChannel,
+  makeHostPermissionRespondChannel,
+  makeHostPromptChannel,
+  makeHostSessionsStartChannel,
+  makeSessionPromptChannelForSession,
   runtimeContextOutputStreamUrl,
   type RuntimeContextRow,
   type RuntimeRunEventRow,
 } from "@firegrid/protocol/launch"
 import {
-  FiregridSessionIdSchema,
-  RuntimeContextIdSchema,
-  SessionHandlePromptInputSchema,
   runtimeAgentOutputObservationFromRow,
 } from "@firegrid/protocol/session-facade"
-import {
-  PublicPromptRequestSchema,
-  makeRuntimeInputIntentRow,
-  promptToRuntimeIngressRequest,
-  type RuntimeIngressRequest,
-} from "@firegrid/protocol/runtime-ingress"
-import { stampRowOtel } from "@firegrid/protocol/otel"
-import { Effect, Layer, Option, Schema, Stream } from "effect"
+import { Effect, Layer, Option, Stream } from "effect"
 import { RuntimeHostConfig } from "../../config.ts"
 
 const runStatusRank = (status: RuntimeRunEventRow["status"]): number =>
@@ -85,42 +64,13 @@ const outputLayerForContext = (
     },
   })
 
-const appendInputIntent = (
-  control: RuntimeControlPlaneTable["Type"],
-  request: RuntimeIngressRequest,
-) =>
-  Effect.gen(function*() {
-    const stamped = yield* stampRowOtel(makeRuntimeInputIntentRow(request))
-    const result = yield* control.inputIntents.insertOrGet(stamped)
-    return result._tag === "Found" ? result.row : stamped
-  })
-
-const permissionResponseInput = (
-  request: HostPermissionRespondChannelRequest,
-): RuntimeIngressRequest => ({
-  contextId: request.contextId,
-  kind: "required_action_result" as const,
-  authoredBy: "client" as const,
-  payload: {
-    _tag: "PermissionResponse",
-    permissionRequestId: request.permissionRequestId,
-    decision: request.decision,
-  },
-  idempotencyKey: request.idempotencyKey ??
-    `permission-response:${request.contextId}:${request.permissionRequestId}`,
-})
-
-const appendContextCreateRequest = (
-  control: RuntimeControlPlaneTable["Type"],
-  request: {
-    readonly contextId: string
-    readonly runtime: Parameters<typeof makeRuntimeContextRequestRow>[0]["runtime"]
-    readonly createdBy?: string
-  },
-) =>
-  stampRowOtel(makeRuntimeContextRequestRow(request)).pipe(
-    Effect.flatMap(row => control.contextRequests.insertOrGet(row)),
-  )
+// tf-aago: the contexts.create / prompt / session.prompt / sessions.start /
+// permissions.respond bindings now come from the shared
+// @firegrid/protocol/launch factories (the single source of truth the
+// client-sdk standalone defaults also consume). The local
+// appendInputIntent / permissionResponseInput / appendContextCreateRequest
+// helpers were deleted; only the snapshot/contexts/lifecycle bindings (which
+// need RuntimeHostConfig + RuntimeOutputTable) remain inline below.
 
 type HostControlChannels =
   | HostContextsCreateChannel
@@ -184,83 +134,16 @@ export const HostControlChannelsLive =
       return Layer.mergeAll(
         Layer.succeed(
           HostContextsCreateChannel,
-          makeCallableChannel({
-            target: HostContextsCreateChannelTarget,
-            requestSchema: HostContextsCreateRequestSchema,
-            responseSchema: HostContextsCreateResponseSchema,
-            call: request =>
-              Effect.gen(function*() {
-                yield* appendContextCreateRequest(control, {
-                  contextId: request.contextId,
-                  runtime: request.runtime,
-                  ...(request.createdBy === undefined
-                    ? {}
-                    : { createdBy: request.createdBy }),
-                })
-                const sessionId = yield* Schema.decodeUnknown(
-                  FiregridSessionIdSchema,
-                )(request.contextId)
-                const contextId = yield* Schema.decodeUnknown(
-                  RuntimeContextIdSchema,
-                )(request.contextId)
-                return {
-                  sessionId,
-                  contextId,
-                }
-              }),
-          }),
+          makeHostContextsCreateChannel(control),
         ),
-        Layer.succeed(
-          HostPromptChannel,
-          makeEgressChannel({
-            target: HostPromptChannelTarget,
-            schema: PublicPromptRequestSchema,
-            append: request =>
-              appendInputIntent(
-                control,
-                promptToRuntimeIngressRequest(request),
-              ).pipe(Effect.asVoid),
-          }),
-        ),
+        Layer.succeed(HostPromptChannel, makeHostPromptChannel(control)),
         Layer.succeed(SessionPromptChannel, {
           forSession: sessionId =>
-            makeEgressChannel({
-              target: SessionPromptChannelTarget,
-              schema: SessionHandlePromptInputSchema,
-              append: request =>
-                appendInputIntent(control, {
-                  contextId: sessionId,
-                  kind: "message",
-                  authoredBy: "client",
-                  payload: request.payload,
-                  idempotencyKey: request.idempotencyKey,
-                  ...(request.metadata === undefined
-                    ? {}
-                    : { metadata: request.metadata }),
-                }).pipe(Effect.asVoid),
-            }),
+            makeSessionPromptChannelForSession(control, sessionId),
         }),
         Layer.succeed(
           HostSessionsStartChannel,
-          makeCallableChannel({
-            target: HostSessionsStartChannelTarget,
-            requestSchema: HostSessionsStartRequestSchema,
-            responseSchema: HostSessionsStartResponseSchema,
-            call: request =>
-              Effect.gen(function*() {
-                const row = makeRuntimeStartRequestRow({
-                  contextId: request.sessionId,
-                  requestedBy: "client",
-                })
-                const stamped = yield* stampRowOtel(row)
-                const result = yield* control.startRequests.insertOrGet(stamped)
-                return makeRuntimeStartRequestAck({
-                  requestId: row.requestId,
-                  contextId: row.contextId,
-                  inserted: result._tag === "Inserted",
-                })
-              }),
-          }),
+          makeHostSessionsStartChannel(control),
         ),
         Layer.succeed(
           HostContextSnapshotChannel,
@@ -302,24 +185,7 @@ export const HostControlChannelsLive =
         }),
         Layer.succeed(
           HostPermissionRespondChannel,
-          makeCallableChannel({
-            target: HostPermissionRespondChannelTarget,
-            requestSchema: HostPermissionRespondChannelRequestSchema,
-            responseSchema: HostPermissionRespondChannelResponseSchema,
-            call: request =>
-              Effect.gen(function*() {
-                const row = yield* appendInputIntent(
-                  control,
-                  permissionResponseInput(request),
-                )
-                return {
-                  responded: true,
-                  contextId: request.contextId,
-                  permissionRequestId: request.permissionRequestId,
-                  inputId: row.intentId,
-                }
-              }),
-          }),
+          makeHostPermissionRespondChannel(control),
         ),
       )
     }),
