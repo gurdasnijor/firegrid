@@ -87,7 +87,9 @@ export {
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
 export {
+  mcpHeaderSecretBindingName,
   ResolveEnvBindingError,
+  resolveMcpServerHeaders,
   resolveSpawnEnvVars,
   type EnvLookup,
 } from "./agent-event-pipeline/sources/sandbox/secrets.ts"

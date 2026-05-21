@@ -1,7 +1,9 @@
 import { Effect, Either, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+  mcpHeaderSecretBindingName,
   ResolveEnvBindingError,
+  resolveMcpServerHeaders,
   RuntimeEnvResolverPolicy,
   resolveSpawnEnvVars,
 } from "../../../src/agent-event-pipeline/sources/sandbox/secrets.ts"
@@ -214,5 +216,61 @@ describe("runtime providers/sandboxes secrets resolver", () => {
       ),
     )
     expect(out).toEqual({})
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.10 resolves MCP header refs through the same host env policy", async () => {
+    const out = await Effect.runPromise(
+      resolveMcpServerHeaders("smithery", {
+        authorization: { ref: "env:SMITHERY_SERVICE_TOKEN" },
+        "x-routing-hint": "public-value",
+      }).pipe(
+        Effect.provide(policyLayer(
+          [[mcpHeaderSecretBindingName("smithery", "authorization"), "SMITHERY_SERVICE_TOKEN"]],
+          { SMITHERY_SERVICE_TOKEN: "Bearer runtime-only" },
+        )),
+      ),
+    )
+
+    expect(out).toEqual({
+      authorization: "Bearer runtime-only",
+      "x-routing-hint": "public-value",
+    })
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.9 rejects literal MCP header secrets at the resolver boundary", async () => {
+    const result = await Effect.runPromise(
+      Effect.either(
+        resolveMcpServerHeaders("smithery", {
+          authorization: "Bearer should-not-enter-durable-plane",
+        }).pipe(
+          Effect.provide(RuntimeEnvResolverPolicy.denyAll),
+        ),
+      ),
+    )
+
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(ResolveEnvBindingError)
+      expect(result.left.op).toBe("resolveMcpServerHeaders")
+      expect(result.left.bindingName).toBe(mcpHeaderSecretBindingName("smithery", "authorization"))
+    }
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.10 denies unauthorized MCP header refs", async () => {
+    const result = await Effect.runPromise(
+      Effect.either(
+        resolveMcpServerHeaders("smithery", {
+          authorization: { ref: "env:SMITHERY_SERVICE_TOKEN" },
+        }).pipe(
+          Effect.provide(RuntimeEnvResolverPolicy.denyAll),
+        ),
+      ),
+    )
+
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left.op).toBe("resolveMcpServerHeaders")
+      expect(result.left.message).toContain("not authorized")
+    }
   })
 })

@@ -187,6 +187,65 @@ describe("@firegrid/protocol launch schema", () => {
     expect(Either.isLeft(acpLowered)).toBe(true)
   })
 
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.9 rejects secret-shaped literal MCP headers before durable launch config", () => {
+    const byHeaderName = Schema.decodeUnknownEither(McpServerDeclarationSchema)({
+      name: "smithery",
+      server: {
+        type: "url",
+        url: "https://mcp.smithery.run/team-namespace",
+        headers: {
+          authorization: "Bearer should-not-enter-durable-plane",
+        },
+      },
+    })
+    expect(Either.isLeft(byHeaderName)).toBe(true)
+
+    const byValueShape = Schema.decodeUnknownEither(McpServerDeclarationSchema)({
+      name: "provider",
+      server: {
+        type: "url",
+        url: "https://provider.example/mcp",
+        headers: {
+          "x-custom": "sk-secret-shaped-token",
+        },
+      },
+    })
+    expect(Either.isLeft(byValueShape)).toBe(true)
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.10 preserves MCP header refs in the durable launch config", () => {
+    const intent = normalizeRuntimeIntent(local.jsonl({
+      argv: ["node", "agent.mjs"],
+      mcpServers: [
+        {
+          name: "smithery",
+          server: {
+            type: "url",
+            url: "https://mcp.smithery.run/team-namespace",
+            headers: {
+              authorization: { ref: "env:SMITHERY_SERVICE_TOKEN" },
+              "x-routing-hint": "public-value",
+            },
+          },
+        },
+      ],
+    }))
+
+    expect(intent.config.mcpServers).toEqual([
+      {
+        name: "smithery",
+        server: {
+          type: "url",
+          url: "https://mcp.smithery.run/team-namespace",
+          headers: {
+            authorization: { ref: "env:SMITHERY_SERVICE_TOKEN" },
+            "x-routing-hint": "public-value",
+          },
+        },
+      },
+    ])
+  })
+
   it("firegrid-local-mcp-run.LAUNCH_CONFIG.3 firegrid-local-mcp-run.LAUNCH_CONFIG.4 decodes CLI launch config in protocol", async () => {
     const decoded = await Effect.runPromise(decodeLaunchConfig({
       agent: "codex-acp",

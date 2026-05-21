@@ -24,7 +24,9 @@ import {
   runCodecRuntimeContextStderrJournal,
 } from "@firegrid/runtime/session-byte-stream-adapter"
 import {
+  resolveMcpServerHeaders,
   type AgentByteStream,
+  type RuntimeEnvResolverPolicy,
 } from "@firegrid/runtime/sources/sandbox"
 import {
   Context,
@@ -54,6 +56,15 @@ interface CodecRuntimeContextSession extends SessionCommon.RuntimeContextSession
   readonly agentSession: AgentSession["Type"]
 }
 
+interface ResolvedMcpServerDeclaration {
+  readonly name: string
+  readonly server: {
+    readonly type: "url"
+    readonly url: string
+    readonly headers?: Readonly<Record<string, string>>
+  }
+}
+
 const protocolForContext = (
   context: RuntimeContext,
 ): Exclude<RuntimeAgentProtocol, "raw"> =>
@@ -68,7 +79,7 @@ const codecLayerForProtocol = (
   // `runtimeContextMcp` marker is set, the host-injected concrete
   // `firegrid-runtime-context` declaration built from the host's OWN
   // bound MCP base. The client never expresses this URL.
-  effectiveMcpServers: ReadonlyArray<McpServerDeclaration> | undefined,
+  effectiveMcpServers: ReadonlyArray<ResolvedMcpServerDeclaration> | undefined,
 ): Layer.Layer<AgentSession, AgentCodecError> =>
   Match.value(protocol).pipe(
     Match.when("stdio-jsonl", () =>
@@ -137,6 +148,33 @@ const runtimeContextMcpUrlForContext = (
   return new URL(route, base.address).toString()
 }
 
+const resolveMcpServerDeclarationHeaders = (
+  context: RuntimeContext,
+  declaration: McpServerDeclaration,
+): Effect.Effect<
+  ResolvedMcpServerDeclaration,
+  RuntimeContextError,
+  RuntimeEnvResolverPolicy
+> =>
+  resolveMcpServerHeaders(declaration.name, declaration.server.headers).pipe(
+    Effect.mapError(error =>
+      asRuntimeContextError(
+        "agent-codec.mcp-header.resolve",
+        error.message,
+        context.contextId,
+        error,
+      ),
+    ),
+    Effect.map(headers => ({
+      name: declaration.name,
+      server: {
+        type: declaration.server.type,
+        url: declaration.server.url,
+        ...(headers === undefined ? {} : { headers }),
+      },
+    })),
+  )
+
 // The exact resolution the codec start path uses to honor the URL-less
 // `runtimeContextMcp` marker. Given a materialized context + the host's
 // bound MCP base, it returns the host-provisioned
@@ -145,9 +183,9 @@ const runtimeContextMcpUrlForContext = (
 const resolveEffectiveMcpServers = (
   context: RuntimeContext,
 ): Effect.Effect<
-  ReadonlyArray<McpServerDeclaration> | undefined,
+  ReadonlyArray<ResolvedMcpServerDeclaration> | undefined,
   RuntimeContextError,
-  FiregridRuntimeContextMcpBaseUrl
+  FiregridRuntimeContextMcpBaseUrl | RuntimeEnvResolverPolicy
 > =>
   Effect.gen(function* () {
     const declared = context.runtime.config.mcpServers
@@ -157,7 +195,11 @@ const resolveEffectiveMcpServers = (
         "firegrid.runtime_context_mcp.enabled": false,
         "firegrid.mcp.declared_count": declared?.length ?? 0,
       })
-      return declared
+      return declared === undefined
+        ? undefined
+        : yield* Effect.forEach(declared, declaration =>
+          resolveMcpServerDeclarationHeaders(context, declaration),
+        )
     }
     const baseService = yield* FiregridRuntimeContextMcpBaseUrl
     const base = yield* baseService.get
@@ -180,10 +222,13 @@ const resolveEffectiveMcpServers = (
       "firegrid.mcp.injected_url": injected.server.url,
       "firegrid.mcp.declared_count": declared?.length ?? 0,
     })
-    return [
+    const effective = [
       injected,
       ...(declared ?? []).filter(existing => existing.name !== injected.name),
     ]
+    return yield* Effect.forEach(effective, declaration =>
+      resolveMcpServerDeclarationHeaders(context, declaration),
+    )
   }).pipe(
     Effect.withSpan("firegrid.host.codec.resolve_effective_mcp_servers", {
       kind: "internal",
