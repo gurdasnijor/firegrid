@@ -29,11 +29,14 @@ export interface TypedStreamBinding<S extends Schema.Schema.Any = Schema.Schema.
   readonly stream: Stream.Stream<Schema.Schema.Type<S>, unknown, never>
 }
 
-export interface AppendTargetBinding<S extends Schema.Schema.Any = Schema.Schema.Any> {
+export interface AppendTargetBinding<
+  S extends Schema.Schema.Any = Schema.Schema.Any,
+  Receipt = void,
+> {
   readonly _tag: "AppendTarget"
   readonly append: (
     payload: Schema.Schema.Type<S>,
-  ) => Effect.Effect<void, unknown, never>
+  ) => Effect.Effect<Receipt, unknown, never>
 }
 
 export interface CallTargetBinding<
@@ -58,11 +61,12 @@ export interface IngressChannel<
 
 export interface EgressChannel<
   S extends Schema.Schema.Any = Schema.Schema.Any,
+  Receipt = void,
 > {
   readonly target: ChannelTarget
   readonly direction: "egress"
   readonly schema: S
-  readonly binding: AppendTargetBinding<S>
+  readonly binding: AppendTargetBinding<S, Receipt>
 }
 
 export interface BidirectionalChannel<
@@ -121,15 +125,15 @@ export const makeIngressChannel = <S extends Schema.Schema.Any>(
   },
 })
 
-export const makeEgressChannel = <S extends Schema.Schema.Any>(
+export const makeEgressChannel = <S extends Schema.Schema.Any, Receipt = void>(
   options: {
     readonly target: ChannelTarget | string
     readonly schema: S
     readonly append: (
       payload: Schema.Schema.Type<S>,
-    ) => Effect.Effect<void, unknown, never>
+    ) => Effect.Effect<Receipt, unknown, never>
   },
-): EgressChannel<S> => ({
+): EgressChannel<S, Receipt> => ({
   target: typeof options.target === "string"
     ? makeChannelTarget(options.target)
     : options.target,

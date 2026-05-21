@@ -42,6 +42,7 @@ import {
   PublicPromptRequestSchema,
   makeRuntimeInputIntentRow,
   promptToRuntimeIngressRequest,
+  type RuntimeInputIntentRow,
   type RuntimeIngressRequest,
 } from "../runtime-ingress/schema.ts"
 import {
@@ -63,6 +64,10 @@ const appendInputIntent = (
   request: RuntimeIngressRequest,
 ) =>
   Effect.gen(function*() {
+    const context = yield* control.contexts.get(request.contextId)
+    if (Option.isNone(context)) {
+      return yield* new ContextNotFound({ contextId: request.contextId })
+    }
     const stamped = yield* stampRowOtel(makeRuntimeInputIntentRow(request))
     const result = yield* control.inputIntents.insertOrGet(stamped)
     return result._tag === "Found" ? result.row : stamped
@@ -108,32 +113,31 @@ export const makeHostContextsCreateChannel = (
 
 export const makeHostPromptChannel = (
   control: RuntimeControlPlaneTableService,
-): EgressChannel<typeof PublicPromptRequestSchema> =>
+): EgressChannel<typeof PublicPromptRequestSchema, RuntimeInputIntentRow> =>
   makeEgressChannel({
     target: HostPromptChannelTarget,
     schema: PublicPromptRequestSchema,
     append: (request) =>
-      appendInputIntent(control, promptToRuntimeIngressRequest(request)).pipe(
-        Effect.asVoid,
-      ),
+      appendInputIntent(control, promptToRuntimeIngressRequest(request)),
   })
 
 export const makeSessionPromptChannelForSession = (
   control: RuntimeControlPlaneTableService,
   sessionId: string,
-): EgressChannel<typeof SessionHandlePromptInputSchema> =>
+): EgressChannel<typeof SessionHandlePromptInputSchema, RuntimeInputIntentRow> =>
   makeEgressChannel({
     target: SessionPromptChannelTarget,
     schema: SessionHandlePromptInputSchema,
     append: (request) =>
       appendInputIntent(control, {
+        ...(request.inputId === undefined ? {} : { inputId: request.inputId }),
         contextId: sessionId,
         kind: "message",
         authoredBy: "client",
         payload: request.payload,
         idempotencyKey: request.idempotencyKey,
         ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
-      }).pipe(Effect.asVoid),
+      }),
   })
 
 export const makeHostSessionsStartChannel = (
