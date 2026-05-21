@@ -1,0 +1,34 @@
+{
+  "id": "codec-double-advertisement",
+  "description": "Fault fixture for duplicate Ready/capability advertisement in one codec session.",
+  "provider": "local-process",
+  "sessionMode": "codec",
+  "transport": "stdio-jsonl",
+  "liveCanary": false,
+  "faultClass": "codec-double-advertisement",
+  "verdict": "expected-fault",
+  "sourceBoundary": "source only sees two byte frames; it does not infer capability state",
+  "codecBoundary": "codec must classify duplicate Ready as a protocol fault",
+  "durableEvidence": [
+    "First Ready is durable capability evidence",
+    "Second Ready is classified as duplicate advertisement"
+  ],
+  "frames": [
+    { "stream": "stdout", "chunk": "{\"type\":\"ready\"}\n" },
+    { "stream": "stdout", "chunk": "{\"type\":\"ready\"}\n" }
+  ],
+  "records": [
+    { "direction": "output", "type": "ready", "toolUseMode": "client_result_roundtrip" },
+    { "direction": "output", "type": "ready", "toolUseMode": "client_result_roundtrip" },
+    { "direction": "output", "type": "error", "recoverable": true, "cause": "duplicate Ready advertisement" }
+  ],
+  "expected": {
+    "outputEvents": 3,
+    "inputEvents": 0,
+    "permissionRequests": 0,
+    "permissionResponses": 0,
+    "toolUses": 0,
+    "terminated": false,
+    "secretsAbsent": true
+  }
+}

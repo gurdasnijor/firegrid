@@ -1,0 +1,41 @@
+{
+  "id": "stdio-jsonl-client-result-roundtrip",
+  "description": "stdio-jsonl transcript that advertises client-result round trip and returns ToolResult input over stdin.",
+  "provider": "local-process",
+  "sessionMode": "codec",
+  "transport": "stdio-jsonl",
+  "liveCanary": false,
+  "faultClass": "happy-path",
+  "verdict": "pass",
+  "sourceBoundary": "local process stdin/stdout/stderr byte streams",
+  "codecBoundary": "stdio-jsonl lines normalize to AgentOutputEvent and encode AgentInputEvent",
+  "durableEvidence": [
+    "Ready row advertises client_result_roundtrip",
+    "ToolUse row is dispatch candidate",
+    "ToolResult input row correlates by tool id",
+    "Terminated row"
+  ],
+  "frames": [
+    { "stream": "stdout", "chunk": "{\"type\":\"ready\",\"capabilities\":{\"tools\":true}}" },
+    { "stream": "stdout", "chunk": "\n{\"type\":\"tool_use\",\"toolUseId\":\"tool-jsonl-1\",\"name\":\"sleep\",\"input\":{\"durationMs\":0}}\n" },
+    { "stream": "stdin", "chunk": "{\"_tag\":\"ToolResult\",\"id\":\"tool-jsonl-1\",\"name\":\"sleep\",\"result\":{\"slept\":true}}\n" },
+    { "stream": "stdout", "chunk": "{\"type\":\"text\",\"messageId\":\"msg-jsonl-1\",\"text\":\"tool_result:true\"}\n" }
+  ],
+  "records": [
+    { "direction": "output", "type": "ready", "toolUseMode": "client_result_roundtrip" },
+    { "direction": "output", "type": "tool_use", "toolUseId": "tool-jsonl-1", "name": "sleep", "input": { "durationMs": 0 }, "providerExecuted": false },
+    { "direction": "input", "type": "tool_result", "toolUseId": "tool-jsonl-1", "name": "sleep", "result": { "slept": true } },
+    { "direction": "output", "type": "text", "id": "msg-jsonl-1", "delta": "tool_result:true" },
+    { "direction": "output", "type": "turn_complete", "finishReason": "stop", "messageId": "msg-jsonl-1" },
+    { "direction": "output", "type": "terminated", "exitCode": 0 }
+  ],
+  "expected": {
+    "outputEvents": 5,
+    "inputEvents": 1,
+    "permissionRequests": 0,
+    "permissionResponses": 0,
+    "toolUses": 1,
+    "terminated": true,
+    "secretsAbsent": true
+  }
+}
