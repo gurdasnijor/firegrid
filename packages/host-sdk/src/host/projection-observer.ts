@@ -1,7 +1,5 @@
-import {
-  RuntimeAgentOutputAfterEvents,
-  type RuntimeAgentOutputObservation,
-} from "@firegrid/runtime/runtime-output"
+import type { RuntimeAgentOutputObservation } from "@firegrid/runtime/runtime-output"
+import { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
 import { Effect, Layer, Option, Stream } from "effect"
 
 export interface HostProjectionObserverOptions<State, Match, E, R> {
@@ -18,11 +16,11 @@ export interface HostProjectionObserverOptions<State, Match, E, R> {
 
 export const hostProjectionObserver = <State, Match, E = never, R = never>(
   options: HostProjectionObserverOptions<State, Match, E, R>,
-): Layer.Layer<never, unknown, RuntimeAgentOutputAfterEvents | R> =>
+): Layer.Layer<never, unknown, SessionAgentOutputChannel | R> =>
   Layer.scopedDiscard(
     Effect.gen(function*() {
-      const output = yield* RuntimeAgentOutputAfterEvents
-      yield* output.forContext(options.contextId).pipe(
+      const output = yield* SessionAgentOutputChannel
+      yield* output.forContext(options.contextId).binding.stream.pipe(
         Stream.mapAccum(options.initialState, options.project),
         Stream.filterMap(match => match),
         Stream.take(1),

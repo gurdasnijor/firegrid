@@ -60,6 +60,10 @@ import {
 import {
   SessionSelfChannelsLive,
 } from "./channels/session-self/index.ts"
+import type { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
+import {
+  SessionAgentOutputChannelLive,
+} from "./channels/session-agent-output/index.ts"
 
 export class FiregridLocalProcess extends Context.Tag(
   "firegrid/host-sdk/FiregridLocalProcess",
@@ -258,6 +262,7 @@ const hostScopedLayer = (
     Layer.provide(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(PerContextRuntimeAgentOutputAfterEventsLive),
     Layer.provideMerge(PerContextRuntimeOutputWriterLive),
+    Layer.provideMerge(SessionAgentOutputChannelLive),
     Layer.provideMerge(hostTables),
   )
   const stdinClaim = SandboxStdinEmissionClaimLive.pipe(
@@ -287,6 +292,7 @@ const hostScopedLayer = (
 /** @category models */
 export type FiregridHost =
   | RuntimeStartCapability
+  | SessionAgentOutputChannel
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
