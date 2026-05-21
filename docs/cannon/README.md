@@ -93,6 +93,16 @@ Read in this order:
 - Host SDK owns host-author composition, channel Layer installation, MCP/Effect
   AI binding, and topology options.
 - Protocol owns shared schemas and wire contracts.
+- Client SDK, CLI, MCP, and future RPC surfaces are projections over
+  protocol-owned operation and channel contracts. Client methods such as
+  `sessions.createOrLoad`, `session.start`, and `permissions.respond` are
+  ergonomic projections, not independent substrate APIs.
+- Agents see only `wait_for`, `send`, and `call` over opaque semantic channel
+  targets; they do not receive durable table, workflow, stream, or provider
+  coordinates.
+- Product-specific webhook semantics live in route/app/adaptor layers. The
+  canonical Firegrid channel for verified webhooks is the generic
+  `firegrid.verifiedWebhooks` fact channel.
 - `packages/runtime/src/durable-tools/` stays deleted.
 
 ## Current Scoreboard

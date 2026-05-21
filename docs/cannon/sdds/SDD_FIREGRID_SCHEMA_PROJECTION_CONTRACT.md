@@ -23,11 +23,12 @@ protocol operation catalog
        -> shared operation execution where the substrate is actually common
 ```
 
-The schema catalog is the product contract. Tools, client APIs, docs, CLI
-commands, and future transport adapters such as REST, gRPC, or JSON-RPC are
-bindings of that contract. The bindings expose the same operation constraints
-to different touchpoints; execution turns a validated operation into concrete
-Firegrid substrate effects.
+The schema and channel catalog is the product contract. Tools, client APIs,
+docs, CLI commands, and future transport adapters such as REST, gRPC, or
+JSON-RPC are bindings of that contract. The bindings expose the same operation
+constraints and semantic channel names to different touchpoints; execution
+turns a validated operation or channel call into concrete Firegrid substrate
+effects.
 
 This is deliberately not:
 
@@ -46,7 +47,7 @@ metadata.
 In other words:
 
 ```txt
-schema -> [tool binding, client binding, cli binding]
+schema/channel contract -> [tool binding, client binding, cli binding]
 ```
 
 The bindings may have different user-facing names and transports, but they must
@@ -414,9 +415,9 @@ operation execution core because it already turns validated operation-shaped
 inputs into Firegrid primitives such as:
 
 - `insertLocalRuntimeContext`;
-- `appendRuntimeIngress`;
-- `WaitFor.match`;
-- `RuntimeObservationSourceNames`;
+- protocol host/session channel dispatch;
+- normalized channel wait matching;
+- protocol observation source names;
 - host-authority checks;
 - provider/capability execution where available.
 
@@ -454,8 +455,9 @@ wrapper around the agent-tool catalog.
 
 For durable RuntimeContext-backed work, the client should expose a session
 facade that keeps low-level runtime identity and delivery details out of
-product apps. Client write methods append durable control intents; they do not
-write runtime-owned state, workflow deferred rows, or live adapter transports.
+product apps. Client write methods project onto protocol-owned host/session
+channels or host-control capabilities; they do not write runtime-owned state,
+workflow deferred rows, or live adapter transports directly.
 
 ```ts
 const session = yield* firegrid.sessions.createOrLoad({
@@ -475,7 +477,10 @@ const permission = yield* session.wait.forPermissionRequest({ timeoutMs })
 yield* permission.respond({ decision })
 ```
 
-This facade is still a binding over Firegrid primitives. It should hide
+This facade is still a binding over Firegrid primitives. After the channel
+cutover, `sessions.createOrLoad`, `session.start`, and
+`permissions.respond` dispatch through protocol-owned channel/capability
+contracts rather than through client-local substrate writes. It should hide
 deterministic `RuntimeContext` identity, runtime input intent id construction,
 permission-response idempotency, and runtime-observation joins from callers.
 Product apps may still own product facts and read models, but they should not
@@ -622,10 +627,12 @@ if (next.matched && next.output._tag === "PermissionRequest") {
 should be implemented as a specialization of the same normalized agent-output
 binding rather than a separate raw-envelope parser.
 
-This does not remove raw table access. `DurableTableProvider` and direct
-`RuntimeOutputTable` reads remain appropriate for inspectors, diagnostics, and
-toy timelines that intentionally render raw stdout/stderr rows. They are not
-the normal product API for applications that need Firegrid session semantics.
+This does not remove raw table access for packages that deliberately build
+inspectors or diagnostics. `DurableTableProvider` and direct `RuntimeOutputTable`
+reads may remain appropriate there when clearly labeled as raw storage views.
+They are not the normal product API, and end-user examples should use session
+methods, normalized observations, and semantic channels for Firegrid session
+semantics.
 
 With this boundary, an app like Dark Factory owns its product facts, prompt
 copy, run-status read model, and permission-resolution facts, but it does not

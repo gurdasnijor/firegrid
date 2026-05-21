@@ -21,7 +21,8 @@ the planner observe child progress through `wait_for` / runtime observations.
 - Live host implementation:
   - derives a deterministic child context id from `(parentContextId, toolUseId)`;
   - inserts a local `RuntimeContext`;
-  - appends the initial prompt through host-owned runtime ingress;
+  - appends the initial prompt through the current host-owned prompt/input
+    intent path;
   - starts the child `RuntimeContextWorkflow`;
   - returns a session-shaped handle with `sessionId === contextId`, `status:
     "running"`, and tool-result metadata.
@@ -30,8 +31,9 @@ the planner observe child progress through `wait_for` / runtime observations.
 
 - Protocol input: `{ sessionId, prompt, inputId?, metadata? }`.
 - Host lowering: `toolUseToEffect` calls `AgentToolHost.appendSessionPrompt`.
-- Live host implementation appends the prompt through `appendRuntimeIngress`,
-  after resolving the target runtime context through host authority.
+- Live host implementation dispatches the prompt through the current host-owned
+  prompt/input intent path after resolving the target runtime context through
+  host authority.
 
 Current correlation support is partial:
 

@@ -268,7 +268,7 @@ response row/event types of a `DurableTable` collection or any equivalent
 projection stream:
 
 ```ts
-type LinearWebhookChannel = IngressChannel<LinearWebhook>
+type VerifiedWebhookFactChannel = IngressChannel<VerifiedWebhookFact>
 type ApprovalChannel = CallableChannel<ApprovalRequest, ApprovalResponse>
 ```
 
@@ -297,10 +297,10 @@ factory, not a pre-materialized subscription, so host composition can provide
 the binding without opening the stream until the hidden substrate needs it:
 
 ```ts
-const LinearWebhookEvents = Channel.ingress<LinearWebhook>({
-  name: "linear.webhook",
-  schema: LinearWebhookSchema,
-  source: () => LinearWebhookTable.events.rows(),
+const VerifiedWebhookFacts = Channel.ingress<VerifiedWebhookFact>({
+  name: "firegrid.verifiedWebhooks",
+  schema: VerifiedWebhookFactSchema,
+  source: () => VerifiedWebhookFactTable.verifiedWebhookFacts.rows(),
 })
 ```
 
@@ -312,11 +312,20 @@ parallel validator that can drift from the durable row shape.
 The agent sees only:
 
 ```ts
-wait_for("linear.webhook", {
-  match: { action: "issue.created" },
+wait_for("firegrid.verifiedWebhooks", {
+  match: {
+    source: "linear-demo",
+    eventType: "Issue.create",
+    webhookId: "delivery_123",
+  },
   timeoutMs: 30_000,
 })
 ```
+
+Linear is data in this example, not a canonical channel family. A product or
+adapter package may add a convenience projection for Linear if it has a real
+consumer, but the protocol/root channel remains the source-neutral verified
+webhook fact channel.
 
 At the SDK/channel-binding layer, `match` lowers to Effect's `Predicate<Row>`
 vocabulary, aligned with the engine-native primitives SDD:
@@ -350,7 +359,9 @@ send("tool.result", {
 
 This generalizes beyond webhooks:
 
-- `Channel<LinearWebhook>` exposes inbound webhooks.
+- `Channel<VerifiedWebhookFact>` exposes verified inbound webhooks through
+  `firegrid.verifiedWebhooks`; app layers may add narrower provider-specific
+  projections.
 - `Channel<RuntimeAgentOutputObservation>` exposes session output.
 - `Channel<RuntimeRun>` exposes lifecycle state.
 - `Channel<MyDomainEvent>` exposes any app-owned durable table row stream.
@@ -492,7 +503,9 @@ Each of the substantive channel types from the table above is its own slice. Sug
 4. **`approval(handle)`** (call channel) — replaces the ad-hoc permission flow tonight's driver auto-approver covers. The host registers an `approval(...)` channel; ACP `session/request_permission` is routed through it; the agent sees `call(approval, {prompt, options})` as a verb-bound faculty.
 5. **`dm` / `notification`** (human conversation) — the human-channel pair. Probably built first as a generic `{ingress dm + egress notification + call approval}` triad parameterized by handle.
 6. **`session.log`** (own marker / memory consolidation) — cheapest add; lets the agent annotate its own history.
-7. **`webhook.intent(name)`** — rename or augment the existing `CallerFact` semantic for the external-HTTP-event case.
+7. **`firegrid.verifiedWebhooks` / app webhook channels** — use the generic
+   verified webhook fact channel for Firegrid-owned defaults; add app-owned
+   convenience channels only when product semantics justify them.
 
 Each slice is its own bead, ~one to two files per channel, plus a test fixture in `scenarios/firegrid/`.
 

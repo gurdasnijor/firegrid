@@ -372,15 +372,24 @@ Three concentric layers:
 
 1. **One substrate primitive**: `DurableTable` — typed rows + reads +
    subscriptions. Everything persistent is rows in some table.
-2. **One adapter layer**: typed channels with 4 directions. Channels
-   carry typed payloads over DurableTable primitives.
+2. **One semantic transport layer**: protocol-owned typed channels with
+   4 directions. Channels carry typed payloads over DurableTable
+   primitives without exposing table names, stream URLs, or workflow
+   handles to callers.
 3. **N projection surfaces**: client SDK methods, agent verbs, CLI
    commands, MCP tools, future REST/gRPC bindings — all project the
-   same channel verbs in surface-specific shapes.
+   same protocol channel contracts in surface-specific shapes.
 
 A small fixed set of external-effect adapters (sandbox, codecs, webhook
 ingest, network) bridges between the outside world and DurableTable
 rows. Once an effect lands as a row, the substrate is uniform.
+
+For example, a product-owned Linear route verifies a signed request,
+runtime ingest writes a source-neutral verified webhook fact, the generic
+`firegrid.verifiedWebhooks` channel exposes that fact, and an agent waits
+with `wait_for("firegrid.verifiedWebhooks", { match: { source, eventType,
+webhookId } })`. Linear is demo data and app policy; the Firegrid channel
+contract stays generic.
 
 > **The workflow engine is not a separate substrate.** It's a state
 > machine framework whose state IS DurableTable rows. Workflows are
@@ -557,8 +566,8 @@ Deterministic substrate validation without live provider calls.
 ## Package Map (each one's role in the choreography model)
 
 ```text
-@firegrid/protocol         Typed contracts that channels carry — the
-                           shared schemas every participant agrees on.
+@firegrid/protocol         Typed operation, channel, launch, observation,
+                           and fact contracts every projection agrees on.
 
 @firegrid/runtime          The durable substrate where choreography
                            happens — workflow engine, event pipeline,
@@ -569,7 +578,8 @@ Deterministic substrate validation without live provider calls.
                            process.
 
 @firegrid/client-sdk       Talk to a running choreography from app code —
-                           browser/edge-safe; protocol-shaped.
+                           browser/edge-safe methods over protocol
+                           channel contracts.
 
 @firegrid/cli              Local entry points to start hosts and run
                            single contexts.
@@ -586,10 +596,10 @@ effect-durable-streams     Low-level Effect client for the Durable
 
 | Package | One-line role |
 | --- | --- |
-| [`@firegrid/protocol`](packages/protocol/README.md) | Typed contracts channels carry |
+| [`@firegrid/protocol`](packages/protocol/README.md) | Typed operation, channel, launch, observation, and fact contracts |
 | [`@firegrid/runtime`](packages/runtime/README.md) | The durable substrate where choreography happens |
 | [`@firegrid/host-sdk`](packages/host-sdk/README.md) | Compose channel bindings + host capabilities |
-| [`@firegrid/client-sdk`](packages/client-sdk/README.md) | Talk to a running choreography from app code |
+| [`@firegrid/client-sdk`](packages/client-sdk/README.md) | Browser/edge-safe app methods over protocol channel contracts |
 | [`@firegrid/cli`](packages/cli/package.json) | Local CLI entry points |
 | [`@firegrid/tiny-firegrid`](packages/tiny-firegrid/README.md) | Deterministic substrate validation + trace/perf |
 | [`effect-durable-operators`](packages/effect-durable-operators/README.md) | DurableTable — the one persisted-state primitive |
@@ -658,6 +668,11 @@ Architecture discipline:
 - **Channels are the application and agent surface.** Substrate
   addressing (table names, stream URLs, workflow handles) does not
   leak above the channel layer.
+- **Client SDK methods are projections, not a separate model.**
+  `createOrLoad`, `start`, `permissions.respond`, and waits
+  validate protocol schemas and lower through semantic channel/capability
+  bindings. `prompt` is the named residual direct input-intent write pending
+  `tf-fyyk`.
 - **Runtime owns workflow execution and durable substrate integration.**
   External-effect adapters live here, not in bindings.
 - **Host SDK owns binding and host composition.** Channel Live Layers
