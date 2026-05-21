@@ -17,6 +17,10 @@
       "types": "./src/channels/index.ts",
       "default": "./src/channels/index.ts"
     },
+    "./per-context-output": {
+      "types": "./src/agent-event-pipeline/authorities/per-context-output.ts",
+      "default": "./src/agent-event-pipeline/authorities/per-context-output.ts"
+    },
     "./tool-executor": {
       "types": "./src/agent-event-pipeline/tool-execution/index.ts",
       "default": "./src/agent-event-pipeline/tool-execution/index.ts"
