@@ -10,8 +10,12 @@ contexts.
 The agent event pipeline is:
 
 ```txt
-agent-event-pipeline/sources -> codecs -> events -> transforms -> authorities -> subscribers
+agent-event-pipeline/sources -> codecs -> events -> transforms -> subscribers
 ```
+
+The durable write-owners that the pipeline feeds (the output journal + public
+projection) live inside the kernel at [`kernel/observation/`](./kernel/observation/);
+the pipeline stages above are the boundary INTO the kernel, not kernel interior.
 
 The arrows describe ownership of data flow, not import permission. Durable
 state is owned by capability provider layers, and runtime behavior composes
@@ -53,8 +57,31 @@ transform" abstraction, the boundary is probably misclassified.
 | [`agent-event-pipeline/codecs/`](./agent-event-pipeline/codecs/README.md) | Protocol wire-format normalization. |
 | [`agent-event-pipeline/events/`](./agent-event-pipeline/events/README.md) | Normalized runtime event contracts and envelope helpers. |
 | [`agent-event-pipeline/transforms/`](./agent-event-pipeline/transforms/README.md) | Pure stream/row shaping operators. |
-| [`agent-event-pipeline/authorities/`](./agent-event-pipeline/authorities/) | Durable Effect capability providers for runtime output/ingress. |
 | [`agent-event-pipeline/subscribers/`](./agent-event-pipeline/subscribers/README.md) | Historical subscriber folder; the live-owner cutover moved prompt/tool routing into the host workflow/session owner. |
+
+(The output write-owners formerly under `agent-event-pipeline/authorities/` now
+live in [`kernel/observation/`](./kernel/observation/) — see the kernel boundary
+below.)
+
+## The kernel
+
+`kernel/` is the privileged durable core: write-ownership / commit-points for
+durable collection families. You do NOT import the kernel directly into a
+program — you reach it through drivers that expose channels (see
+[`docs/handoffs/tf-8ryo-runtime-tree-design.md`](../../../docs/handoffs/tf-8ryo-runtime-tree-design.md)).
+The "authority" Tags are kernel-internal write-ownership, not a public doorway.
+
+- `kernel/control-plane/`: the control-plane recorder (write-owners
+  `RuntimeContextInsert`/`RuntimeRuns`/`RuntimeControlRequests` + recorder Live)
+  and the request-dispatcher daemon that bridges durable control request rows
+  into runtime workflow execution. Host packages provide host-bound side
+  effects but do not export or own the dispatcher internals.
+- `kernel/observation/`: the agent-output journal write-owner and its public
+  projection (`RuntimeAgentOutputAfterEvents`).
+
+There is no directory named `authorities` anywhere; the two formerly
+collide-named `authorities/` folders are now `kernel/control-plane` (control
+plane) and `kernel/observation` (output).
 
 ## Adjacent Runtime Boundaries
 
@@ -71,18 +98,12 @@ These are intentionally not agent event-pipeline stages:
   Host packages install live workflow Layers and provide topology; they do not
   own workflow names, payload schemas, success/error schemas, or
   idempotency/execution-id helpers.
-- `control-plane/`: runtime-owned dispatcher/daemon mechanics that bridge
-  durable control request rows into runtime workflow execution. Host packages
-  provide host-bound side effects, but they do not export or own the dispatcher
-  internals.
 - `agent-tools/`: tool schemas, lowering, MCP exposure, and host-coupled live
   services.
 - `agent-adapters/`: projections over codec sessions
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
 - `verified-webhook-ingest/`: external ingress/source adapter
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
-- `authorities/`: runtime control-plane lifecycle capabilities
-  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.2`).
 
 This namespace move follows the host split and codec session Layer refactor
 (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.5`,

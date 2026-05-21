@@ -3,4 +3,4 @@ export {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
   type RuntimeAgentOutputObservation,
-} from "./runtime-output-journal.ts"
+} from "./output-journal.ts"

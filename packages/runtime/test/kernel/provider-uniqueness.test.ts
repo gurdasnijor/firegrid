@@ -6,11 +6,11 @@ import {
   RuntimeControlPlaneRecorderLive,
   RuntimeRuns,
   RuntimeRunAppendAndGet,
-} from "../../src/authorities/runtime-control-plane-recorder.ts"
+} from "../../src/kernel/control-plane/recorder/recorder.ts"
 import {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
-} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
+} from "../../src/kernel/observation/output-journal.ts"
 
 interface TestProviderEntry {
   readonly capability: object

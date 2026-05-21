@@ -18,12 +18,12 @@
       "default": "./src/agent-event-pipeline/tool-execution/index.ts"
     },
     "./control-plane": {
-      "types": "./src/control-plane/index.ts",
-      "default": "./src/control-plane/index.ts"
+      "types": "./src/kernel/control-plane/index.ts",
+      "default": "./src/kernel/control-plane/index.ts"
     },
     "./runtime-output": {
-      "types": "./src/agent-event-pipeline/authorities/runtime-output-public.ts",
-      "default": "./src/agent-event-pipeline/authorities/runtime-output-public.ts"
+      "types": "./src/kernel/observation/output-public.ts",
+      "default": "./src/kernel/observation/output-public.ts"
     },
     "./streams": {
       "types": "./src/streams/index.ts",

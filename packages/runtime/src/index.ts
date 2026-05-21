@@ -5,7 +5,7 @@ export {
 } from "./runtime-errors.ts"
 export {
   type RuntimeAgentOutputObservation as RuntimeAuthorityAgentOutputObservation,
-} from "./agent-event-pipeline/authorities/runtime-output-public.ts"
+} from "./kernel/observation/output-public.ts"
 export {
   RuntimeControlPlaneRecorderLive,
   RuntimeContexts,
@@ -19,12 +19,12 @@ export {
   type RuntimeLocalContextResolverService,
   type RuntimeContextReadService,
   type RuntimeRunAppendAndGetService,
-} from "./authorities/index.ts"
+} from "./kernel/control-plane/recorder/index.ts"
 export {
   RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
-} from "./agent-event-pipeline/authorities/runtime-output-public.ts"
+} from "./kernel/observation/output-public.ts"
 export {
   RuntimeContextProvisionWorkflow,
   RuntimeContextProvisionWorkflowPayload,

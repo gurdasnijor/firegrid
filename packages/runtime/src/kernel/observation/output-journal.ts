@@ -8,10 +8,10 @@ import type { Option } from "effect"
 import {
   type RuntimeAgentOutputObservation,
   runtimeAgentOutputObservationFromRow,
-} from "../events/index.ts"
+} from "../../agent-event-pipeline/events/index.ts"
 import type { RuntimeObservationSource } from "../../streams/sources.ts"
 
-export type { RuntimeAgentOutputObservation } from "../events/index.ts"
+export type { RuntimeAgentOutputObservation } from "../../agent-event-pipeline/events/index.ts"
 
 type AgentOutputAfterSource = Extract<RuntimeObservationSource, { readonly _tag: "AgentOutputAfter" }>
 

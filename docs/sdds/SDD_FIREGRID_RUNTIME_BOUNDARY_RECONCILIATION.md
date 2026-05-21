@@ -242,6 +242,23 @@ This namespacing should not be done as part of the first host extraction PR.
 The first PR should reduce `host/index.ts`. A later namespace PR can move files
 mechanically once the host split has made imports clearer.
 
+### The `kernel/` boundary (tf-8ryo / tf-bffo)
+
+The runtime-control-plane and durable write-owner folders are now consolidated
+under an explicit `kernel/` directory — the privileged durable core, reached
+only through drivers that expose channels (see
+[`docs/handoffs/tf-8ryo-runtime-tree-design.md`](../handoffs/tf-8ryo-runtime-tree-design.md)).
+There is no longer any directory named `authorities`; the two formerly
+collide-named `authorities/` folders are now `kernel/control-plane/` (the
+control-plane recorder write-owners + the request-dispatcher daemon) and
+`kernel/observation/` (the agent-output journal write-owner + its public
+projection). The "authority" Tags are kernel-internal write-ownership, not a
+public doorway. To keep `packages/runtime/src` free of folder-level cycles, the
+leaf write-owner tags live in `kernel/control-plane/recorder/` (a leaf with no
+path to `workflow-engine/`), while the request-dispatcher (which depends on
+`workflow-engine/`) and the combined control-plane barrel sit one level up in
+`kernel/control-plane/`.
+
 ## Boundary Exercise
 
 For every runtime folder or module, ask:

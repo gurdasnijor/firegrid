@@ -10,7 +10,7 @@ import {
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
 import { Activity, WorkflowEngine } from "@effect/workflow"
-import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { DurableStreamsWorkflowEngine } from "../../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import {
   RuntimeContextProvisionWorkflow,
   RuntimeLifecycleWorkflow,
@@ -18,11 +18,11 @@ import {
   runtimeControlRequestWorkflowExecutionId,
   runtimeControlRequestWorkflowStreamUrl,
   type RuntimeControlRequestDispatchOutcome,
-} from "../workflow-engine/workflows/index.ts"
+} from "../../workflow-engine/workflows/index.ts"
 import { Cause, Clock, Context, Duration, Effect, Layer, Option, Stream, type Scope } from "effect"
 import { withRowOtelParent } from "@firegrid/protocol/otel"
 import type { DurableTableHeaders } from "effect-durable-operators"
-import { RuntimeContextInsert, RuntimeContextRead, RuntimeControlRequests } from "../authorities/index.ts"
+import { RuntimeContextInsert, RuntimeContextRead, RuntimeControlRequests } from "./recorder/recorder.ts"
 
 /**
  * Runtime-internal implementation of callable host-control channel work.

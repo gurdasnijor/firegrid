@@ -466,8 +466,8 @@ rules:
         - "**/*.test.tsx"
         - "**/*.test.mts"
         - "**/__tests__/**"
-        - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/kernel/control-plane/**"
+        - "/packages/runtime/src/kernel/observation/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
     message: |
       Runtime-owned DurableTable writes must go through the owning runtime
@@ -627,7 +627,7 @@ rules:
         owning authority module. Layer.succeed/effect elsewhere creates a hidden
         second writer/reader authority.
       fix-hint: |
-        Move the provider to packages/runtime/src/authorities/** or packages/runtime/src/agent-event-pipeline/authorities/** or compose the
+        Move the provider to packages/runtime/src/kernel/control-plane/** or packages/runtime/src/kernel/observation/** or compose the
         existing authority provider layer.
     paths:
       include:
@@ -638,8 +638,8 @@ rules:
         - "**/*.test.tsx"
         - "**/*.test.mts"
         - "**/__tests__/**"
-        - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/kernel/control-plane/**"
+        - "/packages/runtime/src/kernel/observation/**"
     message: |
       Durable capability tag provided outside its authority module. Use the
       owning provider layer instead.
@@ -697,8 +697,8 @@ rules:
         - "**/*.test.tsx"
         - "**/*.test.mts"
         - "**/__tests__/**"
-        - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/kernel/control-plane/**"
+        - "/packages/runtime/src/kernel/observation/**"
         - "/packages/runtime/src/host/index.ts"
         - "/packages/runtime/src/host/observation-sources.ts"
         - "/packages/runtime/src/agent-tools/mcp-host.ts"
@@ -735,7 +735,7 @@ rules:
     message: |
       AuthorityRegistry production surface detected. Keep registry metadata
       review/test-only unless production behavior requires it.
-    pattern-regex: '(?:packages/runtime/src/authorities/registry\.ts|["''][^"'']*registry(?:\.ts)?["'']|\b[A-Za-z0-9_]*Authority[A-Za-z0-9_]*Registry[A-Za-z0-9_]*\b)'
+    pattern-regex: '(?:packages/runtime/src/kernel/control-plane/registry\.ts|["''][^"'']*registry(?:\.ts)?["'']|\b[A-Za-z0-9_]*Authority[A-Za-z0-9_]*Registry[A-Za-z0-9_]*\b)'
 
   - id: firegrid-runtime-host-no-direct-source-collection-registration
     languages: [typescript]
@@ -890,8 +890,8 @@ rules:
         - "**/*.test.tsx"
         - "**/*.test.mts"
         - "**/__tests__/**"
-        - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/kernel/control-plane/**"
+        - "/packages/runtime/src/kernel/observation/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
         - "/packages/runtime/src/durable-tools/internal/table.ts"
     message: |

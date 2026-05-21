@@ -125,7 +125,7 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
       ),
     )
     const runtimeContents = await readFile(
-      new URL("../../../runtime/src/control-plane/control-request-dispatcher.ts", import.meta.url),
+      new URL("../../../runtime/src/kernel/control-plane/request-dispatcher.ts", import.meta.url),
       "utf8",
     )
     const contents = [...hostContents, runtimeContents].join("\n")

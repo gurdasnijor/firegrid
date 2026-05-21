@@ -3,7 +3,7 @@ import { Effect, Option, Schema } from "effect"
 import {
   RuntimeContextRead,
   RuntimeRunAppendAndGet,
-} from "../../authorities/index.ts"
+} from "../../kernel/control-plane/recorder/index.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,

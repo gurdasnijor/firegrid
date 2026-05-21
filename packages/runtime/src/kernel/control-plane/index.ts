@@ -1,8 +1,9 @@
 export {
   RuntimeControlPlaneRecorderLive,
+  RuntimeControlRequests,
   RuntimeContexts,
-  RuntimeContextInsert,
   RuntimeContextInsertLive,
+  RuntimeContextInsert,
   RuntimeLocalContextResolver,
   RuntimeContextRead,
   RuntimeRuns,
@@ -11,7 +12,7 @@ export {
   type RuntimeLocalContextResolverService,
   type RuntimeContextReadService,
   type RuntimeRunAppendAndGetService,
-} from "../authorities/index.ts"
+} from "./recorder/index.ts"
 export {
   reconcileRuntimeControlRequestsOnce,
   RuntimeControlRequestControlPlaneLive,
@@ -25,4 +26,4 @@ export {
   type RuntimeControlRequestReconcilerService,
   type RuntimeControlRequestSideEffectsService,
   type RuntimeControlRequestStartResult,
-} from "./control-request-dispatcher.ts"
+} from "./request-dispatcher.ts"

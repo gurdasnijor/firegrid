@@ -25,7 +25,7 @@ import type { Scope } from "effect"
 import type {
   RuntimeContextRead,
   RuntimeRunAppendAndGet,
-} from "../../authorities/index.ts"
+} from "../../kernel/control-plane/recorder/index.ts"
 import {
   AgentInputEventSchema,
   AgentOutputEventSchema,
@@ -35,7 +35,7 @@ import {
 } from "../../agent-event-pipeline/events/index.ts"
 import {
   RuntimeAgentOutputAfterEvents,
-} from "../../agent-event-pipeline/authorities/runtime-output-public.ts"
+} from "../../kernel/observation/output-public.ts"
 import {
   RuntimeContextError,
   asRuntimeContextError,

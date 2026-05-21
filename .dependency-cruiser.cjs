@@ -6,9 +6,8 @@ const sanctionedRuntimeCapabilitySubpaths = [
   // docs/architecture/host-sdk-runtime-boundary.md.
   "runtime-errors\\.ts$",
   "agent-event-pipeline/tool-execution/index\\.ts$",
-  "authorities/index\\.ts$",
-  "control-plane/index\\.ts$",
-  "agent-event-pipeline/authorities/runtime-output-public\\.ts$",
+  "kernel/control-plane/index\\.ts$",
+  "kernel/observation/output-public\\.ts$",
   "streams/index\\.ts$",
   "verified-webhook-ingest/index\\.ts$",
   "agent-event-pipeline/events/index\\.ts$",

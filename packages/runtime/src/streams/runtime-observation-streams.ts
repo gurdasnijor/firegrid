@@ -5,8 +5,8 @@ import {
   RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEvents,
   type RuntimeAgentOutputObservation,
-} from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
-import { RuntimeRuns } from "../authorities/runtime-control-plane-recorder.ts"
+} from "../kernel/observation/output-journal.ts"
+import { RuntimeRuns } from "../kernel/control-plane/recorder/recorder.ts"
 import type { RuntimeObservationSource } from "./sources.ts"
 
 export interface RuntimeObservationStreamsService {
