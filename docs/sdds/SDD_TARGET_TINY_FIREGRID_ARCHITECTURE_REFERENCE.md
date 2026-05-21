@@ -64,7 +64,7 @@ production client / edge surface
   -> tiny kernel signal service
   -> tiny HostKernelWorkflow resource state machine
   -> tiny child SessionWorkflow instances
-  -> production-shaped observations, receipts, and trace evidence
+  -> production-shaped channel reads, receipts, and trace evidence
 ```
 
 The goal is not to rewrite Firegrid in tiny-firegrid. The goal is to create a
@@ -141,8 +141,8 @@ Acceptable durable shapes:
 
 - one resource table per durable aggregate such as host, session, run, or
   channel mailbox;
-- public observation records only when they are part of the production-shaped
-  API surface being modeled;
+- public read rows only when they are part of a production-shaped channel being
+  modeled;
 - workflow-engine state for idempotent workflow execution, activities,
   deferred signals, and durable sleeps;
 - explicit queue rows only when the operation is truly a queue with claim/ack
@@ -212,6 +212,7 @@ edge/client request
   -> HostKernelWorkflow applies one state transition
   -> optional child SessionWorkflow execute/signal
   -> resource status/revision update
+  -> channel read routes expose updated state where applicable
   -> route returns production-shaped receipt/response
 ```
 
@@ -253,8 +254,8 @@ Responsibilities:
 - consume prompt signals through the kernel/workflow signal path;
 - append production-shaped agent-output or session-output evidence;
 - respond to cancel/close/resume from the parent workflow;
-- expose enough evidence for `session.wait.*` or channel observation to see the
-  result.
+- expose enough state through ingress or callable channel routes for
+  `session.wait.*`, `wait_for`, or snapshot-style calls to see the result.
 
 The child workflow may use deterministic fake agent behavior. That is allowed
 because this SDD is about architecture wiring, not model/provider quality.
@@ -271,8 +272,8 @@ Required compatibility:
 - edge probes use production route targets and production request/response
   schemas;
 - route descriptors use production channel router metadata types;
-- observation and terminal receipts decode through production schemas or
-  production-compatible schemas;
+- channel read payloads and terminal receipts decode through production schemas
+  or production-compatible schemas;
 - host layer output is assignable to the production public host surface needed
   by the tiny runner.
 
@@ -299,22 +300,21 @@ packages/tiny-firegrid/src/simulations/target-architecture-reference/
   protocol/
     channels.ts                    # production channel targets/schemas re-exported or aliased
     routes.ts                      # production route descriptor/receipt contracts
-    observations.ts                # production-shaped observation schemas
+    reads.ts                       # production read payload schemas used by channels
 
   runtime/
     resources/
       session-resource.ts          # tiny durable aggregate records
     channels/
       host-control-routes.ts       # route bodies; depends on kernel contract only
+      session-agent-output.ts      # ingress read channel over resource/run state
+      state-changes.ts             # generic state-change ingress channel pattern
       router-live.ts               # runtime dispatch interpreter / spans
     kernel/
       control-plane.ts             # signal contract: schemas + Context.Tag only
       control-plane-live.ts        # workflow-backed signal implementation
       host-kernel-workflow.ts      # parent workflow state machine
       session-workflow.ts          # child workflow state machine
-    observation/
-      session-observation.ts       # resource state -> public observation projection
-
   host-sdk/
     host-live.ts                   # host topology: runtime + router + edges
     edges/
@@ -333,11 +333,10 @@ visible:
 
 | Tiny reference folder | Production boundary it represents |
 | --- | --- |
-| `protocol/` | `@firegrid/protocol`: schemas, targets, route contracts, receipts, observation views |
+| `protocol/` | `@firegrid/protocol`: schemas, targets, route contracts, receipts, read payloads |
 | `runtime/resources/` | runtime/kernel-private durable resource state |
-| `runtime/channels/` | `@firegrid/runtime/channels`: route implementations and dispatch interpreter |
+| `runtime/channels/` | `@firegrid/runtime/channels`: route implementations, ingress/read channels, and dispatch interpreter |
 | `runtime/kernel/` | `@firegrid/runtime/kernel`: workflow-owned lifecycle/control state |
-| `runtime/observation/` | runtime-owned projection from internal evidence to public observations |
 | `host-sdk/` | `@firegrid/host-sdk`: topology, config, drivers, and edge installation |
 | `client-sdk/` | `@firegrid/client-sdk`: optional transport adapter only, not semantic contracts |
 | `simulation/` | tiny-firegrid runner glue only |
@@ -355,6 +354,14 @@ resource tables are the modeled runtime state.
 bodies. It imports `runtime/kernel/control-plane.ts` but not workflow
 implementations, workflow-engine tables, or `runtime/kernel/index.ts`-style
 barrels.
+
+Reads are also channels. Streaming reads are ingress channels (`wait_for` /
+subscribe-style projections) and point-in-time reads are callable routes. The
+reference should model the architectural signal in existing code such as
+`packages/runtime/src/channels/session-agent-output.ts` and
+`packages/host-sdk/src/host/state-changes-channel.ts`: durable/resource state is
+hidden behind a channel contract, and callers see channel targets plus decoded
+payloads, not table handles or workflow internals.
 
 `runtime/kernel/control-plane.ts` is the leaf signal contract. It defines
 schemas, the `Context.Tag`, and service interface only.
