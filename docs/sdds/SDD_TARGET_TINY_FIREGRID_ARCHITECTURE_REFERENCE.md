@@ -291,41 +291,96 @@ Rejected compatibility shortcuts:
 - direct DurableTable handles in driver code;
 - route implementations that expose tiny-only receipt shapes.
 
-## Package Layout
+## Reference Layout
 
-Recommended layout:
+The reference layout must mirror the desired production package boundaries. It
+is not organized as "one simulation with helper files." The simulation is only
+a thin runner adapter around an architecture-shaped miniature package graph.
+
+Recommended layout inside tiny-firegrid:
 
 ```text
 packages/tiny-firegrid/src/simulations/target-architecture-reference/
-  index.ts
-  driver.ts
-  host.ts
-  contracts.ts
-  router.ts
-  kernel.ts
-  workflows.ts
-  resources.ts
-  artifacts.ts
+  index.ts                         # simulation registration only
+
+  protocol/
+    channels.ts                    # production channel targets/schemas re-exported or aliased
+    routes.ts                      # production route descriptor/receipt contracts
+    observations.ts                # production-shaped observation schemas
+
+  runtime/
+    resources/
+      session-resource.ts          # tiny durable aggregate records
+      session-evidence.ts          # append-only evidence rows
+    channels/
+      host-control-routes.ts       # route bodies; depends on kernel contract only
+      router-live.ts               # runtime dispatch interpreter / spans
+    kernel/
+      control-plane.ts             # signal contract: schemas + Context.Tag only
+      control-plane-live.ts        # workflow-backed signal implementation
+      host-kernel-workflow.ts      # parent workflow state machine
+      session-workflow.ts          # child workflow state machine
+    observation/
+      session-observation.ts       # resource/evidence -> public observation projection
+
+  host-sdk/
+    host-live.ts                   # host topology: runtime + router + edges
+    edges/
+      in-memory-edge.ts            # tiny edge adapter over production route contracts
+
+  client-sdk/
+    client-live.ts                 # only if the production client cannot target the tiny host directly
+
+  simulation/
+    driver.ts                      # tiny runner adapter, not architecture
+    artifacts.ts                   # native artifact readers/assertion helpers
 ```
 
-`contracts.ts` imports production schemas and names local aliases only where the
-production package does not yet expose the desired neutral contract.
+The folder names are deliberate. They should make the target production split
+visible:
 
-`resources.ts` owns the tiny resource/evidence tables. It should be small
-enough to read in one sitting.
+| Tiny reference folder | Production boundary it represents |
+| --- | --- |
+| `protocol/` | `@firegrid/protocol`: schemas, targets, route contracts, receipts, observation views |
+| `runtime/resources/` | runtime/kernel-private durable state and evidence |
+| `runtime/channels/` | `@firegrid/runtime/channels`: route implementations and dispatch interpreter |
+| `runtime/kernel/` | `@firegrid/runtime/kernel`: workflow-owned lifecycle/control state |
+| `runtime/observation/` | runtime-owned projection from internal evidence to public observations |
+| `host-sdk/` | `@firegrid/host-sdk`: topology, config, drivers, and edge installation |
+| `client-sdk/` | `@firegrid/client-sdk`: optional transport adapter only, not semantic contracts |
+| `simulation/` | tiny-firegrid runner glue only |
 
-`router.ts` builds route descriptors and dispatch. It imports the signal
-contract but not workflow implementations.
+`protocol/` imports production schemas and names local aliases only where the
+production package does not yet expose the desired neutral contract. If a local
+alias is needed, it is a finding against the production contract surface.
 
-`kernel.ts` defines the signal contract and the workflow-backed Live
-implementation. If this grows too large, split the contract into
-`kernel-contract.ts` and keep the implementation below it.
+`runtime/resources/` owns the tiny resource/evidence tables. It should remain
+small enough to read in one sitting and must not grow request/claim/completion
+table families per operation.
 
-`workflows.ts` owns the host and child workflow bodies.
+`runtime/channels/host-control-routes.ts` builds route descriptors and route
+bodies. It imports `runtime/kernel/control-plane.ts` but not workflow
+implementations, workflow-engine tables, or `runtime/kernel/index.ts`-style
+barrels.
 
-`host.ts` composes the tiny host layer and any tiny edge adapters.
+`runtime/kernel/control-plane.ts` is the leaf signal contract. It defines
+schemas, the `Context.Tag`, and service interface only.
 
-`driver.ts` drives the public surface and records no verdict language.
+`runtime/kernel/control-plane-live.ts` is the workflow-backed implementation of
+that contract. It may depend on `host-kernel-workflow.ts`,
+`session-workflow.ts`, and workflow substrate.
+
+`runtime/kernel/host-kernel-workflow.ts` and
+`runtime/kernel/session-workflow.ts` own workflow bodies. They do not import
+router files or edge adapters.
+
+`host-sdk/host-live.ts` composes the tiny host layer, selected router, runtime
+kernel implementation, and edge adapters. It should look like the target
+production host-sdk composition, not like a runtime owner.
+
+`simulation/driver.ts` drives the public surface and records no verdict
+language. It exists to run the reference through tiny-firegrid; it is not part
+of the target host/runtime architecture.
 
 ## Validation Plan
 
@@ -370,4 +425,3 @@ router dispatch, or control-plane row families, reviewers should ask:
 
 If the answer is no, the PR must explain why production needs a bridge that the
 reference deliberately avoided.
-
