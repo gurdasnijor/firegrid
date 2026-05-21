@@ -1,3 +1,5 @@
+// TODO(tf-8oaq): durable-table escape hatches below remain for documented
+// advanced composition; Cycle 2 should replace or narrow them behind channels.
 export {
   AppendError,
   Firegrid,

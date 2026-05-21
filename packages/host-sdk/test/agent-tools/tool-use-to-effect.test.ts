@@ -39,9 +39,9 @@ import {
   makeIngressChannel,
   makeCallableChannel,
   makeEgressChannel,
-  RuntimeAgentToolExecutionLive,
   type ChannelRegistration,
 } from "../../src/host/index.ts"
+import { RuntimeAgentToolExecutionLive } from "@firegrid/runtime/tool-executor"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import {
   AgentToolHost,
