@@ -151,12 +151,6 @@ and traces `target + verb + payload`, then invokes the matching channel route.
 It does not own lifecycle, claims, retries, completion, child workflow
 ownership, or durable resource state.
 
-### Activity / Adapter
-
-The external side-effect boundary. Provider, process, ACP, MCP, sandbox, and
-fake-agent behavior lives here. Activities/adapters do not own durable
-lifecycle state; workflows do.
-
 The target shape is:
 
 ```text
@@ -289,8 +283,12 @@ It does not own:
 - edge decoding;
 - protocol schema definitions;
 - transport-specific ACP/MCP response encoding;
-- provider-specific process execution;
 - public table family definitions.
+
+Any side effect needed by a transition is owned by the workflow instance that
+performs the transition. The reference may implement that side effect as a
+small activity inside the workflow module, but it should not introduce a
+top-level adapter subsystem in the architecture reference.
 
 Duplicate identity is workflow-owned. Replaying the same route request with the
 same idempotency key must resolve to the existing resource revision or receipt
@@ -356,6 +354,7 @@ packages/tiny-firegrid/src/simulations/target-architecture-reference/
 
   runtime/
     resources/
+      host-resource.ts             # tiny durable host aggregate
       session-resource.ts          # tiny durable aggregate records
     channels/
       routes.ts                    # call/send/wait_for route implementations
@@ -363,8 +362,6 @@ packages/tiny-firegrid/src/simulations/target-architecture-reference/
     workflows/
       host-workflow.ts             # parent resource state machine
       session-workflow.ts          # child resource state machine
-    adapters/
-      fake-session-adapter.ts      # external side-effect boundary for the sim
   host-sdk/
     host-live.ts                   # host topology: runtime + router + edges
     edges/
@@ -387,7 +384,6 @@ visible:
 | `runtime/resources/` | runtime/kernel-private durable resource state |
 | `runtime/channels/` | `@firegrid/runtime/channels`: channel route implementations and dispatch interpreter |
 | `runtime/workflows/` | `@firegrid/runtime/kernel` / workflow modules: workflow-owned lifecycle/control state |
-| `runtime/adapters/` | runtime/host adapter boundary for external side effects |
 | `host-sdk/` | `@firegrid/host-sdk`: topology, config, drivers, and edge installation |
 | `client-sdk/` | `@firegrid/client-sdk`: optional transport adapter only, not semantic contracts |
 | `simulation/` | tiny-firegrid runner glue only |
@@ -414,7 +410,9 @@ channel targets plus decoded payloads, not table handles or workflow internals.
 
 `runtime/workflows/host-workflow.ts` and
 `runtime/workflows/session-workflow.ts` own workflow bodies. They do not import
-edge adapters and do not define public route contracts.
+edge adapters and do not define public route contracts. Side effects belong to
+the workflow transition implementation that needs them; they are not modeled as
+a separate reference package boundary.
 
 `host-sdk/host-live.ts` composes the tiny host layer, selected router, runtime
 kernel implementation, and edge adapters. It should look like the target
