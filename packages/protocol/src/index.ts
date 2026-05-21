@@ -1,5 +1,6 @@
 export * as AgentOutput from "./agent-output/index.ts"
 export * as AgentTools from "./agent-tools/index.ts"
+export * as Channels from "./channels/index.ts"
 export * as Launch from "./launch/index.ts"
 export * as Observations from "./observations/index.ts"
 export * as Operations from "./operations/index.ts"
