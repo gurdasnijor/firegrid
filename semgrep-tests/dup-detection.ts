@@ -84,6 +84,9 @@ declare const fallback: (value: unknown) => unknown
 declare const engine: {
   execute: (workflow: unknown, options: unknown) => unknown
 }
+declare const Workflow: {
+  make: (options: unknown) => unknown
+}
 declare const RuntimeContextWorkflow: unknown
 declare const OtherWorkflow: unknown
 declare const streamAuthority: unknown
@@ -224,6 +227,13 @@ const directRuntimeContextWorkflowExecution = engine.execute(RuntimeContextWorkf
 // ok: firegrid-runtime-context-workflow-requires-local-authority
 const otherWorkflowExecution = engine.execute(OtherWorkflow, {
   payload: {},
+})
+
+// ruleid: firegrid-no-unclassified-workflow-make
+const operationShapedWorkflow = Workflow.make({
+  name: "firegrid.operation-wrapper",
+  payload: {},
+  success: {},
 })
 
 declare const runtimeOutputTable: {

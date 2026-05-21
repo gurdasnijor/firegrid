@@ -1,0 +1,18 @@
+# firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION.1
+# firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION.2
+#
+# Inventory rule for production workflow identities. The blocking gate lives in
+# .semgrep.yml so CI can baseline existing migration debt and reject new
+# unclassified Workflow.make sites.
+id: workflow-make-inventory
+language: typescript
+severity: info
+rule:
+  pattern: Workflow.make($$$ARGS)
+message: "Workflow.make identity definition"
+note: >
+  Production Workflow.make sites should be rare and owner-shaped: an owned
+  durable resource or long-running process state machine. One-shot commands,
+  tool calls, waits, request/claim bridges, and route handlers are operation
+  wrappers and should lower through the owning workflow state machine or an
+  explicitly named engine primitive instead.
