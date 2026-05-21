@@ -64,6 +64,9 @@ export {
   type SessionSelfCheckpointEvent,
   type SessionSelfLifecycleEvent,
 } from "./channels/session-self/index.ts"
+export {
+  HostSessionsCreateOrLoadChannelLive,
+} from "./channels/host-sessions-create-or-load-live.ts"
 
 export {
   ContextNotFound,

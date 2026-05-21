@@ -15,13 +15,25 @@ import {
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
 import {
+  HostSessionsCreateOrLoadChannel,
+  HostSessionsCreateOrLoadChannelTarget,
+  HostSessionsCreateOrLoadRequestSchema,
+  HostSessionsCreateOrLoadResponseSchema,
+  makeCallableChannel,
+} from "@firegrid/protocol/channels"
+import {
   encodeRuntimeAgentOutputEnvelope,
+  sessionContextIdForExternalKey,
   type AgentOutputEvent,
 } from "@firegrid/protocol/session-facade"
+import { stampRowOtel } from "@firegrid/protocol/otel"
 import {
   inputIdForRuntimeIngressRequest,
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
+import {
+  makeRuntimeContextRequestRow,
+} from "@firegrid/protocol/launch"
 import { Effect, Layer, Option, Stream } from "effect"
 import type * as Scope from "effect/Scope"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -37,6 +49,11 @@ import {
 
 let server: TestStreamServer | undefined
 let baseUrl: string | undefined
+
+type MissingContextRequest = {
+  readonly _tag: "MissingContextRequest"
+  readonly contextId: string
+}
 
 beforeEach(async () => {
   server = new TestStreamServer()
@@ -58,6 +75,37 @@ const runtimeConfig = () =>
 const agentOutputRaw = (event: AgentOutputEvent): string =>
   encodeRuntimeAgentOutputEnvelope(event)
 
+// Inline channel binding for tests. Mirrors the host-sdk Live Layer
+// (`HostSessionsCreateOrLoadChannelLive`) but lives in the test
+// composition so client-sdk source has no host-sdk dep. jscpd ignores
+// **/*.test.ts so this does NOT count against the duplication baseline.
+const testHostSessionsCreateOrLoadChannelLive = Layer.effect(
+  HostSessionsCreateOrLoadChannel,
+  Effect.gen(function*() {
+    const control = yield* RuntimeControlPlaneTable
+    return makeCallableChannel({
+      target: HostSessionsCreateOrLoadChannelTarget,
+      requestSchema: HostSessionsCreateOrLoadRequestSchema,
+      responseSchema: HostSessionsCreateOrLoadResponseSchema,
+      call: (request) =>
+        Effect.gen(function*() {
+          const contextId = sessionContextIdForExternalKey(request.externalKey)
+          const stamped = yield* stampRowOtel(
+            makeRuntimeContextRequestRow({
+              contextId,
+              runtime: request.runtime,
+              ...(request.createdBy === undefined
+                ? {}
+                : { createdBy: request.createdBy }),
+            }),
+          )
+          yield* control.contextRequests.insertOrGet(stamped)
+          return { sessionId: contextId, contextId }
+        }),
+    })
+  }),
+)
+
 const makeFixture = () => {
   if (baseUrl === undefined) throw new Error("server not started")
   const namespace = `client-session-${crypto.randomUUID()}`
@@ -67,17 +115,23 @@ const makeFixture = () => {
     namespace,
     startedAtMs: Date.now(),
   })
+  const controlPlaneLayer = RuntimeControlPlaneTable.layer({
+    streamOptions: {
+      url: runtimeControlPlaneStreamUrl({ baseUrl, namespace }),
+      contentType: "application/json",
+    },
+  })
   const clientLayer = FiregridLive.pipe(
     Layer.provide(Layer.succeed(FiregridConfig, {
       durableStreamsBaseUrl: baseUrl,
       namespace,
     })),
-    Layer.provideMerge(RuntimeControlPlaneTable.layer({
-      streamOptions: {
-        url: runtimeControlPlaneStreamUrl({ baseUrl, namespace }),
-        contentType: "application/json",
-      },
-    })),
+    Layer.provide(
+      testHostSessionsCreateOrLoadChannelLive.pipe(
+        Layer.provideMerge(controlPlaneLayer),
+      ),
+    ),
+    Layer.provideMerge(controlPlaneLayer),
   )
   return { hostSession, clientLayer }
 }
@@ -121,7 +175,11 @@ const materializeContextRequest = (
     const table = yield* RuntimeControlPlaneTable
     const request = yield* table.contextRequests.get(runtimeContextRequestId(contextId))
     if (Option.isNone(request)) {
-      return yield* Effect.fail(new Error(`missing context request for ${contextId}`))
+      const error: MissingContextRequest = {
+        _tag: "MissingContextRequest",
+        contextId,
+      }
+      return yield* Effect.fail(error)
     }
     const createdAtMs = Date.parse(request.value.createdAt)
     const runtimeContext = yield* makeLocalRuntimeContextForHostSession(
