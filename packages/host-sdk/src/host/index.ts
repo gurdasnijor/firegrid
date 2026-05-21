@@ -77,12 +77,6 @@ export {
   startRuntime,
 } from "./commands.ts"
 export {
-  // TODO(tf-9sx9): lane 2 is migrating current consumers; keep this export until
-  // that PR lands and the public-barrel compatibility window can close.
-  hostProjectionObserver,
-  type HostProjectionObserverOptions,
-} from "./projection-observer.ts"
-export {
   eventChannel,
   eventChannelFromCollection,
 } from "./event-channel.ts"
