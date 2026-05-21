@@ -1,8 +1,15 @@
 # SDD: Workflow-Driven Runtime Planes
 
+Doc-Class: historical-reference
+Status: historical — references the `firegrid-durable-tools` plane, which was
+deleted (PR #519). Channel binding is now the host-plane channel router
+(`docs/sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md`) and durable suspension
+is owned by the one-substrate workflow engine. This proposal was previously
+listed as "current direction" in `docs/README.md`; it no longer is. Do not
+dispatch from it. Not in `docs/cannon/README.md`.
 Date: 2026-05-13
 
-Status: Proposal, docs-only. This SDD is a candidate simplification of
+Status (original): Proposal, docs-only. This SDD is a candidate simplification of
 `SDD_FIREGRID_RUNTIME_HOST_DISPATCHER_AND_CLAIMS.md`, not an implementation
 authorization.
 

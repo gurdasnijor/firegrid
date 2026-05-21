@@ -1,6 +1,11 @@
 # SDD: Firegrid Host-Plane Channel Router
 
-Status: draft architecture
+Doc-Class: internal-contract
+Status: active — the channel router and ACP-edge cutover landed this session
+(`tf-9x11`/#591, `tf-csr0`/#596, `tf-p1aw`/#597). This SDD is the active
+contract for channel routing, not a draft. The Effect-native shape below is the
+reference design; treat divergences on `main` as bugs to reconcile, not as the
+SDD being aspirational. Listed in `docs/cannon/README.md`.
 Created: 2026-05-21
 Last amended: 2026-05-21 (Effect-native router review: router is a typed
 value with `routes` and edge-only `dispatch`; decode failures surface as
