@@ -1137,18 +1137,18 @@ const firegridServiceLayer = Layer.scoped(
 )
 
 /**
- * The Firegrid client service layer. Requires
- * `RuntimeControlPlaneTable` from scope so it shares one materialized
- * RuntimeContext index with the runtime host layer when both are
- * composed in the same scope. Standalone consumers can fall back to
- * `FiregridControlPlaneTableLive`.
+ * The Firegrid client service layer.
  *
- * Provides the client-sdk-internal default Layer for
- * `HostSessionsCreateOrLoadChannel` so the rewired `createOrLoad`
- * dispatch resolves the protocol-owned channel Tag without callers
- * having to wire it. Production hosts may override by providing the
- * host-sdk-owned `HostSessionsCreateOrLoadChannelLive` upstream of
- * this Layer; both satisfy the SAME contract (per tf-35f4 / tf-kddg).
+ * Requires from scope:
+ *   - `RuntimeControlPlaneTable` (shared with the runtime host layer
+ *     so durable context/start requests and runtime projections share
+ *     one materialized RuntimeContext index)
+ *   - `HostSessionsCreateOrLoadChannel` (provided below by the
+ *     standalone default; production hosts may override by providing
+ *     `HostSessionsCreateOrLoadChannelLive` from `@firegrid/host-sdk`)
+ *
+ * Standalone consumers can fall back to `FiregridControlPlaneTableLive`
+ * for the table Tag.
  */
 export const FiregridLive = firegridServiceLayer.pipe(
   Layer.provide(HostSessionsCreateOrLoadChannelStandaloneLive),

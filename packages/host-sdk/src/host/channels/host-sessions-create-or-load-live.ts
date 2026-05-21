@@ -19,63 +19,17 @@
 
 import {
   HostSessionsCreateOrLoadChannel,
-  HostSessionsCreateOrLoadChannelTarget,
-  HostSessionsCreateOrLoadRequestSchema,
-  HostSessionsCreateOrLoadResponseSchema,
-  makeCallableChannel,
-  type HostSessionsCreateOrLoadResponse,
 } from "@firegrid/protocol/channels"
 import {
-  makeRuntimeContextRequestRow,
+  makeHostSessionsCreateOrLoadRequestRowChannel,
   RuntimeControlPlaneTable,
 } from "@firegrid/protocol/launch"
-import { stampRowOtel } from "@firegrid/protocol/otel"
-import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
 import { Effect, Layer } from "effect"
 
 export const HostSessionsCreateOrLoadChannelLive = Layer.effect(
   HostSessionsCreateOrLoadChannel,
   Effect.gen(function*() {
     const control = yield* RuntimeControlPlaneTable
-    return makeCallableChannel({
-      target: HostSessionsCreateOrLoadChannelTarget,
-      requestSchema: HostSessionsCreateOrLoadRequestSchema,
-      responseSchema: HostSessionsCreateOrLoadResponseSchema,
-      call: (request) =>
-        Effect.gen(function*() {
-          const contextId = sessionContextIdForExternalKey(request.externalKey)
-          const stamped = yield* stampRowOtel(
-            makeRuntimeContextRequestRow({
-              contextId,
-              runtime: request.runtime,
-              ...(request.createdBy === undefined
-                ? {}
-                : { createdBy: request.createdBy }),
-            }),
-          )
-          yield* control.contextRequests.insertOrGet(stamped)
-          const response: HostSessionsCreateOrLoadResponse = {
-            sessionId: contextId,
-            contextId,
-          }
-          return response
-        }).pipe(
-          Effect.withSpan(
-            "firegrid.channel.host.sessions.create_or_load.call",
-            {
-              kind: "internal",
-              attributes: {
-                "firegrid.channel.target":
-                  HostSessionsCreateOrLoadChannelTarget,
-                "firegrid.channel.direction": "call",
-                "firegrid.channel.binding_pattern":
-                  "request-row-only",
-                "firegrid.external_key.source": request.externalKey.source,
-                "firegrid.external_key.id": request.externalKey.id,
-              },
-            },
-          ),
-        ),
-    })
+    return makeHostSessionsCreateOrLoadRequestRowChannel(control)
   }),
 )

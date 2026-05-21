@@ -113,6 +113,10 @@ export {
   requireLocalContext,
 } from "./host-context-authority.ts"
 export {
+  makeHostSessionsCreateOrLoadRequestRowChannel,
+  requestHostSessionCreateOrLoad,
+} from "./host-session-create-or-load-request.ts"
+export {
   RuntimeStartCapability,
   RuntimeStartOptionsSchema,
   RuntimeStartResultSchema,
