@@ -25,6 +25,16 @@ components:
       7: Stage boundaries expose typed contracts using existing Effect interfaces where possible; sources return Streams, transforms are Stream-to-Stream functions or Channels, durable table authorities provide Queue.Enqueue/Sink/Effect write tags plus Stream observation tags, subscribers consume capability tags, and host/pipeline only composes those contracts.
       8: Cross-stage routing identities use schema-owned branded types where practical instead of unstructured strings or numbers.
 
+  SOURCE_CONFORMANCE:
+    requirements:
+      1: A tiny-firegrid conformance matrix enumerates every supported SandboxProvider, session mode, codec or transport, and live-agent canary row before harness cases are implemented.
+      2: Deterministic fixture replay covers ACP, stdio-jsonl, fake MCP/provider permission and tool round trips, and adversarial restart or disconnect transcripts without requiring live model credentials in standard verification.
+      3: Replay fixtures exercise named fault classes for crash mid-action, dropped wait, codec double-advertisement, and permission-gate stall.
+      4: A fuzz pass mutates replay byte/input boundaries for chunk splitting, frame coalescing, stdout/stderr interleaving, malformed or incomplete JSON, early exit, stdin close/EPIPE, slow or hung response, duplicate tool ids, missing permission response, response after disconnect, provider secret leakage, and restart/replay after a committed output row.
+      5: The harness emits traceable tiny-firegrid artifacts that can be inspected with simulate:show and simulate:perf, and a failing run exposes the trace path and failed matrix row.
+      6: Findings from the harness update the runtime sources README so source-owned guarantees are separated from codec correlation, durable authority, and app-facing configuration guarantees.
+      7: Live-agent canary rows use real tool-use agent commands only when explicitly enabled by environment and never replace deterministic fixture replay as the CI foundation.
+
   AUTHORITIES:
     requirements:
       1: Every durable table family written by runtime code has exactly one runtime authority module that owns commits for that family.

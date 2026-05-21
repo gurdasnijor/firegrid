@@ -1,0 +1,62 @@
+[
+  {
+    "id": "chunk-splitting",
+    "class": "chunk-splitting",
+    "description": "Split every frame into small chunks and require the record sequence to remain stable."
+  },
+  {
+    "id": "frame-coalescing",
+    "class": "frame-coalescing",
+    "description": "Coalesce adjacent frames on the same stream and require the record sequence to remain stable."
+  },
+  {
+    "id": "stdout-stderr-interleaving",
+    "class": "stdout-stderr-interleaving",
+    "description": "Interleave stderr diagnostic frames with stdout payload frames without changing decoded output records."
+  },
+  {
+    "id": "malformed-incomplete-json",
+    "class": "malformed-incomplete-json",
+    "description": "Classify malformed or incomplete JSON as codec-owned recoverable error evidence."
+  },
+  {
+    "id": "early-process-exit",
+    "class": "early-process-exit",
+    "description": "Classify early source termination as terminal evidence without inventing protocol correlation in sources."
+  },
+  {
+    "id": "stdin-close-epipe",
+    "class": "stdin-close-epipe",
+    "description": "Classify stdin close or EPIPE as source-owned write failure evidence."
+  },
+  {
+    "id": "slow-hung-response",
+    "class": "slow-hung-response",
+    "description": "Classify a slow or hung response as wait/codec timeout evidence, not source polling."
+  },
+  {
+    "id": "duplicate-tool-ids",
+    "class": "duplicate-tool-ids",
+    "description": "Detect duplicate tool ids before durable ToolResult correlation can diverge."
+  },
+  {
+    "id": "permission-request-without-response",
+    "class": "permission-request-without-response",
+    "description": "Detect permission-gate stalls when a PermissionRequest has no matching PermissionResponse."
+  },
+  {
+    "id": "response-after-disconnect",
+    "class": "response-after-disconnect",
+    "description": "Classify late responses after disconnect as replay/correlation evidence outside sources."
+  },
+  {
+    "id": "provider-secret-leakage",
+    "class": "provider-secret-leakage",
+    "description": "Reject records that contain literal provider secret markers."
+  },
+  {
+    "id": "restart-replay-committed-output",
+    "class": "restart-replay-committed-output",
+    "description": "Replay around a committed output row and require no duplicate committed output identity."
+  }
+]

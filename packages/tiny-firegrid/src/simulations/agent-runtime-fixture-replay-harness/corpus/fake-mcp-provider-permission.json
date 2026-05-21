@@ -1,0 +1,36 @@
+{
+  "id": "fake-mcp-provider-permission-gate",
+  "description": "Fake provider fixture for a permission-gated MCP/tool round trip; no provider credential material appears in durable-like records.",
+  "provider": "effect-ai",
+  "sessionMode": "codec",
+  "transport": "fake-mcp-provider",
+  "liveCanary": false,
+  "faultClass": "permission-gate-stall",
+  "verdict": "expected-fault",
+  "sourceBoundary": "provider session acquisition is live-only; credential refs are not replay payloads",
+  "codecBoundary": "provider request becomes PermissionRequest and waits for PermissionResponse",
+  "durableEvidence": [
+    "PermissionRequest row commits before provider continuation",
+    "No literal provider secret appears in replay records",
+    "Missing PermissionResponse is classified as a permission-gate stall"
+  ],
+  "frames": [
+    { "stream": "stdout", "chunk": "{\"provider\":\"effect-ai\",\"event\":\"tool_permission\",\"toolUseId\":\"tool-mcp-1\"}\n" },
+    { "stream": "stderr", "chunk": "waiting for permission response\n" }
+  ],
+  "records": [
+    { "direction": "output", "type": "ready", "toolUseMode": "control_channel_request_response" },
+    { "direction": "output", "type": "tool_use", "toolUseId": "tool-mcp-1", "name": "mcp.linear.search", "input": { "query": "TF-4CIK" }, "providerExecuted": true },
+    { "direction": "output", "type": "permission_request", "permissionRequestId": "perm-mcp-1", "toolUseId": "tool-mcp-1" },
+    { "direction": "output", "type": "status", "kind": "permission.waiting" }
+  ],
+  "expected": {
+    "outputEvents": 4,
+    "inputEvents": 0,
+    "permissionRequests": 1,
+    "permissionResponses": 0,
+    "toolUses": 1,
+    "terminated": false,
+    "secretsAbsent": true
+  }
+}
