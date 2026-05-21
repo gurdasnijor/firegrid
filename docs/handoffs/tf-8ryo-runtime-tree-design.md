@@ -12,26 +12,34 @@ Protocol Firewall" (the substrate-box boundary), grounded in
 NON-GOALS: no production file moves (tf-bffo does those), no behavior changes, no
 deletion of the load-bearing control-request dispatcher / request-row bridge.
 
-## §0 The load-bearing principle (Gurdas correction)
+## §0 The load-bearing principle (Gurdas, ratified 2026-05-21)
 
 The authority Tags — `RuntimeControlRequests`, `RuntimeContextInsert`,
 `RuntimeRuns`, `RuntimeAgentOutputEvents`, `RuntimeAgentOutputAfterEvents`,
-`RuntimeControlPlaneRecorderLive` — are **migration-era substrate internals: the
+`RuntimeControlPlaneRecorderLive` — are **migration-era kernel internals: the
 write-ownership / commit-points for durable collection families.** They are NOT a
 public doorway and must NOT become a second upper-runtime API layer.
 
-**The single doorway above the substrate box is CHANNELS.** Code above the
-substrate boundary (host topology composition, app, client) accesses durable
-state through channel contracts (`@firegrid/protocol/channels` + their bindings),
-not through `Runtime*Insert`/`Runtime*Requests`-style service doors. The target
-directory structure must make the **substrate box explicit** and keep the
-write-owners inside it.
+**The privileged durable core is the KERNEL (`packages/runtime/src/kernel/`).**
+You do NOT import the kernel directly into a program — you reach it through
+**drivers that expose CHANNELS**. Channels are the single doorway: code above the
+kernel boundary (host topology composition, app, client) accesses durable state
+through channel contracts (`@firegrid/protocol/channels`) whose durable
+implementations live in `kernel/channels`, not through
+`Runtime*Insert`/`Runtime*Requests`-style service doors.
 
-So the design has two jobs:
+(Naming: "substrate" is the right word for the whole-Firegrid thesis — "one
+substrate primitive, DurableTable" — but it is overloaded and too floaty for an
+internal directory. The internal box is named **kernel**: a well-defined
+privileged core reached only through drivers/channels. See §3 glossary.)
+
+So the design has three jobs:
 1. Kill the ambiguous "authorities" taxonomy (two unrelated dirs named the same;
    "authority" used as both role AND domain).
-2. Make the substrate box a visible directory boundary, with write-ownership
-   inside and channels as the only sanctioned cross-boundary surface.
+2. Make the kernel a visible directory boundary, with write-ownership inside and
+   channels as the only sanctioned cross-boundary surface.
+3. Co-locate the durable channel IMPLEMENTATIONS into `kernel/channels` so
+   host-sdk cannot read as a second substrate doorway (ownership split below).
 
 ## §1 Current-state inventory
 
@@ -70,7 +78,7 @@ The problems:
 - **`control-plane/index.ts` re-exports `../authorities`** — `control-plane` is an
   umbrella over (request-row daemon + control-plane write-owners) without owning
   either cleanly. Per the bead: do NOT treat `control-plane` as already-canonical.
-- **No explicit substrate-box boundary** — write-owners, pipeline stages, and
+- **No explicit kernel boundary** — write-owners, pipeline stages, and
   external-effect adapters sit as peers; nothing says "this is the write-ownership
   interior; channels are the doorway."
 
@@ -80,11 +88,11 @@ Files importing `RuntimeControlPlaneTable` / `RuntimeOutputTable` /
 `RuntimeControlPlaneRecorderLive` / `RuntimeControlRequestControlPlaneLive`:
 
 ```
-host/channels/host-control/index.ts                 # channel Live bindings → control plane
-host/channels/host-sessions-create-or-load-live.ts  # channel Live binding
-host/channels/session-agent-output/index.ts         # channel Live binding → output table
-host/channels/session-permission/index.ts           # channel Live binding
-host/channels/session-self/index.ts                 # channel Live binding
+host/channels/host-control/index.ts                 # channel Live bindings → control plane  (→ kernel/channels)
+host/channels/host-sessions-create-or-load-live.ts  # channel Live binding                   (→ kernel/channels)
+host/channels/session-agent-output/index.ts         # channel Live binding → output table    (→ kernel/channels)
+host/channels/session-permission/index.ts           # channel Live binding                   (→ kernel/channels)
+host/channels/session-self/index.ts                 # channel Live binding                   (→ kernel/channels)
 host/agent-tool-host-live.ts                         # agent-tool host → control plane writes
 host/commands.ts                                     # startRuntime / appendRuntimeIngress
 host/control-request-side-effects.ts                 # dispatcher side-effect arm (host-side)
@@ -95,17 +103,17 @@ host/runtime-context-workflow-runtime.ts             # workflow runtime composit
 host/runtime-context-session/codec-adapter.ts        # reaches into workflow/session substrate
 ```
 
-## §2 Target tree — domain-first, substrate box explicit
+## §2 Target tree — domain-first, kernel explicit
 
-A single `substrate/` directory makes the write-ownership interior explicit.
-Inside it, organize by **domain** (control-plane, observation, webhook-ingest,
+A single `kernel/` directory makes the write-ownership interior explicit. Inside
+it, organize by **domain** (control-plane, observation, channels, webhook-ingest,
 workflow-engine); the write-owner ROLE is expressed by file naming, not by a
 `authorities/` folder. The agent-event-pipeline keeps the pipeline STAGES
-(adapters/transforms), which are not write-owners.
+(adapters/transforms), which are not write-owners and stay OUTSIDE the kernel.
 
 ```
 packages/runtime/src/
-  substrate/                          # THE substrate box (write-ownership interior; NOT a public doorway)
+  kernel/                             # THE kernel (privileged durable core; reached only via drivers/channels; NOT a public import surface)
     control-plane/                    # domain: control requests + context/run durable state
       recorder.ts                     # ← authorities/runtime-control-plane-recorder.ts
                                       #   (write-owners: RuntimeContextInsert, RuntimeRuns, RuntimeControlRequests, recorder Live)
@@ -117,10 +125,14 @@ packages/runtime/src/
       output-public.ts                # ← agent-event-pipeline/authorities/runtime-output-public.ts (RuntimeAgentOutputAfterEvents)
       observation-streams.ts          # ← streams/runtime-observation-streams.ts (+ streams/sources.ts)
       index.ts
+    channels/                         # the DURABLE channel implementations (Live bindings over kernel state)
+                                      #   ← host-sdk/host/channels/* (host-control, session-agent-output, session-permission,
+                                      #   session-self, host-sessions-create-or-load-live). protocol owns the CONTRACTS;
+                                      #   the kernel owns these Live IMPLEMENTATIONS; host-sdk only COMPOSES them.
     webhook-ingest/                   # ← verified-webhook-ingest/ (adapter, keys, table)
-    workflow-engine/                  # ← workflow-engine/ (already a clean domain; moves under substrate/)
-    index.ts                          # the substrate box's internal barrel (runtime-internal; not for above-box consumers)
-  agent-event-pipeline/               # the PIPELINE STAGES (not write-owners)
+    workflow-engine/                  # ← workflow-engine/ (already a clean domain; moves under kernel/)
+    index.ts                          # the kernel's internal barrel (runtime-internal; not for above-box consumers)
+  agent-event-pipeline/               # the PIPELINE STAGES (external-effect adapters; NOT write-owners; OUTSIDE the kernel)
     codecs/ sources/ transforms/ subscribers/ events/ tool-execution/
     session-byte-stream-adapter.ts
   index.ts  runtime-errors.ts  README.md
@@ -128,16 +140,19 @@ packages/runtime/src/
 
 Notes:
 - **No directory named `authorities` anywhere.** The two collide-named dirs become
-  `substrate/control-plane` and `substrate/observation`.
+  `kernel/control-plane` and `kernel/observation`.
+- **Channel Live implementations co-locate into `kernel/channels`** (the ratified
+  Bucket-A correction): protocol owns channel contracts/Tags/schemas; the kernel
+  owns the durable Live bindings; host-sdk only COMPOSES them (§4).
 - **`control-plane` is no longer a top-level umbrella** — it's a domain INSIDE
-  `substrate/`, owning both the recorder (write-owners) and the request-dispatcher
+  `kernel/`, owning both the recorder (write-owners) and the request-dispatcher
   (the daemon), with explicit exports and no `../authorities` re-export.
 - **`workflow-engine`, `verified-webhook-ingest`, `streams` move under
-  `substrate/`** because they are substrate interior (durable state machines /
+  `kernel/`** because they are kernel interior (durable state machines /
   ingest write-owner / observation sources). The agent-event-pipeline ADAPTERS
-  (codecs/sources/transforms) stay outside the box — they convert external effects
-  INTO durable rows but are not the row write-owners.
-- **The substrate box's `index.ts` is runtime-internal.** Above-box consumers
+  (codecs/sources/transforms) stay outside the kernel — they convert external
+  effects INTO durable rows but are not the row write-owners.
+- **The kernel's `index.ts` is runtime-internal.** Above-kernel consumers
   (host topology, app) should depend on channel contracts, not on this barrel.
   Narrowing the export surface so the authority Tags are not re-exported as
   upper-runtime API is the longer-term move (sequenced below; coordinate with the
@@ -148,64 +163,69 @@ Notes:
 Renaming both dirs to a shared role word (`capabilities/`, `commit-points/`,
 `write-owners/`) was considered. Rejected because it preserves the "role as
 directory" smell (the same critique that sank "authorities") and does not make the
-substrate box explicit. Domain-first under an explicit `substrate/` box is the
-intelligible structure; the role is a file-naming + glossary concern, not a dir.
+kernel explicit. Domain-first under an explicit `kernel/` is the intelligible
+structure; the role is a file-naming + glossary concern, not a dir.
 
 ## §3 Naming glossary
 
 | Term | Decision |
 | --- | --- |
 | **authority** (as a directory) | RETIRED. No dir named `authorities`. |
-| **authority** (as a concept/term in docs) | KEEP narrowly, meaning "the unique write-owner / commit-point for a durable collection family, INSIDE the substrate box." Not a public doorway. |
-| **substrate box** | NEW explicit boundary: `packages/runtime/src/substrate/`. Holds write-ownership + durable state machines + ingest + observation write-owners. |
+| **authority** (as a concept/term in docs) | KEEP narrowly, meaning "the unique write-owner / commit-point for a durable collection family, INSIDE the kernel." Not a public doorway. |
+| **substrate** | RESERVED for the whole-Firegrid thesis ("one substrate primitive, DurableTable"). NOT used as an internal directory name — too overloaded/floaty for a dir. |
+| **kernel** | NEW explicit internal boundary: `packages/runtime/src/kernel/`. The privileged durable core (write-ownership / authority Tags / durable state machines / ingest / observation write-owners / durable channel implementations). You do NOT import the kernel directly into a program — you reach it through drivers that expose channels. |
+| **driver** | the thing that exposes a kernel capability AS a channel. The durable channel Live implementations in `kernel/channels` are the drivers; host-sdk composes them, app/client consume the channel contract. |
 | **recorder** | the control-plane write-owner module (RuntimeContextInsert/RuntimeRuns/RuntimeControlRequests + RuntimeControlPlaneRecorderLive). |
-| **request-dispatcher** | the control-request reconciler daemon + the request-row→reflected bridge (load-bearing; the runtime-internal Pattern-1 implementation behind callable channels). |
+| **request-dispatcher** | the control-request reconciler daemon + the request-row→reflected bridge (load-bearing; the kernel-internal Pattern-1 implementation behind callable channels). |
 | **journal** / **output-public** | the observation write-owner + its public projection. |
-| **channel** | the ONLY sanctioned above-box doorway to durable state (protocol contract + host-sdk/runtime binding). |
-| **control-plane** | a DOMAIN inside the substrate box, not a top-level umbrella dir. |
+| **channel** | the ONLY sanctioned above-kernel doorway to durable state. Contract/Tag/schema in `@firegrid/protocol/channels`; durable Live implementation in `kernel/channels`; host-sdk composes. |
+| **control-plane** | a DOMAIN inside the kernel, not a top-level umbrella dir. |
 
 ## §4 host-sdk leak inventory + classification
 
-Three buckets. Bucket A stays; B moves below the substrate box; C becomes/aligns
-to channel implementations (often already in flight under named beads).
+Three buckets. Bucket A stays; B moves below the kernel; C becomes/aligns to
+channel implementations (often already in flight under named beads).
 
-### Bucket A — TRUE binding-edge composition (CORRECT in host-sdk; keep)
+### Bucket A — TRUE composition / projection edge (CORRECT in host-sdk; keep)
 
-Per the One Substrate firewall, host-sdk OWNS channel bindings + host topology
-composition. These touch substrate tables BY DESIGN (the binding edge):
+Per the ratified ownership split, host-sdk only COMPOSES Layers (topology
+assembly + projection edges) and NEVER owns durable-state wiring:
 
-- `host/channels/*` (host-control, session-agent-output, session-permission,
-  session-self, verified-webhook, host-sessions-create-or-load-live) — these ARE
-  the channel Live Layer implementations (typed views over runtime DurableTables).
-  Correct home. (Longer-term they could relocate to a `runtime/substrate/channels`
-  if we want bindings co-located with the box, but that is NOT required and is out
-  of tf-bffo scope; the firewall permits host-sdk to own bindings.)
-- `host/layers.ts`, `host/config-live.ts` — host TOPOLOGY composition (compose the
-  substrate Live Layers + channel layers into a runnable host). Composition is a
-  binding-edge concern; stays. (It composes `RuntimeControlPlaneRecorderLive` +
-  `RuntimeControlRequestControlPlaneLive` — that is composition, not a substrate
-  leak, but see Bucket B for whether the *composition root* belongs in a runtime
-  host-composition module.)
+- `host/layers.ts`, `host/config-live.ts` — host TOPOLOGY composition (assemble the
+  kernel Live Layers + channel layers into a runnable host). Composition is the
+  legitimate host-sdk role; stays. (It composes `RuntimeControlPlaneRecorderLive` +
+  `RuntimeControlRequestControlPlaneLive` from the kernel — composition, not
+  ownership.)
 - `host/mcp-host.ts`, `mcp-channel-metadata.ts`, `runtime-context-mcp-base-url.ts`
-  — MCP projection edge (tf-r8ib classified this; keep as named binding edge).
+  — MCP projection edge (tf-r8ib classified this; keep as named projection edge).
 
-### Bucket B — SUBSTRATE-INTERNAL that should move BELOW the box (into runtime/substrate)
+### Bucket B — KERNEL-INTERNAL that should move BELOW the box (into runtime/kernel)
 
-These expose runtime substrate wiring from host-sdk; they are interior, not
-binding edge:
+These own/expose durable-state wiring from host-sdk; they are kernel interior, not
+composition or projection edge:
 
+- **`host/channels/*` channel Live bindings** (host-control, session-agent-output,
+  session-permission, session-self, host-sessions-create-or-load-live) — these ARE
+  durable channel IMPLEMENTATIONS (Live bindings touching `RuntimeControlPlaneTable`
+  / `RuntimeOutputTable`). **RATIFIED CORRECTION (overrides the earlier "keep in
+  host-sdk" rec): co-locate into `kernel/channels`.** protocol owns the channel
+  CONTRACTS; the kernel owns the durable Live implementations; host-sdk only
+  composes them. Reason: bindings in host-sdk make host-sdk read as a SECOND
+  substrate doorway; co-location makes "channels are the only doorway" enforceable.
+  (The `host-control-request.ts` / `host-session-create-or-load-request.ts` factory
+  helpers in `@firegrid/protocol/launch` that these bindings consume also belong on
+  the kernel side of the line — they take a `RuntimeControlPlaneTableService` and
+  compose durable ops; revisit their home as part of the co-location.)
 - `host/runtime-substrate.ts` — runtime substrate wiring (HostRuntimeObservationStreamsLive,
-  RuntimeAgentToolExecutionLive). Candidate to move to `runtime/substrate` (or be
-  consumed via a channel/runtime composition entrypoint) so host-sdk does not
-  re-expose substrate Live Layers.
+  RuntimeAgentToolExecutionLive). Move to `runtime/kernel` so host-sdk does not
+  re-expose kernel Live Layers.
 - `host/per-context-runtime-output.ts` — per-context RuntimeOutputTable layer
-  wiring. Substrate interior (output read composition). Move below the box; the
-  client already reaches output through the SessionAgentOutput channel + its own
-  cache (tf-qu7l). Coordinate with tf-aq4d (the snapshot output-read extraction
-  candidate) — this is the same machinery.
+  wiring. Kernel interior (output read composition). Move below; the client already
+  reaches output through the SessionAgentOutput channel + its own cache (tf-qu7l).
+  Coordinate with tf-aq4d (snapshot output-read extraction) — same machinery.
 - `host/control-request-side-effects.ts` — the dispatcher's side-effect arm. It is
   the runtime control-request mechanism living in host-sdk; belongs with the
-  request-dispatcher in `substrate/control-plane` (or a runtime host-composition
+  request-dispatcher in `kernel/control-plane` (or a runtime host-composition
   module), not as a host-sdk top-level.
 
 ### Bucket C — should become / align to channel implementations (mostly in-flight)
@@ -218,10 +238,10 @@ binding edge:
 - `host/agent-tools/execution/*` — depends on runtime workflow/tool execution +
   channel-catalog internals. The tool-call lowering is a binding edge, but its
   dependency on workflow-engine internals + the ChannelInventory catalog is a
-  substrate reach. Classify: the lowering stays (binding edge); the
-  workflow/catalog dependency should resolve through the substrate box's
-  public-ish runtime composition + the channel contracts, not direct internal
-  imports. Coordinate with tf-zd8s's ChannelInventory retirement.
+  substrate reach. Classify: the lowering stays (composition edge); the
+  workflow/catalog dependency should resolve through the kernel's public-ish
+  runtime composition + the channel contracts, not direct internal imports.
+  Coordinate with tf-zd8s's ChannelInventory retirement.
 - `host/agent-tool-host-live.ts` — agent-tool host that writes control-plane rows.
   The write should go through the relevant channel binding (it partly does post-
   tf-aago); residual direct-table writes are a leak to close as the channelization
@@ -231,67 +251,73 @@ binding edge:
 
 Each slice is a behavior-preserving move/rename; no logic changes.
 
-1. **Slice 1 — create the substrate box + move the two authorities dirs.**
-   `mkdir substrate/`; move `authorities/` → `substrate/control-plane/`
+1. **Slice 1 — create the kernel + move the two authorities dirs.**
+   `mkdir kernel/`; move `authorities/` → `kernel/control-plane/`
    (recorder.ts + time.ts), `control-plane/control-request-dispatcher.ts` →
-   `substrate/control-plane/request-dispatcher.ts`; delete the
+   `kernel/control-plane/request-dispatcher.ts`; delete the
    `control-plane/index.ts` `../authorities` re-export umbrella, replace with
-   `substrate/control-plane/index.ts` explicit exports. Move
-   `agent-event-pipeline/authorities/*` → `substrate/observation/`. Update imports.
-   Net: zero `authorities/` dirs; `control-plane` is a substrate domain.
-2. **Slice 2 — move the rest of the box interior.** `verified-webhook-ingest/` →
-   `substrate/webhook-ingest/`; `streams/` → `substrate/observation/`;
-   `workflow-engine/` → `substrate/workflow-engine/`. Keep agent-event-pipeline
+   `kernel/control-plane/index.ts` explicit exports. Move
+   `agent-event-pipeline/authorities/*` → `kernel/observation/`. Update imports.
+   Net: zero `authorities/` dirs; `control-plane` is a kernel domain.
+2. **Slice 2 — move the rest of the kernel interior.** `verified-webhook-ingest/` →
+   `kernel/webhook-ingest/`; `streams/` → `kernel/observation/`;
+   `workflow-engine/` → `kernel/workflow-engine/`. Keep agent-event-pipeline
    stages where they are. Update imports + `runtime/src/index.ts`.
-3. **Slice 3 — narrow the box's export surface (the substrate-box-not-doorway
-   move).** Stop re-exporting the authority Tags as upper-runtime API from
-   `runtime/src/index.ts`; above-box consumers route through channels. This is the
-   load-bearing §0 correction; sequence it AFTER the channelization is complete
-   enough that no above-box consumer still needs the raw Tags (audit first, like
-   the tf-aago compat audit). May be its own bead if the consumer audit is large.
+3. **Slice 3 — co-locate the channel Live implementations + narrow the export
+   surface.** (a) Move `host-sdk/host/channels/*` durable Live bindings into
+   `kernel/channels` (protocol keeps contracts; host-sdk keeps composition only);
+   revisit the `@firegrid/protocol/launch` `*-request.ts` factory helpers' home as
+   part of this. (b) Stop re-exporting the authority Tags as upper-runtime API from
+   `runtime/src/index.ts`; above-kernel consumers route through channels. This is
+   the load-bearing §0 correction. Per the §9 consumer audit, the above-box doorway
+   (client-sdk/cli) is ALREADY channel-clean, so (b) is mechanical re-pointing + a
+   3-file reach-past migration; (a) is the channel-binding relocation. Keep as a
+   tf-bffo sub-step (§9.3 verdict).
 4. **Slice 4 — host-sdk Bucket B relocation.** Move `runtime-substrate.ts`,
-   `per-context-runtime-output.ts`, `control-request-side-effects.ts` below the box
-   (into `substrate/`), leaving host-sdk with binding-edge + topology composition
-   only. Coordinate Bucket C with tf-pisb (codec/byte adapters) + tf-zd8s
-   (ChannelInventory).
+   `per-context-runtime-output.ts`, `control-request-side-effects.ts` below into
+   `kernel/`, leaving host-sdk with composition + projection edges only. Coordinate
+   Bucket C with tf-pisb (codec/byte adapters) + tf-zd8s (ChannelInventory).
 
-Slices 1–2 are pure renames (low risk, do first). Slice 3 is the architectural
-payload (needs a consumer audit). Slice 4 + Bucket C coordinate with named
-in-flight beads.
+Slices 1–2 are pure renames (low risk, do first). Slice 3 carries the channel-
+binding co-location + the export-surface trim (the architectural payload). Slice 4
++ Bucket C coordinate with named in-flight beads.
 
 ## §6 Acceptance check (per the bead)
 
 - [x] No target tree with two unrelated directories named `authorities`.
-- [x] Domain-first target tree with an explicit substrate box.
-- [x] Naming glossary (authority retired as dir; kept as narrow doc term).
-- [x] Target homes decided: recorder + dispatcher → `substrate/control-plane`;
-  output journal/public + streams → `substrate/observation`; webhook ingest +
-  workflow engine → `substrate/`; the host-sdk Bucket-B files → below the box.
-- [x] host-sdk leak inventory + classification (A keep / B move-below / C
-  channel-align) + migration slices.
+- [x] Domain-first target tree with an explicit kernel.
+- [x] Naming glossary (authority retired as dir; kept as narrow doc term; kernel
+  vs substrate distinguished).
+- [x] Target homes decided: recorder + dispatcher → `kernel/control-plane`;
+  output journal/public + streams → `kernel/observation`; channel Live bindings →
+  `kernel/channels`; webhook ingest + workflow engine → `kernel/`; the host-sdk
+  Bucket-B files → below into `kernel/`.
+- [x] host-sdk leak inventory + classification (A compose/project-only / B
+  move-below incl. channel bindings / C channel-align) + migration slices.
 - [x] Load-bearing dispatcher / request-row bridge preserved (moved, not deleted).
-- [x] Authority tags framed as migration-era substrate internals, not a public
-  doorway; channels are the single above-box doorway.
+- [x] Authority tags framed as migration-era kernel internals, not a public
+  doorway; channels are the single above-kernel doorway.
 
-## §7 Open questions for coordinator / Gurdas
+## §7 Resolutions (Gurdas ratified 2026-05-21)
 
-1. **Slice 3 scope**: narrowing the authority-Tag export surface needs an
-   above-box consumer audit (who still imports `RuntimeControlRequests` etc.
-   outside the box). Should that be a sub-bead of tf-bffo or its own bead? (It's
-   the real architectural payload; Slices 1–2 are cosmetic renames.)
-2. **Channel bindings co-location**: leave host-sdk owning `host/channels/*`
-   (firewall-permitted), or relocate channel Live Layers to
-   `runtime/substrate/channels` so bindings sit with the box? Recommend LEAVE
-   (firewall permits; lower churn) unless there's a reason to co-locate.
-3. **`agent-event-pipeline` vs `substrate`**: the pipeline stages
-   (codecs/sources/transforms) are external-effect adapters — keep them as a
-   sibling of `substrate/`, or nest under `substrate/adapters/`? Recommend sibling
-   (they are the boundary INTO the box, not interior).
+1. **Slice 3 scope** — RESOLVED: SUB-BEAD of tf-bffo (the §9 consumer audit shows
+   the above-box doorway is already channel-clean; the work is bounded). No
+   separate peer bead.
+2. **Channel bindings co-location** — RESOLVED (overrides the earlier "leave in
+   host-sdk" rec): CO-LOCATE the durable channel Live bindings into
+   `kernel/channels`. Ratified ownership split — protocol owns contracts/Tags/
+   schemas; kernel owns durable implementations; host-sdk only composes. Reflected
+   in §2 + §4 Bucket B + §5 Slice 3.
+3. **`agent-event-pipeline` vs kernel** — RESOLVED: pipeline adapter stages stay a
+   sibling OUTSIDE `kernel/` (they are the boundary INTO the kernel, not interior).
+4. **Box name** — RESOLVED: `kernel/` (not `substrate/`); "substrate" reserved for
+   the whole-Firegrid thesis. See §3 glossary.
 
 ## §8 Cross-references
 
 - `docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md` §"Firewall" — the boundary
-  this amends (substrate box explicit; channels = doorway)
+  this amends (kernel explicit; channels = doorway; kernel owns durable channel
+  implementations, host-sdk composes)
 - `docs/sdds/SDD_FIREGRID_DURABLE_CHANNELS_SYNC_ASYNC.md` — channels as the
   above-box doorway
 - `packages/runtime/src/{authorities,control-plane,agent-event-pipeline/authorities}`
@@ -325,18 +351,19 @@ reach-past tail.
 
 | Consumer (src) | Tags used | Role | Disposition |
 | --- | --- | --- | --- |
-| `runtime/src/{authorities,control-plane,agent-event-pipeline/authorities,workflow-engine/workflows/runtime-context*,streams/runtime-observation-streams}` | all (define + use) | **Box-interior** | No migration. Slices 1–2 relocate them inside `substrate/`; imports re-point. |
+| `runtime/src/{authorities,control-plane,agent-event-pipeline/authorities,workflow-engine/workflows/runtime-context*,streams/runtime-observation-streams}` | all (define + use) | **Kernel-interior** | No migration. Slices 1–2 relocate them inside `kernel/`; imports re-point. |
 | `runtime/src/index.ts` | re-exports the full set | **The export surface** | THIS is what Slice 3 narrows: stop re-exporting authority Tags as upper-runtime API. The single load-bearing change. |
-| `host-sdk/src/host/layers.ts`, `config-live.ts` | `RuntimeControlPlaneRecorderLive`, `RuntimeLocalContextResolver`, `RuntimeAgentOutputEvents` | **Host-adapter glue / topology composition** (firewall-permitted: "Live Layers for runtime-defined capability Tags") | KEEP. Re-point imports to `substrate/`. Composition must wire the substrate Live Layers somewhere; this is the legitimate host composition root, not doorway-as-API. |
+| `host-sdk/src/host/channels/*` (host-control, session-agent-output, session-permission, session-self, host-sessions-create-or-load-live) | `RuntimeControlPlaneTable`, `RuntimeOutputTable` (durable Live bindings) | **Durable channel IMPLEMENTATION** (ratified: kernel-owned, not host-sdk) | MOVE to `kernel/channels` (Bucket B; §4). host-sdk keeps composition only. The §0/§2 co-location. |
+| `host-sdk/src/host/layers.ts`, `config-live.ts` | `RuntimeControlPlaneRecorderLive`, `RuntimeLocalContextResolver`, `RuntimeAgentOutputEvents` | **Topology composition** (host-sdk's legitimate role: assemble kernel Live Layers + channel layers) | KEEP. Re-point imports to `kernel/`. Composition consumes kernel Live Layers; it is the legitimate host composition root, not doorway-as-API. |
 | `host-sdk/src/host/agent-tool-host-live.ts` | `RuntimeContextInsert`, `RuntimeContextRead`, `RuntimeAgentOutputAfterEvents` | **Host-adapter glue** (captures services for AgentToolHost) | KEEP (re-point). The `RuntimeAgentOutputAfterEvents` read overlaps Bucket B / per-context-output (channel-migration tail, §9.2). |
 | `host-sdk/src/host/commands.ts`, `internal/runtime-context-helpers.ts` | `RuntimeContextRead` | **Host-execution read** (ingress/start context resolution) | KEEP as host-adapter (re-point). Optional later: route through a context-read channel; NOT required for Slice 3. |
-| `host-sdk/src/host/mcp-host.ts` | `RuntimeLocalContextResolver` | **MCP-edge route resolution** (tf-r8ib classified) | KEEP (re-point). |
-| `host-sdk/src/host/runtime-substrate.ts`, `per-context-runtime-output.ts` | `RuntimeControlPlaneRecorderLive`, `RuntimeAgentOutputAfterEvents` | **Bucket B (substrate-internal re-exposed by host-sdk)** | MOVE below the box (already in §4 Bucket B / §5 Slice 4). |
+| `host-sdk/src/host/mcp-host.ts` | `RuntimeLocalContextResolver` | **MCP projection edge** (tf-r8ib classified) | KEEP (re-point). |
+| `host-sdk/src/host/runtime-substrate.ts`, `per-context-runtime-output.ts` | `RuntimeControlPlaneRecorderLive`, `RuntimeAgentOutputAfterEvents` | **Bucket B (kernel-internal re-exposed by host-sdk)** | MOVE below into `kernel/` (already in §4 Bucket B / §5 Slice 4). |
 | `tiny-firegrid/src/simulations/{inv1-stream-zip-body,phase0-wave-2b-stream-zip-restart-replay}/host.ts` | `RuntimeAgentOutputAfterEvents` (read), `RuntimeControlPlaneRecorderLive` (compose) | **Sim host: legitimate compose + a reach-past READ** | The compose is fine (sim is a host). The direct `yield* RuntimeAgentOutputAfterEvents` READ is a reach-past → should use the `SessionAgentOutputChannel` (channel-migration tail, §9.2). |
 | `host-sdk/src/host/sync-run.ts` | — | **FALSE POSITIVE** (comment mentions `RuntimeContextInsert`; no import/use) | None. |
 | Tests: `runtime/test/authorities/provider-uniqueness.test.ts`, `host-sdk/test/host/{sync-run-integration,authority-context,runtime-context-workflow-core}.test.ts`, `client-sdk/test/firegrid.layer-hoisting.test.ts` | various | **Test harness** | Re-point imports. Test-harness reads of the Tags are acceptable (white-box). The client-sdk test reading `RuntimeAgentOutputAfterEvents` is a harness shortcut, not a product-surface leak. |
 
-### §9.2 Channel-migration candidates (the small tail, NOT box-internal)
+### §9.2 Channel-migration candidates (the small tail, NOT kernel-interior)
 
 Only these genuinely *should go through a channel* rather than re-pointing:
 1. The two sim hosts' direct `RuntimeAgentOutputAfterEvents` READ → migrate to the
@@ -347,7 +374,11 @@ Only these genuinely *should go through a channel* rather than re-pointing:
    host-adapter channelization completes (overlaps Bucket B + the post-tf-aago
    channelization). Bounded: 1 file.
 
-Everything else is either box-interior, legitimate host-adapter composition
+(Distinct from the channel-binding RELOCATION — moving `host/channels/*` durable
+Live bindings into `kernel/channels` — which is a move, not a migration: the
+bindings keep their logic, just change home + ownership. That is Slice 3(a).)
+
+Everything else is either kernel-interior, legitimate host-sdk composition
 (re-point only), or already-scheduled Bucket B.
 
 ### §9.3 Sizing verdict — SUB-BEAD of tf-bffo (answers Q1)
@@ -355,17 +386,15 @@ Everything else is either box-interior, legitimate host-adapter composition
 **Slice 3 is a sub-bead of tf-bffo, not its own bead.** Rationale:
 - The app-facing doorway is already channel-clean (client-sdk/cli/app = zero), so
   there is no large external-consumer migration to project-manage separately.
-- The dominant work is mechanical: re-point box-interior + host-adapter imports to
-  the `substrate/` path (rides along with Slices 1–2) and stop re-exporting the
-  Tags from `runtime/src/index.ts` (one file).
+- The dominant work is mechanical: re-point kernel-interior + host composition
+  imports to the `kernel/` path (rides along with Slices 1–2), relocate the
+  `host/channels/*` Live bindings into `kernel/channels` (Slice 3a), and stop
+  re-exporting the Tags from `runtime/src/index.ts` (one file).
 - The genuine channel-migration tail is 3 files (2 sim hosts + 1 host-adapter
   read), all using an already-existing channel (`SessionAgentOutputChannel`).
 - The Bucket-B relocation is already its own Slice 4.
 
-So Slice 3 = "narrow `runtime/src/index.ts` exports + re-point host-adapter imports
-+ migrate the 3-file reach-past tail to `SessionAgentOutputChannel`." That fits
-inside tf-bffo as a sub-step; minting a separate bead would add coordination
-overhead disproportionate to a 3-file channel-migration + an export-surface trim.
-(If Gurdas prefers isolation for the export-surface trim specifically — because it
-is the one behavior-surface change vs the cosmetic renames — it could be a thin
-sub-bead; but it does not need to be a peer of tf-bffo.)
+So Slice 3 = "relocate `host/channels/*` Live bindings → `kernel/channels` +
+narrow `runtime/src/index.ts` exports + re-point host composition imports +
+migrate the 3-file reach-past tail to `SessionAgentOutputChannel`." **RATIFIED: a
+tf-bffo sub-step, not a peer bead** (§7.1).
