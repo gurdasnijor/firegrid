@@ -10,6 +10,7 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "control-plane/index\\.ts$",
   "agent-event-pipeline/authorities/runtime-output-public\\.ts$",
   "streams/index\\.ts$",
+  "verified-webhook-ingest/index\\.ts$",
   "agent-event-pipeline/events/index\\.ts$",
   "agent-event-pipeline/codecs/index\\.ts$",
   "agent-event-pipeline/session-byte-stream-adapter\\.ts$",
