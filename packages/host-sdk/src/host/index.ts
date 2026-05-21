@@ -118,8 +118,13 @@ export {
 } from "./projection-observer.ts"
 export {
   HostRuntimeObservationStreamsLive,
-  RuntimeAgentToolExecutionLive,
 } from "./runtime-substrate.ts"
+export {
+  RuntimeAgentToolExecutionLive,
+} from "@firegrid/runtime/tool-executor"
+export {
+  RuntimeToolUseExecutorLive,
+} from "../agent-tools/execution/runtime-tool-use-executor-live.ts"
 export {
   EventChannelSourceClasses,
   eventChannel,

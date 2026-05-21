@@ -5,7 +5,6 @@ const sanctionedRuntimeCapabilitySubpaths = [
   // sanctioned for host-sdk binding composition by
   // docs/architecture/host-sdk-runtime-boundary.md.
   "runtime-errors\\.ts$",
-  "agent-event-pipeline/subscribers/runtime-tool-use-executor\\.ts$",
   "agent-event-pipeline/tool-execution/index\\.ts$",
   "authorities/index\\.ts$",
   "control-plane/index\\.ts$",
@@ -18,8 +17,6 @@ const sanctionedRuntimeCapabilitySubpaths = [
 ].join("|")
 
 const currentHostSdkSubstrateDebt = [
-  "^packages/host-sdk/src/agent-tools/execution/tool-use-to-effect\\.ts$",
-  "^packages/host-sdk/src/agent-tools/execution/toolkit-layer\\.ts$",
   "^packages/host-sdk/src/host/internal/runtime-context-helpers\\.ts$",
   "^packages/host-sdk/src/host/runtime-context-workflow-core\\.ts$",
   "^packages/host-sdk/src/host/runtime-context-workflow-runtime\\.ts$",

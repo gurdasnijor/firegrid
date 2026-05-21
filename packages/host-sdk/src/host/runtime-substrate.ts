@@ -1,5 +1,4 @@
-import { Effect, Layer, Scope } from "effect"
-import { WorkflowEngine } from "@effect/workflow"
+import { Layer } from "effect"
 import {
   RuntimeControlPlaneRecorderLive,
 } from "@firegrid/runtime/control-plane"
@@ -15,22 +14,7 @@ import {
 } from "@firegrid/runtime/runtime-output"
 import {
   RuntimeObservationStreamsLive,
-  type RuntimeObservationStreams,
 } from "@firegrid/runtime/streams"
-import {
-  makeRuntimeAgentToolExecutionService,
-  RuntimeAgentToolExecution,
-  RuntimeToolUseExecutor,
-} from "@firegrid/runtime/tool-executor"
-import {
-  toolUseToEffect,
-} from "../agent-tools/execution/tool-use-to-effect.ts"
-import type { ChannelInventory } from "./channel.ts"
-import {
-  toolErrorResult,
-  toolExecutionFailed,
-} from "../agent-tools/bindings/tool-error.ts"
-import { type AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
 } from "./per-context-runtime-output.ts"
@@ -86,68 +70,3 @@ export const HostRuntimeObservationStreamsLive = RuntimeObservationStreamsLive.p
 // `FiregridRuntimeHostWithWorkflowLive`.
 export type RuntimeContextWorkflowExecutionEnv =
   HostRuntimeContextExecutionEnv
-
-type RuntimeToolUseExecutorExecutionEnv =
-  | AgentToolHost
-  | ChannelInventory
-  | RuntimeAgentToolExecution
-  | RuntimeObservationStreams
-
-// firegrid-host-sdk.PACKAGE_GRAPH.6
-// Host-provided live layer for the runtime-owned validated tool execution seam.
-export const RuntimeAgentToolExecutionLive = RuntimeAgentToolExecution.layer(
-  makeRuntimeAgentToolExecutionService(),
-).pipe(
-  Layer.withSpan("firegrid.host.runtime_substrate.agent_tool_execution.layer", {
-    kind: "internal",
-  }),
-)
-
-// firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2
-// Temporary runtime-host live layer. The future host-sdk layer can provide the
-// same runtime-owned tag after the agent-tool bindings move out of runtime.
-export const RuntimeToolUseExecutorLive = Layer.effect(
-  RuntimeToolUseExecutor,
-  Effect.gen(function* () {
-    const captured = yield* Effect.context<RuntimeToolUseExecutorExecutionEnv>()
-    return RuntimeToolUseExecutor.of({
-      execute: (context, event) =>
-        Effect.gen(function*() {
-          const currentEngine = yield* WorkflowEngine.WorkflowEngine
-          const currentInstance = yield* WorkflowEngine.WorkflowInstance
-          const currentScope = yield* Effect.scope
-          return yield* toolUseToEffect(context, event).pipe(
-            Effect.catchAllDefect(defect =>
-              Effect.succeed(toolErrorResult(
-                toolExecutionFailed(event.part.id, event.part.name, defect),
-              ))),
-            Effect.provide(captured),
-            Effect.provideService(WorkflowEngine.WorkflowEngine, currentEngine),
-            Effect.provideService(WorkflowEngine.WorkflowInstance, currentInstance),
-            Effect.provideService(Scope.Scope, currentScope),
-          )
-        }).pipe(
-          Effect.tap(result =>
-            Effect.annotateCurrentSpan({
-              "firegrid.agent_output.tool_name": event.part.name,
-              "firegrid.agent_output.tool_result_failure": result.part.isFailure,
-            })),
-          Effect.withSpan("firegrid.host.runtime_substrate.tool_use.execute", {
-            kind: "internal",
-            attributes: {
-              "firegrid.context.id": context.contextId,
-              "firegrid.agent_output.tool_name": event.part.name,
-            },
-          }),
-          Effect.catchAllDefect(defect =>
-            Effect.succeed(toolErrorResult(
-              toolExecutionFailed(event.part.id, event.part.name, defect),
-            ))),
-      ),
-    })
-  }),
-).pipe(
-  Layer.withSpan("firegrid.host.runtime_substrate.tool_use_executor.layer", {
-    kind: "internal",
-  }),
-)

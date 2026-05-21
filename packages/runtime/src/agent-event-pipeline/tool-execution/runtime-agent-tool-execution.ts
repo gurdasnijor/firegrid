@@ -1,7 +1,9 @@
-import { DurableClock, type WorkflowEngine } from "@effect/workflow"
+import { DurableClock } from "@effect/workflow"
 import type {
   CallToolInput,
   CallToolOutput,
+  ScheduleMeToolInput,
+  ScheduleMeToolOutput,
   SendToolInput,
   SendToolOutput,
   SleepToolInput,
@@ -14,10 +16,13 @@ import type {
 import { Context, Duration, Effect, Layer } from "effect"
 import type {
   RuntimeObservationSource,
-  RuntimeObservationStreams,
 } from "../../streams/index.ts"
 import type {
   FieldEqualsTrigger,
+} from "../../workflow-engine/workflows/field-equals.ts"
+export {
+  evaluateFieldEquals,
+  type FieldEqualsTrigger,
 } from "../../workflow-engine/workflows/field-equals.ts"
 import {
   WaitForWorkflow,
@@ -65,6 +70,15 @@ export interface RuntimeCallToolExecutionParams
   readonly call: Effect.Effect<CallToolOutput, unknown, never>
 }
 
+export interface RuntimeScheduleToolExecutionParams
+  extends RuntimeToolExecutionContext
+{
+  readonly input: ScheduleMeToolInput
+  readonly scheduleId: string
+  readonly delayMs: number
+  readonly append: Effect.Effect<void, unknown, never>
+}
+
 export type RuntimeAgentToolExecutionError =
   | {
     readonly _tag: "InvalidToolInput"
@@ -80,11 +94,6 @@ export type RuntimeAgentToolExecutionError =
     readonly reason: string
   }
 
-/**
- * @effect-expect-leaking WorkflowEngine
- * @effect-expect-leaking WorkflowInstance
- * @effect-expect-leaking RuntimeObservationStreams
- */
 export interface RuntimeAgentToolExecutionService {
   readonly sleep: (
     params: RuntimeToolExecutionContext & {
@@ -92,17 +101,13 @@ export interface RuntimeAgentToolExecutionService {
     },
   ) => Effect.Effect<
     SleepToolOutput,
-    RuntimeAgentToolExecutionError,
-    WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
+    RuntimeAgentToolExecutionError
   >
   readonly waitFor: (
     params: RuntimeWaitForToolExecutionParams,
   ) => Effect.Effect<
     WaitForToolOutput,
-    RuntimeAgentToolExecutionError,
-    | RuntimeObservationStreams
-    | WorkflowEngine.WorkflowEngine
-    | WorkflowEngine.WorkflowInstance
+    RuntimeAgentToolExecutionError
   >
   readonly waitForAny: (
     params: RuntimeWaitForAnyToolExecutionParams,
@@ -113,6 +118,9 @@ export interface RuntimeAgentToolExecutionService {
   readonly call: (
     params: RuntimeCallToolExecutionParams,
   ) => Effect.Effect<CallToolOutput, RuntimeAgentToolExecutionError>
+  readonly schedule: (
+    params: RuntimeScheduleToolExecutionParams,
+  ) => Effect.Effect<ScheduleMeToolOutput, RuntimeAgentToolExecutionError>
 }
 
 const waitForTimeoutPayload = (
@@ -168,6 +176,11 @@ const waitForAny = (
   )
 }
 
+const hideExecutionRequirements = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, never> =>
+  effect as Effect.Effect<A, E, never>
+
 // firegrid-host-sdk.PACKAGE_GRAPH.6
 // firegrid-workflow-driven-runtime.PHASE_6_AGENT_TOOLS.9
 export const makeRuntimeAgentToolExecutionService =
@@ -177,7 +190,10 @@ export const makeRuntimeAgentToolExecutionService =
         name: `tool:${toolUseId}`,
         duration: Duration.millis(input.durationMs),
         inMemoryThreshold: Duration.zero,
-      }).pipe(Effect.as<SleepToolOutput>({ slept: true })),
+      }).pipe(
+        Effect.as<SleepToolOutput>({ slept: true }),
+        hideExecutionRequirements,
+      ),
     waitFor: ({ contextId, toolUseId, input, source, trigger }) =>
       WaitForWorkflow.execute({
         executionKey: `wait:${contextId}:${toolUseId}`,
@@ -188,6 +204,7 @@ export const makeRuntimeAgentToolExecutionService =
         Effect.provide(WaitForWorkflowLayer),
         Effect.map(waitForWorkflowOutput),
         Effect.mapError(toolExecutionFailed),
+        hideExecutionRequirements,
       ),
     waitForAny,
     send: ({ input, append }) =>
@@ -199,13 +216,19 @@ export const makeRuntimeAgentToolExecutionService =
       call.pipe(
         Effect.mapError(toolExecutionFailed),
       ),
+    schedule: ({ scheduleId, delayMs, append }) =>
+      DurableClock.sleep({
+        name: scheduleId,
+        duration: Duration.millis(delayMs),
+        inMemoryThreshold: Duration.zero,
+      }).pipe(
+        Effect.zipRight(append),
+        Effect.as<ScheduleMeToolOutput>({ scheduled: true, scheduleId }),
+        Effect.mapError(toolExecutionFailed),
+        hideExecutionRequirements,
+      ),
   })
 
-/**
- * @effect-expect-leaking WorkflowEngine
- * @effect-expect-leaking WorkflowInstance
- * @effect-expect-leaking RuntimeObservationStreams
- */
 export class RuntimeAgentToolExecution extends Context.Tag(
   "@firegrid/runtime/RuntimeAgentToolExecution",
 )<RuntimeAgentToolExecution, RuntimeAgentToolExecutionService>() {
@@ -213,3 +236,11 @@ export class RuntimeAgentToolExecution extends Context.Tag(
     service: RuntimeAgentToolExecutionService,
   ): Layer.Layer<RuntimeAgentToolExecution> => Layer.succeed(this, service)
 }
+
+export const RuntimeAgentToolExecutionLive = RuntimeAgentToolExecution.layer(
+  makeRuntimeAgentToolExecutionService(),
+).pipe(
+  Layer.withSpan("firegrid.runtime.agent_tool_execution.layer", {
+    kind: "internal",
+  }),
+)

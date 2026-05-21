@@ -87,10 +87,16 @@ import {
   RuntimeContextWorkflowRuntime,
 } from "../../../../host-sdk/src/host/runtime-context-workflow-runtime.ts"
 import {
+  RuntimeAgentToolExecutionLive,
+} from "@firegrid/runtime/tool-executor"
+import {
   HostRuntimeObservationSubstrateLive,
-  RuntimeToolUseExecutorLive,
+  HostRuntimeObservationStreamsLive,
   type RuntimeContextWorkflowExecutionEnv,
 } from "../../../../host-sdk/src/host/runtime-substrate.ts"
+import {
+  RuntimeToolUseExecutorLive,
+} from "../../../../host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts"
 import {
   RuntimeContextWorkflowSession,
   runtimeInputDeferredFor,
@@ -680,6 +686,8 @@ const streamZipWorkflowSupportLayer = (
     Layer.provideMerge(
       RuntimeToolUseExecutorLive.pipe(
         Layer.provide(HostRuntimeObservationSubstrateLive),
+        Layer.provideMerge(HostRuntimeObservationStreamsLive),
+        Layer.provideMerge(RuntimeAgentToolExecutionLive),
       ),
     ),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),

@@ -42,7 +42,7 @@ import {
 } from "../../runtime-errors.ts"
 import {
   RuntimeToolUseExecutor,
-} from "../../agent-event-pipeline/subscribers/runtime-tool-use-executor.ts"
+} from "../tool-execution/runtime-tool-use-executor.ts"
 import {
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,
