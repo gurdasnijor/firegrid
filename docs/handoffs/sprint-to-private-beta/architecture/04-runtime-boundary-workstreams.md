@@ -82,6 +82,14 @@ Target:
 - simulations use client waits, semantic channels, or package-local runtime
   observations instead of exported host projection observers.
 
+`tf-6w3s` sharpened this from "general boundary debt" into external-effect
+adapter debt: `runtime-context-session/codec-adapter.ts` and
+`runtime-context-session/raw-adapter.ts` own `ReadableStream` /
+`WritableStream` conversion and `Effect.tryPromise(... stdin.write ...)`
+effects. Those are adapter bodies, not host composition. Host-sdk may choose
+which runtime session adapter to install; the byte-stream adapter
+implementation belongs below the runtime line.
+
 ## Workstream D: Tool Execution And Agent/MCP Binding
 
 Candidate files:
@@ -89,6 +97,7 @@ Candidate files:
 - `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts`
 - `packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts`
 - `packages/runtime/src/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts`
+- `packages/host-sdk/src/host/mcp-host.ts` for the boundary decision only
 
 Target:
 
@@ -97,6 +106,10 @@ Target:
 - `toolkit-layer.ts` stops importing `host/runtime-substrate.ts`;
 - `runtime-tool-use-executor.ts` moves out of `subscribers/` because it is a
   service tag, not a scoped observation subscriber.
+- MCP HTTP server installation is decided explicitly: either it remains a
+  binding-edge projection server in host-sdk with no durable substrate
+  authority, or its server body moves to a runtime/agent-tools package. Do not
+  leave it as an unnamed exception to the external-effect adapter rule.
 
 Post-beta package decision: extract agent/MCP binding into `@firegrid/agent-tools`
 after private beta unless evidence says it must split earlier.
@@ -116,3 +129,33 @@ Rule:
 - they should not become public table-facade escape hatches;
 - host-sdk should compose them only through top-level runtime capabilities.
 
+## Workstream F: External-Effect Adapter Boundary
+
+Source-read evidence:
+
+- `docs/research/tf-6w3s-external-effect-adapter-inventory.FINDING.md`
+
+Verdict:
+
+- application-level adapter set is finite and matches the One Substrate SDD
+  directionally;
+- `effect-durable-streams` and `effect-durable-operators` are legitimate
+  substrate transport libraries outside runtime;
+- product-layer host/CLI hits remain follow-up work or explicit exceptions.
+
+Actionable surfaces:
+
+- `packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts`
+- `packages/host-sdk/src/host/runtime-context-session/raw-adapter.ts`
+- `packages/host-sdk/src/host/mcp-host.ts`
+- `packages/cli/src/bin/run.ts` embedded Durable Stream test server start/stop
+
+Target:
+
+- session byte-stream adapters move below the runtime line;
+- MCP HTTP server placement is recorded as either binding-edge projection
+  exception or moved under a runtime/agent-tools package;
+- CLI embedded test-server lifecycle is either moved to a test/dev harness
+  module or explicitly documented as a CLI dev-only exception;
+- One Substrate synthesis does not claim "all external effects are already in
+  runtime" until these dispositions are closed.

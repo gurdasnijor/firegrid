@@ -256,11 +256,20 @@ monorepo:
 
 For each hit:
 - Categorize: known adapter (sandbox / codec / webhook ingest / network)
-- Confirm location: should be in `packages/runtime/`
-- Flag any hit outside runtime as a boundary violation
+- Confirm location: application-level adapters should be in `packages/runtime/`
+  or a named binding-edge projection exception.
+- Treat `effect-durable-streams` / `effect-durable-operators` as lower-tier
+  substrate transport libraries, not application-level adapter leaks.
+- Flag product-layer host/CLI hits outside runtime as boundary violations or
+  required explicit exceptions.
 
 Result: a finite catalog of external-effect adapters confirming the
 SDD's "small fixed set" claim. Output: a table in the spike roll-up.
+
+Landed result: `docs/research/tf-6w3s-external-effect-adapter-inventory.FINDING.md`.
+Verdict: finite set confirmed, with explicit follow-up work for host-sdk
+session byte-stream adapters, host-sdk MCP HTTP server placement, and CLI
+embedded Durable Stream dev-server lifecycle.
 
 ## Two-cycle dispatch
 

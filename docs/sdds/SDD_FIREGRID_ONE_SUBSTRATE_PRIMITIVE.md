@@ -11,7 +11,12 @@ not agent verbs.
 Peer review wave 2 — Gary's follow-up: DONE-shaped bullet wording
 re-tightened to "shared/public schemas"; three-layer chain qualified to
 "every operation that touches persisted state" so synchronous handle
-factories are correctly excluded.)
+factories are correctly excluded.
+Peer review wave 3 — tf-6w3s external-effect adapter inventory: adapter set
+confirmed finite, but package-boundary wording corrected. Durable transport
+libraries are substrate exceptions; host/CLI projection shims with byte,
+server, or dev-server effects are explicit follow-up work, not proof of a
+runtime-only boundary.)
 Owner: Firegrid Architecture
 Supersedes/strengthens: `SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
 Extends: `SDD_FIREGRID_AGENT_BODY_PLAN.md`, `SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
@@ -31,6 +36,16 @@ HTTP webhook ingestion, LLM/provider API calls) bridge between the outside
 world and DurableTable rows. Their job is to convert external effects into
 durable rows; once a row lands in a DurableTable, the substrate becomes
 uniform.
+
+`tf-6w3s` source-read tightened the package-boundary claim: the adapter set is
+finite, but "external effects only occur in `@firegrid/runtime`" is too broad.
+`packages/effect-durable-streams` and `packages/effect-durable-operators`
+are substrate transport libraries and legitimately own HTTP/storage effects
+below Firegrid's runtime. Product-layer host/CLI effects remain work items:
+MCP HTTP serving, runtime-context session byte-stream shims, and CLI embedded
+dev-server lifecycle must either move below the runtime/substrate line or be
+documented as narrow projection/test-harness exceptions with deletion or
+stabilization targets.
 
 **Channels are Firegrid's typed semantic transport layer over DurableTable.**
 Channels are the unifying typed-interaction vocabulary across client / agent
@@ -337,6 +352,20 @@ Each adapter does I/O the substrate cannot model. Their output becomes a
 DurableTable row; their input often comes from a DurableTable row. **The
 adapter layer is the only place external effects enter the substrate.**
 
+Package placement rule:
+
+- Firegrid application-level adapters live in `@firegrid/runtime` unless they
+  are a binding-edge projection server with no durable substrate ownership.
+- Durable substrate libraries (`effect-durable-streams`,
+  `effect-durable-operators`) are explicit lower-tier exceptions; they provide
+  the transport used by DurableTable and DurableStream and are not app-level
+  adapter leaks.
+- Binding packages (`host-sdk`, `cli`, future REST/gRPC/MCP packages) may own
+  projection ceremony, argument parsing, and server installation for their
+  surface, but byte-stream conversion, workflow/session execution, durable
+  row authority, and cross-process adapter bodies belong below the binding
+  line.
+
 ### 2. In-memory coordination
 
 Some coordination is intentionally non-durable:
@@ -592,7 +621,9 @@ semantics.
       through exactly one channel verb and a fixed DurableTable primitive
       pattern
 - [ ] The external-effect adapter inventory is documented and finite
-      (sandbox, codecs, webhook ingest, network clients — nothing else)
+      (sandbox, codecs, webhook ingest, network clients, substrate transport
+      libraries — nothing else), with host/CLI projection exceptions either
+      eliminated or named with a private-beta disposition
 - [ ] No package outside `@firegrid/runtime` constructs `DurableTable.layer(...)`
       directly (except in test/sim infrastructure)
 - [ ] `currentHostSdkSubstrateDebt` carveout list reaches zero or contains

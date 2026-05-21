@@ -51,6 +51,16 @@ catalog -> multiple bindings/projections -> runtime substrate." Treat that as a
 documentation/canon clarity improvement, not as a change to the core boundary
 verdict below.
 
+Update from `tf-6w3s` / PR #540: the external-effect adapter inventory is now
+source-read documented. The finite-adapter claim holds directionally, but the
+package-boundary claim needs precision. `effect-durable-streams` and
+`effect-durable-operators` are lower-tier substrate transports and should be
+named exceptions, not treated as app-level leaks. The remaining product-layer
+external-effect concerns are concrete: host-sdk runtime-context session
+byte-stream adapters, host-sdk MCP HTTP server installation, and the CLI
+embedded Durable Stream dev server. These are now dispatchable boundary
+workstreams rather than open-ended research.
+
 ## Generated Architecture Evidence
 
 Regenerated the useful Mermaid dependency graphs from `package.json` scripts in

@@ -217,6 +217,14 @@ If asked "what now?", answer:
   application event/fact observation, and `RuntimeObservationStreams` for
   runtime-internal consumers. Do not create another generic projection-observer
   facade unless repeated evidence proves the existing surfaces are insufficient.
+- Treat `tf-6w3s` as the current external-effect adapter source-read. It
+  validates the finite-adapter model but corrects the simplistic package rule:
+  durable substrate libraries legitimately own HTTP/storage effects outside
+  runtime; product-layer host/CLI effects need disposition. The concrete next
+  asks are runtime-context session byte-stream adapters below runtime,
+  MCP-host HTTP server as an explicit binding-edge exception or relocation, and
+  CLI embedded Durable Stream test-server lifecycle as a dev-only exception or
+  harness move.
 
 ## Watchpoints
 

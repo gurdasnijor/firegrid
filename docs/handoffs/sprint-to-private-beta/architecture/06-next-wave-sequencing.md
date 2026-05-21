@@ -12,6 +12,8 @@ Parallel lanes:
 4. Host-sdk export audit: stop exporting substrate internals.
 5. Methodology/examples sweep: remove `hostProjectionObserver` as taught API.
 6. Guardrail lane: ratchet `.dependency-cruiser.cjs` after each merge.
+7. External-effect adapter boundary: move session byte-stream adapters below
+   runtime, and decide the MCP HTTP server / CLI dev-server exceptions.
 
 Acceptance:
 
@@ -19,6 +21,9 @@ Acceptance:
 - currentHostSdkSubstrateDebt shrinks or a finding explains why it cannot;
 - runtime imports no host-sdk;
 - client-sdk imports no runtime.
+- external-effect inventory exceptions are either lower-tier substrate
+  libraries, named binding-edge projection exceptions, or tracked migration
+  beads.
 
 ## Phase 1.5: Surface Hygiene Pass
 
@@ -66,6 +71,13 @@ Sequence:
 
 Choose one side-effect adapter first: Linear or GitHub, not both.
 
+Do not start Phase 2 by adding more ad hoc provider clients. First consume the
+`tf-6w3s` inventory: provider/webhook effects enter through the finite adapter
+set, write protocol-owned facts, and project through channels or typed
+session/control operations. Any new Linear/GitHub/Slack adapter must name its
+DurableTable row family, idempotency key, channel/projection surface, and
+ownership package before implementation.
+
 ## Phase 3: Performance And Hardening
 
 Goal: make the beta reliable and measurable.
@@ -112,4 +124,3 @@ ACCEPTANCE:
   no runtime -> host-sdk import
   no client-sdk -> runtime import
 ```
-
