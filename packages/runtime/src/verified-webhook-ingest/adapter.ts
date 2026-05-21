@@ -13,7 +13,12 @@
  *  - firegrid-verified-webhook-ingest.BOUNDARIES.2
  */
 
-import { Clock, Effect, Match, Schema } from "effect"
+import { Clock, Effect, Either, Match, Schema } from "effect"
+import {
+  LinearWebhookPayloadSchema,
+  type LinearWebhookFact,
+  type LinearWebhookPayload,
+} from "@firegrid/protocol/verified-webhook"
 import {
   VerifiedWebhookFactTable,
   type VerifiedWebhookFact,
@@ -95,6 +100,7 @@ const unsafeSelectedHeaderNames = new Set([
 
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()
+const JsonPayloadSchema = Schema.parseJson(Schema.Unknown)
 
 const headerKey = (name: string) => name.toLowerCase()
 
@@ -207,38 +213,37 @@ const verifySignature = (
     )
     const received = headers[signatureHeaderName]
     if (received === undefined) {
-      return yield* Effect.fail(ingestError({
+      return yield* ingestError({
         op: "webhook/verify",
         source: request.source,
         message: "missing signature header",
-      }))
+      })
     }
     const expected = yield* hmacSha256Hex(
       request.source,
       request.config.secret,
       request.rawBody,
     )
-    return yield* (constantTimeHexEquals(expected, signatureHexFromHeader(received))
-      ? Effect.void
-      : Effect.fail(ingestError({
-        op: "webhook/verify",
-        source: request.source,
-        message: "invalid signature",
-      })))
+    if (constantTimeHexEquals(expected, signatureHexFromHeader(received))) return
+    return yield* ingestError({
+      op: "webhook/verify",
+      source: request.source,
+      message: "invalid signature",
+    })
   })
 
 const parseJsonPayload = (
   request: VerifiedWebhookIngestRequest,
 ): Effect.Effect<unknown, VerifiedWebhookIngestError> =>
-  Effect.try({
-    try: () => JSON.parse(decoder.decode(request.rawBody)) as unknown,
-    catch: (cause) => ingestError({
-      op: "webhook/decode-json",
-      source: request.source,
-      message: "malformed JSON payload",
-      cause,
-    }),
-  })
+  Schema.decodeUnknown(JsonPayloadSchema)(decoder.decode(request.rawBody)).pipe(
+    Effect.mapError((cause) =>
+      ingestError({
+        op: "webhook/decode-json",
+        source: request.source,
+        message: "malformed JSON payload",
+        cause,
+      })),
+  )
 
 const pathValue = (
   value: unknown,
@@ -277,6 +282,57 @@ const selectedHeaders = (
   )
 }
 
+const optionalField = <Key extends string, Value>(
+  key: Key,
+  value: Value | undefined,
+): Partial<Record<Key, Value>> =>
+  value === undefined ? {} : { [key]: value } as Record<Key, Value>
+
+const linearWebhookEventType = (
+  payload: LinearWebhookPayload,
+): string => `${payload.type}.${payload.action}`
+
+const linearWebhookExternalEntityKey = (
+  payload: LinearWebhookPayload,
+): string | undefined => stringAtPath(payload, ["data", "id"])
+
+const makeLinearFact = (
+  request: VerifiedWebhookIngestRequest,
+  headers: Readonly<Record<string, string>>,
+  payload: LinearWebhookPayload,
+  timestamp: string,
+  payloadSha256: string,
+): LinearWebhookFact => {
+  const externalEntityKey = linearWebhookExternalEntityKey(payload)
+  return {
+    factKey: [request.source, payload.webhookId],
+    source: request.source,
+    externalEventKey: payload.webhookId,
+    ...optionalField("externalEntityKey", externalEntityKey),
+    eventType: linearWebhookEventType(payload),
+    receivedAt: request.receivedAt ?? timestamp,
+    verifiedAt: timestamp,
+    signatureScheme,
+    payloadSha256,
+    selectedHeaders: selectedHeaders(
+      headers,
+      request.config.signatureHeaderName ?? defaultSignatureHeaderName,
+      request.config.selectedHeaderNames,
+    ),
+    payload,
+    action: payload.action,
+    type: payload.type,
+    webhookId: payload.webhookId,
+    webhookTimestamp: payload.webhookTimestamp,
+    createdAt: payload.createdAt,
+    ...optionalField("organizationId", payload.organizationId),
+    ...optionalField("url", payload.url),
+    ...optionalField("actor", payload.actor),
+    ...optionalField("data", payload.data),
+    ...optionalField("updatedFrom", payload.updatedFrom),
+  }
+}
+
 const makeFact = (
   request: VerifiedWebhookIngestRequest,
   headers: Readonly<Record<string, string>>,
@@ -284,6 +340,16 @@ const makeFact = (
   timestamp: string,
   payloadSha256: string,
 ): Effect.Effect<VerifiedWebhookFact, VerifiedWebhookIngestError> => {
+  const linearPayload = Schema.decodeUnknownEither(LinearWebhookPayloadSchema)(payload)
+  if (Either.isRight(linearPayload)) {
+    return Effect.succeed(makeLinearFact(
+      request,
+      headers,
+      linearPayload.right,
+      timestamp,
+      payloadSha256,
+    ))
+  }
   const externalEventKey = stringAtPath(
     payload,
     request.config.externalEventKeyPath ?? defaultExternalEventKeyPath,
@@ -373,10 +439,10 @@ export const ingestVerifiedWebhook = (
       Match.exhaustive,
     )
     if (outcome._tag !== "Conflict") return outcome
-    return yield* Effect.fail(ingestError({
+    return yield* ingestError({
       op: "webhook/conflict",
       source: request.source,
       message: "duplicate external event key has different payload hash",
       factKey: fact.factKey,
-    }))
+    })
   })

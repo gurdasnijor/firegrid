@@ -12,8 +12,10 @@ export {
   type VerifiedWebhookFactKey,
 } from "./keys.ts"
 export {
+  LinearWebhookFactSchema,
   VerifiedWebhookFactSchema,
   VerifiedWebhookFactTable,
+  type LinearWebhookFact,
   type VerifiedWebhookFact,
   type VerifiedWebhookFactTableOptions,
   type VerifiedWebhookFactTableService,

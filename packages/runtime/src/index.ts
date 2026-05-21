@@ -133,6 +133,8 @@ export {
 } from "./agent-adapters/index.ts"
 export {
   ingestVerifiedWebhook,
+  LinearWebhookFactSchema,
+  type LinearWebhookFact,
   type VerifiedWebhookFact,
   VerifiedWebhookFactKeyEncoded,
   VerifiedWebhookFactKeySchema,

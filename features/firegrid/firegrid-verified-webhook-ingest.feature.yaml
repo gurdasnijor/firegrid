@@ -27,6 +27,11 @@ components:
       3: Agents can wait on top-level scalar verified webhook fact fields including source, externalEventKey, externalEntityKey, and eventType.
       4: Permission request and resolution events can use the verified webhook fact path when product routes emit source-neutral permission_requested or permission_resolved facts carrying permissionId, correlationId, and contextId or parentSessionId fields.
 
+  LINEAR_FACTS:
+    requirements:
+      1: When an accepted verified webhook payload decodes as the protocol Linear webhook payload schema, ingest writes a row that decodes as LinearWebhookFactSchema.
+      2: Linear webhook fact scalar fields including externalEventKey, externalEntityKey, eventType, action, type, webhookId, webhookTimestamp, and createdAt derive from the decoded Linear payload in one path so top-level values cannot diverge from payload values.
+
   PRODUCTION_SURFACE:
     requirements:
       1: The production API keeps ingestVerifiedWebhook as the raw request verifier/translator for product-owned route adapters and relies on the generic DurableTable collection source-name registration helper rather than a verified-webhook-specific source helper, Firegrid-owned HTTP service, or POST endpoint.
