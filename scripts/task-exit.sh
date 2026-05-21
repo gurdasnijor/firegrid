@@ -37,9 +37,18 @@ if [ -n "$DECISION" ]; then
     && echo "✓ $BEAD → signoff:pending (external_ref set). Add the gate: br dep add <gated-id> $BEAD"
 fi
 
-# 3. commit any remaining work in THIS worktree
-if [ -n "$(git -C "$RR" status --porcelain)" ]; then
-  git -C "$RR" add -A
+# 3. commit any remaining work in THIS worktree.
+#    EXCLUDE .beads/ from the add: a lane's local `br update` operations mutate
+#    .beads/issues.jsonl in the worktree's working tree, and `git add -A` would
+#    otherwise sweep those into the lane commit. The cron is the canonical
+#    pusher of .beads/issues.jsonl (see step 1's "local beads flush only"
+#    comment + the script header). Without this exclude, the lane commit ends
+#    up containing .beads/ changes that then collide non-patch-equivalently
+#    with cron-pushed origin/main .beads/ updates on rebase — the failure that
+#    forced PR #531 (tf-482w) to be closed-as-superseded. Pathspec ':!.beads/'
+#    is git's "exclude" magic syntax; the lane's real work commits as before.
+if [ -n "$(git -C "$RR" status --porcelain -- ':!.beads/')" ]; then
+  git -C "$RR" add -A -- ':!.beads/'
   git -C "$RR" -c commit.gpgsign=false commit -q -m "wip($BEAD): task-exit checkpoint" \
     && echo "✓ committed remaining work on $BR"
 fi

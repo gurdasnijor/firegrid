@@ -18,10 +18,11 @@ import type { RuntimeHostTopologyOptions } from "./types.ts"
 import { RuntimeHostAgentToolHostLive } from "./agent-tool-host-live.ts"
 import { RuntimeStartCapabilityLive } from "./commands.ts"
 import {
-  RuntimeControlRequestReconcilerDaemonLive,
-  RuntimeControlRequestReconcilerLive,
-  RuntimeControlRequestWorkflowEngineLive,
-} from "./control-request-reconciler.ts"
+  RuntimeControlRequestControlPlaneLive,
+} from "@firegrid/runtime/control-plane"
+import {
+  RuntimeControlRequestSideEffectsLive,
+} from "./control-request-side-effects.ts"
 import {
   FiregridRuntimeContextMcpBaseUrlLive,
 } from "./runtime-context-mcp-base-url.ts"
@@ -310,21 +311,23 @@ export const FiregridRuntimeHostLive = (
   const namespaceScoped = namespaceScopedLayer(options)
   const hostScoped = hostScopedLayer(options)
   const hostChannels = SessionSelfChannelsLive(options.channels)
-  const controlRequestServices = RuntimeControlRequestReconcilerLive.pipe(
-    Layer.provideMerge(RuntimeControlRequestWorkflowEngineLive),
-    Layer.provideMerge(RuntimeStartCapabilityLive),
-    Layer.provideMerge(hostChannels),
-  )
-  const controlRequestDaemon = options.controlRequestReconciler === false
-    ? controlRequestServices
-    : RuntimeControlRequestReconcilerDaemonLive.pipe(
-      Layer.provideMerge(controlRequestServices),
-    )
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
-  return RuntimeInputIntentDispatcherLive.pipe(
-    Layer.provideMerge(controlRequestDaemon),
+  const hostPublic = RuntimeInputIntentDispatcherLive.pipe(
+    Layer.provideMerge(RuntimeStartCapabilityLive),
+    Layer.provideMerge(hostChannels),
+  )
+  const controlPlane = RuntimeControlRequestControlPlaneLive({
+    durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+    namespace: options.namespace,
+    ...(options.headers !== undefined ? { headers: options.headers } : {}),
+    daemon: options.controlRequestReconciler !== false,
+  }).pipe(
+    Layer.provideMerge(RuntimeControlRequestSideEffectsLive),
+  )
+  return controlPlane.pipe(
+    Layer.provideMerge(hostPublic),
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),

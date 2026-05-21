@@ -37,6 +37,14 @@
       "types": "./src/agent-tools/index.ts",
       "default": "./src/agent-tools/index.ts"
     },
+    "./channels": {
+      "types": "./src/channels/index.ts",
+      "default": "./src/channels/index.ts"
+    },
+    "./channels/session-permission": {
+      "types": "./src/channels/session-permission.ts",
+      "default": "./src/channels/session-permission.ts"
+    },
     "./agent-output": {
       "types": "./src/agent-output/index.ts",
       "default": "./src/agent-output/index.ts"

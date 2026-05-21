@@ -1,0 +1,25 @@
+feature:
+  name: firegrid-linear-webhook-fact-schema
+  product: firegrid
+  description: Schema-first protocol contract for Linear verified webhook facts before runtime ingest and channel bindings consume the shape.
+
+components:
+  PROTOCOL_SCHEMA:
+    requirements:
+      1: "@firegrid/protocol/verified-webhook exports LinearWebhookFactSchema and its TypeScript type before runtime ingest or channel bindings consume Linear webhook facts."
+      2: Linear webhook facts reuse the source-neutral verified webhook fact fields for deterministic fact key, configured source id, external event/entity keys, event type, receipt and verification timestamps, signature scheme, selected headers, payload hash, and source-owned payload.
+
+  LINEAR_FIELDS:
+    requirements:
+      1: Linear webhook facts expose Linear payload scalars needed by waiters at top level, including action, type, webhookId, webhookTimestamp, createdAt, organizationId, and url.
+      2: Linear webhook facts preserve actor, data, and updatedFrom payload members under Effect Schema validation without narrowing them to Firegrid-owned business semantics.
+
+  EXPORTS:
+    requirements:
+      1: The Linear webhook fact schema remains browser-safe and available from @firegrid/protocol/verified-webhook and the protocol root VerifiedWebhook namespace.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: This feature does not add a Firegrid-owned HTTP route, webhook verification helper, Linear client, channel binding, provider registry, callback URL minting, or runtime ingest behavior.
+      2: This feature is bound by firegrid-platform-invariants.SECURITY.1, firegrid-platform-invariants.SECURITY.2, and firegrid-platform-invariants.AUTHORITY.8.

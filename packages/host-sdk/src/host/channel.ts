@@ -1,9 +1,10 @@
-import { Context, Layer, Option, Schema } from "effect"
 import type {
   ChannelRegistration,
   ChannelSourceClass,
   ChannelTarget,
 } from "@firegrid/protocol/channels"
+import { Context, Layer, Option, Schema } from "effect"
+
 export {
   ChannelDirectionSchema,
   ChannelSourceClassSchema,
@@ -13,17 +14,19 @@ export {
   makeChannelTarget,
   makeEgressChannel,
   makeIngressChannel,
-  type AppendTargetBinding,
-  type BidirectionalChannel,
-  type CallableChannel,
-  type CallTargetBinding,
-  type ChannelDirection,
-  type ChannelRegistration,
-  type ChannelSourceClass,
-  type ChannelTarget,
-  type EgressChannel,
-  type IngressChannel,
-  type TypedStreamBinding,
+} from "@firegrid/protocol/channels"
+export type {
+  AppendTargetBinding,
+  BidirectionalChannel,
+  CallableChannel,
+  CallTargetBinding,
+  ChannelDirection,
+  ChannelRegistration,
+  ChannelSourceClass,
+  ChannelTarget,
+  EgressChannel,
+  IngressChannel,
+  TypedStreamBinding,
 } from "@firegrid/protocol/channels"
 
 export const FactoryEventSchema = Schema.Struct({

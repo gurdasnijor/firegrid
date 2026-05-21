@@ -1,0 +1,28 @@
+feature:
+  name: firegrid-sim3-binding-swap-isolation
+  product: firegrid
+  description: Empirical validation that a scoped SessionPermissionChannel binding can install a policy over the durable permission-response write without leaking across sessions.
+
+components:
+  SESSION_PERMISSION_CHANNEL:
+    requirements:
+      1: The protocol package exposes a SessionPermissionChannel contract with the callable target, request/response schemas, and Context.Tag service identity.
+      2: The Host SDK exposes a default SessionPermissionChannel Live Layer that writes PermissionResponse values to the durable runtime input-intent table.
+      3: The Host SDK exposes a scoped auto-approve policy Layer that supplies a permission decision before delegating to the default durable binding.
+
+  SIMULATION:
+    requirements:
+      1: "Sim 3 composes two sessions that use the same SessionPermissionChannel Tag with different Layers: session A uses a scoped auto-approve policy and session B uses the default durable binding."
+      2: Sim 3 drives permission response calls for both sessions concurrently and queries session-scoped durable response rows after the calls complete.
+      3: Sim 3 asserts session A response rows contain an Allow decision for the matching permission request id.
+      4: Sim 3 asserts session B response rows exist for the matching permission request id and do not contain session A's auto-approve origin.
+
+  FINDING:
+    requirements:
+      1: The finding records the verdict, explicit durable-row queries, query results, and trace evidence for the binding-swap isolation claim.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: Sim 3 does not validate the legacy ChannelInventory string lookup path as the final channel architecture proof.
+      2: Sim 3 does not add a new public client method; the public client permission helpers remain unchanged.

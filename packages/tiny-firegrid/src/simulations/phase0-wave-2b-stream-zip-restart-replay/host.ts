@@ -43,6 +43,7 @@ import {
   RuntimeControlPlaneRecorderLive,
 } from "@firegrid/runtime/control-plane"
 import {
+  appendRuntimeInputDeferred,
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
   type WorkflowExecutionRow,
@@ -89,9 +90,6 @@ import {
   PerContextRuntimeOutputWriter,
   PerContextRuntimeOutputWriterLive,
 } from "../../../../host-sdk/src/host/per-context-runtime-output.ts"
-import {
-  appendRuntimeInputDeferred,
-} from "../../../../host-sdk/src/host/runtime-input-deferred.ts"
 import {
   RuntimeContextWorkflowSession,
   runtimeInputDeferredFor,

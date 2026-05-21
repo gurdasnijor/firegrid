@@ -18,8 +18,8 @@
       "default": "./src/agent-event-pipeline/tool-execution/index.ts"
     },
     "./control-plane": {
-      "types": "./src/authorities/index.ts",
-      "default": "./src/authorities/index.ts"
+      "types": "./src/control-plane/index.ts",
+      "default": "./src/control-plane/index.ts"
     },
     "./runtime-output": {
       "types": "./src/agent-event-pipeline/authorities/runtime-output-public.ts",

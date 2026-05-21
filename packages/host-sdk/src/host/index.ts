@@ -47,6 +47,12 @@ export {
   sessionAgentOutputChannel,
 } from "./channels/session-agent-output/index.ts"
 export {
+  SessionPermissionAutoApproveLayer,
+  SessionPermissionChannelLive,
+  SessionPermissionDecisionMissing,
+  makeSessionPermissionChannel,
+} from "./channels/session-permission/index.ts"
+export {
   SessionSelfChannelsLive,
   SessionSelfCheckpointChannel,
   SessionSelfCheckpointChannelTarget,
@@ -144,18 +150,6 @@ export {
   type SessionLogChannel,
   type SessionLogRow,
 } from "./session-log-channel.ts"
-export {
-  RuntimeControlRequestReconciler,
-  RuntimeControlRequestReconcilerDaemonLive,
-  RuntimeControlRequestReconcilerLive,
-  RuntimeControlRequestWorkflowEngine,
-  RuntimeControlRequestWorkflowEngineLive,
-  reconcileRuntimeControlRequestsOnce,
-  runRuntimeControlRequestReconciler,
-  runtimeControlRequestReconcilerDefaults,
-  type RuntimeControlRequestReconcilerOptions,
-  type RuntimeControlRequestReconcilerService,
-} from "./control-request-reconciler.ts"
 export {
   FiregridEnvBindingsFromEnv,
   FiregridLocalHostLive,

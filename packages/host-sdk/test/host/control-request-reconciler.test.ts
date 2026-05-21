@@ -17,11 +17,13 @@ import { Data, Effect, Fiber, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
+} from "../../src/host/index.ts"
+import {
   reconcileRuntimeControlRequestsOnce,
   runtimeControlRequestReconcilerDefaults,
   runRuntimeControlRequestReconciler,
   type RuntimeControlRequestReconcilerOptions,
-} from "../../src/host/index.ts"
+} from "@firegrid/runtime/control-plane"
 import {
   runtimeControlRequestWorkflowExecutionId,
   runtimeControlRequestWorkflowStreamUrl,
@@ -526,7 +528,6 @@ setTimeout(shutdown, 8_000)
       Effect.gen(function* () {
         yield* insertRequests(firstContextId, new Date().toISOString(), runtime)
         const reconciler = yield* runRuntimeControlRequestReconciler({
-          pollIntervalMs: 25,
           claimWindowMs: 60_000,
         }).pipe(Effect.fork)
         yield* waitForStartedRuns([firstContextId])

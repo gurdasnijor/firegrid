@@ -62,7 +62,6 @@ import {
   FiregridMcpServerLayer,
   firegridRunCreatedBy,
   localProcessSpawnEnvFromHostEnv,
-  reconcileRuntimeControlRequestsOnce,
   RuntimeEnvResolverPolicy,
   runConfigToIngressRequest,
   runtimeContextMcpPath,
@@ -254,7 +253,7 @@ const executeRun = (config: LaunchConfig, externalKey: CliExternalKey) =>
       `firegrid:run: launched context ${session.contextId} (${config.agentArgv.join(" ")})`,
     )
 
-    yield* reconcileRuntimeControlRequestsOnce()
+    yield* session.whenReady
     const initialPrompt = runConfigToIngressRequest(config, session.contextId)
     if (initialPrompt !== undefined) {
       yield* appendRuntimeIngress(initialPrompt)
@@ -393,7 +392,7 @@ const seedContextAndPrintReady = (
       runtime: launchConfigToPublicRuntimeIntent(runConfig),
       createdBy: startCreatedBy,
     })
-    yield* reconcileRuntimeControlRequestsOnce()
+    yield* session.whenReady
     const initialPrompt = runConfigToIngressRequest(runConfig, session.contextId)
     if (initialPrompt !== undefined) {
       yield* appendRuntimeIngress(initialPrompt)
