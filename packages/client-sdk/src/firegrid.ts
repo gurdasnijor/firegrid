@@ -11,6 +11,7 @@
 // receipts preserve the stored RuntimeInputIntentRow client contract.
 
 import {
+  ContextNotFound,
   PublicLaunchRequestSchema,
   PublicLaunchRuntimeIntentSchema,
   RuntimeControlPlaneTable,
@@ -101,11 +102,13 @@ export interface ClientOptions {
   readonly txTimeoutMs?: number
   /**
    * Upper bound (ms) for the reflected-context wait that dependent writes
-   * (e.g. `firegrid.prompt`) perform before appending. A real in-flight
-   * context materializes well within this window; an unknown/typo context
-   * id never materializes, so the wait must be bounded — on timeout the
-   * dependent write falls through to its append, whose context-existence
-   * check surfaces `ContextNotFound` instead of hanging forever. tf-1r3h.
+   * (`firegrid.prompt`, `firegrid.sessions.prompt`, `session.prompt`,
+   * `session.start`) perform before writing. A real in-flight context
+   * materializes well within this window; an unknown/typo context id never
+   * materializes, so the wait is bounded — on timeout the barrier does one
+   * authoritative control-plane read and fails with `ContextNotFound`
+   * (wrapped in `AppendError`) if the context is absent, instead of hanging
+   * forever. Defaults to 30s. tf-1r3h.
    */
   readonly contextReflectionTimeoutMs?: number
 }
@@ -770,9 +773,35 @@ const make = (config: ResolvedConfig) =>
       contextId: string,
     ): Effect.Effect<void, AppendError> =>
       // firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2
-      waitUntilContextReady(contextId).pipe(
-        Effect.mapError(cause => new AppendError({ contextId, cause })),
-      )
+      //
+      // tf-1r3h (#587 review): the reflected-context barrier is BOUNDED. A
+      // real in-flight context materializes within the window and the wait
+      // completes normally; an unknown/typo context id never materializes,
+      // so an unbounded wait would hang forever (the README-hang failure
+      // class). On timeout we do one authoritative control-plane read:
+      //   - present (projection merely lagged the table) -> proceed;
+      //   - absent -> fail with the same ContextNotFound the append path
+      //     produces, so every dependent write (prompt / sessions.prompt /
+      //     session.prompt / session.start) surfaces a bounded error instead
+      //     of hanging. session.start in particular has no append-side
+      //     existence check, so the barrier is the only guard against an
+      //     orphan start-request row for a context that will never exist.
+      Effect.gen(function* () {
+        const ready = yield* Effect.timeoutOption(
+          waitUntilContextReady(contextId),
+          Duration.millis(config.contextReflectionTimeoutMs),
+        ).pipe(Effect.mapError(cause => new AppendError({ contextId, cause })))
+        if (Option.isSome(ready)) return
+        const existing = yield* control.contexts.get(contextId).pipe(
+          Effect.mapError(cause => new AppendError({ contextId, cause })),
+        )
+        if (Option.isNone(existing)) {
+          return yield* new AppendError({
+            contextId,
+            cause: new ContextNotFound({ contextId }),
+          })
+        }
+      })
 
     const appendHostPrompt = (
       request: PublicPromptRequest,
@@ -996,18 +1025,10 @@ const make = (config: ResolvedConfig) =>
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
         const decoded = yield* decodePublicPromptRequest(request)
-        // tf-1r3h (#587 review): the reflected-context barrier must be
-        // BOUNDED. A real in-flight context materializes within the
-        // window and the append proceeds normally; an unknown/typo
-        // context id never materializes, so an unbounded wait would hang
-        // forever (the README-hang failure class). On timeout we fall
-        // through to appendHostPrompt, whose context-existence check
-        // surfaces ContextNotFound (mapped to AppendError) — the same
-        // bounded error the pre-barrier path produced for unknown ids.
-        yield* Effect.timeoutOption(
-          awaitSessionDependentContext(decoded.contextId),
-          Duration.millis(config.contextReflectionTimeoutMs),
-        )
+        // tf-1r3h: bounded reflected-context barrier (see
+        // awaitSessionDependentContext). Unknown ids fail bounded with
+        // ContextNotFound rather than hanging.
+        yield* awaitSessionDependentContext(decoded.contextId)
         return yield* appendHostPrompt(decoded)
       }),
       sessions: {
