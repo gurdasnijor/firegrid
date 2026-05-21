@@ -34,8 +34,8 @@ composition questions in clean room:
 - how a host/kernel workflow launches and owns child session workflows;
 - how child workflows receive prompt/cancel/close/resume signals;
 - how resource state is represented without one table per CRUD operation;
-- how edge completion receipts are derived from route metadata and terminal
-  evidence.
+- how edge completion receipts are derived from route metadata and resource
+  state.
 
 This reference belongs in `packages/tiny-firegrid/`, because the transactional
 cutover rule explicitly allows partial evidence and prototype shapes there. It
@@ -125,18 +125,11 @@ SessionResource {
   updatedAt
 }
 
-SessionEvidence {
-  id
-  sessionId
-  revision
-  kind
-  payload
-  recordedAt
-}
 ```
 
-The workflow owns transitions of `status` and `revision`. Evidence rows explain
-what happened, but they are not a second control plane.
+The workflow owns transitions of `status` and `revision`. Simulation evidence is
+captured by OTel traces emitted by the tiny-firegrid runner, not by durable
+scenario/e2e assertion rows.
 
 This is the core rule:
 
@@ -148,8 +141,8 @@ Acceptable durable shapes:
 
 - one resource table per durable aggregate such as host, session, run, or
   channel mailbox;
-- append-only evidence/event rows for observation, receipts, trace correlation,
-  and audit;
+- public observation records only when they are part of the production-shaped
+  API surface being modeled;
 - workflow-engine state for idempotent workflow execution, activities,
   deferred signals, and durable sleeps;
 - explicit queue rows only when the operation is truly a queue with claim/ack
@@ -218,12 +211,12 @@ edge/client request
   -> HostKernelWorkflow mailbox receives intent
   -> HostKernelWorkflow applies one state transition
   -> optional child SessionWorkflow execute/signal
-  -> resource record + evidence rows update
+  -> resource status/revision update
   -> route returns production-shaped receipt/response
 ```
 
 The router returns receipts from route metadata plus terminal or accepted
-evidence. Callers do not pass `sync`, `awaitMode`, or `isComplete` flags.
+resource state. Callers do not pass `sync`, `awaitMode`, or `isComplete` flags.
 
 ## HostKernelWorkflow
 
@@ -311,7 +304,6 @@ packages/tiny-firegrid/src/simulations/target-architecture-reference/
   runtime/
     resources/
       session-resource.ts          # tiny durable aggregate records
-      session-evidence.ts          # append-only evidence rows
     channels/
       host-control-routes.ts       # route bodies; depends on kernel contract only
       router-live.ts               # runtime dispatch interpreter / spans
@@ -321,7 +313,7 @@ packages/tiny-firegrid/src/simulations/target-architecture-reference/
       host-kernel-workflow.ts      # parent workflow state machine
       session-workflow.ts          # child workflow state machine
     observation/
-      session-observation.ts       # resource/evidence -> public observation projection
+      session-observation.ts       # resource state -> public observation projection
 
   host-sdk/
     host-live.ts                   # host topology: runtime + router + edges
@@ -342,7 +334,7 @@ visible:
 | Tiny reference folder | Production boundary it represents |
 | --- | --- |
 | `protocol/` | `@firegrid/protocol`: schemas, targets, route contracts, receipts, observation views |
-| `runtime/resources/` | runtime/kernel-private durable state and evidence |
+| `runtime/resources/` | runtime/kernel-private durable resource state |
 | `runtime/channels/` | `@firegrid/runtime/channels`: route implementations and dispatch interpreter |
 | `runtime/kernel/` | `@firegrid/runtime/kernel`: workflow-owned lifecycle/control state |
 | `runtime/observation/` | runtime-owned projection from internal evidence to public observations |
@@ -354,9 +346,10 @@ visible:
 production package does not yet expose the desired neutral contract. If a local
 alias is needed, it is a finding against the production contract surface.
 
-`runtime/resources/` owns the tiny resource/evidence tables. It should remain
+`runtime/resources/` owns the tiny durable resource records. It should remain
 small enough to read in one sitting and must not grow request/claim/completion
-table families per operation.
+table families per operation. OTel spans are the simulation evidence; durable
+resource tables are the modeled runtime state.
 
 `runtime/channels/host-control-routes.ts` builds route descriptors and route
 bodies. It imports `runtime/kernel/control-plane.ts` but not workflow
@@ -395,8 +388,8 @@ artifacts:
 3. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.3` - route tests
    use a fake kernel signal service, proving router-to-workflow decoupling.
 4. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.4` - durable
-   artifacts contain resource/evidence records and workflow state, not
-   per-operation request/claim/completion table families.
+   artifacts contain resource records and workflow state, not per-operation
+   request/claim/completion table families.
 5. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.5` - a run proves
    create/load, start, prompt, cancel, and one of close/resume with duplicate
    request identity and child workflow ownership.
