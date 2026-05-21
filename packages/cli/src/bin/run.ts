@@ -520,10 +520,11 @@ const acpRuntimeIntent = (
   config: LaunchConfig,
   request: AcpStdioSessionRuntimeRequest,
 ) =>
-  launchConfigToPublicRuntimeIntent({
+  // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.5
+  launchConfigToPublicRuntimeIntent(withRuntimeContextMcpMarker({
     ...config,
     ...(config.cwd === undefined ? { cwd: request.request.cwd } : {}),
-  })
+  }))
 
 const processInputStream = (): ReadableStream<Uint8Array> =>
   Readable.toWeb(globalThis.process.stdin) as ReadableStream<Uint8Array>
@@ -536,18 +537,27 @@ const hostAcpLayer = (
   config: AcpConfig,
 ) => {
   const headers = durableTableHeadersFromEnv()
-  return AcpStdioEdgeLive({
+  const host = firegridLocalHostLayer(
+    durableStreams,
+    config.namespace,
+    config.runConfig,
+    headers,
+  )
+  const acpEdge = AcpStdioEdgeLive({
     input: processInputStream(),
     output: processOutputStream(),
     runtime: request => acpRuntimeIntent(config.runConfig, request),
-  }).pipe(
-    Layer.provideMerge(firegridLocalHostLayer(
-      durableStreams,
-      config.namespace,
-      config.runConfig,
-      headers,
-    )),
+  })
+  // firegrid-zed-acp-stdio-external-agent.CLI_HELPER.3
+  // firegrid-zed-acp-stdio-external-agent.MCP_BOUNDARY.4
+  const mcpServer = Layer.discard(
+    FiregridMcpServerLayer({
+      host: defaultMcpHost,
+      port: defaultMcpPort,
+      path: ensurePathInput(defaultMcpPath),
+    }),
   )
+  return Layer.mergeAll(acpEdge, mcpServer).pipe(Layer.provideMerge(host))
 }
 
 const runAcpStdio = (

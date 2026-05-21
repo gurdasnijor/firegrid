@@ -303,16 +303,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
         })
         break
       case "Status":
-        await this.connection.sessionUpdate({
-          sessionId: acpSessionId,
-          update: {
-            sessionUpdate: "agent_message_chunk",
-            content: {
-              type: "text",
-              text: output.event.kind,
-            },
-          },
-        })
+        // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6
         break
       case "Ready":
       case "PermissionRequest":
