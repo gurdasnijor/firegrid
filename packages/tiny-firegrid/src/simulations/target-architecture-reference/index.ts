@@ -5,7 +5,7 @@ import { targetArchitectureReferenceHost } from "./workflow.ts"
 export default defineSimulation({
   id: "target-architecture-reference",
   description:
-    "tf-pzsl Phase 0A: channel dispatch writes a workflow-owned DurableTable, the workflow reads rows and advances a durable cursor.",
+    "tf-ly2g Phase 0B: workflow-owned output append log, durable output cursor, result return, and O(outputs) observation.",
   host: targetArchitectureReferenceHost,
   driver: targetArchitectureReferenceDriver,
 })
