@@ -4,7 +4,7 @@ import {
   ApprovalCallRequestSchema,
 } from "@firegrid/protocol/agent-tools"
 import {
-  RuntimeContextMcpChannelCatalogLive,
+  RuntimeContextChannelRouterLive,
   dmChannel,
   eventChannelTarget,
   ensurePathInput,
@@ -331,7 +331,7 @@ const darkFactoryChannelsLive = (
   | ApprovalOperatorChannel
 > =>
   Layer.mergeAll(
-    RuntimeContextMcpChannelCatalogLive(darkFactoryChannelRegistrations(channels)),
+    RuntimeContextChannelRouterLive(darkFactoryChannelRegistrations(channels)),
     darkFactoryChannelTagsLive(channels),
   )
 

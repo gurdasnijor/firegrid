@@ -5,8 +5,5 @@ export {
 export {
   submitSessionPermissionResponse,
 } from "./session-permission.ts"
-export {
-  hostSessionLifecycleStream,
-  makeHostControlSnapshot,
-  type HostControlSnapshotConfig,
-} from "./host-control.ts"
+export * from "./router.ts"
+export * from "./host-control.ts"

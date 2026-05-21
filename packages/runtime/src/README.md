@@ -66,6 +66,9 @@ These are intentionally not agent event-pipeline stages:
   observation stream capability tags. Consumers such as wait routers and
   future channel registries use this folder for typed stream selection without
   depending on workflow ownership.
+- `channels/`: public runtime channel router capabilities. The implementation
+  lives in runtime authority/provider modules; this folder is the stable import
+  surface for route metadata and dispatch composition.
 - `workflow-engine/`: workflow substrate adapter and runtime-owned workflow
   definitions (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
   Host packages install live workflow Layers and provide topology; they do not

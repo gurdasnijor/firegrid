@@ -56,7 +56,7 @@ import {
   RuntimeInputIntentDispatcherLive,
 } from "./runtime-context-workflow-runtime.ts"
 import {
-  type RuntimeContextMcpChannelCatalog,
+  type RuntimeChannelRouter,
 } from "./channel.ts"
 import {
   SessionSelfChannelsLive,
@@ -301,7 +301,7 @@ export type FiregridHost =
   | RuntimeLocalContextResolver
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
-  | RuntimeContextMcpChannelCatalog
+  | RuntimeChannelRouter
 
 export const FiregridRuntimeHostLive = (
   options: RuntimeHostTopologyOptions,

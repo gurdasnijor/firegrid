@@ -4,7 +4,7 @@ import {
 } from "@firegrid/runtime/control-plane"
 import { Effect, Layer, type Scope } from "effect"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
-import type { RuntimeContextMcpChannelCatalog } from "./channel.ts"
+import type { RuntimeChannelRouter } from "./channel.ts"
 import { startRuntime } from "./commands.ts"
 import { PerContextRuntimeOutputWriter } from "./per-context-runtime-output.ts"
 import { RuntimeContextWorkflowRuntime } from "./runtime-context-workflow-runtime.ts"
@@ -21,7 +21,7 @@ export const RuntimeControlRequestSideEffectsLive = Layer.scoped(
     const runtime = yield* RuntimeContextWorkflowRuntime
     const captured = yield* Effect.context<
       | AgentToolHost
-      | RuntimeContextMcpChannelCatalog
+      | RuntimeChannelRouter
       | HostRuntimeContextExecutionEnv
       | PerContextRuntimeOutputWriter
       | RuntimeContextWorkflowRuntime

@@ -10,9 +10,8 @@ import {
   type HostId,
 } from "@firegrid/protocol/launch"
 import {
-  RuntimeContextMcpChannelCatalog,
+  RuntimeChannelRouter,
   channelMetadata,
-  findRuntimeContextMcpChannel,
   FiregridRuntimeHostWithWorkflowLive,
   makeCallableChannel,
   makeChannelTarget,
@@ -131,12 +130,13 @@ describe("channel Tags", () => {
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
-        const inventory = yield* RuntimeContextMcpChannelCatalog
-        const provided = Option.getOrThrow(findRuntimeContextMcpChannel(inventory, "factory.events"))
-        const metadata = channelMetadata(provided)
+        const router = yield* RuntimeChannelRouter
+        const route = yield* router.route("factory.events")
+        const metadata = router.metadata.find(entry =>
+          entry.target === route.descriptor.target)
         return {
-          direction: metadata.direction,
-          target: metadata.target,
+          direction: metadata?.direction,
+          target: metadata?.target,
           text: JSON.stringify(metadata),
         }
       }).pipe(

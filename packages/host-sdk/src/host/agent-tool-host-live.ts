@@ -56,7 +56,7 @@ import type {
   ApprovalCallPermissionRequest,
   ApprovalCallRequest,
 } from "@firegrid/protocol/agent-tools"
-import type { RuntimeContextMcpChannelCatalog } from "./channel.ts"
+import type { RuntimeChannelRouter } from "./channel.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.3
 // Host-coupled AgentToolHost live behavior lives here instead of the host
@@ -199,7 +199,7 @@ const runtimeHostAgentToolHostService = (captured: {
   readonly agentOutputEvents: RuntimeAgentOutputAfterEvents["Type"]
   // TFIND-031: ambient host durable substrate captured at layer-build
   // time, re-provided into the deferred child-context workflow run.
-  readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv | RuntimeContextMcpChannelCatalog>
+  readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv | RuntimeChannelRouter>
   // Gap-2: optional provider side-effect capability resolved at
   // layer-build time. NOT part of `hostContext` — never re-provided into
   // the deferred child-context workflow capture (TFIND-031 boundary held).
@@ -561,7 +561,7 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     // deferred child-context workflow (run later, outside this gen) can
     // re-provide it. Always present here via the composed host layer.
     const hostContext = yield* Effect.context<
-      HostRuntimeContextExecutionEnv | RuntimeContextMcpChannelCatalog
+      HostRuntimeContextExecutionEnv | RuntimeChannelRouter
     >()
     // Gap-2: optional provider side-effect capability. Resolved at
     // layer-build time, NOT folded into `hostContext` — the TFIND-031

@@ -12,7 +12,11 @@ export {
   makeRuntimeContextMcpChannelCatalog,
   RuntimeContextMcpChannelCatalog,
   RuntimeContextMcpChannelCatalogLive,
+  RuntimeChannelRouter,
+  RuntimeContextChannelRouterLive,
+  makeRuntimeContextChannelRouter,
   type ChannelMetadata,
+  type RuntimeChannelRouterService,
   type RuntimeContextMcpChannelCatalogService,
 } from "./channel.ts"
 export * from "@firegrid/protocol/channels"

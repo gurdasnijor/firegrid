@@ -475,6 +475,7 @@ This inventory is the review checklist for the post-`#250` tree.
 | `codecs/` | Scoped protocol session providers and wire normalization | Target after Effect-native session layer refactor; event barrel compatibility should drop. | Imported by `events/index.ts`. | Yes, with `events/` |
 | `host/` | Host topology and command entrypoints | Mixed; source of most cycles. | Owns shared runtime errors today. | Yes |
 | `streams/` | Runtime observation source schemas and stream capability tags | Target substrate-neutral surface; not owned by durable wait tools. | Provides typed observation source selection for wait routers and future channel registry consumers. | No |
+| `channels/` | Public channel router capabilities | Target public surface for route metadata and dispatch composition; route providers stay in authority/provider modules. | Exposes runtime-owned router tags without exposing DurableTable route bodies. | No |
 | `waits/` | Durable coordination operator | Mixed; wait row authority belongs with wait bounded context. | Owns row schema/source registry/router. | No |
 | `agent-tools/` | Runtime tool schemas, MCP exposure, and lowering | Mixed; MCP host couples to host authority. | Host/tool composition overlap. | Yes, via `host/` |
 | `agent-adapters/` | Projections/adapters over codec sessions | Acceptable sibling surface. Keep out of durable runtime pipeline. | Adapter projection only. | No |

@@ -23,8 +23,8 @@ import type {
 } from "@firegrid/runtime/workflow-engine"
 import { Context, Effect, Layer, Option, Stream } from "effect"
 import {
-  RuntimeContextMcpChannelCatalog,
-  makeRuntimeContextMcpChannelCatalog,
+  RuntimeChannelRouter,
+  makeRuntimeContextChannelRouter,
 } from "../../channel.ts"
 import {
   RuntimeContextCheckpointSource,
@@ -309,7 +309,7 @@ export const SessionSelfChannelsLive = (
 ): Layer.Layer<
   | SessionSelfLifecycleChannel
   | SessionSelfCheckpointChannel
-  | RuntimeContextMcpChannelCatalog,
+  | RuntimeChannelRouter,
   never,
   RuntimeControlPlaneTable | RuntimeContextCheckpointSource
 > => Layer.unwrapEffect(
@@ -318,8 +318,8 @@ export const SessionSelfChannelsLive = (
       Layer.succeed(SessionSelfLifecycleChannel, lifecycle),
       Layer.succeed(SessionSelfCheckpointChannel, checkpoint),
       Layer.succeed(
-        RuntimeContextMcpChannelCatalog,
-        makeRuntimeContextMcpChannelCatalog([
+        RuntimeChannelRouter,
+        makeRuntimeContextChannelRouter([
           ...mcpChannels,
           lifecycle,
           checkpoint,

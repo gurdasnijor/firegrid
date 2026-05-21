@@ -49,6 +49,10 @@
       "types": "./src/channels/index.ts",
       "default": "./src/channels/index.ts"
     },
+    "./channels/router": {
+      "types": "./src/channels/router.ts",
+      "default": "./src/channels/router.ts"
+    },
     "./observations": {
       "types": "./src/observations/index.ts",
       "default": "./src/observations/index.ts"

@@ -2,53 +2,33 @@ import {
   HostContextSnapshotChannel,
   HostContextSnapshotChannelTarget,
   HostContextSnapshotRequestSchema,
-  HostContextsChannel,
-  HostContextsCreateChannel,
-  HostPermissionRespondChannel,
-  HostPromptChannel,
   HostSessionSnapshotChannel,
   HostSessionSnapshotChannelTarget,
   HostSessionSnapshotRequestSchema,
-  HostSessionsStartChannel,
   RuntimeContextSnapshotSchema,
-  SessionLifecycleChannel,
-  SessionLifecycleChannelTarget,
-  SessionPromptChannel,
   makeCallableChannel,
-  makeIngressChannel,
+  type HostContextsChannel,
+  type HostContextsCreateChannel,
+  type HostPermissionRespondChannel,
+  type HostPromptChannel,
+  type HostSessionsStartChannel,
+  type SessionLifecycleChannel,
+  type SessionPromptChannel,
 } from "@firegrid/protocol/channels"
 import {
   RuntimeControlPlaneTable,
-  RuntimeRunEventSchema,
-  makeHostContextsChannel,
-  makeHostContextsCreateChannel,
-  makeHostPermissionRespondChannel,
-  makeHostPromptChannel,
-  makeHostSessionsStartChannel,
-  makeSessionPromptChannelForSession,
 } from "@firegrid/protocol/launch"
 import {
-  hostSessionLifecycleStream,
+  RuntimeHostControlChannelsLive,
   makeHostControlSnapshot,
+  type HostPlaneChannelRouter,
 } from "@firegrid/runtime/channels"
 import { Effect, Layer } from "effect"
 import { RuntimeHostConfig } from "../../config.ts"
 
-// tf-bffo (PARTIAL): the durable snapshot reads + the session-lifecycle run stream
-// now live in @firegrid/runtime/channels; this layer composes them.
-//
-// REMAINING CARVEOUT (tf-9x11, blocks tf-bffo): the contexts.create / prompt /
-// session.prompt / sessions.start / permissions.respond request-row channel lives are
-// still constructed here from RuntimeControlPlaneTable via the @firegrid/protocol/launch
-// factories (makeHostContextsCreateChannel(control), etc.). Those table-bound channel
-// lives still sit ABOVE the runtime channels box and are NOT relocated by this PR.
-// Canonical end-state: docs/sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md (tf-rd3d) —
-// protocol owns route contracts, runtime/kernel owns route IMPLEMENTATIONS, host-sdk
-// composes the router (FiregridHostChannelRouterLive) + edges. These factory-built
-// channel lives are route implementations that belong on the runtime side of the
-// router; host-sdk must NOT own durable route bodies in the end state. The router
-// end-to-end implementation (which replaces HostControlChannelsLive) is tracked by
-// tf-9x11.
+// Host-control write/read route bindings live in @firegrid/runtime/channels.
+// Host-sdk keeps only the snapshot bindings that need RuntimeHostConfig to
+// open per-context output streams.
 
 type HostControlChannels =
   | HostContextsCreateChannel
@@ -60,6 +40,7 @@ type HostControlChannels =
   | HostContextsChannel
   | SessionLifecycleChannel
   | HostPermissionRespondChannel
+  | HostPlaneChannelRouter
 
 export const HostControlChannelsLive =
   Layer.unwrapEffect(
@@ -72,20 +53,7 @@ export const HostControlChannelsLive =
         ...(config.headers === undefined ? {} : { headers: config.headers }),
       })
 
-      return Layer.mergeAll(
-        Layer.succeed(
-          HostContextsCreateChannel,
-          makeHostContextsCreateChannel(control),
-        ),
-        Layer.succeed(HostPromptChannel, makeHostPromptChannel(control)),
-        Layer.succeed(SessionPromptChannel, {
-          forSession: sessionId =>
-            makeSessionPromptChannelForSession(control, sessionId),
-        }),
-        Layer.succeed(
-          HostSessionsStartChannel,
-          makeHostSessionsStartChannel(control),
-        ),
+      const snapshotChannels = Layer.mergeAll(
         Layer.succeed(
           HostContextSnapshotChannel,
           makeCallableChannel({
@@ -104,23 +72,9 @@ export const HostControlChannelsLive =
             call: request => snapshotForContext(request.sessionId),
           }),
         ),
-        Layer.succeed(
-          HostContextsChannel,
-          makeHostContextsChannel(control),
-        ),
-        Layer.succeed(SessionLifecycleChannel, {
-          forSession: sessionId =>
-            makeIngressChannel({
-              target: SessionLifecycleChannelTarget,
-              schema: RuntimeRunEventSchema,
-              sourceClass: "static-source",
-              stream: hostSessionLifecycleStream(control, sessionId),
-            }),
-        }),
-        Layer.succeed(
-          HostPermissionRespondChannel,
-          makeHostPermissionRespondChannel(control),
-        ),
+      )
+      return RuntimeHostControlChannelsLive.pipe(
+        Layer.provideMerge(snapshotChannels),
       )
     }),
   ) as Layer.Layer<
