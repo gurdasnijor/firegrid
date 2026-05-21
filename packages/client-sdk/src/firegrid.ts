@@ -755,6 +755,14 @@ const make = (config: ResolvedConfig) =>
         Effect.mapError(cause => new PreloadError({ cause })),
       )
 
+    const awaitSessionDependentContext = (
+      contextId: string,
+    ): Effect.Effect<void, AppendError> =>
+      // firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2
+      waitUntilContextReady(contextId).pipe(
+        Effect.mapError(cause => new AppendError({ contextId, cause })),
+      )
+
     const appendRuntimeInputIntent = (
       request: RuntimeIngressRequest,
     ): Effect.Effect<RuntimeInputIntentRow, AppendError> =>
@@ -889,6 +897,7 @@ const make = (config: ResolvedConfig) =>
               "firegrid.session.id": sessionId,
             }, Effect.gen(function* () {
               const decoded = yield* decodeSessionHandlePromptInput(request)
+              yield* awaitSessionDependentContext(sessionId)
               yield* Effect.annotateCurrentSpan({
                 "firegrid.context.id": sessionId,
                 "firegrid.input.idempotency_key": decoded.idempotencyKey ?? "",
@@ -906,9 +915,12 @@ const make = (config: ResolvedConfig) =>
             withClientSpan("firegrid.client.session.start", {
               "firegrid.session.id": sessionId,
               "firegrid.context.id": sessionId,
-            }, hostSessionsStartChannel.binding.call({ sessionId }).pipe(
-              Effect.mapError(cause => new AppendError({ contextId: sessionId, cause })),
-            )),
+            }, Effect.gen(function*() {
+              yield* awaitSessionDependentContext(sessionId)
+              return yield* hostSessionsStartChannel.binding.call({ sessionId }).pipe(
+                Effect.mapError(cause => new AppendError({ contextId: sessionId, cause })),
+              )
+            })),
           snapshot: () => readSnapshot(sessionId),
           wait: waitClient,
           permissions: permissionsClient,
@@ -991,6 +1003,7 @@ const make = (config: ResolvedConfig) =>
           "firegrid.session.id": request.sessionId,
         }, Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)
+          yield* awaitSessionDependentContext(decoded.sessionId)
           yield* Effect.annotateCurrentSpan({
             "firegrid.context.id": decoded.sessionId,
             "firegrid.input.id": decoded.inputId ?? "",
