@@ -7,22 +7,26 @@ components:
   BENCH_SUBSTRATE:
     requirements:
       1: The simulation uses one DurableTable-backed bench substrate for item events, dispatch rows, report rows, and score rows.
-      2: Item events, worker actions, dispatch, and reports are exposed as channel contracts instead of direct table access from participant code.
+      2: Item events, worker actions, dispatch, claims, reports, and scores are exposed as channel contracts instead of direct table access from participant code.
+      3: The driver seeds external task events and observes final participant artifacts without reading or writing host channel bindings.
 
   TOPOLOGY_ARMS:
     requirements:
       1: The simulation runs monolithic, orchestrated worker, and choreographed peer arms over the same deterministic item set.
       2: The orchestrated arm delegates work through dispatch rows and gathers worker report rows.
       3: The choreographed arm lets peers coordinate from shared item-event rows without a supervisor dispatch row.
+      4: Choreographed peers emit claim rows before worker actions and decide locally whether to report each item.
 
   OBSERVABILITY:
     requirements:
       1: A default run completes at least three items for every topology arm.
       2: Each topology arm writes one deterministic score row.
       3: The runner trace contains readable arm and participant spans for simulate:show.
+      4: The run output includes participant-produced evidence for reports, claims, actions, and score rows.
 
 constraints:
   PUBLIC_SURFACE:
     requirements:
       1: Participant sessions launch through the public Firegrid client session surface with the locked primitive runtime-context MCP profile enabled.
       2: The simulation host composes its channels inline and does not import product configurations or host runtime internals.
+      3: Participant behavior uses the public primitive tool surface (`wait_for`, `wait_for_any`, `send`, and `call`) instead of host-sdk/runtime/kernel internals.

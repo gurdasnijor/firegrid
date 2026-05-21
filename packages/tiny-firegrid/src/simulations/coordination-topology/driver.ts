@@ -1,15 +1,21 @@
-import { Firegrid, local } from "@firegrid/client-sdk/firegrid"
-import { Chunk, Effect, Stream } from "effect"
+import {
+  Firegrid,
+  local,
+  type RuntimeAgentOutputObservation,
+  type FiregridSessionHandle,
+} from "@firegrid/client-sdk/firegrid"
+import { Effect } from "effect"
 import { agenticPatternsExternalKey } from "../agentic-patterns-primitive-profile/profile.ts"
 import {
-  awaitCoordinationTopologyApi,
+  coordinationTopologyClaimsTarget,
+  coordinationTopologyDispatchTarget,
   coordinationTopologyItemCount,
+  coordinationTopologyItemEventsTarget,
+  coordinationTopologyReportsTarget,
+  coordinationTopologyScoresTarget,
+  coordinationTopologyWorkerActionTarget,
   coordinationTopologyWorkerCount,
-  type CoordinationDispatchRow,
-  type CoordinationItemEventRow,
-  type CoordinationReportRow,
   type CoordinationScoreRow,
-  type CoordinationTopologyApi,
   type CoordinationTopologyArm,
 } from "./host.ts"
 
@@ -17,6 +23,8 @@ interface Participant {
   readonly label: string
   readonly sessionId: string
   readonly contextId: string
+  readonly marker: ParticipantMarker
+  readonly toolNames: ReadonlyArray<string>
 }
 
 interface ArmResult {
@@ -37,48 +45,493 @@ interface BenchItem {
   readonly value: number
 }
 
+interface ParticipantMarker {
+  readonly role: ParticipantRole
+  readonly arm: CoordinationTopologyArm
+  readonly participantId: string
+  readonly reports: number
+  readonly dispatches: number
+  readonly claims: number
+  readonly actions: number
+  readonly scores: number
+  readonly toolNames: ReadonlyArray<string>
+  readonly score?: CoordinationScoreRow
+}
+
+type ParticipantRole =
+  | "seed"
+  | "monolithic"
+  | "orchestrator-dispatch"
+  | "worker"
+  | "orchestrator-score"
+  | "peer"
+  | "peer-score"
+
+interface ParticipantConfig {
+  readonly role: ParticipantRole
+  readonly runId: string
+  readonly arm: CoordinationTopologyArm
+  readonly participantId: string
+  readonly items: ReadonlyArray<BenchItem>
+  readonly workerIds: ReadonlyArray<string>
+  readonly peerIds: ReadonlyArray<string>
+  readonly createdBy: string
+}
+
 const benchItems: ReadonlyArray<BenchItem> = [
   { itemId: "item-1", value: 2 },
   { itemId: "item-2", value: 3 },
   { itemId: "item-3", value: 5 },
 ]
 
-const nowIso = (): string => new Date().toISOString()
+const channels = {
+  claims: coordinationTopologyClaimsTarget,
+  dispatches: coordinationTopologyDispatchTarget,
+  itemEvents: coordinationTopologyItemEventsTarget,
+  reports: coordinationTopologyReportsTarget,
+  scores: coordinationTopologyScoresTarget,
+  workerAction: coordinationTopologyWorkerActionTarget,
+} as const
 
-const scoreId = (runId: string, arm: CoordinationTopologyArm): string =>
-  `${runId}:${arm}:score`
+const markerPrefix = "COORDINATION_TOPOLOGY_DONE:"
 
-const itemNumber = (itemId: string): number =>
-  Number.parseInt(itemId.replace("item-", ""), 10)
+const workerIds = Array.from(
+  { length: coordinationTopologyWorkerCount },
+  (_, index) => `worker-${index + 1}`,
+)
 
-const workerForItem = (
-  itemId: string,
-  workerIds: ReadonlyArray<string>,
-): string =>
-  workerIds[(itemNumber(itemId) - 1) % workerIds.length] ?? workerIds[0] ?? "worker-0"
+const peerIds = Array.from(
+  { length: coordinationTopologyWorkerCount },
+  (_, index) => `peer-${index + 1}`,
+)
+
+const scoreForMarker = (
+  marker: ParticipantMarker,
+  arm: CoordinationTopologyArm,
+): Effect.Effect<CoordinationScoreRow, Error> => {
+  if (marker.score === undefined) {
+    return failParticipant(
+      marker.participantId,
+      `participant did not emit ${arm} score`,
+    )
+  }
+  return Effect.succeed(marker.score)
+}
 
 const participantExternalId = (
-  api: CoordinationTopologyApi,
+  runId: string,
   arm: CoordinationTopologyArm,
   label: string,
-): string => `${api.runId}:${arm}:${label}`
+): string => `${runId}:${arm}:${label}`
+
+const textDelta = (
+  observation: RuntimeAgentOutputObservation,
+): string | undefined =>
+  observation._tag === "TextChunk" ? observation.event.part.delta : undefined
+
+const parseMarker = (text: string): ParticipantMarker | undefined => {
+  if (!text.startsWith(markerPrefix)) return undefined
+  return JSON.parse(text.slice(markerPrefix.length)) as ParticipantMarker
+}
+
+const failParticipant = (
+  label: string,
+  message: string,
+): Effect.Effect<never, Error> =>
+  Effect.fail(new Error(`${label}: ${message}`))
+
+const waitForParticipantMarker = (
+  session: FiregridSessionHandle,
+  label: string,
+): Effect.Effect<{
+  readonly marker: ParticipantMarker
+  readonly toolNames: ReadonlyArray<string>
+}, unknown> =>
+  Effect.gen(function*() {
+    const toolNames: Array<string> = []
+    while (true) {
+      const output = yield* session.wait.forAgentOutput({ timeoutMs: 20_000 })
+      if (!output.matched) {
+        return yield* failParticipant(label, "timed out waiting for done marker")
+      }
+      if (output.output._tag === "ToolUse" && output.output.toolName !== undefined) {
+        toolNames.push(output.output.toolName)
+      }
+      const markerText = textDelta(output.output)
+      if (markerText !== undefined) {
+        const marker = parseMarker(markerText)
+        if (marker !== undefined) return { marker, toolNames }
+      }
+    }
+  })
+
+const deterministicAgentSource = (config: ParticipantConfig): string => `
+const readline = require("node:readline");
+const config = ${JSON.stringify(config)};
+const channels = ${JSON.stringify(channels)};
+const markerPrefix = ${JSON.stringify(markerPrefix)};
+let sequence = 0;
+let pending = new Map();
+let steps = [];
+let cursor = 0;
+const marker = {
+  role: config.role,
+  arm: config.arm,
+  participantId: config.participantId,
+  reports: 0,
+  dispatches: 0,
+  claims: 0,
+  actions: 0,
+  scores: 0,
+  toolNames: []
+};
+const reports = [];
+const claims = [];
+
+const emit = value => process.stdout.write(JSON.stringify(value) + "\\n");
+const nowIso = () => new Date().toISOString();
+const itemNumber = itemId => Number.parseInt(itemId.replace("item-", ""), 10);
+const indexOf = (values, value) => values.indexOf(value);
+const workerForItem = itemId => {
+  const index = (itemNumber(itemId) - 1) % config.workerIds.length;
+  return config.workerIds[index] || config.workerIds[0] || "worker-0";
+};
+const peerShouldClaim = itemId => {
+  const peerIndex = indexOf(config.peerIds, config.participantId);
+  if (peerIndex < 0) return false;
+  return (itemNumber(itemId) - 1) % config.peerIds.length === peerIndex;
+};
+
+const finish = () => {
+  marker.toolNames = Array.from(new Set(marker.toolNames));
+  emit({ type: "text", text: markerPrefix + JSON.stringify(marker) });
+  emit({ type: "turn_complete", finishReason: "stop" });
+  setTimeout(() => process.exit(0), 500);
+};
+const fail = message => {
+  emit({ type: "text", text: "COORDINATION_TOPOLOGY_ERROR:" + message });
+  emit({ type: "turn_complete", finishReason: "error" });
+  setTimeout(() => process.exit(1), 500);
+};
+const next = () => {
+  const step = steps[cursor++];
+  if (step === undefined) {
+    finish();
+    return;
+  }
+  step();
+};
+const tool = (name, input, onResult) => {
+  const toolUseId = config.participantId + ":" + (++sequence) + ":" + name;
+  marker.toolNames.push(name);
+  pending.set(toolUseId, onResult);
+  emit({ type: "tool_use", toolUseId, name, input });
+};
+const matched = (content, label) => {
+  if (content && content.matched === true) return content.event;
+  fail("timed out waiting for " + label);
+};
+const addStep = step => steps.push(step);
+const waitItem = (item, onEvent) => tool("wait_for", {
+  channel: channels.itemEvents,
+  match: { runId: config.runId, arm: config.arm, itemId: item.itemId },
+  timeoutMs: 10000
+}, content => {
+  onEvent(matched(content, "item " + item.itemId));
+});
+const sendReport = (item, workerId, resultValue, path, done) => {
+  const report = {
+    reportId: config.runId + ":" + config.arm + ":" + item.itemId + ":" + workerId + ":report",
+    runId: config.runId,
+    arm: config.arm,
+    itemId: item.itemId,
+    workerId,
+    resultValue,
+    path,
+    createdAt: nowIso()
+  };
+  reports.push(report);
+  tool("send", { channel: channels.reports, payload: report }, () => {
+    marker.reports += 1;
+    done();
+  });
+};
+const runActionAndReport = (item, value, workerId, path, done) => {
+  tool("call", {
+    channel: channels.workerAction,
+    request: {
+      runId: config.runId,
+      arm: config.arm,
+      itemId: item.itemId,
+      inputValue: value,
+      workerId,
+      participantId: config.participantId
+    }
+  }, action => {
+    marker.actions += 1;
+    sendReport(item, workerId, action.resultValue, path, done);
+  });
+};
+const sendScore = (topology, workerCount, dispatchCount, claimCount, rows) => {
+  const score = {
+    scoreId: config.runId + ":" + config.arm + ":score",
+    runId: config.runId,
+    arm: config.arm,
+    itemCount: config.items.length,
+    workerCount,
+    dispatchCount,
+    claimCount,
+    reportCount: rows.length,
+    totalResultValue: rows.reduce((total, row) => total + row.resultValue, 0),
+    topology
+  };
+  tool("send", { channel: channels.scores, payload: score }, () => {
+    marker.scores += 1;
+    marker.score = score;
+    next();
+  });
+};
+const addSeedSteps = () => {
+  for (const item of config.items) {
+    addStep(() => tool("send", {
+      channel: channels.itemEvents,
+      payload: {
+        eventId: config.runId + ":" + config.arm + ":" + item.itemId + ":ready",
+        runId: config.runId,
+        arm: config.arm,
+        itemId: item.itemId,
+        value: item.value,
+        producedBy: config.participantId,
+        createdAt: nowIso()
+      }
+    }, next));
+  }
+};
+const addMonolithicSteps = () => {
+  for (const item of config.items) {
+    addStep(() => waitItem(item, event => runActionAndReport(
+      item,
+      event.value,
+      config.participantId,
+      ["solo"],
+      next
+    )));
+  }
+  addStep(() => sendScore(
+    "one participant consumes item events and reports every item",
+    1,
+    0,
+    0,
+    reports
+  ));
+};
+const addOrchestratorDispatchSteps = () => {
+  for (const item of config.items) {
+    addStep(() => waitItem(item, event => {
+      const dispatch = {
+        dispatchId: config.runId + ":orchestrated:" + item.itemId + ":dispatch",
+        runId: config.runId,
+        arm: "orchestrated",
+        itemId: item.itemId,
+        value: event.value,
+        supervisorId: config.participantId,
+        workerId: workerForItem(item.itemId),
+        createdAt: nowIso()
+      };
+      tool("send", { channel: channels.dispatches, payload: dispatch }, () => {
+        marker.dispatches += 1;
+        next();
+      });
+    }));
+  }
+};
+const addWorkerSteps = () => {
+  for (const item of config.items) {
+    addStep(() => tool("wait_for", {
+      channel: channels.dispatches,
+      match: {
+        runId: config.runId,
+        arm: "orchestrated",
+        itemId: item.itemId,
+        workerId: config.participantId
+      },
+      timeoutMs: 250
+    }, content => {
+      if (!content || content.matched !== true) {
+        next();
+        return;
+      }
+      runActionAndReport(item, content.event.value, config.participantId, [
+        "supervisor",
+        config.participantId
+      ], next);
+    }));
+  }
+};
+const addOrchestratorScoreSteps = () => {
+  for (const item of config.items) {
+    addStep(() => tool("wait_for", {
+      channel: channels.reports,
+      match: { runId: config.runId, arm: "orchestrated", itemId: item.itemId },
+      timeoutMs: 10000
+    }, content => {
+      reports.push(matched(content, "report " + item.itemId));
+      next();
+    }));
+  }
+  addStep(() => sendScore(
+    "supervisor dispatches rows; workers observe assignments and report",
+    config.workerIds.length,
+    config.items.length,
+    0,
+    reports
+  ));
+};
+const addPeerSteps = () => {
+  for (const item of config.items) {
+    addStep(() => tool("wait_for_any", {
+      channels: [
+        {
+          channel: channels.itemEvents,
+          match: { runId: config.runId, arm: "choreographed", itemId: item.itemId }
+        },
+        {
+          channel: channels.claims,
+          match: {
+            runId: config.runId,
+            arm: "choreographed",
+            itemId: item.itemId,
+            decision: "claimed"
+          }
+        }
+      ],
+      timeoutMs: 10000
+    }, content => {
+      if (!content || content.timedOut === true) fail("timed out waiting for choreographed item " + item.itemId);
+      const event = content.channel === channels.itemEvents ? content.result : undefined;
+      const value = event && typeof event.value === "number" ? event.value : item.value;
+      const decision = peerShouldClaim(item.itemId) ? "claimed" : "observed";
+      const claim = {
+        claimId: config.runId + ":choreographed:" + item.itemId + ":" + config.participantId + ":" + decision,
+        runId: config.runId,
+        arm: "choreographed",
+        itemId: item.itemId,
+        workerId: config.participantId,
+        value,
+        decision,
+        createdAt: nowIso()
+      };
+      claims.push(claim);
+      tool("send", { channel: channels.claims, payload: claim }, () => {
+        marker.claims += decision === "claimed" ? 1 : 0;
+        if (decision !== "claimed") {
+          next();
+          return;
+        }
+        runActionAndReport(item, value, config.participantId, [
+          "shared-item-events",
+          "claim:" + config.participantId
+        ], next);
+      });
+    }));
+  }
+};
+const addPeerScoreSteps = () => {
+  for (const item of config.items) {
+    addStep(() => tool("wait_for", {
+      channel: channels.claims,
+      match: {
+        runId: config.runId,
+        arm: "choreographed",
+        itemId: item.itemId,
+        decision: "claimed"
+      },
+      timeoutMs: 10000
+    }, content => {
+      claims.push(matched(content, "claim " + item.itemId));
+      next();
+    }));
+  }
+  for (const item of config.items) {
+    addStep(() => tool("wait_for", {
+      channel: channels.reports,
+      match: { runId: config.runId, arm: "choreographed", itemId: item.itemId },
+      timeoutMs: 10000
+    }, content => {
+      reports.push(matched(content, "report " + item.itemId));
+      next();
+    }));
+  }
+  addStep(() => sendScore(
+    "peers discover item events, emit claim rows, and report local claims",
+    config.peerIds.length,
+    0,
+    claims.length,
+    reports
+  ));
+};
+const buildSteps = () => {
+  if (config.role === "seed") addSeedSteps();
+  if (config.role === "monolithic") addMonolithicSteps();
+  if (config.role === "orchestrator-dispatch") addOrchestratorDispatchSteps();
+  if (config.role === "worker") addWorkerSteps();
+  if (config.role === "orchestrator-score") addOrchestratorScoreSteps();
+  if (config.role === "peer") addPeerSteps();
+  if (config.role === "peer-score") addPeerScoreSteps();
+};
+
+const rl = readline.createInterface({ input: process.stdin });
+rl.on("line", line => {
+  let event;
+  try {
+    event = JSON.parse(line);
+  } catch (error) {
+    fail("malformed input: " + String(error));
+    return;
+  }
+  if (event.type === "prompt") {
+    buildSteps();
+    next();
+    return;
+  }
+  if (event.type === "tool_result") {
+    const handler = pending.get(event.toolUseId);
+    pending.delete(event.toolUseId);
+    if (event.isError) fail("tool failed: " + event.name + " " + JSON.stringify(event.content));
+    if (handler === undefined) fail("unexpected tool result: " + event.toolUseId);
+    handler(event.content);
+  }
+});
+`
 
 const launchParticipant = (
   firegrid: Firegrid["Type"],
-  api: CoordinationTopologyApi,
+  runId: string,
   arm: CoordinationTopologyArm,
+  role: ParticipantRole,
   label: string,
 ): Effect.Effect<Participant, unknown> =>
   Effect.gen(function*() {
+    const config: ParticipantConfig = {
+      role,
+      runId,
+      arm,
+      participantId: label,
+      items: benchItems,
+      workerIds,
+      peerIds,
+      createdBy: "tf-1fcd.coordination-topology",
+    }
     const session = yield* firegrid.sessions.createOrLoad({
       externalKey: agenticPatternsExternalKey(
-        participantExternalId(api, arm, label),
+        participantExternalId(runId, arm, label),
       ),
-      createdBy: "tf-1fcd.coordination-topology",
+      createdBy: config.createdBy,
       runtime: local.jsonl({
         argv: [
           globalThis.process.execPath,
-          "--version",
+          "-e",
+          deterministicAgentSource(config),
         ],
         agentProtocol: "stdio-jsonl",
         runtimeContextMcp: { enabled: true },
@@ -86,194 +539,77 @@ const launchParticipant = (
     })
     yield* session.whenReady
     yield* session.prompt({
-      payload: `tf-1fcd ${arm} participant ${label}`,
-      idempotencyKey: `tf-1fcd:${api.runId}:${arm}:${label}:initial`,
+      payload: JSON.stringify({
+        task: "tf-1fcd.coordination-topology",
+        runId,
+        arm,
+        role,
+        label,
+      }),
+      idempotencyKey: `tf-1fcd:${runId}:${arm}:${label}:initial`,
     })
     yield* session.start()
+    const observed = yield* waitForParticipantMarker(session, label)
+
+    yield* Effect.annotateCurrentSpan({
+      "coordination.arm": arm,
+      "coordination.participant": label,
+      "coordination.role": role,
+      "coordination.tool_names": observed.toolNames.join(","),
+      "coordination.reports": observed.marker.reports,
+      "coordination.dispatches": observed.marker.dispatches,
+      "coordination.claims": observed.marker.claims,
+      "coordination.actions": observed.marker.actions,
+      "coordination.scores": observed.marker.scores,
+    })
+
     return {
       label,
       sessionId: session.sessionId,
       contextId: session.contextId,
+      marker: observed.marker,
+      toolNames: observed.toolNames,
     }
   }).pipe(
-    Effect.withSpan("coordination_topology.participant.launch", {
+    Effect.withSpan("coordination_topology.participant.run", {
       kind: "client",
       attributes: {
         "coordination.arm": arm,
         "coordination.participant": label,
+        "coordination.role": role,
       },
     }),
   )
 
-const appendItemEvents = (
-  api: CoordinationTopologyApi,
+const seedArm = (
+  firegrid: Firegrid["Type"],
+  runId: string,
   arm: CoordinationTopologyArm,
-  producedBy: string,
-): Effect.Effect<ReadonlyArray<CoordinationItemEventRow>, unknown> =>
-  Effect.forEach(benchItems, item => {
-    const row: CoordinationItemEventRow = {
-      eventId: `${api.runId}:${arm}:${item.itemId}:ready`,
-      runId: api.runId,
-      arm,
-      itemId: item.itemId,
-      value: item.value,
-      producedBy,
-      createdAt: nowIso(),
-    }
-    return api.channels.itemEvents.binding.append(row).pipe(Effect.as(row))
-  })
-
-const waitForReports = (
-  api: CoordinationTopologyApi,
-  arm: CoordinationTopologyArm,
-  expected: number,
-) =>
-  api.channels.reports.binding.stream.pipe(
-    Stream.filter(row => row.runId === api.runId && row.arm === arm),
-    Stream.take(expected),
-    Stream.runCollect,
-    Effect.map(Chunk.toReadonlyArray),
-    Effect.timeoutFail({
-      duration: "10 seconds",
-      onTimeout: () => new Error(`timed out waiting for ${arm} reports`),
-    }),
-  )
-
-const waitForDispatches = (
-  api: CoordinationTopologyApi,
-  workerId: string,
-  expected: number,
-) =>
-  api.channels.dispatches.binding.stream.pipe(
-    Stream.filter(row => row.runId === api.runId && row.workerId === workerId),
-    Stream.take(expected),
-    Stream.runCollect,
-    Effect.map(Chunk.toReadonlyArray),
-    Effect.timeoutFail({
-      duration: "10 seconds",
-      onTimeout: () => new Error(`timed out waiting for dispatches: ${workerId}`),
-    }),
-  )
-
-const waitForPeerItemEvents = (
-  api: CoordinationTopologyApi,
-  arm: CoordinationTopologyArm,
-  workerId: string,
-  workerIds: ReadonlyArray<string>,
-) => {
-  const expected = benchItems.filter(item =>
-    workerForItem(item.itemId, workerIds) === workerId,
-  ).length
-  return api.channels.itemEvents.binding.stream.pipe(
-    Stream.filter(row =>
-      row.runId === api.runId
-      && row.arm === arm
-      && workerForItem(row.itemId, workerIds) === workerId,
-    ),
-    Stream.take(expected),
-    Stream.runCollect,
-    Effect.map(Chunk.toReadonlyArray),
-    Effect.timeoutFail({
-      duration: "10 seconds",
-      onTimeout: () => new Error(`timed out waiting for peer events: ${workerId}`),
-    }),
-  )
-}
-
-const reportFromAction = (
-  api: CoordinationTopologyApi,
-  input: {
-    readonly arm: CoordinationTopologyArm
-    readonly itemId: string
-    readonly value: number
-    readonly workerId: string
-    readonly participantId: string
-    readonly path: ReadonlyArray<string>
-  },
-): Effect.Effect<CoordinationReportRow, unknown> =>
-  Effect.gen(function*() {
-    const action = yield* api.channels.workerAction.binding.call({
-      arm: input.arm,
-      itemId: input.itemId,
-      inputValue: input.value,
-      workerId: input.workerId,
-      participantId: input.participantId,
-    })
-    const row: CoordinationReportRow = {
-      reportId: `${api.runId}:${input.arm}:${input.itemId}:${input.workerId}:report`,
-      runId: api.runId,
-      arm: input.arm,
-      itemId: input.itemId,
-      workerId: input.workerId,
-      resultValue: action.resultValue,
-      path: [...input.path],
-      createdAt: nowIso(),
-    }
-    yield* api.channels.reports.binding.append(row)
-    return row
-  })
-
-const writeScore = (
-  api: CoordinationTopologyApi,
-  input: {
-    readonly arm: CoordinationTopologyArm
-    readonly workerCount: number
-    readonly dispatchCount: number
-    readonly reports: ReadonlyArray<CoordinationReportRow>
-    readonly topology: string
-  },
-): Effect.Effect<CoordinationScoreRow, unknown> => {
-  const row: CoordinationScoreRow = {
-    scoreId: scoreId(api.runId, input.arm),
-    runId: api.runId,
-    arm: input.arm,
-    itemCount: coordinationTopologyItemCount,
-    workerCount: input.workerCount,
-    dispatchCount: input.dispatchCount,
-    reportCount: input.reports.length,
-    totalResultValue: input.reports.reduce(
-      (total, report) => total + report.resultValue,
-      0,
-    ),
-    topology: input.topology,
-  }
-  return api.writeScore(row).pipe(
-    Effect.zipRight(api.getScore(row.scoreId)),
-  )
-}
+): Effect.Effect<Participant, unknown> =>
+  launchParticipant(firegrid, runId, arm, "seed", `${arm}-seed`)
 
 const runMonolithicArm = (
   firegrid: Firegrid["Type"],
-  api: CoordinationTopologyApi,
+  runId: string,
 ): Effect.Effect<ArmResult, unknown> =>
   Effect.gen(function*() {
-    const participant = yield* launchParticipant(firegrid, api, "monolithic", "solo")
+    yield* seedArm(firegrid, runId, "monolithic")
     // agentic-patterns-coordination-topology.BENCH_SUBSTRATE.1
     // agentic-patterns-coordination-topology.BENCH_SUBSTRATE.2
-    yield* appendItemEvents(api, "monolithic", participant.contextId)
-    yield* Effect.forEach(benchItems, item =>
-      reportFromAction(api, {
-        arm: "monolithic",
-        itemId: item.itemId,
-        value: item.value,
-        workerId: "solo",
-        participantId: participant.contextId,
-        path: ["solo"],
-      }))
-    const reports = yield* waitForReports(api, "monolithic", benchItems.length)
-    const score = yield* writeScore(api, {
-      arm: "monolithic",
-      workerCount: 1,
-      dispatchCount: 0,
-      reports,
-      topology: "one participant processes the item-event channel directly",
-    })
-    const result: ArmResult = {
-      arm: "monolithic",
-      participants: [participant],
+    // agentic-patterns-coordination-topology.BENCH_SUBSTRATE.3
+    const solo = yield* launchParticipant(
+      firegrid,
+      runId,
+      "monolithic",
+      "monolithic",
+      "solo",
+    )
+    const score = yield* scoreForMarker(solo.marker, "monolithic")
+    return {
+      arm: "monolithic" as const,
+      participants: [solo],
       score,
     }
-    return result
   }).pipe(
     Effect.withSpan("coordination_topology.arm.monolithic", {
       kind: "internal",
@@ -284,85 +620,35 @@ const runMonolithicArm = (
     }),
   )
 
-const runWorker = (
-  api: CoordinationTopologyApi,
-  participant: Participant,
-  expected: number,
-): Effect.Effect<ReadonlyArray<CoordinationReportRow>, unknown> =>
-  Effect.gen(function*() {
-    const dispatches = yield* waitForDispatches(api, participant.label, expected)
-    return yield* Effect.forEach(dispatches, dispatch =>
-      reportFromAction(api, {
-        arm: "orchestrated",
-        itemId: dispatch.itemId,
-        value: dispatch.value,
-        workerId: participant.label,
-        participantId: participant.contextId,
-        path: ["supervisor", participant.label],
-      }))
-  }).pipe(
-    Effect.withSpan("coordination_topology.participant.worker", {
-      kind: "internal",
-      attributes: {
-        "coordination.arm": "orchestrated",
-        "coordination.participant": participant.label,
-        "coordination.expected_dispatches": expected,
-      },
-    }),
-  )
-
 const runOrchestratedArm = (
   firegrid: Firegrid["Type"],
-  api: CoordinationTopologyApi,
+  runId: string,
 ): Effect.Effect<ArmResult, unknown> =>
   Effect.gen(function*() {
-    const supervisor = yield* launchParticipant(
-      firegrid,
-      api,
-      "orchestrated",
-      "supervisor",
-    )
-    const workerLabels = Array.from(
-      { length: coordinationTopologyWorkerCount },
-      (_, index) => `worker-${index + 1}`,
-    )
-    const workers = yield* Effect.forEach(workerLabels, label =>
-      launchParticipant(firegrid, api, "orchestrated", label))
-    yield* appendItemEvents(api, "orchestrated", supervisor.contextId)
+    yield* seedArm(firegrid, runId, "orchestrated")
     // agentic-patterns-coordination-topology.TOPOLOGY_ARMS.2
-    const dispatches = yield* Effect.forEach(benchItems, item => {
-      const row: CoordinationDispatchRow = {
-        dispatchId: `${api.runId}:orchestrated:${item.itemId}:dispatch`,
-        runId: api.runId,
-        arm: "orchestrated",
-        itemId: item.itemId,
-        value: item.value,
-        supervisorId: supervisor.contextId,
-        workerId: workerForItem(item.itemId, workerLabels),
-        createdAt: nowIso(),
-      }
-      return api.channels.dispatches.binding.append(row).pipe(Effect.as(row))
-    })
-    yield* Effect.forEach(workers, worker => {
-      const expected = dispatches.filter(dispatch =>
-        dispatch.workerId === worker.label,
-      ).length
-      return runWorker(api, worker, expected)
-    }, { concurrency: "unbounded" })
-    const reports = yield* waitForReports(api, "orchestrated", benchItems.length)
-    const score = yield* writeScore(api, {
-      arm: "orchestrated",
-      workerCount: workers.length,
-      dispatchCount: dispatches.length,
-      reports,
-      topology: "supervisor writes dispatch rows; workers emit reports",
-    })
-    const result: ArmResult = {
-      arm: "orchestrated",
-      participants: [supervisor, ...workers],
+    const dispatcher = yield* launchParticipant(
+      firegrid,
+      runId,
+      "orchestrated",
+      "orchestrator-dispatch",
+      "supervisor-dispatch",
+    )
+    const workers = yield* Effect.forEach(workerIds, workerId =>
+      launchParticipant(firegrid, runId, "orchestrated", "worker", workerId))
+    const scorer = yield* launchParticipant(
+      firegrid,
+      runId,
+      "orchestrated",
+      "orchestrator-score",
+      "supervisor-score",
+    )
+    const score = yield* scoreForMarker(scorer.marker, "orchestrated")
+    return {
+      arm: "orchestrated" as const,
+      participants: [dispatcher, ...workers, scorer],
       score,
     }
-    return result
   }).pipe(
     Effect.withSpan("coordination_topology.arm.orchestrated", {
       kind: "internal",
@@ -374,67 +660,29 @@ const runOrchestratedArm = (
     }),
   )
 
-const runPeer = (
-  api: CoordinationTopologyApi,
-  participant: Participant,
-  workerIds: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyArray<CoordinationReportRow>, unknown> =>
-  Effect.gen(function*() {
-    const events = yield* waitForPeerItemEvents(
-      api,
-      "choreographed",
-      participant.label,
-      workerIds,
-    )
-    return yield* Effect.forEach(events, event =>
-      reportFromAction(api, {
-        arm: "choreographed",
-        itemId: event.itemId,
-        value: event.value,
-        workerId: participant.label,
-        participantId: participant.contextId,
-        path: ["shared-item-events", participant.label],
-      }))
-  }).pipe(
-    Effect.withSpan("coordination_topology.participant.peer", {
-      kind: "internal",
-      attributes: {
-        "coordination.arm": "choreographed",
-        "coordination.participant": participant.label,
-      },
-    }),
-  )
-
 const runChoreographedArm = (
   firegrid: Firegrid["Type"],
-  api: CoordinationTopologyApi,
+  runId: string,
 ): Effect.Effect<ArmResult, unknown> =>
   Effect.gen(function*() {
-    const peerLabels = Array.from(
-      { length: coordinationTopologyWorkerCount },
-      (_, index) => `peer-${index + 1}`,
-    )
-    const peers = yield* Effect.forEach(peerLabels, label =>
-      launchParticipant(firegrid, api, "choreographed", label))
+    yield* seedArm(firegrid, runId, "choreographed")
     // agentic-patterns-coordination-topology.TOPOLOGY_ARMS.3
-    yield* appendItemEvents(api, "choreographed", "shared-bench")
-    yield* Effect.forEach(peers, peer => runPeer(api, peer, peerLabels), {
-      concurrency: "unbounded",
-    })
-    const reports = yield* waitForReports(api, "choreographed", benchItems.length)
-    const score = yield* writeScore(api, {
-      arm: "choreographed",
-      workerCount: peers.length,
-      dispatchCount: 0,
-      reports,
-      topology: "peers partition shared item-event rows without dispatch",
-    })
-    const result: ArmResult = {
-      arm: "choreographed",
-      participants: peers,
+    // agentic-patterns-coordination-topology.TOPOLOGY_ARMS.4
+    const peers = yield* Effect.forEach(peerIds, peerId =>
+      launchParticipant(firegrid, runId, "choreographed", "peer", peerId))
+    const scorer = yield* launchParticipant(
+      firegrid,
+      runId,
+      "choreographed",
+      "peer-score",
+      "peer-score",
+    )
+    const score = yield* scoreForMarker(scorer.marker, "choreographed")
+    return {
+      arm: "choreographed" as const,
+      participants: [...peers, scorer],
       score,
     }
-    return result
   }).pipe(
     Effect.withSpan("coordination_topology.arm.choreographed", {
       kind: "internal",
@@ -452,18 +700,20 @@ export const coordinationTopologyDriver: Effect.Effect<
   Firegrid
 > = Effect.gen(function*() {
   const firegrid = yield* Firegrid
-  const api = yield* awaitCoordinationTopologyApi
-  const monolithic = yield* runMonolithicArm(firegrid, api)
-  const orchestrated = yield* runOrchestratedArm(firegrid, api)
-  const choreographed = yield* runChoreographedArm(firegrid, api)
+  const runId = `coordination-topology-${crypto.randomUUID()}`
+  const monolithic = yield* runMonolithicArm(firegrid, runId)
+  const orchestrated = yield* runOrchestratedArm(firegrid, runId)
+  const choreographed = yield* runChoreographedArm(firegrid, runId)
   const arms = [monolithic, orchestrated, choreographed]
 
   // agentic-patterns-coordination-topology.TOPOLOGY_ARMS.1
   // agentic-patterns-coordination-topology.OBSERVABILITY.1
   // agentic-patterns-coordination-topology.OBSERVABILITY.2
   // agentic-patterns-coordination-topology.OBSERVABILITY.3
+  // agentic-patterns-coordination-topology.OBSERVABILITY.4
   // agentic-patterns-coordination-topology.PUBLIC_SURFACE.1
   // agentic-patterns-coordination-topology.PUBLIC_SURFACE.2
+  // agentic-patterns-coordination-topology.PUBLIC_SURFACE.3
   yield* Effect.annotateCurrentSpan({
     "coordination.verdict": "GREEN",
     "coordination.item_count": coordinationTopologyItemCount,
@@ -472,15 +722,18 @@ export const coordinationTopologyDriver: Effect.Effect<
     "coordination.total_result_value": arms
       .map(arm => arm.score.totalResultValue)
       .join(","),
+    "coordination.participant_evidence": arms
+      .flatMap(arm => arm.participants.map(participant =>
+        `${participant.label}:${participant.marker.toolNames.join("+")}`))
+      .join("|"),
   })
 
-  const result: CoordinationTopologyResult = {
-    verdict: "GREEN",
+  return {
+    verdict: "GREEN" as const,
     itemCount: coordinationTopologyItemCount,
     workerCount: coordinationTopologyWorkerCount,
     arms,
   }
-  return result
 }).pipe(
   Effect.withSpan("coordination_topology.driver", {
     kind: "internal",
