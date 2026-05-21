@@ -141,7 +141,13 @@ tf-bffo adds a `channels/` top-level folder holding durable channel Live
 implementations co-located below the substrate boundary: protocol owns the
 channel contracts/Tags, the runtime owns these durable Live bindings, and
 host-sdk only COMPOSES them by injecting host topology config. This ratchets
-toward "channels are the only above-box doorway".
+toward "channels are the only above-box doorway". The canonical end-state is the
+Host-Plane Channel Router
+([`SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md`](./SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md),
+tf-rd3d): protocol owns route contracts, runtime/kernel owns route
+implementations, host-sdk composes the router (`FiregridHostChannelRouterLive`) +
+edges. The carveouts below are route implementations that belong on the runtime
+side of that router.
 
 The first cutover (PR #589) relocates the SessionAgentOutput channel, the
 per-context `RuntimeOutputTable` wiring, the control-request durable arm, the

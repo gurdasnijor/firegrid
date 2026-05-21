@@ -41,9 +41,12 @@ import { RuntimeHostConfig } from "../../config.ts"
 // session.prompt / sessions.start / permissions.respond request-row channel lives are
 // still constructed here from RuntimeControlPlaneTable via the @firegrid/protocol/launch
 // factories (makeHostContextsCreateChannel(control), etc.). Those table-bound channel
-// lives still sit ABOVE the runtime channels box and are NOT relocated by this PR —
-// see tf-hhgs ("Relocate host-control request-row channel lives below the runtime
-// channels box").
+// lives still sit ABOVE the runtime channels box and are NOT relocated by this PR.
+// Canonical end-state: docs/sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md (tf-rd3d) —
+// protocol owns route contracts, runtime/kernel owns route IMPLEMENTATIONS, host-sdk
+// composes the router (FiregridHostChannelRouterLive) + edges. These factory-built
+// channel lives are route implementations that belong on the runtime side of the
+// router. Relocation tracked by tf-hhgs.
 
 type HostControlChannels =
   | HostContextsCreateChannel
