@@ -1,9 +1,9 @@
 # SDD: Durable Channels - Sync and Async Agent Communication
 
-Status: canonized framing - **validated by the tf-lfxs spike (GREEN, 2026-05-21)**
+Status: canonized framing - **validated by the tf-lfxs spike and production-closed by tf-1r3h (2026-05-21)**
 Created: 2026-05-20
 Owner: Firegrid Runtime / Agent Tool Surface
-Validation: `tf-lfxs-durable-channels-sync-async.FINDING.md` (both modes proven with existing substrate; no new verb; no Effect-interface leakage)
+Validation: `tf-lfxs-durable-channels-sync-async.FINDING.md` (both modes proven with existing substrate; no new verb; no Effect-interface leakage) + `tf-1r3h-durable-sync-async-closure-audit.md` (production closure classification and tests)
 Follow-on to: `SDD_FIREGRID_AGENT_BODY_PLAN.md` (channels as nervous system; the verb set)
 Grounded in: `SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md` (DurableTable as the one substrate primitive)
 
@@ -170,17 +170,15 @@ context state before it writes. Identity-only `createOrLoad` callers are not
 handshakes by the "answer gates the next step" rule, so they still receive the
 deterministic handle immediately.
 
-**This is no longer an assertion - the tf-lfxs spike proved it (GREEN,
-2026-05-21).** The spike wrapped the existing `HostSessionsCreateOrLoad`
-callable binding with a request-reflection barrier in the binding layer: the
-binding still writes the normal control-plane request row, then waits for the
-host-owned runtime-context row to be reflected before the call returns. The
-spike confirmed that the same callable channel contract can absorb the
-reflection wait with no new public verb. The sim still attached through the
-runner's separately materialized public client read model before exercising
-prompt/start/wait; the production follow-up is to put this reflection wait in
-the real `createOrLoad` binding so that extra readiness step disappears at
-normal call sites.
+**This is no longer an assertion - the tf-lfxs spike proved the shape, and
+tf-1r3h closed the production semantics.** The spike wrapped the existing
+`HostSessionsCreateOrLoad` callable binding with a request-reflection barrier
+to prove the same channel contract can absorb a wait with no new public verb.
+The production rule is more precise than "make `createOrLoad` globally
+blocking": identity-only callers can receive the deterministic handle
+immediately, while dependent operations that need reflected context state own
+the barrier before writing. Production `session.prompt`, `session.start`,
+`firegrid.sessions.prompt`, and `firegrid.prompt` now follow that rule.
 
 ## Validation: tf-lfxs spike (GREEN, 2026-05-21)
 
@@ -200,11 +198,11 @@ Both modes were proven against the existing substrate in the one-trace
   `Sink` surfaced as Firegrid channel API, and no provider-specific channel
   contract was added.
 
-The production follow-up is intentionally separate: move request-reflection
-semantics into compat-gated callable/dependent-operation bindings where the
-result gates the next client action, beginning with `createOrLoad -> prompt`
-and `createOrLoad -> start`. The spike does **not** migrate production behavior
-by itself.
+The production follow-up from the spike is closed for the public session
+write/start surface: request-reflection semantics live in callable or
+dependent-operation bindings where the result gates the next client action.
+`createOrLoad` itself remains request-row/identity acknowledgement because its
+inline result is the handle identity, not reflected host readiness.
 
 ## Decision guide
 

@@ -35,10 +35,12 @@ import {
   makeRuntimeContextRequestRow,
 } from "@firegrid/protocol/launch"
 import { Effect, Fiber, Layer, Option, Stream } from "effect"
+import type { Exit } from "effect"
 import type * as Scope from "effect/Scope"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { TestStreamServer } from "../../effect-durable-operators/test/harness.ts"
 import {
+  AppendError,
   Firegrid,
   FiregridConfig,
   FiregridLive,
@@ -106,7 +108,9 @@ const testHostSessionsCreateOrLoadChannelLive = Layer.effect(
   }),
 )
 
-const makeFixture = () => {
+const makeFixture = (
+  overrides?: { readonly contextReflectionTimeoutMs?: number },
+) => {
   if (baseUrl === undefined) throw new Error("server not started")
   const namespace = `client-session-${crypto.randomUUID()}`
   const hostSession = makeHostSessionRow({
@@ -125,6 +129,9 @@ const makeFixture = () => {
     Layer.provide(Layer.succeed(FiregridConfig, {
       durableStreamsBaseUrl: baseUrl,
       namespace,
+      ...(overrides?.contextReflectionTimeoutMs === undefined
+        ? {}
+        : { contextReflectionTimeoutMs: overrides.contextReflectionTimeoutMs }),
     })),
     Layer.provide(
       testHostSessionsCreateOrLoadChannelLive.pipe(
@@ -257,6 +264,31 @@ const readRuntimeInputIntent = (
   ))
 }
 
+// tf-1r3h (#587 review): read any start-request row for a context id, used to
+// prove session.start writes NO orphan row when the context never materializes.
+const readStartRequest = (
+  hostSession: HostSessionRow,
+  contextId: string,
+): Promise<RuntimeStartRequestRow | undefined> => {
+  if (baseUrl === undefined) throw new Error("server not started")
+  return Effect.runPromise(Effect.gen(function* () {
+    const table = yield* RuntimeControlPlaneTable
+    return yield* table.startRequests.query((coll) =>
+      coll.toArray.find(row => row.contextId === contextId))
+  }).pipe(
+    Effect.provide(RuntimeControlPlaneTable.layer({
+      streamOptions: {
+        url: runtimeControlPlaneStreamUrl({
+          baseUrl,
+          namespace: namespaceFromHostSession(hostSession),
+        }),
+        contentType: "application/json",
+      },
+    })),
+    Effect.scoped,
+  ))
+}
+
 const waitForRuntimeInputIntent = (
   hostSession: HostSessionRow,
   intentId: string,
@@ -281,6 +313,24 @@ const waitForRuntimeInputIntent = (
     })),
     Effect.scoped,
   )
+}
+
+// tf-1r3h (#587 review): shared assertion for the bounded reflected-context
+// barrier. Every session-dependent write (firegrid.prompt, sessions.prompt,
+// session.prompt, session.start) must surface this exact bounded error for an
+// unknown/typo context id instead of waiting forever.
+const expectBoundedContextNotFound = (
+  error: unknown,
+  contextId: string,
+): void => {
+  expect(error).toBeInstanceOf(AppendError)
+  expect((error as AppendError).contextId).toBe(contextId)
+  const cause = (error as AppendError).cause as {
+    readonly _tag?: string
+    readonly contextId?: string
+  }
+  expect(cause._tag).toBe("ContextNotFound")
+  expect(cause.contextId).toBe(contextId)
 }
 
 describe("Firegrid session facade", () => {
@@ -473,6 +523,133 @@ describe("Firegrid session facade", () => {
       idempotencyKey: "host-prompt-turn",
     })
     expect(stored).toEqual(result.intent)
+  })
+
+  it("firegrid-agent-ingress.INGRESS.6 launch -> firegrid.prompt waits for reflected context without explicit whenReady", async () => {
+    const fixture = makeFixture()
+    const effect: Effect.Effect<
+      {
+        readonly contextId: string
+        readonly exit: Exit.Exit<RuntimeInputIntentRow, unknown>
+      },
+      unknown,
+      Firegrid | RuntimeControlPlaneTable
+    > = Effect.gen(function*() {
+      const firegrid = yield* Firegrid
+      const context = yield* firegrid.launch({
+        runtime: runtimeConfig(),
+        requestedBy: "prompt-reflection-gap-test",
+      })
+      const prompt = yield* firegrid.prompt({
+        contextId: context.contextId,
+        payload: { text: "barrier top-level prompt" },
+        idempotencyKey: "host-prompt-before-reflection",
+      }).pipe(Effect.fork)
+      yield* Effect.sleep("50 millis")
+      yield* materializeContextRequest(fixture.hostSession, context.contextId)
+      const exit = yield* prompt.await
+      return { contextId: context.contextId, exit }
+    })
+    const result = await runWithClient(
+      fixture,
+      effect,
+    )
+
+    expect(result.exit._tag).toBe("Success")
+    if (result.exit._tag !== "Success") return
+    const stored = await readRuntimeInputIntent(
+      fixture.hostSession,
+      result.exit.value.intentId,
+    )
+    expect(stored).toMatchObject({
+      contextId: result.contextId,
+      payload: { text: "barrier top-level prompt" },
+      idempotencyKey: "host-prompt-before-reflection",
+    })
+  })
+
+  it("firegrid-agent-ingress.INGRESS.6 firegrid.prompt for an unknown context id errors (bounded) instead of hanging", async () => {
+    // tf-1r3h (#587 review): the reflected-context barrier is bounded. With a
+    // short reflection window and a context id that never materializes, the
+    // wait must time out and fall through to the append's context-existence
+    // check (ContextNotFound -> AppendError) rather than hanging forever. The
+    // vitest per-test timeout would trip if this regressed to an unbounded wait.
+    const fixture = makeFixture({ contextReflectionTimeoutMs: 150 })
+    const unknownContextId = "ctx_does-not-exist"
+    const error = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        // Effect.flip turns the expected failure into a success value; if the
+        // prompt unexpectedly *succeeded*, flip fails the run (and the test).
+        return yield* firegrid.prompt({
+          contextId: unknownContextId,
+          payload: { text: "to nowhere" },
+          idempotencyKey: "unknown-context-prompt",
+        }).pipe(Effect.flip)
+      }),
+    )
+
+    expectBoundedContextNotFound(error, unknownContextId)
+  })
+
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2 session.prompt for an unknown context id errors (bounded) instead of hanging", async () => {
+    // tf-1r3h (#587 review): session-handle prompt shares the bounded barrier.
+    const fixture = makeFixture({ contextReflectionTimeoutMs: 150 })
+    const unknownSessionId = "ctx_session-prompt-does-not-exist"
+    const error = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        const handle = yield* firegrid.sessions.attach({ sessionId: unknownSessionId })
+        return yield* handle.prompt({
+          payload: { text: "to nowhere" },
+          idempotencyKey: "unknown-session-prompt",
+        }).pipe(Effect.flip)
+      }),
+    )
+
+    expectBoundedContextNotFound(error, unknownSessionId)
+  })
+
+  it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.1 firegrid.sessions.prompt for an unknown context id errors (bounded) instead of hanging", async () => {
+    // tf-1r3h (#587 review): top-level tool-shaped session prompt is bounded too.
+    const fixture = makeFixture({ contextReflectionTimeoutMs: 150 })
+    const unknownSessionId = "ctx_sessions-prompt-does-not-exist"
+    const error = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        return yield* firegrid.sessions.prompt({
+          sessionId: unknownSessionId,
+          prompt: "to nowhere",
+          inputId: "unknown-sessions-prompt",
+        }).pipe(Effect.flip)
+      }),
+    )
+
+    expectBoundedContextNotFound(error, unknownSessionId)
+  })
+
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2 session.start for an unknown context id errors (bounded) without an orphan start request", async () => {
+    // tf-1r3h (#587 review): session.start has NO append-side existence check,
+    // so the bounded barrier is the only guard against an orphan start-request
+    // row for a context that will never materialize. It must fail bounded.
+    const fixture = makeFixture({ contextReflectionTimeoutMs: 150 })
+    const unknownSessionId = "ctx_session-start-does-not-exist"
+    const error = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        const handle = yield* firegrid.sessions.attach({ sessionId: unknownSessionId })
+        return yield* handle.start().pipe(Effect.flip)
+      }),
+    )
+
+    expectBoundedContextNotFound(error, unknownSessionId)
+    // No orphan start-request row was written for the nonexistent context.
+    const startRequest = await readStartRequest(fixture.hostSession, unknownSessionId)
+    expect(startRequest).toBeUndefined()
   })
 
   it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.1 sessions.prompt keeps its ok output and stores the egress receipt", async () => {
