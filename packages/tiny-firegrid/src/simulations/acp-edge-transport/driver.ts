@@ -94,6 +94,12 @@ export const acpEdgeTransportDriver: Effect.Effect<
     if (texts.length < 2) {
       return reject("expected ACP sessionUpdate text for both turns")
     }
+    if (!texts[0]?.includes("turn 1")) {
+      return reject(`expected first ACP text to come from turn 1, got ${texts[0]}`)
+    }
+    if (!texts[1]?.includes("turn 2")) {
+      return reject(`expected second ACP text to come from turn 2, got ${texts[1]}`)
+    }
 
     return {
       initializedProtocolVersion: initialized.protocolVersion,

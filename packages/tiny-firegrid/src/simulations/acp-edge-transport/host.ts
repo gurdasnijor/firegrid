@@ -5,7 +5,11 @@ import {
 } from "@firegrid/host-sdk"
 import { Layer } from "effect"
 import type { TinyFiregridHostEnv } from "../../types.ts"
-import { FiregridAcpStdioHostEdgeLive } from "./edge.ts"
+import {
+  acpStdioEdge,
+  FiregridHostPlaneEdgesLive,
+  type FiregridHostPlaneEdgeTopology,
+} from "./edge.ts"
 import { inMemoryAcpEdgeHarness } from "./harness.ts"
 
 export const acpEdgeTransportHost = (
@@ -18,12 +22,19 @@ export const acpEdgeTransportHost = (
   }).pipe(
     Layer.provide(FiregridLocalProcessFromEnv(env.processEnv)),
   )
-  const acpEdge = FiregridAcpStdioHostEdgeLive({
-    input: inMemoryAcpEdgeHarness.edgeInput,
-    output: inMemoryAcpEdgeHarness.edgeOutput,
-    durableStreamsBaseUrl: env.durableStreamsBaseUrl,
-    namespace: env.namespace,
-  })
+  const edgeTopology: FiregridHostPlaneEdgeTopology = {
+    context: {
+      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
+      namespace: env.namespace,
+    },
+    edges: [
+      acpStdioEdge({
+        input: inMemoryAcpEdgeHarness.edgeInput,
+        output: inMemoryAcpEdgeHarness.edgeOutput,
+      }),
+    ],
+  }
+  const acpEdge = FiregridHostPlaneEdgesLive(edgeTopology)
 
   return Layer.mergeAll(runtimeHost, acpEdge) as Layer.Layer<
     FiregridHost,

@@ -20,6 +20,32 @@ interface FiregridAcpStdioHostEdgeOptions {
   readonly turnTimeoutMs?: number
 }
 
+export interface FiregridHostPlaneEdgeContext {
+  readonly durableStreamsBaseUrl: string
+  readonly namespace: string
+}
+
+export interface FiregridAcpStdioEdgeConfig {
+  readonly _tag: "AcpStdio"
+  readonly input: ReadableStream<Uint8Array>
+  readonly output: WritableStream<Uint8Array>
+  readonly turnTimeoutMs?: number
+}
+
+export type FiregridHostPlaneEdgeConfig = FiregridAcpStdioEdgeConfig
+
+export interface FiregridHostPlaneEdgeTopology {
+  readonly context: FiregridHostPlaneEdgeContext
+  readonly edges: ReadonlyArray<FiregridHostPlaneEdgeConfig>
+}
+
+export const acpStdioEdge = (
+  config: Omit<FiregridAcpStdioEdgeConfig, "_tag">,
+): FiregridAcpStdioEdgeConfig => ({
+  _tag: "AcpStdio",
+  ...config,
+})
+
 interface EdgeSession {
   readonly acpSessionId: string
   readonly firegridSession: FiregridSessionHandle
@@ -274,4 +300,29 @@ export const FiregridAcpStdioHostEdgeLive = (
         ),
       ),
     ),
+  )
+
+export const FiregridHostPlaneEdgeLive = (
+  context: FiregridHostPlaneEdgeContext,
+  edge: FiregridHostPlaneEdgeConfig,
+): Layer.Layer<never, unknown> => {
+  switch (edge._tag) {
+    case "AcpStdio":
+      return FiregridAcpStdioHostEdgeLive({
+        input: edge.input,
+        output: edge.output,
+        durableStreamsBaseUrl: context.durableStreamsBaseUrl,
+        namespace: context.namespace,
+        ...(edge.turnTimeoutMs === undefined ? {} : { turnTimeoutMs: edge.turnTimeoutMs }),
+      })
+  }
+}
+
+export const FiregridHostPlaneEdgesLive = (
+  topology: FiregridHostPlaneEdgeTopology,
+): Layer.Layer<never, unknown> =>
+  topology.edges.reduce(
+    (layer, edge) =>
+      Layer.mergeAll(layer, FiregridHostPlaneEdgeLive(topology.context, edge)),
+    Layer.empty as Layer.Layer<never, unknown>,
   )
