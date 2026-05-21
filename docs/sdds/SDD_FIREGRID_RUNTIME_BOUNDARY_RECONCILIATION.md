@@ -159,7 +159,9 @@ cutover rule — no undocumented coexistence):
   session.prompt / sessions.start / permissions.respond request-row channel
   lives from `RuntimeControlPlaneTable` via the `@firegrid/protocol/launch`
   factories — those table-bound channel lives still sit above the runtime
-  channels box (tf-hhgs).
+  channels box. The end-to-end router implementation that relocates these
+  durable route bodies below host-sdk and replaces `HostControlChannelsLive` is
+  tf-9x11 (host-sdk must not own durable route bodies in the end state).
 - the `session-self` checkpoint channel (workflow-engine durable reads) and the
   `RuntimeAgentOutputAfterEvents` reach-past (tf-77ab).
 

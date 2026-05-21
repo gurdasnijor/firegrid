@@ -37,7 +37,7 @@ import { RuntimeHostConfig } from "../../config.ts"
 // tf-bffo (PARTIAL): the durable snapshot reads + the session-lifecycle run stream
 // now live in @firegrid/runtime/channels; this layer composes them.
 //
-// REMAINING CARVEOUT (tf-hhgs, blocks tf-bffo): the contexts.create / prompt /
+// REMAINING CARVEOUT (tf-9x11, blocks tf-bffo): the contexts.create / prompt /
 // session.prompt / sessions.start / permissions.respond request-row channel lives are
 // still constructed here from RuntimeControlPlaneTable via the @firegrid/protocol/launch
 // factories (makeHostContextsCreateChannel(control), etc.). Those table-bound channel
@@ -46,7 +46,9 @@ import { RuntimeHostConfig } from "../../config.ts"
 // protocol owns route contracts, runtime/kernel owns route IMPLEMENTATIONS, host-sdk
 // composes the router (FiregridHostChannelRouterLive) + edges. These factory-built
 // channel lives are route implementations that belong on the runtime side of the
-// router. Relocation tracked by tf-hhgs.
+// router; host-sdk must NOT own durable route bodies in the end state. The router
+// end-to-end implementation (which replaces HostControlChannelsLive) is tracked by
+// tf-9x11.
 
 type HostControlChannels =
   | HostContextsCreateChannel
