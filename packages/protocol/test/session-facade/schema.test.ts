@@ -21,6 +21,7 @@ import {
   runtimeAgentOutputObservationFromRow,
   runtimePermissionRequestObservationFromAgentOutput,
   sessionContextIdForExternalKey,
+  tryDecodeRuntimeAgentOutputEnvelope,
 } from "../../src/session-facade/schema.ts"
 
 describe("session facade protocol schema", () => {
@@ -336,6 +337,119 @@ describe("session facade protocol schema", () => {
     })).toEqual({
       afterSequence: 1,
       timeoutMs: 30_000,
+    })
+  })
+
+  // tf-8s7d: AgentOutputEvent schema migration path —
+  // forward-compatibility for future `_tag` variants per the tf-ypq9
+  // schema-evolution policy (replay-facing rows must decode across
+  // version boundaries).
+  describe("tf-8s7d agent-output forward-compatibility (future _tag rows)", () => {
+    // Hand-built envelope using a `_tag` value the current
+    // AgentOutputEventSchema does NOT declare. Stands in for a row written
+    // by a future Firegrid version that has added a new variant. The
+    // string is JSON-encoded the same way encodeRuntimeAgentOutputEnvelope
+    // would encode it, so the only difference vs a real envelope is the
+    // unknown _tag.
+    const futureRowRaw = JSON.stringify({
+      type: "firegrid.agent-output",
+      event: {
+        _tag: "FutureNewVariant",
+        someNewField: "future-payload",
+        nested: { deep: 1 },
+      },
+    })
+
+    it("STRICT decoder REJECTS a row with an unknown _tag (proves the original failure mode)", () => {
+      const decoded = decodeRuntimeAgentOutputEnvelope(futureRowRaw)
+      expect(Option.isNone(decoded)).toBe(true)
+    })
+
+    it("FORGIVING decoder accepts the same row and surfaces it as AgentOutputUnknown carrying the original tag + payload", () => {
+      const decoded = tryDecodeRuntimeAgentOutputEnvelope(futureRowRaw)
+      expect(Option.isSome(decoded)).toBe(true)
+      if (Option.isNone(decoded)) return
+      const event = decoded.value
+      expect(event._tag).toBe("AgentOutputUnknown")
+      if (event._tag !== "AgentOutputUnknown") return
+      expect(event.unknownTag).toBe("FutureNewVariant")
+      expect(event.payload).toEqual({
+        someNewField: "future-payload",
+        nested: { deep: 1 },
+      })
+    })
+
+    it("FORGIVING decoder still strictly decodes a KNOWN _tag (no regression — known variants stay typed)", () => {
+      const decoded = tryDecodeRuntimeAgentOutputEnvelope(
+        encodeRuntimeAgentOutputEnvelope({
+          _tag: "Status",
+          kind: "thinking",
+        }),
+      )
+      expect(Option.isSome(decoded)).toBe(true)
+      if (Option.isNone(decoded)) return
+      expect(decoded.value._tag).toBe("Status")
+      // AgentUnknownEvent has `unknownTag` — its absence proves the strict
+      // path took precedence over the fallback for a known _tag.
+      expect((decoded.value as { unknownTag?: string }).unknownTag).toBeUndefined()
+    })
+
+    it("FORGIVING decoder rejects malformed envelopes (missing event, wrong outer type, empty _tag)", () => {
+      // Missing top-level `event`
+      expect(
+        Option.isNone(
+          tryDecodeRuntimeAgentOutputEnvelope(
+            JSON.stringify({ type: "firegrid.agent-output" }),
+          ),
+        ),
+      ).toBe(true)
+      // Wrong outer type discriminator
+      expect(
+        Option.isNone(
+          tryDecodeRuntimeAgentOutputEnvelope(
+            JSON.stringify({
+              type: "not.firegrid",
+              event: { _tag: "FutureNewVariant" },
+            }),
+          ),
+        ),
+      ).toBe(true)
+      // Event has _tag but it's empty
+      expect(
+        Option.isNone(
+          tryDecodeRuntimeAgentOutputEnvelope(
+            JSON.stringify({
+              type: "firegrid.agent-output",
+              event: { _tag: "" },
+            }),
+          ),
+        ),
+      ).toBe(true)
+      // Not JSON at all
+      expect(
+        Option.isNone(
+          tryDecodeRuntimeAgentOutputEnvelope("not-json{{{"),
+        ),
+      ).toBe(true)
+    })
+
+    it("runtimeAgentOutputObservationFromRow returns Option.none for an unknown _tag row (does not crash, does not surface unknowns into the typed observation)", () => {
+      const observation = runtimeAgentOutputObservationFromRow({
+        eventId: {
+          contextId: "ctx_future",
+          activityAttempt: 1,
+          target: "events",
+          sequence: 1,
+        },
+        contextId: "ctx_future",
+        activityAttempt: 1,
+        sequence: 1,
+        source: "stdout",
+        format: "jsonl",
+        receivedAt: "2026-05-21T00:00:00.000Z",
+        raw: futureRowRaw,
+      })
+      expect(Option.isNone(observation)).toBe(true)
     })
   })
 })

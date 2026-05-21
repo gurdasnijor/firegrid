@@ -16,7 +16,10 @@ import {
   AgentTextChunkEventSchema,
   AgentToolUseEventSchema,
   AgentTurnCompleteEventSchema,
+  AgentUnknownEventSchema,
   type AgentOutputEvent,
+  type AgentOutputEventOrUnknown,
+  type AgentUnknownEvent,
 } from "../agent-output/index.ts"
 
 export const FiregridSessionIdSchema = Schema.String.pipe(
@@ -427,6 +430,12 @@ export const encodeRuntimeAgentOutputEnvelope = (
 // TFIND-030 (Q2 strict): yields the typed union or `Option.none()`. A stored
 // envelope whose `event` does not conform to `AgentOutputEvent` is rejected
 // here rather than passed through as an opaque record.
+//
+// tf-8s7d: the strict path is preserved unchanged for callers that
+// explicitly want the strict typed surface. New code should prefer
+// `tryDecodeRuntimeAgentOutputEnvelope` (below), which adds a forgiving
+// terminal `AgentUnknownEvent` arm for forward-compat with future
+// `_tag` variants per the tf-ypq9 schema-evolution policy.
 export const decodeRuntimeAgentOutputEnvelope = (
   raw: string,
 ): Option.Option<AgentOutputEvent> =>
@@ -435,13 +444,77 @@ export const decodeRuntimeAgentOutputEnvelope = (
     envelope => envelope.event,
   )
 
+// tf-8s7d — forward-compatibility two-pass decoder.
+//
+// Strict decode first (preserves the typed `AgentOutputEvent` surface for
+// known `_tag` variants). On strict failure, attempts a permissive
+// structural parse: if the row is a valid JSON envelope whose `event` is
+// an object with a non-empty string `_tag`, the envelope is decoded into
+// an `AgentUnknownEvent` carrying the original `_tag` (in `unknownTag`)
+// and the event payload. Returns `Option.none()` only for envelopes that
+// fail BOTH paths (malformed JSON, wrong outer envelope shape, or an
+// event without a string `_tag`).
+//
+// This is the load-bearing forward-compat seam: when a newer Firegrid
+// version emits a new `AgentOutputEvent` variant, older readers using
+// this decoder preserve the row rather than silently drop it. The
+// preserved variant is `AgentUnknownEvent` — clearly tagged so consumers
+// can surface, audit, log, or drop it intentionally.
+//
+// Per the tf-ypq9 schema-evolution policy
+// (`docs/cannon/architecture/schema-evolution-and-error-ownership.md`),
+// `AgentOutputEvent` is replay-facing; this decoder is the projection
+// of the "decode old and current row versions through a migration union
+// before the row reaches execution code" clause for the
+// future-tag-expansion case.
+const PermissiveAgentOutputEnvelopeSchema = Schema.parseJson(
+  Schema.Struct({
+    type: Schema.Literal("firegrid.agent-output"),
+    event: Schema.Struct({
+      _tag: Schema.String.pipe(Schema.minLength(1)),
+    }, {
+      key: Schema.String,
+      value: Schema.Unknown,
+    }),
+  }),
+)
+
+const buildAgentUnknownEvent = (
+  rawEvent: { readonly _tag: string } & { readonly [k: string]: unknown },
+): Option.Option<AgentUnknownEvent> => {
+  const { _tag, ...rest } = rawEvent
+  return Schema.decodeUnknownOption(AgentUnknownEventSchema)({
+    _tag: "AgentOutputUnknown",
+    unknownTag: _tag,
+    ...(Object.keys(rest).length === 0 ? {} : { payload: rest }),
+  })
+}
+
+export const tryDecodeRuntimeAgentOutputEnvelope = (
+  raw: string,
+): Option.Option<AgentOutputEventOrUnknown> => {
+  const strict = decodeRuntimeAgentOutputEnvelope(raw)
+  if (Option.isSome(strict)) return strict
+  const permissive = Schema.decodeUnknownOption(
+    PermissiveAgentOutputEnvelopeSchema,
+  )(raw)
+  if (Option.isNone(permissive)) return Option.none()
+  return buildAgentUnknownEvent(permissive.value.event)
+}
+
 export const runtimeAgentOutputObservationFromRow = (
   row: RuntimeEventRow,
 ): Option.Option<RuntimeAgentOutputObservation> =>
-  // TFIND-030: `event` is already the typed `AgentOutputEvent` union here
-  // (a non-conforming envelope was rejected upstream), so the discriminant
-  // is guaranteed present — no record/string guard needed.
-  Option.flatMap(decodeRuntimeAgentOutputEnvelope(row.raw), (event) => {
+  // tf-8s7d: use the forgiving two-pass decoder so a future `_tag`
+  // variant decodes to `AgentUnknownEvent` rather than silently
+  // dropping the row at the strict-decode boundary. The observation
+  // layer still only surfaces KNOWN variants in its typed return
+  // (`RuntimeAgentOutputObservation`); the Unknown branch returns
+  // `Option.none()` here so existing consumers' exhaustive `_tag`
+  // matches stay total. A future revision can promote `AgentUnknownEvent`
+  // into the observation surface if a consumer needs to audit unknowns.
+  Option.flatMap(tryDecodeRuntimeAgentOutputEnvelope(row.raw), (event) => {
+    if (event._tag === "AgentOutputUnknown") return Option.none()
     const contextIds = runtimeAgentOutputContextIds(row.contextId)
     if (Option.isNone(contextIds)) return Option.none()
     const base = {
