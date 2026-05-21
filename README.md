@@ -1,122 +1,367 @@
 # Firegrid
 
-Firegrid lets you build local AI agents that survive crashes, restarts, long
-waits, and external events without losing their place.
+**A durable choreography substrate for AI agent systems.**
+No orchestrator. No graph. No central plan.
 
-It is not a graph builder where you hard-code the agent workflow up front.
-Firegrid gives agents a small set of durable primitives - wait, sleep,
-delegate, schedule, execute, observe - and lets the model decide what to do
-next at runtime. Firegrid handles the durable execution underneath: workflow
-state, event streams, runtime contexts, retries, host restarts, and typed
-protocol boundaries.
+Agents, humans, webhooks, and services coordinate by reading and writing
+typed events to a shared durable environment. Firegrid runs that
+environment durably — across crashes, restarts, long waits, and external
+events you don't control. The substrate is the contract; the
+participants choose what to do next at runtime.
 
-**Status:** private beta. The runtime is usable for local experiments and
-internal agent workflows, but public APIs may still change.
+> **If you're choosing between LangGraph, AutoGen, and CrewAI to define
+> your agent's flow upfront, Firegrid is a different category** — closer
+> to Restate or Temporal than to LangChain, but with an agent-facing
+> coordination model rather than a state-machine DSL.
 
-## Choreography, Not Orchestration
+**Status:** private beta. Local + internal use ready; public APIs may
+still change.
 
-Most agent frameworks ask you to author the control flow: define a graph, write
-steps, wire branches, set timeouts, and decide when one agent should call the
-next. Firegrid's bet is different. The durable substrate should make agent
-decisions safe and observable, but the sequence of work should be chosen by the
-agent in response to what it actually sees.
+---
+
+## Two Categories. Pick One.
 
 ```mermaid
-flowchart LR
-  subgraph O["Orchestration"]
-    O0["Developer writes graph"] --> O1["research step"]
-    O1 --> O2{"coded branch"}
-    O2 --> O3["score step"]
-    O2 --> O4["draft step"]
-    O3 --> O5["fixed retry / timeout policy"]
-    O4 --> O5
-    O5 --> O6["workflow ceiling: change code to change behavior"]
+flowchart TB
+  subgraph Orchestration["Orchestration — most agent frameworks"]
+    direction TB
+    O0[Developer authors the flow]
+    O1[planner node]
+    O2{router}
+    O3[critic node]
+    O4[executor node]
+    O0 --> O1 --> O2
+    O2 -->|cond A| O3
+    O2 -->|cond B| O4
+    O3 --> O2
+    O4 --> O2
   end
 
-  subgraph C["Firegrid choreography"]
-    C0["Agent receives goal + durable tools"] --> C1["observe history"]
-    C1 --> C2["decide next move at runtime"]
-    C2 --> C3["wait_for / sleep"]
-    C2 --> C4["session_new / session_prompt"]
-    C2 --> C5["execute / schedule_me"]
-    C3 --> C6["durable event stream"]
-    C4 --> C6
-    C5 --> C6
-    C6 --> C1
+  subgraph Choreography["Choreography — Firegrid"]
+    direction TB
+    S[("Durable Substrate<br/>(typed channels over rows)")]
+    P1[Planner agent]
+    P2[Reviewer agent]
+    P3[Linear webhook]
+    P4[Human approval]
+    P5[Tool execution]
+    P6[Audit logger]
+    P1 <-->|wait_for / send| S
+    P2 <-->|wait_for / send| S
+    P3 ---->|emits fact| S
+    P4 ---->|emits fact| S
+    P5 <-->|call / send| S
+    S -.->|read-only| P6
   end
+
+  classDef o fill:#fee,stroke:#c44
+  classDef c fill:#efe,stroke:#494
+  classDef sub fill:#fed,stroke:#a52
+  class Orchestration o
+  class Choreography c
+  class S sub
 ```
 
-The agent-facing surface is intentionally small:
+**Orchestration**: the developer authors a directed graph upfront. The
+framework routes work between nodes according to that graph.
+Predictable. Hard to extend. Brittle under external events.
 
-- `wait_for` - pause durably until a matching fact appears
-- `session_new`, `session_prompt` - create and continue delegated participants
-- `schedule_me` - ask your future self to resume with a prompt
-- `execute` - call a bounded, advertised capability and record the result
-- `sleep` - pause for a duration
+**Choreography**: participants subscribe to a shared substrate of typed
+events. No one routes; no one orchestrates. Coordination emerges from
+each participant acting on what it observes. Adding a new participant
+is subscribing to a channel; removing one is unsubscribing.
 
-That means the primary "program" can be a prompt plus durable tools, not a
-TypeScript DAG:
+The participants don't know each other exists. They share the
+environment.
+
+---
+
+## The Substrate, Concretely
+
+Think of the substrate as a **typed, durable bulletin board**:
+
+- Anyone can pin a typed fact ("plan ready", "PR opened", "human approved")
+- Anyone can wait on facts matching a pattern
+- The board survives restarts; late readers see what was pinned before
+  they arrived
+- There's no postmaster routing pins to readers — the board IS the routing
+
+The agent's contract with the substrate is a small fixed verb set
+(channels are the typed transport):
+
+```ts
+wait_for(channel, { match, timeoutMs })   // observe — wait until something pins a matching fact
+send(channel, payload)                     // emit — pin a typed fact for others to find
+call(channel, request)                     // request/response — pin a question, wait for the typed answer
+sleep(duration) / schedule_me(when, prompt) // time-based waits
+session_new(prompt) / session_prompt(session, prompt) // delegate to a child participant
+execute(capability, input)                 // call a bounded host capability and record the result
+```
+
+That's the whole agent surface. **There is no `graph.addNode()`. There
+is no `state.transition()`. There is no router function.**
+
+---
+
+## Hello Choreography
+
+A LangGraph hello-world authors the flow:
+
+```ts
+// orchestration: edges + conditional routing all encoded upfront
+const graph = new StateGraph(MyState)
+  .addNode("planner", plannerFn)
+  .addNode("executor", executorFn)
+  .addEdge("planner", "executor")
+  .addConditionalEdge("executor", routerFn, { retry: "planner", done: END })
+```
+
+A Firegrid hello-world doesn't:
+
+```ts
+// participant A — does work, pins a fact
+yield* send(PlanReadyChannel, { plan: "..." })
+
+// participant B — somewhere else, possibly running on a different host,
+// possibly waiting for hours, possibly restarted three times since A ran.
+// observes the substrate, reacts. No import of A. No knowledge of A.
+const event = yield* wait_for(PlanReadyChannel, { match: {...} })
+yield* execute(approve_pr_tool, event.plan)
+```
+
+Nobody authors the relationship. The participants coordinate through
+the substrate, not through code that references each other.
+
+---
+
+## Things Choreography Enables That Orchestrators Can't (Without Becoming Substrate Themselves)
+
+These aren't theoretical — they're the use cases that pushed us out of
+orchestration in the first place.
+
+### 1. Late-arriving external events
+
+A Linear webhook arrives 3 hours after the agent started its first turn.
+The agent that was waiting observes it. Nobody updated a state graph to
+say "the webhook is coming." The webhook is just a participant emitting
+a fact into the substrate; the agent is just a participant observing.
+
+### 2. Capabilities that grow without rewiring
+
+Add a GitHub integration next week. Register a `GitHubPullRequestOpened`
+channel binding. The existing agent gains the ability to wait on it —
+without touching the agent's code, without redeploying a central
+orchestrator, without updating a state graph.
+
+### 3. Multi-agent coordination without a coordinator
+
+Agent A finishes planning and emits `event("plan.ready")`. Agent B was
+already waiting on that channel. Neither agent knew the other existed.
+No router decided "now hand off to B." A scaled-up version: 50
+specialist agents subscribing to overlapping subsets of channels, each
+acting on what they see.
+
+### 4. Cross-restart resumption with new state
+
+Agent is mid-task when the host crashes. New process starts. Agent
+resumes — and finds three human approvals that arrived during the
+downtime, already in the substrate. It picks up the right one.
+Orchestrators model this as "we'd need a separate event queue and a way
+to inject it into the graph." Choreography models it as "events are
+substrate facts; the substrate persists; the agent observes."
+
+### 5. Adding observers for free
+
+Want to log every permission request to S3? Subscribe a new participant
+to the permission channel. The agent doesn't change. The orchestrator
+doesn't change. There IS no orchestrator. The participant is a peer
+reading the substrate, just like everyone else.
+
+### 6. Backpressure without coordination
+
+If 100 webhooks arrive at once, they're 100 facts pinned to the
+substrate. Workers consume at their own pace. No queue depth to
+configure, no orchestrator to instrument, no "handle burst load" code
+to write. The substrate is the queue; subscribers consume at their
+rate.
+
+---
+
+## The Agent's Eye View
+
+A Firegrid program is a goal + the substrate + a small toolbox:
 
 ```text
-Goal: fix the failing checkout test and open a PR.
+Goal: triage the failing checkout test and ship a fix.
 
-Available durable tools:
-- wait_for(channel, match, timeout)
-- session_new(prompt)
-- session_prompt(session, prompt)
-- schedule_me(when, prompt)
-- execute(capability, input)
-- sleep(duration)
+Substrate channels available to me (this is the entire universe I can perceive):
+- ci.test.failure                  (ingress; I observe failed CI runs)
+- linear.issue.created              (ingress; I observe new tickets)
+- agent_output.from(child)          (ingress; I observe what my children emit)
+- session_prompt(child)             (egress; I can give a child a new instruction)
+- approval(human)                   (call; I can ask a human to decide)
+- github.pr.create                  (call; I can open a PR)
+- session.log                       (egress; I leave breadcrumbs)
 
-Agent:
-1. Start an investigation session for the failing test.
-2. Wait for its summary.
-3. If the fix is small, implement it directly; otherwise start a second
-   session for review.
-4. Execute the test command.
-5. Wait for CI or schedule myself to re-check.
-6. Open the PR when the evidence is good enough.
+What I do:
+1. session_new("read the failing test and find the root cause")
+2. wait_for(agent_output.from(child), {match: {final: true}})
+3. If fix is small → execute(github.pr.create, ...)
+   else → call(approval(human), "fix is risky; OK to proceed?")
+4. wait_for(ci.test.passing) OR schedule_me(in: 10min, "check CI again")
+5. session.log("shipped fix; closed loop")
 ```
 
-The model owns the sequence, branching, delegation, and recovery policy. The
-durability comes from the primitives, and the legibility comes from the
-observation stream every primitive writes to.
+The agent picks the sequence. The substrate makes the sequence durable.
+No one wrote a graph; no one decided the branch conditions in advance.
 
-## One Substrate, Several Projections
+---
 
-Firegrid does have client APIs, host composition APIs, CLI entry points, and MCP
-tools. Those are projections of the same substrate, not separate ways to define
-a central agent graph.
+## The Engineer's Eye View
 
-- **Agent tool projection:** the agent sees `wait_for`, `session_new`,
-  `schedule_me`, `execute`, and related durable tools.
-- **Channel projection:** application events such as webhooks, approvals,
-  runtime observations, and domain facts become semantic channels the agent can
-  wait on or emit to.
-- **Client SDK projection:** apps can create sessions, read observations, and
-  render live state without importing runtime internals.
-- **Host Layer projection:** host authors compose runtime services, channel
-  bindings, MCP exposure, and adapters with Effect `Layer`s.
-- **CLI projection:** local development can start a host or run one context
-  without writing a host app.
-- **Transport projections:** future REST, gRPC, or JSON-RPC adapters can bind
-  the same protocol contracts without becoming a new orchestration layer.
+```mermaid
+flowchart TB
+  subgraph App["Your application"]
+    Agent[AI agents]
+    Client[Client SDK calls]
+    CLI[CLI commands]
+    Webhook[Webhook routes]
+  end
 
-Application code talks to these projections. It does not receive workflow
-engines, stream URLs, table names, execution ids, or subscription handles.
+  subgraph Channels["Typed channel layer (the substrate's API)"]
+    Verbs["wait_for · send · call<br/>(4 typed directions: ingress, egress, call, bidirectional)"]
+  end
 
-## Who It Is For
+  subgraph Substrate["The one substrate primitive"]
+    DT[("DurableTable<br/>insert · upsert · delete · get · query · rows()")]
+  end
 
-Firegrid is for developers building agents that need to do real work over time:
-local coding agents, automation workers, private assistants, webhook-driven
-agents, and internal tools that need durable waits without becoming a full
-hosted workflow platform.
+  subgraph Engine["Durable execution"]
+    WF["Workflow engine<br/>(state machines whose state IS DurableTable rows)"]
+  end
 
-It sits near systems such as Temporal, Restate, Inngest, LangGraph, Mastra, and
-CrewAI, but the center of gravity is different. Firegrid is an Effect-native
-local agent runtime for choreography: durable primitives, typed channels, and
-observable history under an agent-facing surface. It is not a general workflow
-SaaS, and it is not primarily a graph authoring framework.
+  subgraph Adapters["External-effect adapters (substrate boundary)"]
+    Sandbox[Sandbox: process spawn]
+    Codec[Codecs: ACP, stdio-jsonl]
+    Ingest[Verified webhook ingest]
+    Net[Network / provider APIs]
+  end
+
+  Agent --> Verbs
+  Client --> Verbs
+  CLI --> Verbs
+  Webhook --> Verbs
+  Verbs <--> DT
+  WF <--> DT
+  Adapters <-->|external↔durable rows| DT
+
+  classDef app fill:#eef,stroke:#225
+  classDef chan fill:#efe,stroke:#494
+  classDef sub fill:#fed,stroke:#a52
+  classDef eng fill:#eef,stroke:#449
+  classDef adap fill:#fee,stroke:#a44
+  class App app
+  class Channels chan
+  class Substrate sub
+  class Engine eng
+  class Adapters adap
+```
+
+Three concentric layers:
+
+1. **One substrate primitive**: `DurableTable` — typed rows + reads +
+   subscriptions. Everything persistent is rows in some table.
+2. **One adapter layer**: typed channels with 4 directions. Channels
+   carry typed payloads over DurableTable primitives.
+3. **N projection surfaces**: client SDK methods, agent verbs, CLI
+   commands, MCP tools, future REST/gRPC bindings — all project the
+   same channel verbs in surface-specific shapes.
+
+A small fixed set of external-effect adapters (sandbox, codecs, webhook
+ingest, network) bridges between the outside world and DurableTable
+rows. Once an effect lands as a row, the substrate is uniform.
+
+> **The workflow engine is not a separate substrate.** It's a state
+> machine framework whose state IS DurableTable rows. Workflows are
+> typed views over the same substrate channels project over.
+
+---
+
+## When Orchestrators Win Over Firegrid
+
+Honest counter-positioning. If your problem looks like these, reach for
+LangGraph / AutoGen / CrewAI / Temporal-for-agents — they're better at
+it:
+
+- **Fixed linear flows** with no external events: "planner → researcher
+  → writer → editor" where the shape is known at design time
+- **Visual workflow editing** for non-developers — Firegrid has no GUI
+- **Hosted SaaS** with one-click deploy and dashboards — Firegrid runs
+  in your process
+- **Single-turn agents** that return one answer and terminate
+- **Pre-defined branching** with a small fixed condition set
+
+Reach for Firegrid when:
+
+- **Coordination must outlive any single agent invocation** — multi-day
+  workflows, human-in-the-loop, async external events
+- **Capabilities evolve faster than central orchestration logic** —
+  adding integrations without rewriting flows
+- **Multiple agents/services need to operate semi-independently** against
+  shared state without a router process
+- **Restart-safety + replay** must include external events arriving
+  during downtime, not just resuming the agent itself
+- **The system is durable infrastructure, not a single-shot script**
+
+The fork point is whether coordination needs to outlive any single
+invocation. If yes → choreography. If no → orchestration.
+
+---
+
+## A Different Vocabulary
+
+If you're carrying language inertia from orchestrators, here's the
+mapping (and where there's no equivalent, that's load-bearing):
+
+| Orchestration mental model | Firegrid mental model |
+| --- | --- |
+| Graph nodes | Participants (agents, services, humans, webhooks — peers) |
+| Graph edges | Channels (typed event/fact transport) |
+| Conditional edges / router function | *No equivalent.* Agents read the substrate and decide. |
+| State graph definition | *No equivalent.* State IS the durable substrate. |
+| Step / handoff | `wait_for` / `send` / `call` over channels |
+| Workflow declaration | Implicit; emerges from participant behavior + substrate state |
+| Orchestrator process | *No equivalent.* There isn't one. |
+| "The agent runs to completion" | The agent pauses durably; the substrate outlives the agent process |
+
+The "no equivalent" rows are the ones doing the differentiation. They
+aren't features Firegrid hasn't built yet — they're concepts the model
+deliberately doesn't have.
+
+---
+
+## What Firegrid Deliberately Doesn't Have
+
+These are architectural choices, not roadmap gaps. The model works
+*because* these don't exist:
+
+- **No visual workflow editor.** Flows aren't predefined; there's
+  nothing to draw.
+- **No state-graph DSL.** Participants read/write substrate; they don't
+  declare transitions.
+- **No central orchestrator process.** Nothing to deploy as "the
+  orchestrator."
+- **No hosted SaaS.** Runs in your process against your durable streams.
+  No dashboards we operate.
+- **No tight coupling between participants.** Adding/removing one
+  doesn't require updating others.
+- **No "the agent runs until done."** Agents pause durably; the
+  substrate outlives the agent process.
+
+If any of these absences feel like missing features, you may want an
+orchestrator instead.
+
+---
 
 ## Quick Start
 
@@ -155,68 +400,82 @@ pnpm --filter @firegrid/tiny-firegrid simulate:list
 pnpm --filter @firegrid/tiny-firegrid simulate:perf
 ```
 
-## What Firegrid Provides
+---
 
-- **Durable local agent contexts.** Agent work can span sleeps, waits, restarts,
-  and host bounces without depending on one in-memory process staying alive.
-- **Agent tools with durable semantics.** Operations like `sleep`, `wait_for`,
-  session control, scheduling, and execution are exposed as a small tool
-  surface.
-- **Typed channels.** Agents wait on or emit semantic events such as webhooks,
-  approvals, lifecycle events, and domain facts without knowing the transport
-  underneath.
-- **Effect-native runtime composition.** Host applications compose Firegrid
-  services with `Layer`s, so tests and local hosts can swap concrete bindings
-  cleanly.
-- **Protocol-owned contracts.** Host, client, CLI, runtime, and tests share
-  schemas through `@firegrid/protocol` instead of inventing local contracts.
-- **Simulation-first validation.** `@firegrid/tiny-firegrid` provides fast,
-  deterministic traces and perf harnesses for runtime behavior that should not
-  require live provider calls.
-
-## How It Is Organized
+## Package Map (each one's role in the choreography model)
 
 ```text
-@firegrid/protocol
-  shared schemas, operation contracts, row/projection schemas
+@firegrid/protocol         Typed contracts that channels carry — the
+                           shared schemas every participant agrees on.
 
-bindings
-  @firegrid/host-sdk
-    host composition, channel Layers, MCP / Effect AI tool binding
-  @firegrid/client-sdk
-    browser/app-safe client surface over protocol schemas
-  @firegrid/cli
-    local command-line binding
+@firegrid/runtime          The durable substrate where choreography
+                           happens — workflow engine, event pipeline,
+                           verified ingest, external-effect adapters.
 
-@firegrid/runtime
-  workflow engine integration, runtime workflows, event pipeline,
-  verified webhook ingest, provider adapters, common execution services
+@firegrid/host-sdk         Compose channel bindings + host-side
+                           capabilities — wire the substrate into your
+                           process.
+
+@firegrid/client-sdk       Talk to a running choreography from app code —
+                           browser/edge-safe; protocol-shaped.
+
+@firegrid/cli              Local entry points to start hosts and run
+                           single contexts.
+
+@firegrid/tiny-firegrid    Test the choreography substrate
+                           deterministically; trace + perf harness.
+
+effect-durable-operators   DurableTable: the one persisted-state
+                           primitive everything is built on.
+
+effect-durable-streams     Low-level Effect client for the Durable
+                           Streams protocol.
 ```
 
-| Package | Role |
+| Package | One-line role |
 | --- | --- |
-| [`@firegrid/protocol`](packages/protocol/README.md) | Browser-safe shared schemas, operation contracts, launch/control rows, runtime ingress rows, observations, projection schemas, verified-webhook schemas. |
-| [`@firegrid/runtime`](packages/runtime/README.md) | Durable execution substrate: workflow engine, workflow definitions, runtime event pipeline, provider adapters, verified webhook ingest, runtime operation execution. |
-| [`@firegrid/host-sdk`](packages/host-sdk/README.md) | Host-author composition: `FiregridRuntimeHostLive`, channel Layers, MCP server exposure, Effect AI toolkit binding, local host topology. |
-| [`@firegrid/client-sdk`](packages/client-sdk/README.md) | App/browser-safe client binding over protocol schemas and normalized observations. |
-| [`@firegrid/cli`](packages/cli/package.json) | Local CLI entry points for starting hosts and running contexts. |
-| [`@firegrid/tiny-firegrid`](packages/tiny-firegrid/README.md) | Deterministic simulations, trace capture, perf harnesses, and factory-vision smokes. |
-| [`effect-durable-operators`](packages/effect-durable-operators/README.md) | Effect-native durable table/operator layer over Durable Streams State. |
-| [`effect-durable-streams`](packages/effect-durable-streams/README.md) | Low-level Effect client for the Durable Streams protocol. |
+| [`@firegrid/protocol`](packages/protocol/README.md) | Typed contracts channels carry |
+| [`@firegrid/runtime`](packages/runtime/README.md) | The durable substrate where choreography happens |
+| [`@firegrid/host-sdk`](packages/host-sdk/README.md) | Compose channel bindings + host capabilities |
+| [`@firegrid/client-sdk`](packages/client-sdk/README.md) | Talk to a running choreography from app code |
+| [`@firegrid/cli`](packages/cli/package.json) | Local CLI entry points |
+| [`@firegrid/tiny-firegrid`](packages/tiny-firegrid/README.md) | Deterministic substrate validation + trace/perf |
+| [`effect-durable-operators`](packages/effect-durable-operators/README.md) | DurableTable — the one persisted-state primitive |
+| [`effect-durable-streams`](packages/effect-durable-streams/README.md) | Low-level Durable Streams client |
+
+---
 
 ## Architecture Docs
 
-The compact source-of-truth reading set starts at
-[`docs/cannon/README.md`](docs/cannon/README.md). Older docs elsewhere under
-`docs/` are historical unless they are promoted there.
+The compact source-of-truth reading set is
+[`docs/cannon/README.md`](docs/cannon/README.md). Older docs elsewhere
+under `docs/` are historical unless they're promoted into cannon.
 
-Useful entry points:
+The load-bearing reads in order:
 
-- [`docs/cannon/architecture/host-sdk-runtime-boundary.md`](docs/cannon/architecture/host-sdk-runtime-boundary.md)
-- [`docs/cannon/architecture/current-convergence-assessment-2026-05-20.md`](docs/cannon/architecture/current-convergence-assessment-2026-05-20.md)
-- [`docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`](docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md)
-- [`docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`](docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md)
-- [`docs/cannon/vision/factory-vision.md`](docs/cannon/vision/factory-vision.md)
+1. **The architectural pillar** —
+   [`docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md`](docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md)
+   — DurableTable is the one substrate; channels are typed transport
+   over it; everything else is projection.
+
+2. **The agent surface** —
+   [`docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`](docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md)
+   — the small fixed verb set; channels as the agent's nervous system.
+
+3. **The package boundary** —
+   [`docs/cannon/architecture/host-sdk-runtime-boundary.md`](docs/cannon/architecture/host-sdk-runtime-boundary.md)
+   — protocol/runtime/host-sdk/client-sdk separation, derivable from
+   "who touches DurableTable directly."
+
+4. **The factory vision** —
+   [`docs/cannon/vision/factory-vision.md`](docs/cannon/vision/factory-vision.md)
+   — what Firegrid is for, end-to-end.
+
+5. **Current convergence** —
+   [`docs/cannon/architecture/current-convergence-assessment-2026-05-20.md`](docs/cannon/architecture/current-convergence-assessment-2026-05-20.md)
+   — where the architecture is today vs. the target shape.
+
+---
 
 ## For Contributors
 
@@ -233,8 +492,8 @@ Run the full gate before code review:
 pnpm run verify
 ```
 
-Lane work happens in sibling worktrees under `../firegrid-worktrees/`, not in
-the primary checkout:
+Lane work happens in sibling worktrees under `../firegrid-worktrees/`,
+not in the primary checkout:
 
 ```sh
 bash scripts/task-enter.sh <bead-id> <slug>
@@ -242,17 +501,25 @@ bash scripts/task-enter.sh <bead-id> <slug>
 bash scripts/task-exit.sh <bead-id>
 ```
 
-Architecture discipline for contributors:
+Architecture discipline:
 
-- Channels are the application and agent surface.
-- Runtime owns workflow execution and durable substrate integration.
-- Host SDK owns binding and host composition.
-- Protocol owns shared contracts consumed by more than one binding.
+- **Channels are the application and agent surface.** Substrate
+  addressing (table names, stream URLs, workflow handles) does not
+  leak above the channel layer.
+- **Runtime owns workflow execution and durable substrate integration.**
+  External-effect adapters live here, not in bindings.
+- **Host SDK owns binding and host composition.** Channel Live Layers
+  bind to substrate; client/CLI/MCP projections wrap channel verbs.
+- **Protocol owns shared contracts** consumed by more than one
+  binding. Runtime-internal schemas stay runtime-owned.
 - Product code imports from normal package dependencies, never from
   `repos/**`; vendored upstream sources are read-only references.
 
-The current convergence scoreboard is the `currentHostSdkSubstrateDebt` list in
-[`.dependency-cruiser.cjs`](.dependency-cruiser.cjs).
+The convergence scoreboard is the `currentHostSdkSubstrateDebt` list in
+[`.dependency-cruiser.cjs`](.dependency-cruiser.cjs) — every closed
+carveout is a step toward the substrate-boundary-clean state.
+
+---
 
 ## License
 
