@@ -26,3 +26,7 @@ export {
   type RuntimeControlRequestSideEffectsService,
   type RuntimeControlRequestStartResult,
 } from "./control-request-dispatcher.ts"
+export {
+  activeActivityAttempt,
+  recordLifecycleTerminalEvidence,
+} from "./lifecycle-evidence.ts"
