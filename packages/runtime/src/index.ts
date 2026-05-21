@@ -152,3 +152,7 @@ export {
   type VerifiedWebhookIngestResult,
   verifiedWebhookFactTableLayerOptions,
 } from "./verified-webhook-ingest/index.ts"
+export {
+  ExternalEffectOutboundAdapter,
+  type ExternalEffectOutboundAdapterService,
+} from "./outbound-effects/index.ts"

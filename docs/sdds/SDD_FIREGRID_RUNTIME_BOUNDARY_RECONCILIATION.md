@@ -218,6 +218,7 @@ packages/runtime/src/
   workflow-engine/
   agent-tools/
   agent-adapters/
+  outbound-effects/
   streams/
   source-registration/
   verified-webhook-ingest/
@@ -234,9 +235,9 @@ The exact folder names can change, but the boundary is fixed:
   visibility without host-only observation glue;
 - streams owns substrate-neutral runtime observation source schemas and stream
   capability tags consumed by wait routers and future channel registries;
-- waits, workflow-engine, tools, adapters, streams, source registration, and
-  verified ingest are adjacent bounded contexts, not subfolders of the agent
-  event pipeline.
+- waits, workflow-engine, tools, adapters, outbound effects, streams, source
+  registration, and verified ingest are adjacent bounded contexts, not
+  subfolders of the agent event pipeline.
 
 This namespacing should not be done as part of the first host extraction PR.
 The first PR should reduce `host/index.ts`. A later namespace PR can move files
@@ -450,6 +451,7 @@ This inventory is the review checklist for the post-`#250` tree.
 | `waits/` | Durable coordination operator | Mixed; wait row authority belongs with wait bounded context. | Owns row schema/source registry/router. | No |
 | `agent-tools/` | Runtime tool schemas, MCP exposure, and lowering | Mixed; MCP host couples to host authority. | Host/tool composition overlap. | Yes, via `host/` |
 | `agent-adapters/` | Projections/adapters over codec sessions | Acceptable sibling surface. Keep out of durable runtime pipeline. | Adapter projection only. | No |
+| `outbound-effects/` | External provider side-effect adapters | Target adjacent adapter surface; host composes channels over runtime capabilities. | Provider transport and response mapping for outbound channel calls. | No |
 | `source-registration/` | Provider-owned source registration layers | Target shape after host observation glue extraction. | Registers named observation sources for `wait_for`. | No |
 | `workflow-engine/` | Workflow engine adapter/substrate | Separate substrate boundary. Do not fold into agent runtime pipeline. | Runtime substrate dependency. | No |
 | `verified-webhook-ingest/` | External ingress/source adapter | Separate ingest surface. Audit later for generic durable operator overlap. | Adjacent ingest surface. | No |
@@ -626,6 +628,22 @@ Target:
 - do not route runtime pipeline lifecycle through adapters;
 - keep adapter registries as adapter-specific composition, not runtime
   authority registries.
+
+### `outbound-effects/`
+
+Role: external provider side-effect adapters.
+
+Outbound-effect adapters convert decoded channel requests into provider calls
+and map provider responses back into protocol-owned response schemas. They are
+runtime-owned adapter bodies, while channel contracts stay in
+`@firegrid/protocol/channels` and host-sdk composes the live channel Layer.
+
+Target:
+
+- keep provider credentials and transport details out of protocol schemas;
+- expose narrow Effect capability tags and Layers for host composition;
+- do not give adapters durable substrate authority unless a specific channel
+  contract requires durable request/completion rows.
 
 ### `workflow-engine/`
 

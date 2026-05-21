@@ -1,0 +1,24 @@
+feature:
+  name: firegrid-external-effect-channel
+  product: firegrid
+  description: Project outbound provider side effects through a neutral callable channel contract.
+
+components:
+  CONTRACT:
+    requirements:
+      1: Protocol declares a neutral external.effect.call callable channel target with request and response schemas.
+      2: The request schema carries an opaque effect id, opaque payload, and optional idempotency or correlation metadata without provider-specific fields.
+      3: The response schema carries the effect id, completion status, opaque output, and completion timestamp without provider-specific fields.
+  RUNTIME_ADAPTER:
+    requirements:
+      1: Runtime owns adapters that convert decoded neutral effect requests into outbound provider calls.
+      2: Runtime adapters map provider responses into the neutral protocol response schema.
+      3: Provider transport configuration is injected through Effect Layer composition rather than protocol schemas.
+  HOST_BINDING:
+    requirements:
+      1: Host SDK composes the neutral protocol channel Tag to a runtime outbound-effect adapter through a Live Layer.
+      2: The host binding exposes only the neutral callable channel binding, not provider credentials or transport internals.
+  VALIDATION:
+    requirements:
+      1: Tests prove a runtime adapter issues one provider outbound request through the neutral effect channel shape.
+      2: Tests prove the host Live Layer registers external.effect.call as a callable channel.

@@ -34,6 +34,9 @@ export {
   HostSessionsCreateOrLoadChannelLive,
 } from "./channels/host-sessions-create-or-load-live.ts"
 export { HostControlChannelsLive } from "./channels/host-control/index.ts"
+export {
+  ExternalEffectCallChannelLive,
+} from "./channels/external-effect-live.ts"
 
 export {
   ContextNotFound,

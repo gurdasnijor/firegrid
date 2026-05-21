@@ -53,6 +53,10 @@
       "types": "./src/agent-adapters/index.ts",
       "default": "./src/agent-adapters/index.ts"
     },
+    "./outbound-effects": {
+      "types": "./src/outbound-effects/index.ts",
+      "default": "./src/outbound-effects/index.ts"
+    },
     "./sources/sandbox": {
       "types": "./src/agent-event-pipeline/sources/sandbox/index.ts",
       "default": "./src/agent-event-pipeline/sources/sandbox/index.ts"

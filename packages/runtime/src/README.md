@@ -4,7 +4,7 @@ This directory keeps the agent event-pipeline grouped under
 `agent-event-pipeline/`. The target from
 [`SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md`](../../../docs/sdds/SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md)
 is to keep clean event-pipeline roles together while host, waits, tools,
-workflow-engine, adapters, and verified ingest remain adjacent bounded
+workflow-engine, adapters, outbound effects, and verified ingest remain adjacent bounded
 contexts.
 
 The agent event pipeline is:
@@ -79,6 +79,9 @@ These are intentionally not agent event-pipeline stages:
   services.
 - `agent-adapters/`: projections over codec sessions
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
+- `outbound-effects/`: external provider side-effect adapters projected by
+  host-composed channels. The provider transport and response mapping live
+  here; protocol channel contracts stay in `@firegrid/protocol/channels`.
 - `verified-webhook-ingest/`: external ingress/source adapter
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
 - `authorities/`: runtime control-plane lifecycle capabilities
