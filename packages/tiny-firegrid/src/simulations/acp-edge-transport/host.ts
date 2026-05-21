@@ -1,7 +1,9 @@
 import {
   AcpStdioEdgeLive,
+  ensurePathInput,
   FiregridLocalHostLive,
   FiregridLocalProcessFromEnv,
+  FiregridMcpServerLayer,
   type FiregridHost,
 } from "@firegrid/host-sdk"
 import { local } from "@firegrid/protocol/launch"
@@ -49,10 +51,18 @@ export const acpEdgeTransportHost = (
         agent: "tiny-firegrid-acp-edge-backing-agent",
         agentProtocol: "stdio-jsonl",
         cwd: request.cwd,
+        runtimeContextMcp: { enabled: true },
       }),
-  }).pipe(Layer.provideMerge(runtimeHost))
+  })
+  const mcp = Layer.discard(
+    FiregridMcpServerLayer({
+      host: "127.0.0.1",
+      port: 0,
+      path: ensurePathInput("/mcp"),
+    }),
+  )
 
-  return acpEdge as Layer.Layer<
+  return Layer.mergeAll(acpEdge, mcp).pipe(Layer.provideMerge(runtimeHost)) as Layer.Layer<
     FiregridHost,
     unknown,
     never

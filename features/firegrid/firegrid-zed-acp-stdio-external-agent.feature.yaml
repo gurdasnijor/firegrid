@@ -36,11 +36,14 @@ components:
       2: ACP newSession dispatches through the host-plane channel router to create a RuntimeContext while keeping ACP session identity adapter-local.
       3: ACP prompt dispatches prompt and start through host-plane channel routes, forwards Firegrid agent output as ACP sessionUpdate notifications, resolves only after TurnComplete, and keeps the session reusable for later prompts.
       4: ACP methods without current Firegrid host primitives fail explicitly instead of pretending to work, and follow-up beads track the missing primitives.
+      5: ACP stdio edge sessions request the host-owned runtime-context MCP marker so the backing runtime receives the Firegrid tool surface through the same host-side injection path as run and start.
+      6: ACP protocol-status observations from a backing ACP runtime are handled as protocol events by the edge and are not projected to the ACP client as assistant text chunks.
 
   CLI_HELPER:
     requirements:
       1: A CLI helper composes the local Firegrid host with AcpStdioEdgeLive, routes process stdin/stdout as the ACP transport, and keeps stdout reserved for ACP frames.
       2: The CLI helper accepts a normal local runtime command preset for the RuntimeContexts created by ACP newSession.
+      3: The CLI helper binds the host-owned runtime-context MCP server for backing runtimes while keeping the external client transport on ACP stdio.
 
 constraints:
   MCP_BOUNDARY:
@@ -48,6 +51,7 @@ constraints:
       1: The Zed ACP stdio path does not start or expose an MCP HTTP server as its transport.
       2: Local MCP bootstrap remains a separate `firegrid start` control/tool route and is not renamed or generalized into an mcp-local ACP concept.
       3: Sharing host/runtime context primitives with MCP is allowed; sharing MCP JSON-RPC routes, tool transport, or ready-record stdout semantics with ACP stdio is not.
+      4: A backing runtime launched by the ACP stdio edge may receive the host-owned runtime-context MCP declaration; that internal tool route is not part of the Zed ACP transport.
 
   NON_GOALS:
     requirements:

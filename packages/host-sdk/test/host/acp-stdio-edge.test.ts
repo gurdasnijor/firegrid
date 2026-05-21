@@ -48,6 +48,7 @@ let turn = 0
 const write = value => process.stdout.write(JSON.stringify(value) + "\\n")
 rl.on("line", line => {
   turn += 1
+  write({ type: "status", kind: turn === 1 ? "available_commands_update" : "tool_call_update" })
   write({ type: "text", messageId: "edge-message-" + turn, text: "host-sdk acp edge turn " + turn })
   write({ type: "turn_complete", messageId: "edge-message-" + turn, finishReason: "stop" })
 })
@@ -79,7 +80,7 @@ const makeClient = (
 })
 
 describe("ACP stdio edge", () => {
-  it("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 routes newSession and prompt through the host edge", async () => {
+  it("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6 routes turns and does not render protocol status as text", async () => {
     const harness = makeInMemoryAcpHarness()
     const namespace = `acp-edge-${crypto.randomUUID()}`
     const updates: Array<acp.SessionNotification> = []
