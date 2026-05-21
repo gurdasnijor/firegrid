@@ -2,6 +2,10 @@
 
 Status: draft architecture
 Created: 2026-05-21
+Last amended: 2026-05-21 (Effect-native router review: router is a typed
+value with `routes` and edge-only `dispatch`; decode failures surface as
+`ParseError`; route descriptors own Layer composition; router owns dispatch
+spans.)
 Owner: Firegrid Architecture
 Extends:
 - `SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md`
@@ -59,6 +63,15 @@ export const FiregridHostChannelRouter = channelRouter({
 })
 ```
 
+The router value has two views:
+
+1. `routes`: the typed in-process declaration, keyed by target literal.
+2. `dispatch`: the derived string-keyed edge view for ACP/MCP/HTTP/CLI and
+   other wire protocols.
+
+This mirrors the shape used by typed RPC/API systems: one typed declaration
+drives both compile-time usage and runtime edge interpretation.
+
 A host topology composes the router with runtime/kernel providers and edge
 adapters:
 
@@ -106,11 +119,12 @@ Owns channel contracts:
 - channel direction schemas;
 - channel payload schemas;
 - per-channel `Context.Tag`s;
-- pure route descriptor types if they are needed for cross-package typing;
+- pure route descriptor types, including the direction-to-verb matrix and the
+  `ChannelRouter<Routes>` type;
 - metadata needed by edge projections, such as target, direction, schema, and
   human-facing description.
 
-Protocol does not own route implementations.
+Protocol does not own route implementations or dispatch execution.
 
 ### `@firegrid/runtime`
 
@@ -119,6 +133,8 @@ Owns runtime/kernel route implementations:
 - channel Live Layers that lower into runtime control-plane tables;
 - channel Live Layers that lower into runtime output/observation tables;
 - channel Live Layers that signal or start workflows;
+- the runtime dispatch interpreter that decodes edge payloads and invokes route
+  implementations;
 - durable request/response workers when a callable route uses mailbox
   semantics;
 - any workflow, DurableTable, or adapter machinery below the channel boundary.
@@ -163,6 +179,12 @@ A router entry has three pieces:
 3. **Projection metadata**: enough information for edge adapters to list and
    invoke the route without importing substrate internals.
 
+Route implementations are descriptors, not raw `Layer` values. The descriptor
+keeps the protocol contract, metadata, and Live Layer tied together so the
+router can derive its own `Layer.mergeAll(...)` composition. If routes were
+only raw Layers, every host topology would have to remember to merge them by
+hand and the router would not actually own the route surface.
+
 The route direction controls which verbs are legal:
 
 | Direction | Agent/client verb | Route lowering |
@@ -172,38 +194,72 @@ The route direction controls which verbs are legal:
 | `call` | `call` | durable request/response handshake |
 | `bidirectional` | `send` + `wait_for` | same target supports append and observe |
 
-Routers should reject invalid verb/direction pairs before they reach a route
-implementation.
+The direction-to-verb table is a type-level lookup for typed callers. Invalid
+verb/direction pairs should be compile errors when code is generated from or
+written against the router declaration. Runtime rejection remains only at the
+wire boundary where a verb arrives as a string.
 
 ## Dispatch Contract
 
-The router exposes a narrow dispatch API for edge adapters:
+The router is a typed value. Its `routes` field is the in-process surface; its
+`dispatch` field is the string-keyed edge surface derived from those routes.
 
 ```ts
-type ChannelRouterDispatch = {
-  readonly waitFor: (
-    target: ChannelTarget,
-    input: WaitForInput,
-  ) => Effect.Effect<WaitForOutput, ChannelRouteError>
+type ChannelRouter<Routes extends Record<string, ChannelRoute>> = {
+  readonly routes: Routes
 
-  readonly send: (
-    target: ChannelTarget,
-    payload: unknown,
-  ) => Effect.Effect<unknown, ChannelRouteError>
+  readonly dispatch: {
+    readonly waitFor: (
+      target: keyof Routes & string,
+      input: unknown,
+    ) => Effect.Effect<unknown, ChannelRouteError | ParseError>
 
-  readonly call: (
-    target: ChannelTarget,
-    request: unknown,
-  ) => Effect.Effect<unknown, ChannelRouteError>
+    readonly send: (
+      target: keyof Routes & string,
+      payload: unknown,
+    ) => Effect.Effect<unknown, ChannelRouteError | ParseError>
+
+    readonly call: (
+      target: keyof Routes & string,
+      request: unknown,
+    ) => Effect.Effect<unknown, ChannelRouteError | ParseError>
+  }
 }
 ```
 
-The dispatch API is intentionally `unknown` at the edge because edge payloads
-arrive from JSON, ACP, MCP, CLI args, or HTTP bodies. The router decodes with
-the route's protocol schema before invoking the route implementation.
+The dispatch API is intentionally `unknown` only at the edge because edge
+payloads arrive from JSON, ACP, MCP, CLI args, or HTTP bodies. Dispatch lifts
+`Schema.decodeUnknown(route.input)` over the wire payload before invoking the
+route implementation. Route implementations receive decoded domain values and
+never see `unknown`.
+
+Decode failures surface as `ParseError` in the dispatch error channel. They
+should not be hidden inside a generic route error, because schema failure is a
+normal edge-boundary outcome.
 
 Typed in-process code should prefer typed channel tags and ergonomic client
 methods. String dispatch is an edge concern.
+
+## Dispatch Observability
+
+The router is also the correct place for shared dispatch tracing. Every edge
+crosses it, so every edge should get the same span names and attributes without
+each adapter reinventing them.
+
+Each dispatch should wrap route invocation in a span such as:
+
+```ts
+Effect.withSpan("firegrid.channel.dispatch", {
+  attributes: {
+    "firegrid.channel.target": target,
+    "firegrid.channel.direction": route.direction,
+    "firegrid.channel.verb": verb,
+  },
+})
+```
+
+Edges may add protocol-specific child spans, but target/direction/verb belongs
+to the router.
 
 ## Why This Is Not The Old Registry
 
@@ -244,7 +300,8 @@ Target state:
 
 edge adapter
   receives prompt over ACP/MCP/HTTP/CLI
-  calls router.send("host.prompt", payload)
+  calls router.dispatch.send("host.prompt", payload)
+    -> Effect<unknown, ChannelRouteError | ParseError>
 ```
 
 The host SDK never needs to know how prompt becomes a DurableTable row or a
@@ -259,7 +316,8 @@ A callable or egress route may lower to:
 
 - a durable request row observed by a kernel worker;
 - a workflow signal/mailbox entry;
-- an engine-native stream wait primitive;
+- a runtime-owned durable stream wait primitive, such as the future
+  `streamWaitAny` path named by the workflow-body plan;
 - a direct in-process runtime service in single-host tests.
 
 Those are implementation choices below the router. The route contract above the
@@ -273,14 +331,27 @@ contract while the runtime/kernel chooses the backing mechanism.
 ## Migration Plan
 
 1. Add pure router descriptor types and helpers.
-2. Move table-bound host-control channel Live Layers from `@firegrid/host-sdk`
+2. Add the runtime dispatch interpreter that derives `router.dispatch` from the
+   typed route declaration.
+3. Move table-bound host-control channel Live Layers from `@firegrid/host-sdk`
    into `@firegrid/runtime` or the runtime/kernel channel area.
-3. Replace `HostControlChannelsLive` with a host channel router declaration.
-4. Update ACP/MCP/CLI edges to consume router metadata and router dispatch.
-5. Delete broad `ChannelInventory` consumers. Keep only a thin edge-local
-   string-target resolver if an edge still needs it.
-6. Update docs/examples so new host surfaces are expressed as
+4. Replace `HostControlChannelsLive` with a host channel router declaration.
+5. Update ACP/MCP/CLI edges to consume router metadata and `router.dispatch`.
+6. Delete broad `ChannelInventory` consumers. Edges consume `router.dispatch`;
+   the broad app-visible inventory API is not carried forward.
+7. Update docs/examples so new host surfaces are expressed as
    `router + edge adapters + kernel`, not `registry + ad hoc Layers`.
+
+The post-move dependency direction is:
+
+```text
+host-sdk -> runtime -> protocol
+```
+
+`host-sdk` should lose direct DurableTable/control-plane imports for route
+bodies. If a current host-control route constructs table clients inline, split
+that into a runtime route Live Layer before moving the host topology to the
+router declaration.
 
 ## Acceptance Criteria
 
@@ -290,22 +361,30 @@ contract while the runtime/kernel chooses the backing mechanism.
 - Every route implementation lives at or below the runtime/kernel boundary
   unless it is explicitly app-owned.
 - Edge adapters use the router instead of hand-wiring channel lookup.
+- Decode failures from edge payloads are represented as `ParseError`.
+- Router dispatch emits consistent target/direction/verb spans.
 - `@firegrid/host-sdk` composes routers and edges; it does not own durable
   state wiring as stable architecture.
 - Typed client methods and agent verbs are projections over router-backed
   channels, not parallel operation catalogs.
 
+## Resolved Placement Calls
+
+1. Pure router helper types live in `@firegrid/protocol/channels/router`.
+   Reason: the route descriptor type, direction-to-verb matrix, and
+   `ChannelRouter<Routes>` shape are covariant with channel contracts. Splitting
+   them into another package would force lockstep versioning with protocol.
+2. Runtime owns the dispatch interpreter. Reason: dispatch performs schema
+   decoding, route invocation, span creation, and Layer-backed execution.
+3. Route implementations are descriptors, not raw Layers. Reason: descriptors
+   let the router derive both route metadata and `Layer.mergeAll(...)`
+   composition from the same declaration.
+
 ## Open Questions
 
-1. Should the pure router helper live in `@firegrid/protocol/channels/router`
-   or in a small runtime-neutral package? Default: protocol, because it is
-   contract metadata plus typing, not implementation.
-2. Should route implementations be expressed as `Layer` values directly, or as
-   `{ tag, layer }` descriptors? Default: descriptors, because edge metadata
-   and Layer composition need to stay tied together.
-3. Should host-specific app channels be registered by extending the same router
+1. Should host-specific app channels be registered by extending the same router
    or by merging routers? Default: router merging, so app packages can publish
    their own channel bundles.
-4. How much metadata should be required for REST/gRPC generation? Default:
+2. How much metadata should be required for REST/gRPC generation? Default:
    target, direction, schemas, and optional description first; avoid committing
    to transport-specific metadata until the first edge needs it.
