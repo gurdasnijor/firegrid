@@ -3,28 +3,17 @@ export {
   asRuntimeContextError,
   mapRuntimeContextError,
 } from "./runtime-errors.ts"
-export {
-  type RuntimeAgentOutputObservation as RuntimeAuthorityAgentOutputObservation,
-} from "./agent-event-pipeline/authorities/runtime-output-public.ts"
-export {
-  RuntimeControlPlaneRecorderLive,
-  RuntimeContexts,
-  RuntimeContextInsert,
-  RuntimeContextInsertLive,
-  RuntimeLocalContextResolver,
-  RuntimeContextRead,
-  RuntimeRuns,
-  RuntimeRunAppendAndGet,
-  type RuntimeContextInsertService,
-  type RuntimeLocalContextResolverService,
-  type RuntimeContextReadService,
-  type RuntimeRunAppendAndGetService,
-} from "./authorities/index.ts"
-export {
-  RuntimeAgentOutputAfterEvents,
-  RuntimeAgentOutputEvents,
-  RuntimeAgentOutputEventsLayer,
-} from "./agent-event-pipeline/authorities/runtime-output-public.ts"
+// Boundary (tf-bffo): the control-plane authority write-owner tags
+// (RuntimeControlPlaneRecorderLive, RuntimeContextInsert(Live), RuntimeContexts,
+// RuntimeContextRead, RuntimeLocalContextResolver, RuntimeRuns,
+// RuntimeRunAppendAndGet) and the agent-output journal internals
+// (RuntimeAgentOutputAfterEvents, RuntimeAgentOutputEvents(Layer), the
+// RuntimeAuthorityAgentOutputObservation projection) are kernel internals — the
+// write-ownership / commit points for durable collection families. They are NOT
+// part of the above-box public surface: code above the substrate boundary reaches
+// durable state through CHANNELS, not these service doors. Internal host
+// composition still wires them via the `@firegrid/runtime/control-plane` and
+// `@firegrid/runtime/runtime-output` subpaths; they are intentionally absent here.
 export {
   RuntimeContextProvisionWorkflow,
   RuntimeContextProvisionWorkflowPayload,
