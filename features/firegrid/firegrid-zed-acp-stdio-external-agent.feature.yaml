@@ -38,12 +38,14 @@ components:
       4: ACP methods without current Firegrid host primitives fail explicitly instead of pretending to work, and follow-up beads track the missing primitives.
       5: ACP stdio edge sessions request the host-owned runtime-context MCP marker so the backing runtime receives the Firegrid tool surface through the same host-side injection path as run and start.
       6: ACP protocol-status observations from a backing ACP runtime are handled as protocol events by the edge and are not projected to the ACP client as assistant text chunks.
+      7: The production ACP stdio edge emits Effect spans for ACP initialize, newSession, and prompt requests with bounded protocol/session attributes and no prompt or credential payload attributes.
 
   CLI_HELPER:
     requirements:
       1: A CLI helper composes the local Firegrid host with AcpStdioEdgeLive, routes process stdin/stdout as the ACP transport, and keeps stdout reserved for ACP frames.
       2: The CLI helper accepts a normal local runtime command preset for the RuntimeContexts created by ACP newSession.
       3: The CLI helper binds the host-owned runtime-context MCP server for backing runtimes while keeping the external client transport on ACP stdio.
+      4: The CLI helper exposes an explicit opt-in ACP trace export switch and environment variable that write ended spans out-of-band from ACP stdout while leaving the default command quiet.
 
 constraints:
   MCP_BOUNDARY:
@@ -66,3 +68,4 @@ constraints:
       3: The smoke proves the spawned ACP process binds to a Firegrid RuntimeContext and does not require test-local stream URL wiring.
       4: A tiny-firegrid host-topology spike configures an ACP stdio edge with injectable streams, drives it from an in-memory ACP client through the real ACP TypeScript SDK, maps initialize, newSession, prompt, and sessionUpdate over public Firegrid client/channel operations, and proves prompt completion follows TurnComplete while the Firegrid session remains alive.
       5: A production host-sdk smoke drives AcpStdioEdgeLive with an in-memory ACP client through initialize, newSession, two prompt turns, sessionUpdate text projection, TurnComplete completion, and session reuse.
+      6: An ACP stdio trace smoke with export enabled writes a local artifact containing ACP edge spans and, when the backing ACP agent reaches the host-owned Firegrid MCP route, MCP register_toolkit, tools/list, and tools/call spans.

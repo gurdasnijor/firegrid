@@ -71,6 +71,11 @@ import {
   type AcpStdioSessionRuntimeRequest,
 } from "@firegrid/host-sdk"
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk/firegrid"
+import {
+  FiregridOtelLive,
+  resolveFiregridOtelFileDestination,
+  type FiregridOtelDestination,
+} from "@firegrid/observability/node"
 import { Cause, Console, Context, Data, Effect, Either, Exit, Layer, Option, ParseResult } from "effect"
 import { Readable, Writable } from "node:stream"
 
@@ -108,6 +113,7 @@ interface StartConfig {
 interface AcpConfig {
   readonly namespace: string
   readonly runConfig: LaunchConfig
+  readonly otelDestination?: FiregridOtelDestination
 }
 
 interface ReadyRecord {
@@ -559,7 +565,24 @@ const hostAcpLayer = (
       path: ensurePathInput(defaultMcpPath),
     }),
   )
-  return Layer.mergeAll(acpEdge, mcpServer).pipe(Layer.provideMerge(host))
+  const base = Layer.mergeAll(acpEdge, mcpServer).pipe(Layer.provideMerge(host))
+  if (config.otelDestination === undefined) return base
+  return base.pipe(
+    Layer.provideMerge(
+      // firegrid-zed-acp-stdio-external-agent.CLI_HELPER.4
+      FiregridOtelLive({
+        resource: {
+          serviceName: "firegrid-acp",
+          attributes: {
+            "firegrid.namespace": config.namespace,
+            "firegrid.durable_streams.base_url": durableStreams.baseUrl,
+            "firegrid.process.role": "firegrid-acp",
+          },
+        },
+        destination: config.otelDestination,
+      }),
+    ),
+  )
 }
 
 const runAcpStdio = (
@@ -622,9 +645,12 @@ const acpHelp = `Start Firegrid as a long-running ACP stdio agent.
 The command reserves stdout for ACP JSON-RPC frames and routes ACP newSession
 and prompt requests into Firegrid host-plane channel routes.
 
+Tracing is quiet by default. Use --otel-file or FIREGRID_OTEL_FILE to append
+ended spans as JSONL without writing diagnostics to stdout.
+
 Examples:
   pnpm firegrid -- acp --agent codex-acp --agent-protocol acp -- npx -y @zed-industries/codex-acp@0.14.0
-  pnpm firegrid -- acp --cwd "$PWD" -- node agent.mjs`
+  pnpm firegrid -- acp --otel-file .firegrid/acp-trace.jsonl --cwd "$PWD" -- node agent.mjs`
 
 const runArgv = Args.text({ name: "agent-argv" }).pipe(
   Args.withDescription(helpWithDetails(LaunchCliHelp.agentArgv)),
@@ -660,6 +686,13 @@ const secretEnvOption = Options.text("secret-env").pipe(
   Options.withPseudoName("NAME[=ENV_NAME]"),
   Options.withDescription(helpWithDetails(LaunchCliHelp.secretEnv)),
   Options.repeated,
+)
+const acpOtelFileOption = Options.text("otel-file").pipe(
+  Options.withPseudoName("PATH"),
+  Options.withDescription(
+    "Append ACP host-process Effect spans as JSONL to PATH. Equivalent env: FIREGRID_OTEL_FILE.",
+  ),
+  Options.optional,
 )
 
 const runCommand = Command.make(
@@ -766,9 +799,10 @@ const acpCommand = Command.make(
     agentProtocol: agentProtocolOption,
     cwd: cwdOption,
     secretEnv: secretEnvOption,
+    otelFile: acpOtelFileOption,
     agentArgv: runArgv,
   },
-  ({ agent, agentArgv, agentProtocol, cwd, namespace, secretEnv }) =>
+  ({ agent, agentArgv, agentProtocol, cwd, namespace, otelFile, secretEnv }) =>
     Effect.gen(function*() {
       const raw = yield* rawRunConfigFromCli({
         agentArgv,
@@ -782,12 +816,18 @@ const acpCommand = Command.make(
       const runConfig = yield* decodeCliRunConfig(raw, "firegrid acp")
       const durableStreams = yield* durableStreamsEndpoint
       const namespaceFromEnv = globalThis.process.env["FIREGRID_RUNTIME_NAMESPACE"]
+      const cliFilePath = Option.getOrUndefined(otelFile)
+      const otelDestination = resolveFiregridOtelFileDestination({
+        ...(cliFilePath === undefined ? {} : { filePath: cliFilePath }),
+        env: globalThis.process.env,
+      })
       const config: AcpConfig = {
         namespace: Option.getOrElse(namespace, () =>
           namespaceFromEnv === undefined || namespaceFromEnv.length === 0
             ? defaultNamespace
             : namespaceFromEnv),
         runConfig,
+        ...(otelDestination === undefined ? {} : { otelDestination }),
       }
       yield* runAcpStdio(durableStreams, config)
     }).pipe(Effect.scoped),

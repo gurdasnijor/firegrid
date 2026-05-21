@@ -1,19 +1,16 @@
-import * as NodeSdk from "@effect/opentelemetry/NodeSdk"
-import * as Otlp from "@effect/opentelemetry/Otlp"
-import { NodeHttpClient } from "@effect/platform-node"
 import {
-  BatchSpanProcessor,
-  ConsoleSpanExporter,
-  SimpleSpanProcessor,
-  type ReadableSpan,
-  type SpanExporter,
-  type SpanProcessor,
-} from "@opentelemetry/sdk-trace-base"
+  FiregridOtelLive,
+} from "@firegrid/observability/node"
+import type {
+  FiregridOtelDestination,
+  FiregridOtelResource,
+  SpanProcessor,
+} from "@firegrid/observability/node"
 import { execSync } from "node:child_process"
-import { createWriteStream, readFileSync, type WriteStream } from "node:fs"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { Config, Effect, Layer, Option } from "effect"
+import type { Layer } from "effect"
 import type { TinyFiregridSimulation } from "../types.ts"
 
 // Run-provenance attributes (Item E of the §6 observability batch).
@@ -52,14 +49,6 @@ const provenanceAttributes: Record<string, string> = (() => {
   return Object.fromEntries(entries)
 })()
 
-const OtlpEndpointConfig = Config.string("OTEL_EXPORTER_OTLP_ENDPOINT").pipe(
-  Config.option,
-)
-const OtlpHeadersConfig = Config.hashMap(
-  Config.string(),
-  "OTEL_EXPORTER_OTLP_HEADERS",
-).pipe(Config.option)
-
 const resource = (
   simulation: TinyFiregridSimulation<unknown>,
   runId: string,
@@ -67,7 +56,7 @@ const resource = (
     readonly namespace: string
     readonly durableStreamsBaseUrl: string
   },
-) => ({
+): FiregridOtelResource => ({
   serviceName: "tiny-firegrid",
   attributes: {
     "firegrid.simulation.id": simulation.id,
@@ -82,108 +71,7 @@ const resource = (
 // `firegrid.side` carries the value we want to filter on more than the
 // hyphen-named OTel `service.namespace` does, so we leave it as a span
 // attribute (propagated via `Effect.annotateSpans` in runner/side.ts).
-
-// Resource attributes are flat key/value; nothing fancy here.
-//
-// One JSON object per span, newline-delimited. Each line is a self-contained
-// record — the viewer doesn't need any envelope. Matches what
-// `ConsoleSpanExporter` would print, minus the multi-paragraph
-// `util.inspect` shape that made console output unusable.
-const spanToJsonLine = (span: ReadableSpan): string => {
-  const ctx = span.spanContext()
-  const record = {
-    name: span.name,
-    traceId: ctx.traceId,
-    spanId: ctx.spanId,
-    parentSpanId: span.parentSpanContext?.spanId,
-    kind: span.kind,
-    startTime: span.startTime,
-    endTime: span.endTime,
-    duration: span.duration,
-    status: span.status,
-    attributes: span.attributes,
-    events: span.events,
-    links: span.links,
-    resource: span.resource.attributes,
-  }
-  return JSON.stringify(record) + "\n"
-}
-
-// Minimal `SpanExporter` that appends one JSON-line per span to a file.
-// Wrapped in `BatchSpanProcessor` (not `SimpleSpanProcessor`) so writes
-// coalesce — a run can emit thousands of spans and we don't want a syscall
-// per span on the hot path.
-class FileSpanExporter implements SpanExporter {
-  private readonly stream: WriteStream
-  private closed = false
-  constructor(filePath: string) {
-    this.stream = createWriteStream(filePath, { flags: "a" })
-  }
-  export(
-    spans: ReadableSpan[],
-    resultCallback: (result: { code: number; error?: Error }) => void,
-  ): void {
-    if (this.closed) {
-      resultCallback({ code: 1, error: new Error("exporter closed") })
-      return
-    }
-    try {
-      spans.forEach(span => this.stream.write(spanToJsonLine(span)))
-      resultCallback({ code: 0 })
-    } catch (e) {
-      resultCallback({ code: 1, error: e as Error })
-    }
-  }
-  shutdown(): Promise<void> {
-    if (this.closed) return Promise.resolve()
-    this.closed = true
-    return new Promise(resolve => this.stream.end(() => resolve()))
-  }
-  forceFlush(): Promise<void> {
-    return Promise.resolve()
-  }
-}
-
-export type TelemetryDestination =
-  | { readonly _tag: "file"; readonly filePath: string }
-  | { readonly _tag: "console" }
-
-const fileTelemetryLive = (
-  simulation: TinyFiregridSimulation<unknown>,
-  runId: string,
-  options: {
-    readonly namespace: string
-    readonly durableStreamsBaseUrl: string
-    readonly filePath: string
-    readonly heartbeatProcessor: SpanProcessor | undefined
-  },
-) =>
-  NodeSdk.layer(() => ({
-    resource: resource(simulation, runId, options),
-    // Multi-processor pattern: file exporter is the durable artifact;
-    // the heartbeat processor (a thin Queue-adapter constructed by
-    // makeHeartbeat) is the stderr liveness signal. Both fire on every
-    // span end; only the file's batch processor buffers.
-    spanProcessor: options.heartbeatProcessor !== undefined
-      ? [
-        new BatchSpanProcessor(new FileSpanExporter(options.filePath)),
-        options.heartbeatProcessor,
-      ]
-      : new BatchSpanProcessor(new FileSpanExporter(options.filePath)),
-  }))
-
-const consoleTelemetryLive = (
-  simulation: TinyFiregridSimulation<unknown>,
-  runId: string,
-  options: {
-    readonly namespace: string
-    readonly durableStreamsBaseUrl: string
-  },
-) =>
-  NodeSdk.layer(() => ({
-    resource: resource(simulation, runId, options),
-    spanProcessor: new SimpleSpanProcessor(new ConsoleSpanExporter()),
-  }))
+export type TelemetryDestination = FiregridOtelDestination
 
 // Routing precedence:
 //   1. OTEL_EXPORTER_OTLP_ENDPOINT set → send to OTLP HTTP (production
@@ -202,25 +90,10 @@ export const TelemetryLive = (
     readonly heartbeatProcessor: SpanProcessor | undefined
   },
 ): Layer.Layer<never, unknown> =>
-  Layer.unwrapEffect(
-    Effect.gen(function*() {
-      const endpoint = yield* OtlpEndpointConfig
-      if (Option.isSome(endpoint)) {
-        const headers = yield* OtlpHeadersConfig
-        return Otlp.layerJson({
-          baseUrl: endpoint.value,
-          resource: resource(simulation, runId, options),
-          headers: Option.getOrUndefined(headers),
-        }).pipe(
-          Layer.provide(NodeHttpClient.layer),
-        )
-      }
-      if (options.destination._tag === "console") {
-        return consoleTelemetryLive(simulation, runId, options)
-      }
-      return fileTelemetryLive(simulation, runId, {
-        ...options,
-        filePath: options.destination.filePath,
-      })
-    }),
-  )
+  FiregridOtelLive({
+    resource: resource(simulation, runId, options),
+    destination: options.destination,
+    spanProcessors: options.heartbeatProcessor === undefined
+      ? []
+      : [options.heartbeatProcessor],
+  })

@@ -42,7 +42,7 @@ import type * as Scope from "effect/Scope"
 import type {
   ReadableSpan,
   SpanProcessor,
-} from "@opentelemetry/sdk-trace-base"
+} from "@firegrid/observability/node"
 import { nsFromHrTime, nsToMs } from "./trace.ts"
 
 interface HeartbeatOptions {

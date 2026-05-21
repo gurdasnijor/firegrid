@@ -1,7 +1,7 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { local } from "@firegrid/protocol/launch"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Tracer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   AcpStdioEdgeLive,
@@ -79,11 +79,51 @@ const makeClient = (
   }),
 })
 
+interface CapturedSpan {
+  readonly name: string
+  readonly attributes: Record<string, unknown>
+}
+
+const capturingTracerLayer = (
+  capturedSpans: Array<CapturedSpan>,
+): Layer.Layer<never> => {
+  const tracer: Tracer.Tracer = {
+    [Tracer.TracerTypeId]: Tracer.TracerTypeId,
+    span: (name, parent, context, links, startTime, kind) => {
+      const attributes: Record<string, unknown> = {}
+      capturedSpans.push({ name, attributes })
+      const span: Tracer.Span = {
+        _tag: "Span",
+        name,
+        spanId: `acp-edge-${crypto.randomUUID()}`,
+        traceId: "acp-edge-test",
+        parent,
+        context,
+        status: { _tag: "Started", startTime },
+        attributes: new Map<string, unknown>(),
+        links,
+        sampled: true,
+        kind,
+        end: () => {},
+        attribute: (key, value) => {
+          attributes[key] = value
+        },
+        event: () => {},
+        addLinks: () => {},
+      }
+      return span
+    },
+    context: f => f(),
+  }
+  return Layer.setTracer(tracer)
+}
+
 describe("ACP stdio edge", () => {
-  it("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6 routes turns and does not render protocol status as text", async () => {
+  it("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7 routes turns and traces ACP edge requests", async () => {
     const harness = makeInMemoryAcpHarness()
     const namespace = `acp-edge-${crypto.randomUUID()}`
     const updates: Array<acp.SessionNotification> = []
+    const capturedSpans: Array<CapturedSpan> = []
 
     const layer = AcpStdioEdgeLive({
       input: harness.edgeInput,
@@ -110,6 +150,7 @@ describe("ACP stdio edge", () => {
           Layer.provide(FiregridLocalProcessFromEnv(globalThis.process.env)),
         ),
       ),
+      Layer.provideMerge(capturingTracerLayer(capturedSpans)),
     )
 
     await Effect.runPromise(Effect.scoped(
@@ -158,5 +199,18 @@ describe("ACP stdio edge", () => {
       "host-sdk acp edge turn 1",
       "host-sdk acp edge turn 2",
     ])
+    expect(capturedSpans.map(span => span.name)).toEqual(
+      expect.arrayContaining([
+        "firegrid.acp_stdio_edge.initialize",
+        "firegrid.acp_stdio_edge.new_session",
+        "firegrid.acp_stdio_edge.prompt",
+      ]),
+    )
+    const promptSpans = capturedSpans.filter(span =>
+      span.name === "firegrid.acp_stdio_edge.prompt")
+    expect(promptSpans).toHaveLength(2)
+    expect(promptSpans[0]?.attributes["firegrid.acid"]).toBe(
+      "firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7",
+    )
   })
 })

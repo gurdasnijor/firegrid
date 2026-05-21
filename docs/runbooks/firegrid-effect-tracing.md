@@ -164,39 +164,53 @@ SELECT * FROM read_otlp_traces('packages/tiny-firegrid/.simulate/runs/<run-id>/t
 
 ## Production or operator traces
 
-A host application that wants real traces should provide an OpenTelemetry Layer
-around the same Firegrid program. The idiom from the vendored Effect source
-(`repos/effect/packages/opentelemetry/examples/index.ts`) is:
+A host application that wants real traces provides an OpenTelemetry Layer around
+the same Firegrid program. Firegrid applications should use the shared
+Node-only helper in `@firegrid/observability/node` instead of copying exporter
+wiring into each executable:
 
 ```ts
-import * as NodeSdk from "@effect/opentelemetry/NodeSdk"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { FiregridOtelLive } from "@firegrid/observability/node"
 import { Effect } from "effect"
 
-const FiregridOtelLive = NodeSdk.layer(() => ({
+const FiregridOtelLayer = FiregridOtelLive({
   resource: {
     serviceName: "firegrid-host",
+    attributes: {
+      "firegrid.process.role": "firegrid-host",
+    },
   },
-  spanProcessor: new BatchSpanProcessor(
-    new OTLPTraceExporter({
-      url: process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
-    }),
-  ),
-}))
+  destination: { _tag: "file", filePath: ".firegrid/trace.jsonl" },
+})
 
 await Effect.runPromise(
   firegridHostProgram.pipe(
-    Effect.provide(FiregridOtelLive),
+    Effect.provide(FiregridOtelLayer),
   ),
 )
 ```
 
-For local debugging, replace the OTLP exporter with
-`ConsoleSpanExporter` and `SimpleSpanProcessor` from
-`@opentelemetry/sdk-trace-base`. Product packages and smoke harnesses may
-choose exporters and sampling policy; reusable Firegrid packages only emit
-spans.
+The shared helper writes one ended span per JSON line for file destinations,
+supports console export for interactive tools, accepts extra span processors
+such as tiny-firegrid's heartbeat processor, and switches to OTLP JSON export
+when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Product packages and smoke harnesses
+still choose opt-in policy, resource attributes, and stdout/stderr discipline;
+reusable Firegrid packages only emit spans.
+
+`firegrid acp` is quiet by default and keeps stdout reserved for ACP JSON-RPC
+frames. Enable host-process trace export explicitly:
+
+```bash
+pnpm firegrid -- acp \
+  --otel-file .firegrid/acp-trace.jsonl \
+  --agent codex-acp \
+  --agent-protocol acp \
+  -- npx -y @zed-industries/codex-acp@0.14.0
+```
+
+`FIREGRID_OTEL_FILE=.firegrid/acp-trace.jsonl` is equivalent. If
+`OTEL_EXPORTER_OTLP_ENDPOINT` is also set, the shared Layer routes spans to the
+OTLP endpoint rather than the local file.
 
 ## Full e2e traces through real agent runtimes
 
@@ -219,7 +233,7 @@ Codex agents:
 
 For actual operator debugging, use all available layers:
 
-- Provide `NodeSdk.layer` in the Firegrid host process.
+- Provide `FiregridOtelLive` in the Firegrid host process.
 - Use the local-process boundary spans to see process launch, stdout bytes,
   stderr bytes, stdin-backed codec sends, and process exit code without tracing
   inside the external agent.
