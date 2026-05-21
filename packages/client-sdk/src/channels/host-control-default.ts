@@ -1,6 +1,8 @@
-// tf-aago: client-sdk standalone-default Live Layer for the host-control
-// write channels (contexts.create / prompt / session.prompt /
-// sessions.start / permissions.respond).
+// tf-aago / tf-qu7l: client-sdk standalone-default Live Layer for the
+// host-control channels — write paths (contexts.create / prompt /
+// session.prompt / sessions.start / permissions.respond) and the contexts
+// ingress read path (HostContextsChannel, tf-qu7l: backs watchContexts +
+// whenReady).
 //
 // Production hosts compose the host-sdk-owned `HostControlChannelsLive`
 // (which also serves the read/ingress/snapshot channels). This default
@@ -15,6 +17,7 @@
 // while production hosts override with host-sdk's Live Layer.
 
 import {
+  HostContextsChannel,
   HostContextsCreateChannel,
   HostPermissionRespondChannel,
   HostPromptChannel,
@@ -22,6 +25,7 @@ import {
   SessionPromptChannel,
 } from "@firegrid/protocol/channels"
 import {
+  makeHostContextsChannel,
   makeHostContextsCreateChannel,
   makeHostPermissionRespondChannel,
   makeHostPromptChannel,
@@ -39,6 +43,7 @@ export const HostControlChannelsStandaloneLive = Layer.unwrapEffect(
         HostContextsCreateChannel,
         makeHostContextsCreateChannel(control),
       ),
+      Layer.succeed(HostContextsChannel, makeHostContextsChannel(control)),
       Layer.succeed(HostPromptChannel, makeHostPromptChannel(control)),
       Layer.succeed(SessionPromptChannel, {
         forSession: (sessionId: string) =>
