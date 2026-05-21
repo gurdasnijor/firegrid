@@ -66,6 +66,12 @@ components:
       11: The Tiny Firegrid simulation CLI exposes a post-hoc perf command that reads a run trace JSONL artifact and reports top spans by self-time, HTTP route rolls, and idle gaps with start timestamp, end timestamp, and duration.
       12: Idle gaps above a caller-selected finding threshold are first-class finding sources that can emit draft finding material only through an explicit operator flag and never silently mutate finding files.
 
+  HOST_PROCESS_EXPORTERS:
+    requirements:
+      1: Firegrid host-process applications share one Node-only observability package for OpenTelemetry Layer construction instead of copying exporter setup into each executable.
+      2: The shared host-process observability package supports JSONL file trace export, console trace export, OTLP HTTP export via standard OTEL endpoint/header environment variables, and caller-provided span processors.
+      3: Executable applications remain responsible for opt-in policy, resource attributes, and stdout/stderr discipline when they provide the shared observability Layer.
+
 constraints:
   INVARIANTS:
     requirements:
@@ -82,6 +88,7 @@ constraints:
       3: Trace context encode and decode helpers safe for browser use live in `@firegrid/client` or `@firegrid/substrate` curated public surfaces; runtime-tier span Layers and span emitter wiring live in `@firegrid/runtime`.
       4: Direct OpenTelemetry exporter configuration, sampler choice, and vendor wiring stay downstream in product packages; Firegrid core does not adopt a default exporter.
       5: This spec does not introduce a `@firegrid/runtime` to `@firegrid/client` package edge or a `@firegrid/client` to `@firegrid/runtime` package edge through observability helpers.
+      6: The shared host-process observability package is not imported by core packages that own Firegrid authority or browser-safe protocol surfaces; CLI and simulation host packages may import it as downstream exporter policy.
 
   NON_SCOPE:
     requirements:

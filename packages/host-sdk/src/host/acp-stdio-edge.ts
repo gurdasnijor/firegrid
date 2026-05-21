@@ -38,11 +38,26 @@ interface AcpStdioEdgeContextTimeout {
   readonly contextId: string
 }
 
+interface AcpStdioEdgeTurnOutputError {
+  readonly _tag: "AcpStdioEdgeTurnOutputError"
+  readonly reason: "timeout" | "terminated"
+  readonly message: string
+}
+
 const acpStdioEdgeContextTimeout = (
   contextId: string,
 ): AcpStdioEdgeContextTimeout => ({
   _tag: "AcpStdioEdgeContextTimeout",
   contextId,
+})
+
+const acpStdioEdgeTurnOutputError = (
+  reason: AcpStdioEdgeTurnOutputError["reason"],
+  message: string,
+): AcpStdioEdgeTurnOutputError => ({
+  _tag: "AcpStdioEdgeTurnOutputError",
+  reason,
+  message,
 })
 
 export class AcpStdioEdge extends Context.Tag(
@@ -122,17 +137,27 @@ class FiregridAcpStdioAgent implements acp.Agent {
   }
 
   async initialize(_params: acp.InitializeRequest): Promise<acp.InitializeResponse> {
-    return {
-      protocolVersion: acp.PROTOCOL_VERSION,
-      agentCapabilities: {
-        loadSession: false,
-        promptCapabilities: {
-          image: false,
-          audio: false,
-          embeddedContext: false,
+    return this.run(
+      Effect.succeed({
+        protocolVersion: acp.PROTOCOL_VERSION,
+        agentCapabilities: {
+          loadSession: false,
+          promptCapabilities: {
+            image: false,
+            audio: false,
+            embeddedContext: false,
+          },
         },
-      },
-    }
+      }).pipe(
+        Effect.withSpan("firegrid.acp_stdio_edge.initialize", {
+          kind: "server",
+          attributes: {
+            "firegrid.acid": "firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7",
+            "firegrid.acp.protocol_version": acp.PROTOCOL_VERSION,
+          },
+        }),
+      ),
+    )
   }
 
   async authenticate(_params: acp.AuthenticateRequest): Promise<acp.AuthenticateResponse> {
@@ -140,69 +165,110 @@ class FiregridAcpStdioAgent implements acp.Agent {
   }
 
   async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+    const router = this.router
+    const options = this.options
+    const sessions = this.sessions
+    const waitForContext = (contextId: string) => this.waitForContext(contextId)
     const acpSessionId = `acp_${crypto.randomUUID()}`
-    const runtime = runtimeForSession(this.options, {
+    const runtime = runtimeForSession(options, {
       acpSessionId,
       request: params,
     })
 
-    // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.2
-    const created = await this.run(this.router.dispatch({
-      target: HostSessionsCreateOrLoadChannelTarget,
-      verb: "call",
-      payload: {
-        externalKey: {
-          source: this.options.externalKeySource ?? defaultExternalKeySource,
-          id: acpSessionId,
-        },
-        runtime,
-        createdBy: this.options.createdBy ?? defaultCreatedBy,
-      },
-    })) as { readonly contextId: string; readonly sessionId: string }
-    await this.run(this.waitForContext(created.contextId))
-    this.sessions.set(acpSessionId, {
-      acpSessionId,
-      contextId: created.contextId,
-      started: false,
-    })
-    return { sessionId: acpSessionId }
+    return this.run(
+      Effect.gen(function*() {
+        // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.2
+        const created = yield* (router.dispatch({
+          target: HostSessionsCreateOrLoadChannelTarget,
+          verb: "call",
+          payload: {
+            externalKey: {
+              source: options.externalKeySource ?? defaultExternalKeySource,
+              id: acpSessionId,
+            },
+            runtime,
+            createdBy: options.createdBy ?? defaultCreatedBy,
+          },
+        }) as Effect.Effect<{ readonly contextId: string; readonly sessionId: string }, unknown>)
+        yield* Effect.annotateCurrentSpan({
+          "firegrid.context.id": created.contextId,
+          "firegrid.session.id": created.sessionId,
+        })
+        yield* waitForContext(created.contextId)
+        sessions.set(acpSessionId, {
+          acpSessionId,
+          contextId: created.contextId,
+          started: false,
+        })
+        return { sessionId: acpSessionId }
+      }).pipe(
+        Effect.withSpan("firegrid.acp_stdio_edge.new_session", {
+          kind: "server",
+          attributes: {
+            "firegrid.acid": "firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7",
+            "firegrid.acp.session_id": acpSessionId,
+            "firegrid.acp.request.mcp_server_count": params.mcpServers?.length ?? 0,
+            "firegrid.acp.cwd_present": params.cwd !== undefined,
+          },
+        }),
+      ),
+    )
   }
 
   async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
+    const router = this.router
+    const waitForTurnComplete = (session: EdgeSession) => this.waitForTurnCompleteEffect(session)
     const session = this.sessions.get(params.sessionId)
     if (session === undefined) {
       return reject(`unknown ACP session ${params.sessionId}`)
     }
 
-    // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.3
-    await this.run(this.router.dispatch({
-      target: SessionPromptChannelTarget,
-      verb: "send",
-      payload: {
-        sessionId: session.contextId,
-        prompt: {
-          payload: promptText(params),
-          idempotencyKey: params.messageId ?? `acp-prompt-${crypto.randomUUID()}`,
-        },
-      },
-    }))
+    return this.run(
+      Effect.gen(function*() {
+        yield* Effect.annotateCurrentSpan({
+          "firegrid.context.id": session.contextId,
+        })
+        // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.3
+        yield* router.dispatch({
+          target: SessionPromptChannelTarget,
+          verb: "send",
+          payload: {
+            sessionId: session.contextId,
+            prompt: {
+              payload: promptText(params),
+              idempotencyKey: params.messageId ?? `acp-prompt-${crypto.randomUUID()}`,
+            },
+          },
+        })
 
-    if (!session.started) {
-      await this.run(this.router.dispatch({
-        target: HostSessionsStartChannelTarget,
-        verb: "call",
-        payload: { sessionId: session.contextId },
-      }))
-      session.started = true
-    }
+        if (!session.started) {
+          yield* router.dispatch({
+            target: HostSessionsStartChannelTarget,
+            verb: "call",
+            payload: { sessionId: session.contextId },
+          })
+          session.started = true
+        }
 
-    const turnComplete = await this.waitForTurnComplete(session)
-    return {
-      stopReason: acpStopReason(turnComplete.event),
-      ...(params.messageId === undefined || params.messageId === null
-        ? {}
-        : { userMessageId: params.messageId }),
-    }
+        const turnComplete = yield* waitForTurnComplete(session)
+        return {
+          stopReason: acpStopReason(turnComplete.event),
+          ...(params.messageId === undefined || params.messageId === null
+            ? {}
+            : { userMessageId: params.messageId }),
+        }
+      }).pipe(
+        Effect.withSpan("firegrid.acp_stdio_edge.prompt", {
+          kind: "server",
+          attributes: {
+            "firegrid.acid": "firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7",
+            "firegrid.acp.session_id": params.sessionId,
+            "firegrid.acp.message_id_present": params.messageId !== undefined && params.messageId !== null,
+            "firegrid.acp.prompt_part_count": params.prompt.length,
+          },
+        }),
+      ),
+    )
   }
 
   async cancel(_params: acp.CancelNotification): Promise<void> {
@@ -249,26 +315,43 @@ class FiregridAcpStdioAgent implements acp.Agent {
     )
   }
 
-  private async waitForTurnComplete(
+  private waitForTurnCompleteEffect(
     session: EdgeSession,
-  ): Promise<Extract<RuntimeAgentOutputObservation, { readonly _tag: "TurnComplete" }>> {
-    for (;;) {
-      const next = await this.run(this.waitForAgentOutput(session))
-      if (Option.isNone(next)) {
-        return reject("timed out waiting for Firegrid agent output")
+  ): Effect.Effect<Extract<RuntimeAgentOutputObservation, { readonly _tag: "TurnComplete" }>, unknown> {
+    const waitForAgentOutput = (edgeSession: EdgeSession) => this.waitForAgentOutput(edgeSession)
+    const forwardOutput = (
+      acpSessionId: string,
+      output: RuntimeAgentOutputObservation,
+    ) => this.forwardOutput(acpSessionId, output)
+    return Effect.gen(function*() {
+      for (;;) {
+        const next = yield* waitForAgentOutput(session)
+        if (Option.isNone(next)) {
+          return yield* Effect.fail(
+            acpStdioEdgeTurnOutputError(
+              "timeout",
+              "timed out waiting for Firegrid agent output",
+            ),
+          )
+        }
+        const output = next.value
+        session.lastSequence = output.sequence
+        yield* Effect.tryPromise(() => forwardOutput(session.acpSessionId, output))
+        switch (output._tag) {
+          case "TurnComplete":
+            return output
+          case "Terminated":
+            return yield* Effect.fail(
+              acpStdioEdgeTurnOutputError(
+                "terminated",
+                "Firegrid session terminated before ACP TurnComplete",
+              ),
+            )
+          default:
+            break
+        }
       }
-      const output = next.value
-      session.lastSequence = output.sequence
-      await this.forwardOutput(session.acpSessionId, output)
-      switch (output._tag) {
-        case "TurnComplete":
-          return output
-        case "Terminated":
-          return reject("Firegrid session terminated before ACP TurnComplete")
-        default:
-          break
-      }
-    }
+    })
   }
 
   private async forwardOutput(
