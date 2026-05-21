@@ -8,22 +8,24 @@ components:
     requirements:
       1: The simulation uses one DurableTable-backed experiment substrate for task events, claims, reports, artifacts, and score rows.
       2: Task events, worker actions, claims, reports, artifacts, and scores are exposed as channel contracts instead of direct table access from participant code.
-      3: The live experiment driver seeds prompts and observes participant artifacts without reading or writing host channel bindings.
+      3: The live experiment driver launches public sessions and leaves experiment evidence in native trace and durable-row artifacts instead of reading or writing host channel bindings.
 
   TOPOLOGY_ARMS:
     requirements:
-      1: The live experiment runs A single-agent, B developer-authored orchestration, and C choreography arms over the same task packet.
+      1: The live experiment runs A single-agent, B developer-authored orchestration, and C choreography arms over the same non-contrived software-factory task packet.
       2: The developer-authored orchestration arm uses a fixed graph, fixed handoff path, and fixed merge/review order without a manager agent.
       3: The choreography arm lets peer agents coordinate through shared claims and artifacts without central assignment.
       4: Choreographed peers emit claim rows before publishing artifacts and decide locally what to inspect, build, review, or hand off.
+      5: Live participants publish task-specific claims, patch plans, review notes, or handoff artifacts instead of placeholder channel-shape rows.
 
   OBSERVABILITY:
     requirements:
       1: A live run completes at least the A, B, and C arms when frontier-model credentials are enabled.
-      2: Each live topology arm emits deterministic scoring evidence derived from trace, participant markers, and artifact-channel use.
+      2: Each live topology arm emits native tiny-firegrid evidence through trace spans, runtime tool-use spans, and durable channel rows.
       3: The runner trace contains readable arm and participant spans for simulate:show.
-      4: The run output includes participant-produced evidence for claims, artifacts, tool calls, and final markers.
-      5: The live experiment reports GREEN only when each arm meets its minimum participant marker and primitive-channel evidence contract; missing evidence is reported as non-GREEN or inconclusive.
+      4: A post-run analysis document interprets trace.jsonl, simulate:show/perf, and durable channel-row artifacts instead of relying on driver-side text or tool-use scraping.
+      5: The live driver does not compute the canonical experiment verdict from participant text/tool output; experiment conclusions live in the trace-backed analysis document.
+      6: Live prompts describe the task, available tools, role constraints, and success criteria without embedding exact JSON payload examples whose echo becomes experiment evidence.
 
   FIXTURE_SMOKE:
     requirements:
@@ -37,3 +39,4 @@ constraints:
       2: The simulation host composes its channels inline and does not import product configurations or host runtime internals.
       3: Participant behavior uses the public primitive tool surface (`wait_for`, `wait_for_any`, `send`, and `call`) instead of host-sdk/runtime/kernel internals.
       4: Live experiment execution is gated behind explicit environment opt-in and provider credentials; CI may run only the non-experiment fixture smoke.
+      5: Missing routing, filtering, lifecycle, or experiment-ergonomics helpers are recorded as product-surface gaps instead of being implemented as simulation-only harness conveniences.

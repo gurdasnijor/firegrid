@@ -175,8 +175,9 @@ Do not include a central manager-agent arm in the primary comparison. A manager
 agent can itself behave like choreography, so it blurs the line between the
 patterns this experiment is trying to separate.
 
-The minimum viable first run should include A, B, and C. Add D if the task
-budget allows.
+The minimum viable first run is **A, B, and C only**. Arm D is a useful later
+baseline, but it should not be included in the first run unless A/B/C already
+produce a clean, comparable result.
 
 ### Arm A: Single Agent
 
@@ -368,224 +369,65 @@ state, choreographed agents may duplicate work or miss peer findings.
 
 ---
 
-## Implementation Requirements
+## V0 Execution Contract
+
+The first implementation should be tractable and comparable rather than broad.
+It should run only A/B/C, on the same task packet, with the same model family
+and comparable budgets.
 
 The point of the showcase is frontier models plus durable coordination tools.
-The primary run should use real frontier-model participants. A fixture agent is
-useful for CI and regression tests, but it should not be the headline
-experiment because it cannot demonstrate whether model capability actually uses
-durable temporal primitives.
+The primary run should use real frontier-model participants. Fixture agents are
+useful for CI and regression tests, but they cannot demonstrate whether model
+capability actually uses durable temporal primitives.
 
-The arm code should make the coordination pattern obvious and use the public
-client surface directly. The concrete runtime can point at Claude Code, Codex,
-an ACP agent, or another frontier-model runner.
+The driver should be minimal:
 
-```ts
-import { Firegrid, local } from "@firegrid/client-sdk"
-import { Effect } from "effect"
+- launch participants;
+- give each participant the task, available tools, role constraints, and
+  success criteria;
+- wait for participant lifecycle completion;
+- leave evidence collection to the experiment substrate's native trace,
+  event, and artifact outputs.
 
-const claudeRuntime = local.jsonl({
-  argv: ["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.36.1"],
-  agent: "claude-acp",
-  agentProtocol: "acp",
-  envBindings: [{ name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" }],
-  runtimeContextMcp: { enabled: true },
-})
+The driver should not contain a parallel verdict system, score model, transcript
+scraper, or hidden orchestration loop. Prompts should describe the task,
+available tools, and success criteria. They should not provide exact payloads
+whose echo becomes the evidence of success.
 
-declare const taskPacket: string
-declare const scoreArm: (arm: string) => Effect.Effect<void>
-```
+### Arm A: Single Agent
 
-### A. Single Agent
+- One frontier-model participant receives the whole task packet.
+- It decides how to investigate, design, review, and produce the final artifact.
+- Success is judged from the final artifact and native run evidence after the
+  run, not by the driver while the run is executing.
 
-```ts
-export const runSingleAgent = Effect.gen(function*() {
-  const firegrid = yield* Firegrid
-  const session = yield* firegrid.sessions.createOrLoad({
-    externalKey: { source: "coordination-experiment", id: "single" },
-    runtime: claudeRuntime,
-    createdBy: "coordination-experiment",
-  })
+### Arm B: Developer-Authored Orchestration
 
-  yield* session.prompt({
-    idempotencyKey: "initial",
-    payload: [
-      "You own the whole task.",
-      "Use the available durable tools when you need to wait, record progress,",
-      "ask for approval, or inspect prior state.",
-      "",
-      taskPacket,
-    ].join("\n"),
-  })
-  yield* session.start()
+- The experiment author fixes the topology, task slices, and handoff path.
+- Participants run in that predefined order or graph.
+- Participants may use the shared workspace, but they do not choose the graph
+  shape or change the handoff path.
+- This is not a manager-agent arm; the graph is authored by the experimenter.
 
-  yield* scoreArm("single")
-})
-```
+### Arm C: Choreography
 
-### B. Developer-Authored Orchestration
-
-```ts
-export const runDeveloperAuthoredOrchestration = Effect.gen(function*() {
-  const firegrid = yield* Firegrid
-
-  const investigator = yield* firegrid.sessions.createOrLoad({
-    externalKey: {
-      source: "coordination-experiment",
-      id: "orchestration-investigator",
-    },
-    runtime: claudeRuntime,
-    createdBy: "coordination-experiment",
-  })
-
-  yield* investigator.prompt({
-    idempotencyKey: "investigate",
-    payload: [
-      "Investigate this task and publish an investigation report.",
-      "Do not implement.",
-      "",
-      taskPacket,
-    ].join("\n"),
-  })
-  yield* investigator.start()
-
-  const report = yield* investigator.wait.forAgentOutput({
-    timeoutMs: 120_000,
-  })
-
-  const builder = yield* firegrid.sessions.createOrLoad({
-    externalKey: {
-      source: "coordination-experiment",
-      id: "orchestration-builder",
-    },
-    runtime: claudeRuntime,
-    createdBy: "coordination-experiment",
-  })
-
-  yield* builder.prompt({
-    idempotencyKey: "build",
-    payload: [
-      "Implement from this fixed upstream report.",
-      "Do not change the task decomposition.",
-      "",
-      JSON.stringify(report),
-    ].join("\n"),
-  })
-  yield* builder.start()
-
-  yield* scoreArm("developer-authored-orchestration")
-})
-```
-
-### C. Choreography
-
-```ts
-export const runChoreography = Effect.gen(function*() {
-  const firegrid = yield* Firegrid
-
-  const planner = yield* firegrid.sessions.createOrLoad({
-    externalKey: { source: "coordination-experiment", id: "peer-planner" },
-    runtime: claudeRuntime,
-    createdBy: "coordination-experiment",
-  })
-  const builder = yield* firegrid.sessions.createOrLoad({
-    externalKey: { source: "coordination-experiment", id: "peer-builder" },
-    runtime: claudeRuntime,
-    createdBy: "coordination-experiment",
-  })
-  const reviewer = yield* firegrid.sessions.createOrLoad({
-    externalKey: { source: "coordination-experiment", id: "peer-reviewer" },
-    runtime: claudeRuntime,
-    createdBy: "coordination-experiment",
-  })
-
-  const peerPrompt = [
-    taskPacket,
-    "",
-    "Watch the shared workspace.",
-    "Claim useful work when you see it.",
-    "Publish findings, artifacts, and review comments for the others.",
-    "Stop when the final artifact is ready or your budget is exhausted.",
-  ].join("\n")
-
-  yield* Effect.all([
-    planner.prompt({ idempotencyKey: "initial", payload: peerPrompt }),
-    builder.prompt({ idempotencyKey: "initial", payload: peerPrompt }),
-    reviewer.prompt({ idempotencyKey: "initial", payload: peerPrompt }),
-  ], { concurrency: "unbounded" })
-  yield* Effect.all([
-    planner.start(),
-    builder.start(),
-    reviewer.start(),
-  ], { concurrency: "unbounded" })
-
-  yield* scoreArm("choreography")
-})
-```
-
-### D. Independent Attempts
-
-```ts
-export const runIndependentAttempts = Effect.gen(function*() {
-  const firegrid = yield* Firegrid
-
-  const attempts = yield* Effect.all([1, 2, 3].map((index) =>
-    Effect.gen(function*() {
-      const session = yield* firegrid.sessions.createOrLoad({
-        externalKey: {
-          source: "coordination-experiment",
-          id: `attempt-${index}`,
-        },
-        runtime: claudeRuntime,
-        createdBy: "coordination-experiment",
-      })
-      yield* session.prompt({
-        idempotencyKey: "initial",
-        payload: taskPacket,
-      })
-      yield* session.start()
-      return session
-    })
-  ), { concurrency: "unbounded" })
-
-  const outputs = yield* Effect.all(attempts.map((session) =>
-    session.wait.forAgentOutput({ timeoutMs: 120_000 }),
-  ), { concurrency: "unbounded" })
-
-  const selector = yield* firegrid.sessions.createOrLoad({
-    externalKey: { source: "coordination-experiment", id: "attempt-selector" },
-    runtime: claudeRuntime,
-    createdBy: "coordination-experiment",
-  })
-  yield* selector.prompt({
-    idempotencyKey: "select",
-    payload: [
-      "Select or combine the best result from these independent attempts.",
-      "",
-      JSON.stringify(outputs),
-    ].join("\n"),
-  })
-  yield* selector.start()
-
-  yield* scoreArm("independent-attempts")
-})
-```
+- Peer participants start from a shared workspace and role hints.
+- Each peer decides locally what to claim, inspect, publish, review, or hand off.
+- Communication happens through shared durable artifacts and claims.
+- No driver-side partitioning assigns work to peers after launch.
 
 The participant-facing contract is:
 
 ```txt
 observe workspace
-claim work
-publish finding
+claim work when appropriate
+publish findings and artifacts
 request or record review
-produce final artifact
+produce or react to final artifacts
 ```
 
 Any helper required to make those actions ergonomic should be treated as a
 product-surface gap, not hidden as experiment-only convenience code.
-
-Use deterministic fixture agents only for CI and regression coverage. The
-showcase experiment itself should run real frontier-model participants.
 
 ---
 
