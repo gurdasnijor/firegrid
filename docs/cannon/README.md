@@ -33,6 +33,19 @@ index anchors to:
 - **Channel-boundary enforcement** — `tf-bffo`/#589. Public surface narrowed;
   host-sdk durable wiring relocated into the runtime; channels are the only
   above-box doorway.
+- **Phase 0 target tiny-firegrid reference** — `tf-3w1e`/#604 (framing),
+  reconciled `tf-qnq9`/#588. The clean-room, API-compatible specimen of the
+  target host/runtime shape: edge → channel router → host kernel workflow →
+  workflow-owned durable resources → child session workflows. It is the review
+  oracle production migrations compare against, not a parallel API. Phase 0A is
+  the host/session resource + router baseline; **Phase 0B** is replay-safe
+  output observation — `tf-q4uz`/#609 (amplification oracle + `DurableOutputCursor`
+  primitive spec) and `tf-ly2g`/#610 (output-result oracle).
+- **Workflow-identity admission guard** — `tf-gomx`/#611. A static `Workflow.make`
+  inventory plus a CI gate (`tooling/ast-grep/rules/workflow-make-inventory.yml`,
+  `.semgrep.yml`): new production workflow identities must be owner-shaped and
+  SDD-justified. Operation-shaped workflows already in production are migration
+  debt, not precedent (feature `firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION`).
 
 Docs that contradict this shipped state are historical (see the "Explicitly
 Non-Canonical Or Historical" section below). The canonical
@@ -54,9 +67,14 @@ Read in this order:
 6. `sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
 7. `../sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md` — the channel router that
    shipped this session (router/ACP-edge cutover).
-8. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
-9. `research/workflow-body-single-suspension-rule.md`
-10. `vision/factory-vision.md`
+8. `../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md` — the Phase 0
+   target host/runtime shape the migrations converge toward.
+9. `../investigations/2026-05-21-phase0b-output-replay-oracle.md` — the tf-7kq8
+   replay-amplification failure class and the `DurableOutputCursor` / O(outputs)
+   contract for Phase 0B output observation.
+10. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+11. `research/workflow-body-single-suspension-rule.md`
+12. `vision/factory-vision.md`
 
 ## Canonical Documents
 
@@ -95,6 +113,15 @@ Read in this order:
   string-keyed view. The router/ACP-edge cutover landed this session
   (`tf-9x11`/#591, `tf-csr0`/#596, `tf-p1aw`/#597); treat this SDD as the active
   contract for channel routing rather than a draft.
+- `../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md` — **dispatchable
+  (draft architecture).** The Phase 0 target: an API-compatible clean-room
+  reference (edge → router → `HostKernelWorkflow` → workflow-owned durable
+  host/session resources → child session workflows) that production migrations
+  compare against. Defines the state model (one resource record per aggregate,
+  *not* request/claim/completion table families per operation) and the
+  `HostKernelWorkflow` control-plane ownership. Lanes building Phase 0A/0B
+  dispatch from this; production PRs touching host-control routes, kernel
+  workflows, or control-plane rows use it as the review oracle.
 - `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md` — protocol owns shared
   schemas; TypeScript SDK, CLI, MCP/tool, and future REST/gRPC/JSON-RPC
   bindings project from protocol; runtime executes.
@@ -106,6 +133,13 @@ Read in this order:
 
 - `research/workflow-body-single-suspension-rule.md` — current workflow body
   authoring rule.
+- `../investigations/2026-05-21-phase0b-output-replay-oracle.md` —
+  **dispatchable for Phase 0B output observation.** Defines the `tf-7kq8`
+  replay-amplification failure class (output observation that scales O(resumes ×
+  history) instead of O(distinct outputs)), the `DurableOutputCursor` primitive
+  contract (durable position + journaled/memoized read), the O(outputs) trace
+  invariant, and additive constraints for `tf-ly2g`. Lanes implementing Phase 0B
+  output observation dispatch from this.
 - `research/tf-2y01-import-guardrails-baseline.md` — guardrail baseline.
 - `research/tf-ygz3-shim-retirement-iteration-4.FINDING.md` — why the remaining
   carveouts need real moves or consumer migration.
@@ -137,6 +171,12 @@ Read in this order:
 - Docs presenting `ChannelRegistry`/`ChannelInventory` as the channel binding
   mechanism are historical; the host-plane channel router replaced the broad
   registry as the canonical binding object.
+- Docs that present per-operation / per-verb workflow identities, or
+  request/claim/completion table families per CRUD operation, as the design
+  model are historical. The target reference models these as one resource record
+  per aggregate owned by a `HostKernelWorkflow`; existing operation-shaped
+  workflows are migration debt (see the `WORKFLOW_ADMISSION` invariant above).
+  Do not cite them as precedent for new surfaces.
 
 ## Current Hard Invariants
 
@@ -166,6 +206,21 @@ Read in this order:
   canonical Firegrid channel for verified webhooks is the generic
   `firegrid.verifiedWebhooks` fact channel.
 - `packages/runtime/src/durable-tools/` stays deleted.
+- A production `Workflow.make` identity is only for an owned durable resource or
+  long-running process state machine. One-shot commands, CRUD/lifecycle
+  requests, tool calls, waits, and routing/request-claim bridges are operation
+  wrappers — lower them through the owning workflow state machine
+  (`HostKernelWorkflow`) or an explicitly named engine primitive, not a new
+  workflow identity. New `Workflow.make` sites need SDD-backed owner
+  justification and a deliberate static-inventory entry; operation-shaped
+  workflows already in production are **migration debt, not precedent** (feature
+  `firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION`, `tf-gomx`/#611).
+- Output observation inside a workflow body is O(distinct outputs), never
+  O(resumes × history). The delivered cursor is durable workflow state
+  (reconstructed on replay, not re-derived by re-scanning) and the "observe next
+  output" read is a journaled/memoized step — the `DurableOutputCursor` shape.
+  The volatile-cursor + live-full-scan-on-replay shape is the `tf-7kq8` failure
+  class and must not be reintroduced.
 - Half-ships are allowed only in `packages/tiny-firegrid/`. Production package
   work must either complete the replacement, declare a temporary bridge with a
   blocking deletion/reconciliation bead, or remain explicitly open.

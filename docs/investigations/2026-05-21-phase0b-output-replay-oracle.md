@@ -1,5 +1,8 @@
 # Phase 0B output-replay amplification oracle — finding + primitive spec (2026-05-21)
 
+Doc-Class: dispatchable
+Status: active
+
 **Bead:** `tf-q4uz` (P0 de-risk/prototype for `tf-ly2g`).
 **Status:** prototype + spec complete; oracle GREEN.
 **Audience:** lane 2 (`tf-ly2g`, the real Phase 0B target-reference on the #607
