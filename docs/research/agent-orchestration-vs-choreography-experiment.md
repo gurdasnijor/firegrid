@@ -156,16 +156,83 @@ The task packet should include:
 
 Run the same task across several coordination arms.
 
-| Arm | Description | What It Tests |
-| --- | --- | --- |
-| A. Single large-context agent | one agent gets all context and does the task | dead-simple baseline |
-| B. Simple scripted decomposition | harness splits task into fixed subtasks, agents execute, harness combines | whether decomposition alone helps |
-| C. Central orchestrator | one manager agent delegates to workers and tracks state | classic manager/worker orchestration |
-| D. Choreography / indirect discovery | peer agents observe shared work artifacts and decide what to do | whether decentralized coordination works |
-| E. Standalone specialist swarm | several specialist agents work independently, no live coordination, final aggregation | whether parallel independent attempts beat coordination |
+Each arm should be described by the same four questions:
+
+- **Who sees the task?**
+- **Who decides the next step?**
+- **How do participants communicate?**
+- **What counts as success?**
+
+| Arm | Who Decides? | Communication Shape | What It Tests |
+| --- | --- | --- | --- |
+| A. Single agent | one agent | no handoff; one continuous context | whether anything more complex is justified |
+| B. Fixed workflow | experiment author | pre-written task slices and final merge | whether decomposition alone helps |
+| C. Manager agent | one coordinator agent | manager delegates, workers report back | whether an LLM manager beats fixed routing |
+| D. Choreography | each peer agent locally | agents publish/read shared artifacts and claims | whether decentralized coordination works |
+| E. Independent attempts | no live coordinator | several isolated attempts, final selection | whether parallel attempts beat coordination |
 
 The minimum viable first run should include A, C, and D. Add B and E if the
 task budget allows.
+
+### Arm A: Single Agent
+
+The control arm.
+
+- One agent receives the task packet, repo access, rubric, and budget.
+- It plans, executes, reviews, and produces the final answer itself.
+- No other participant sees intermediate work.
+- Success means the final artifact passes the same checks as every other arm.
+
+This is the baseline to beat. If it wins on quality, cost, and reliability,
+the experiment should say so plainly.
+
+### Arm B: Fixed Workflow
+
+This is not a neutral harness. It is a hand-authored workflow baseline.
+
+- The experiment author predefines the split, for example: investigate,
+  implement, review, summarize.
+- Agents receive their fixed slice and return an artifact.
+- The workflow combines the artifacts mechanically.
+- No agent decides the decomposition or changes the order.
+
+This tests whether "more agents" helps even when all coordination intelligence
+comes from the human-authored workflow.
+
+### Arm C: Manager Agent
+
+Classic orchestration, but with the plan owned by an LLM.
+
+- One manager agent receives the full task and can spawn or prompt workers.
+- Workers only see the assignment they are given.
+- Workers report back to the manager.
+- The manager decides whether to ask for more work, revise the plan, or finish.
+
+This tests whether central LLM coordination beats both a single agent and a
+fixed human-authored workflow.
+
+### Arm D: Choreography
+
+No central assignment.
+
+- Peer agents share a durable workspace.
+- Each peer can read open work, claims, findings, outputs, reviews, and traces.
+- Each peer decides locally what to claim, what to publish, and when to stop.
+- Handoffs happen through shared artifacts, not manager instructions.
+
+This tests the core choreography question: can decentralized agents coordinate
+by watching state rather than being routed by a central planner?
+
+### Arm E: Independent Attempts
+
+Parallelism without coordination.
+
+- Several agents receive the full task independently.
+- They do not see each other's intermediate work.
+- A final selector picks or combines the best result.
+
+This tests whether the value comes from live coordination, or simply from
+sampling multiple independent attempts.
 
 ---
 
@@ -173,20 +240,23 @@ task budget allows.
 
 At least one trial must avoid central assignment.
 
-Choreography arm shape:
+A choreography trial starts with a shared workspace, not a manager.
 
-```txt
-shared workspace / durable artifact board:
-  work items
-  claims
-  findings
-  questions
-  review comments
-  terminal outputs
+The workspace contains durable facts such as:
 
-agents receive role prompts, not task assignments:
-  "Watch the board. Claim useful work. Publish findings. React to others."
-```
+- open work;
+- claims;
+- findings;
+- questions;
+- review comments;
+- tool results;
+- terminal outputs;
+- final artifacts.
+
+Agents receive role prompts, not direct assignments:
+
+> Watch the workspace. Claim useful work. Publish what you learn. React when
+> other participants produce something relevant.
 
 The trial should measure whether agents can:
 
@@ -359,31 +429,38 @@ packages/tiny-firegrid/src/simulations/coordination-patterns/
 The Firegrid implementation should still preserve the generic experiment arms.
 Do not turn the generic experiment into a Firegrid architecture proof.
 
-Participant launch should look like end-user client code:
+Participant setup should read like an experiment script, not infrastructure
+plumbing:
 
-```ts
-import { Firegrid, local } from "@firegrid/client-sdk/firegrid"
-import { Effect } from "effect"
+```txt
+launch participant "planner" with:
+  role: propose a plan and publish open work
+  tools: read workspace, claim work, publish finding, request review
+  model: deterministic fixture agent first; live Codex/Claude later
 
-const launchParticipant = (externalKey: string, prompt: string) =>
-  Effect.gen(function*() {
-    const firegrid = yield* Firegrid
-    const session = yield* firegrid.sessions.createOrLoad({
-      externalKey: { source: "coordination-patterns", id: externalKey },
-      runtime: local.jsonl({
-        argv: [process.execPath, "--version"],
-        agentProtocol: "stdio-jsonl",
-        runtimeContextMcp: { enabled: true },
-      }),
-      createdBy: "coordination-patterns-experiment",
-    })
-
-    yield* session.whenReady
-    yield* session.prompt({ payload: prompt })
-    yield* session.start()
-    return session
-  })
+launch participant "reviewer" with:
+  role: inspect completed work and publish feedback
+  tools: read workspace, publish review, approve/reject artifact
+  model: same budget class as planner
 ```
+
+The implementation can lower this into `Firegrid.sessions.createOrLoad`,
+`session.prompt`, `session.start`, and channel verbs. The design document should
+not make readers understand `local.jsonl`, argv wiring, or MCP setup just to
+understand the experiment.
+
+The participant-facing contract is:
+
+```txt
+observe workspace
+claim work
+publish finding
+request or record review
+produce final artifact
+```
+
+Any helper required to make those actions ergonomic should be treated as a
+Firegrid product-surface gap, not hidden as simulation-only convenience code.
 
 Start with deterministic fixture agents. Add live Codex/Claude/ACP canaries
 only after deterministic runs work.
