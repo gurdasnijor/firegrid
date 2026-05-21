@@ -155,6 +155,14 @@ resource/control capability with a typed command union when operations share
 the same owner, durability, and completion semantics. Split channels only when
 the direction, visibility, owner, or completion contract is actually different.
 
+For session I/O, prompt input and event output are one logical capability from
+the product point of view, but they are two channel registrations in the
+current channel model because they have opposite direction and different
+schemas. The target reference should name that as a single `session.exchange`
+or `session.io` capability in the architecture, with an egress prompt side and
+an ingress event side. Do not introduce separate architectural concepts just
+because the router needs separate typed bindings for asymmetric directions.
+
 ### Router
 
 The edge dispatch boundary over channels. It decodes, validates, authorizes,
@@ -333,8 +341,7 @@ export const TinyHostPlaneChannelRouterLive = Layer.effect(
   HostPlaneChannelRouter,
   Effect.gen(function*() {
     const hostControl = yield* HostControlChannel
-    const sessionPrompt = yield* SessionPromptChannel
-    const sessionEvents = yield* SessionEventsChannel
+    const sessionExchange = yield* SessionExchangeChannel
 
     return makeRuntimeChannelRouter([
       runtimeRouteFromChannel(hostControl),
@@ -342,14 +349,14 @@ export const TinyHostPlaneChannelRouterLive = Layer.effect(
         target: SessionPromptChannelTarget,
         field: "sessionId",
         inputSchema: SessionPromptRouteInputSchema,
-        channel: sessionPrompt.forSession,
+        channel: sessionExchange.promptForSession,
         payload: input => input.prompt,
       }),
       runtimeRouteFromFactoryChannel({
         target: SessionEventsChannelTarget,
         field: "sessionId",
         inputSchema: SessionEventsRouteInputSchema,
-        channel: sessionEvents.forSession,
+        channel: sessionExchange.eventsForSession,
         payload: input => input.filter,
       }),
     ])
@@ -364,7 +371,9 @@ and `SessionPromptChannel`. Those are migration-era public contracts over old
 request-row families. The target reference should prove the cleaner shape:
 one host-control capability for host/session lifecycle commands that share the
 same host workflow owner, plus separate channels for truly different
-capabilities such as session prompt input or session event reads.
+capabilities. Session prompt input and session event reads are better modeled
+as two directional bindings of one session exchange capability, not as two
+unrelated concepts.
 
 The router Layer consumes channel services. It does not import `HostWorkflow`,
 call `HostWorkflow.execute`, or know how the channel binding is implemented.
