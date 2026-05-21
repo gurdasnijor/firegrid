@@ -29,7 +29,7 @@ const isSimulation = (
 // discovery so they don't show up in `simulate list` or get picked up as
 // runnable. Add to this set rather than relying on placeholder `index.ts`
 // files that the discovery walk would otherwise happily load.
-const hiddenFolders = new Set(["to-be-migrated", "sim2-multi-surface-projection"])
+const hiddenFolders = new Set(["sim2-multi-surface-projection"])
 
 const isHidden = (folder: string): boolean =>
   hiddenFolders.has(folder) || folder.startsWith("_") || folder.startsWith(".")

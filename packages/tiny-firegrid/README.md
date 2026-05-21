@@ -131,11 +131,3 @@ provide the shared run lookup and parse path used by `simulate:show` and
 See [docs/methodology.md](./docs/methodology.md) for the discipline this package
 follows: what counts as a simulation, what the trace is (and isn't) responsible
 for, and how findings get filed.
-
-## Migration backlog
-
-`src/simulations/to-be-migrated/` holds simulation drivers from before the
-post-#426 runner shape. They are hidden from discovery (`simulate:list` will
-not surface them and `simulate:run` cannot execute them) until each one is
-ported into its own `<id>/{index,driver,host}.ts` folder under
-`src/simulations/`.

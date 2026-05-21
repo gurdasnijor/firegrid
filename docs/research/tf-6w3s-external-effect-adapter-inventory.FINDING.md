@@ -127,7 +127,7 @@ These were still recorded because the source-read asked for a monorepo grep pass
 | `packages/tiny-firegrid/src/simulations/phase1-lane6-new-shape-replay/driver.ts:4` | `Effect.tryPromise` harness body | Simulation driver, excluded |
 | `packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/driver.ts:4` | `Effect.tryPromise` harness body | Simulation driver, excluded |
 | `packages/tiny-firegrid/src/simulations/phase0-wave-2b-stream-zip-restart-replay/driver.ts:4` | `Effect.tryPromise` harness body | Simulation driver, excluded |
-| `packages/tiny-firegrid/src/simulations/to-be-migrated/**` | legacy spike strings using HTTP, fs, stdin/stdout, `Effect.tryPromise` | Archived/migration spike text, excluded |
+| retired tiny-firegrid migration backlog | legacy spike strings using HTTP, fs, stdin/stdout, `Effect.tryPromise` | Deleted from the active simulation tree; no longer a live exclusion surface |
 | `packages/*/test/**`, `packages/**/*.test.ts`, fixtures | `fetch`, `FetchHttpClient`, file I/O, web streams, spawned fixture scripts | Tests/fixtures, excluded |
 | `scripts/**` | shell/node tooling fs, process, and HTTP-adjacent commands | Repository tooling, excluded |
 

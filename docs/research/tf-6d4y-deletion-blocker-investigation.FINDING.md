@@ -43,7 +43,7 @@ Generated graph files were restored after inspection so this finding carries the
 | `packages/host-sdk/test/host/runtime-observation-sources.test.ts` | HARD test-only | Imports `WaitFor` and uses `HostRuntimeObservationSubstrateLive`. |
 | `packages/runtime/test/authorities/provider-uniqueness.test.ts` | SCHEMA/test-only | Imports internal durable wait-store authorities and asserts table/provider identity. Delete or migrate with durable-tools. |
 | `packages/tiny-firegrid/src/simulations/inv3-restart-replay/host.ts` | HARD sim-only | Legacy durable-tools simulation imports `WaitFor`, `DurableToolsWaitForLive`, and `DurableToolsTable`. |
-| `packages/tiny-firegrid/src/simulations/to-be-migrated/**` | HARD/SCHEMA sim-only | To-be-migrated simulations still import durable-tools table/types. |
+| retired tiny-firegrid migration backlog | RESOLVED sim-only | The old migration backlog was deleted from the active simulation tree. |
 | `packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/**` | DEAD comment evidence | Comments document the intended absence of `WaitFor.match`, wait-router, durable wait rows, and durable-tools wait-router spans. |
 
 ## OTEL Trace Evidence

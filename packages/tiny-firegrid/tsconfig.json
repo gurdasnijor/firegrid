@@ -16,5 +16,5 @@
     "noEmit": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/simulations/*.ts", "src/simulations/to-be-migrated/*.ts"]
+  "exclude": ["src/simulations/*.ts"]
 }

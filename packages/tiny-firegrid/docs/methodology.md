@@ -121,6 +121,3 @@ not verified ground-truth.
   and they are tracked separately from tiny-firegrid's runner work.
 - Conclusion-shaped artifacts (`run.json` with `claimStatus`, `findings: [...]`
   arrays in TypeScript). The trace is the output; findings are prose.
-- A migrate CLI for the `to-be-migrated/` backlog. The migration is mechanical
-  and the discipline ("port one sim, write a finding, repeat") doesn't need
-  tooling.
