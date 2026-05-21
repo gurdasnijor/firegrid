@@ -27,6 +27,7 @@ export {
 } from "./tool-use-to-effect.ts"
 export {
   FiregridAgentToolkitLayer,
+  FiregridPrimitiveProfileToolkitLayer,
   ToolCallWorkflow,
   ToolCallWorkflowLayer,
 } from "./toolkit-layer.ts"

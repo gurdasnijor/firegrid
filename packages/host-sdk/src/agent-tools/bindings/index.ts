@@ -27,6 +27,7 @@ export {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
   FiregridMcpToolFailureSchema,
+  FiregridPrimitiveProfileToolkit,
   ScheduleMeTool,
   SendTool,
   SessionCancelTool,

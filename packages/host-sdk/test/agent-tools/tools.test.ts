@@ -34,6 +34,7 @@ import {
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
+  FiregridPrimitiveProfileToolkit,
   SleepTool,
 } from "../../src/agent-tools/bindings/tools.ts"
 import {
@@ -139,6 +140,15 @@ describe("FiregridAgentToolkit", () => {
         "wait_for_any",
       ],
     )
+  })
+
+  it("agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.1 agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.3 exposes the locked primitive profile catalog", () => {
+    expect(Object.keys(FiregridPrimitiveProfileToolkit.tools).sort()).toEqual([
+      "call",
+      "send",
+      "wait_for",
+      "wait_for_any",
+    ])
   })
 
   it("Tool.parametersSchema decodes identically to the @firegrid/protocol input schema (no parallel parameter shape)", async () => {
