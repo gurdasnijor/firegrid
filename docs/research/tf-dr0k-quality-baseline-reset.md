@@ -72,9 +72,10 @@ They do not become blockers for the product baseline reset.
   severity, code, and message, while preserving line and column in the baseline
   for human review. This prevents comment-only edits from creating synthetic
   regressions when the same semantic diagnostic shifts line number.
-- Legacy `check:docs` and `check:specs` preflight gates were removed from the
-  code-quality path. They were process-era checks, not code-quality gates, and
-  they should not block the post-wave product quality reset.
+- Legacy `check:docs` and `check:specs` preflight gates were temporarily
+  removed from the code-quality path during the reset. They are process gates,
+  not product-code baselines, and `tf-hd3e` restores them as explicit
+  docs/spec hygiene checks outside the post-wave product quality ratchets.
 
 #### Effect diagnostic residual floor
 

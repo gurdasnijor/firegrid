@@ -1,5 +1,6 @@
 // firegrid-quality-gates.PREFLIGHT.1
 // firegrid-quality-gates.PREFLIGHT.2
+// firegrid-quality-gates.PREFLIGHT.3
 //
 // Local PR preflight runner. Unlike `pnpm run verify`, this script keeps
 // running after a failure so the developer sees every failing gate in one pass.
@@ -9,6 +10,8 @@ import { error, log } from "node:console"
 import process from "node:process"
 
 const gates = [
+  ["check:specs", "Feature spec YAML syntax"],
+  ["check:docs", "Documentation hygiene"],
   ["typecheck", "TypeScript project references"],
   ["lint", "ESLint and production cutover checks"],
   ["lint:dead", "Knip dead-code ratchet"],

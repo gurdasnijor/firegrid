@@ -36,7 +36,7 @@ env:
 # version bumps touch one file rather than every job.
 #
 # Gating jobs:
-#   lint              — eslint + dead-code + dup + effect-quality + ast-grep
+#   lint              — docs/specs + eslint + dead-code + dup + effect-quality + ast-grep
 #   semgrep           — semgrep --test fixtures + production semgrep scan
 #   typecheck         — pnpm --recursive typecheck
 #   effect-diagnostics — effect-language-service diagnostics
@@ -54,6 +54,12 @@ jobs:
 
       - name: Setup pnpm + Node + install
         uses: ./.github/actions/setup
+
+      - name: Check feature spec syntax
+        run: pnpm run check:specs
+
+      - name: Check docs hygiene
+        run: pnpm run check:docs
 
       - name: Lint
         run: pnpm run lint

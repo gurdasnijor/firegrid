@@ -12,11 +12,14 @@ pnpm run preflight
 `preflight` runs the same practical gate set but continues after failures and
 prints a summary at the end. This satisfies
 `firegrid-quality-gates.PREFLIGHT.1` and
-`firegrid-quality-gates.PREFLIGHT.2`.
+`firegrid-quality-gates.PREFLIGHT.2`. Its docs/spec entries satisfy
+`firegrid-quality-gates.PREFLIGHT.3`.
 
 ## Gate Summary
 
 This section satisfies `firegrid-quality-gates.DOCS.1`.
+The runnable `check:specs` and `check:docs` scripts satisfy
+`firegrid-quality-gates.DOCS.3`.
 
 | Gate | Script | What It Forbids | Canonical Replacement | Notes |
 |---|---|---|---|---|
