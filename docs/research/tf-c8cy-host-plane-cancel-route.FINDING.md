@@ -2,6 +2,11 @@
 
 ## Verdict
 
+**2026-05-21 amendment:** the evidence below still stands, but the prior
+route-wiring conclusion is superseded. The host-plane router must stay an edge
+/ system-call boundary; durable lifecycle/control ownership moves under a
+workflow-mediated `HostKernelWorkflow` validation slice.
+
 The durable cancellation substrate exists, but the host-plane router does not
 currently expose a cancellation primitive for ACP stdio edge routing. The
 remaining question is architectural: either lifecycle cancel becomes a routed

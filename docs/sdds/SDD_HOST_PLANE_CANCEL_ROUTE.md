@@ -1,108 +1,156 @@
-# SDD: Host-Plane Cancel Route
+# SDD: HostKernelWorkflow-Mediated Control Plane Slice
 
-Status: decision required
+Status: validation slice implemented - prune decision pending
 Bead: `tf-c8cy`
 Blocks: `tf-8aw5`, `tf-rqyh`
 
-## §0 DECISION
+## §0 Architecture Correction
 
-**Does session cancel dispatch through the host-plane router as a new lifecycle
-route, promoting lifecycle intent from observation-only into routed host-plane
-control, or does cancel flow through a different host-owned mechanism below the
-router while `SessionLifecycleChannel` stays observation-only by design?**
+**Gurdas architecture correction, 2026-05-21, PR #602:** the prior Option A
+route-wiring direction is superseded. The bug in both prior options was the
+assumption that a host-plane router should own durable control-row appends.
+That makes the router grow an internal control plane and blurs the boundary
+between public route contracts and runtime-owned workflow state.
 
-This decision gates ACP stdio edge `session/cancel`, later close/resume work,
-and any future edge that needs to terminate a RuntimeContext-backed session.
-Do not ship a parallel implementation before this is decided.
+Guiding rule: **if code starts accumulating claims, polling, request rows,
+completions, retries, lifecycle transitions, or exclusive ownership over
+runtime state — that IS a control plane, and in Firegrid it must be modeled as
+a WORKFLOW, not as router bodies.**
 
-## Evidence
+The corrected model is:
 
-The durable cancel row exists. `RuntimeLifecycleRequestRowSchema` carries
-`lifecycle: "cancel" | "close"` and is described as a durable request that the
-host claims and drives to terminal state. `makeRuntimeLifecycleRequestRow`
-selects `runtimeCancelRequestId` for cancel.
+- the host-plane router is an edge / system-call boundary;
+- create/load, start, prompt, cancel, close, and resume signal a long-running
+  `HostKernelWorkflow` through a workflow signal/mailbox contract;
+- `HostKernelWorkflow` owns exclusive control over its `RuntimeContextWorkflow`
+  children and serializes lifecycle/control decisions;
+- `SessionLifecycleChannel` remains observation-only;
+- `inputIntents`, `contextRequests`, `startRequests`, `lifecycleRequests`,
+  `controlRequestClaims`, and `controlRequestCompletions` are kernel-private
+  workflow/mailbox or migration-tail state, not public protocol durable state;
+- `@firegrid/protocol` owns public route/channel request and response
+  contracts only; kernel/runtime packages own private durable row schemas and
+  workflow state.
 
-The `session_cancel` agent tool already appends that row through
-`appendCommittedLifecycleRequest`, using a committed `RuntimeControlPlaneTable`
-bound to the control-plane stream the reconciler reads.
+## Validation Slice Built
 
-The host-plane router does not route cancel today. `RuntimeHostControlChannelsLive`
-routes create, prompt, session prompt, session start, permission respond,
-contexts, and sessions create-or-load. The lifecycle channel is then provided
-separately with the comment: "SessionLifecycleChannel is intentionally
-observation-only here. The router declares every dispatched host-control
-channel; lifecycle remains a stream service consumed through its typed channel
-tag."
+The slice adds a runtime-kernel prototype, exported through
+`@firegrid/runtime/kernel`, not the root runtime barrel:
 
-Current ACP stdio edge behavior is fail-fast: `cancel()` rejects with "ACP
-cancel is not implemented by the Firegrid stdio edge."
+- `HostKernelWorkflow`: one long-running workflow per host identity.
+- `HostKernelControlPlaneLive`: a narrow signal service that appends intents to
+  workflow-native durable deferred mailbox slots.
+- Intent family: `CreateLoad`, `Start`, `Prompt`, `Cancel`.
+- Child ownership: `Start` executes `RuntimeContextWorkflowNative`; `Prompt`
+  appends the runtime input deferred for that child; `Cancel` interrupts the
+  child workflow and writes public terminal run evidence.
 
-Full citations are in
-`docs/research/tf-c8cy-host-plane-cancel-route.FINDING.md`.
+The router is deliberately not involved in this slice. The proof isolates the
+load-bearing question: can lifecycle/control ownership move into a workflow
+without host-control route bodies appending lifecycle/control rows?
 
-## Option A — Route Lifecycle Intent Through HostPlaneChannelRouter
+## Native Evidence
 
-Decision: session cancel and close are host-plane commands. Add a new routed
-control surface, likely distinct from the existing observation-only
-`SessionLifecycleChannel`, with a payload shaped around `{ sessionId,
-lifecycle }` or narrower cancel/close commands.
+Test:
+`packages/runtime/test/workflow-engine/host-kernel-workflow.test.ts`
 
-Cutover for `tf-8aw5`:
+Command:
 
-1. Add protocol schemas and a channel target for lifecycle intent.
-2. Add a `RuntimeHostControlChannelsLive` router route that appends the existing
-   durable lifecycle request row.
-3. Wire ACP `cancel({ sessionId })` to `router.dispatch(...)`.
-4. Test that ACP cancel does not just resolve: it appends the lifecycle request
-   and the runtime reaches cancelled/terminated observation.
+```bash
+pnpm --filter @firegrid/runtime exec vitest run test/workflow-engine/host-kernel-workflow.test.ts
+```
 
-Benefits:
+Result: `1 passed`.
 
-- ACP edge uses the same router contract as newSession, prompt, and start.
-- Keeps edge code away from durable table construction.
-- Establishes one host-plane termination shape reusable by close/resume work.
+The test asserts native durable artifacts, not a bespoke evidence harness:
 
-Costs:
+- four `firegrid.host-kernel` mailbox deferred rows for create/load, start,
+  prompt, and cancel;
+- four host-kernel workflow activity rows, proving serialized intent handling;
+- one host-kernel workflow execution and one child
+  `RuntimeContextWorkflowNative` execution;
+- one runtime context row materialized by the kernel create/load decision;
+- public run rows `started` then `exited` with cancel evidence
+  `exitCode: 130`, `signal: "SIGTERM"`;
+- one child runtime input deferred row for prompt delivery;
+- no `contextRequests`, `startRequests`, `lifecycleRequests`,
+  `controlRequestClaims`, or `controlRequestCompletions` rows written by the
+  slice;
+- captured spans for `firegrid.host_kernel.intent.signal`,
+  `firegrid.host_kernel.workflow.intent.apply`,
+  `firegrid.host_kernel.child.start`, and `firegrid.host_kernel.child.cancel`.
 
-- Reopens the meaning of lifecycle under host-control routing.
-- Requires care not to overload the existing observation-only
-  `SessionLifecycleChannel` name with command semantics.
-- Expands the router's authority beyond currently dispatched control channels.
+Typecheck:
 
-## Option B — Keep SessionLifecycleChannel Observation-Only
+```bash
+pnpm --filter @firegrid/runtime typecheck
+```
 
-Decision: lifecycle observation remains intentionally separate from lifecycle
-intent. ACP cancel appends the existing durable lifecycle row through a
-host-owned helper below the router, not through `HostPlaneChannelRouter`.
+Result: pass.
 
-Cutover for `tf-8aw5`:
+## Comparison To Today's Dispatcher Path
 
-1. Extract or expose a narrow host-owned helper equivalent to the current
-   `appendCommittedLifecycleRequest` behavior.
-2. Compose that helper into `AcpStdioEdgeLive`.
-3. Wire ACP `cancel({ sessionId })` to the helper with `lifecycle: "cancel"`.
-4. Test that ACP cancel does not just resolve: it appends the lifecycle request
-   and the runtime reaches cancelled/terminated observation.
+Today's path is row-dispatcher mediated:
 
-Benefits:
+```text
+public/channel/helper append
+  -> RuntimeControlPlaneTable.{contextRequests,startRequests,lifecycleRequests}
+  -> control-request-dispatcher
+  -> RuntimeContextProvisionWorkflow / RuntimeStartWorkflow / RuntimeLifecycleWorkflow
+  -> claim/completion rows
+  -> side effects on RuntimeContextWorkflowRuntime
+```
 
-- Preserves the explicit observation-only lifecycle channel comment.
-- Reuses the proven durable append path without changing router semantics.
-- Avoids making every lifecycle intent a channel route before the shape is
-  proven beyond ACP/tool cancellation.
+The slice path is workflow-mediated:
 
-Costs:
+```text
+edge/system-call intent
+  -> HostKernelControlPlane.signal
+  -> HostKernelWorkflow mailbox deferred
+  -> serialized HostKernelWorkflow decision activity
+  -> RuntimeContextWorkflow child execute / input deferred / interrupt
+  -> public context + run observation rows
+```
 
-- ACP edge gains a second host dependency beside the router.
-- More care is needed to prevent duplicate direct durable append helpers.
-- Future close/resume work may need another decision if the helper grows.
+The comparison is clean for the covered create/load, start, prompt, and cancel
+happy path: the kernel workflow produces the native workflow and public
+observation evidence without the dispatcher request-row/claim/completion
+families.
 
-## Recommendation Shape
+The comparison is not yet complete for multi-host failover, retries after host
+death, duplicate edge request identity across process restart, close/resume, or
+public router contract acks.
 
-Both options must preserve one invariant: there is only one durable lifecycle
-append path for a given semantic operation after cutover. The chosen
-implementation should delete or reuse the existing `session_cancel` append
-logic rather than creating a second writer with subtly different request ids,
-headers, or stream binding.
+## Prune Plan If The Slice Expands Cleanly
 
-Gary should decide §0 before `tf-8aw5` resumes.
+Prune candidates after follow-up coverage:
+
+- `runtime/control-plane/control-request-dispatcher.ts`;
+- `RuntimeContextProvisionWorkflow`, `RuntimeStartWorkflow`, and
+  `RuntimeLifecycleWorkflow`;
+- `contextRequests`, `startRequests`, `lifecycleRequests`,
+  `controlRequestClaims`, and `controlRequestCompletions` durable row families,
+  or move any still-needed row shape under kernel-private mailbox state;
+- direct lifecycle append helpers such as `appendCommittedLifecycleRequest`;
+- host-control route bodies that write durable control rows;
+- `RuntimeInputIntentDispatcherLive` and the public `inputIntents` row bridge,
+  once prompt/input is fully mailbox/workflow-native rather than migration-tail
+  bridge state.
+
+Deletion order should be: prove parity for one route family, route edges to the
+kernel signal, delete the corresponding request-row writer, then delete the
+dispatcher arm and row family. Do not delete all row bridges before the kernel
+has replacement coverage for restart/failover and idempotency.
+
+## Current Verdict
+
+Clean for the narrow validation slice. `HostKernelWorkflow` can be the
+exclusive lifecycle/control owner for a small set of `RuntimeContextWorkflow`
+children using native workflow durable artifacts and public observation rows,
+without route-owned lifecycle/control request rows.
+
+Not yet clean enough for broad deletion. The next proof must add router
+decode/authorize/dispatch-intent, duplicate request id semantics, restart
+replay, and close/resume coverage. `tf-8aw5` and `tf-rqyh` remain blocked on
+that HostKernelWorkflow signal boundary rather than on direct lifecycle-route
+wiring.

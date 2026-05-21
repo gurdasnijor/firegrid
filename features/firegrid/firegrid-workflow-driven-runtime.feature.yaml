@@ -46,6 +46,8 @@ components:
       1: A future HostWorkflow observes explicit eligible runtime-context work and starts or resumes RuntimeContextWorkflow executions without directly performing external runtime side effects.
       2: HostWorkflow does not use app-local in-memory sets as a correctness fence for context execution.
       3: HostWorkflow does not start child context workflows from retained context rows until the control-plane model can distinguish eligible work from already-observed context evidence.
+      4: HostKernelWorkflow accepts create/load, start, prompt, and cancel intents through a workflow-native signal or mailbox contract and serializes lifecycle decisions for its RuntimeContextWorkflow children.
+      5: HostKernelWorkflow validation proves native workflow durable artifacts and public runtime rows without writing lifecycle request, claim, or completion rows through host-control router bodies.
 
   PHASE_6_AGENT_TOOLS:
     requirements:
