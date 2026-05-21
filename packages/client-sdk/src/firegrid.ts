@@ -5,9 +5,10 @@
 // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.3
 //
 // Public Firegrid client. This package is browser/app safe: it writes
-// durable launch and runtime-input intent through protocol helpers and
-// reads durable control/output projections, but it does not own live
-// runtime input delivery.
+// launch/start/permission control requests through protocol channel Tags and
+// reads durable control/output projections, but it does not own live runtime
+// input delivery. Prompt still writes runtime-input intents directly pending
+// tf-fyyk's prompt egress-return decision.
 
 import {
   PublicLaunchRequestSchema,
@@ -804,12 +805,11 @@ const make = (config: ResolvedConfig) =>
     // channel Tags (HostContextsCreate / HostSessionsStart /
     // HostPermissionRespond), whose bindings live in the shared
     // @firegrid/protocol/launch factories. `appendRuntimeInputIntent`
-    // (below) survives for the prompt egress paths: lane 3's HostPrompt /
-    // SessionPrompt channels return void, but the client prompt methods
-    // return the stored RuntimeInputIntentRow (tests assert returned ===
-    // stored, createdAt included). The egress-void vs row-return gap is
-    // flagged for lane 3 reconciliation (an append-returning-row variant or
-    // a contract change); until then prompt stays on the local helper.
+    // survives only for prompt egress paths: HostPrompt / SessionPrompt
+    // channels return void, but the client prompt methods return the stored
+    // RuntimeInputIntentRow (tests assert returned === stored, createdAt
+    // included). tf-fyyk owns that prompt egress-return decision; until then
+    // prompt stays on this local helper as the known residual direct write.
 
     const makeSessionHandle = (
       sessionId: FiregridSessionId,
