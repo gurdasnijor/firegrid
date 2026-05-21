@@ -233,7 +233,10 @@ remove that footgun:
 File-destination spans are written immediately per ended span (a
 `SimpleSpanProcessor`, matching the console destination), so a long-running ACP
 agent populates the JSONL artifact continuously without needing to exit — and an
-abrupt editor disconnect no longer discards a pending batch.
+abrupt editor disconnect no longer discards a pending batch. Set
+`FIREGRID_OTEL_FILE_FLUSH=batched` to restore 5s/512-span `BatchSpanProcessor`
+batching for high-span-rate non-interactive hosts that prefer throughput over
+per-span latency; the default is `immediate`.
 
 ## Full e2e traces through real agent runtimes
 

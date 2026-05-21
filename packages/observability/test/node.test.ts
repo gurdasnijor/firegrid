@@ -19,6 +19,33 @@ describe("@firegrid/observability node helpers", () => {
     expect(resolveFiregridOtelFileDestination({ env: {} })).toBeUndefined()
   })
 
+  it("tf-r1gz resolves a relative --otel-file against baseDir (repo-correct, not the launch cwd)", () => {
+    // A relative path used to resolve against the firegrid process cwd, which
+    // under Zed is the editor's cwd — so the trace landed outside the repo.
+    // baseDir (the operator-supplied --cwd) pins it to an absolute repo path.
+    expect(resolveFiregridOtelFileDestination({
+      filePath: ".firegrid/acp-trace.jsonl",
+      baseDir: "/repo/root",
+    })).toEqual({ _tag: "file", filePath: "/repo/root/.firegrid/acp-trace.jsonl" })
+
+    // An absolute --otel-file ignores baseDir.
+    expect(resolveFiregridOtelFileDestination({
+      filePath: "/abs/trace.jsonl",
+      baseDir: "/repo/root",
+    })).toEqual({ _tag: "file", filePath: "/abs/trace.jsonl" })
+
+    // Env-sourced relative paths resolve against baseDir too.
+    expect(resolveFiregridOtelFileDestination({
+      env: { FIREGRID_OTEL_FILE: "trace.jsonl" },
+      baseDir: "/repo/root",
+    })).toEqual({ _tag: "file", filePath: "/repo/root/trace.jsonl" })
+
+    // Without baseDir the raw path is returned unchanged (back-compat).
+    expect(resolveFiregridOtelFileDestination({
+      filePath: ".firegrid/acp-trace.jsonl",
+    })).toEqual({ _tag: "file", filePath: ".firegrid/acp-trace.jsonl" })
+  })
+
   it("firegrid-observability.HOST_PROCESS_EXPORTERS.2 serializes ended spans as one JSONL record", () => {
     const line = spanToJsonLine({
       name: "firegrid.test.span",

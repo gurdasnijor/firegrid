@@ -77,7 +77,6 @@ import {
   type FiregridOtelDestination,
 } from "@firegrid/observability/node"
 import { Cause, Console, Context, Data, Effect, Either, Exit, Layer, Option, ParseResult } from "effect"
-import path from "node:path"
 import { Readable, Writable } from "node:stream"
 
 class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
@@ -821,28 +820,21 @@ const acpCommand = Command.make(
       const durableStreams = yield* durableStreamsEndpoint
       const namespaceFromEnv = globalThis.process.env["FIREGRID_RUNTIME_NAMESPACE"]
       const cliFilePath = Option.getOrUndefined(otelFile)
-      const rawOtelDestination = resolveFiregridOtelFileDestination({
-        ...(cliFilePath === undefined ? {} : { filePath: cliFilePath }),
-        env: globalThis.process.env,
-      })
       // tf-r1gz: a RELATIVE --otel-file (e.g. the documented
       // `.firegrid/acp-trace.jsonl`) used to resolve against the firegrid
       // PROCESS cwd. Under Zed the agent is launched from Zed's own cwd, not
       // the repo, so the trace silently landed at <zed-cwd>/.firegrid/... and
-      // never appeared where operators looked. Resolve a relative trace path
-      // against the operator-supplied --cwd (the project root the documented
-      // config pairs it with) when present, else the process cwd; pin the
-      // result to an absolute path and announce it on stderr (stdout stays
-      // reserved for ACP JSON-RPC frames) so the artifact location is never a
-      // guess. firegrid-zed-acp-stdio-external-agent.CLI_HELPER.4
-      const otelBaseDir = Option.getOrUndefined(cwd) ?? globalThis.process.cwd()
-      const otelDestination: FiregridOtelDestination | undefined =
-        rawOtelDestination === undefined || rawOtelDestination._tag !== "file"
-          ? rawOtelDestination
-          : {
-            _tag: "file",
-            filePath: path.resolve(otelBaseDir, rawOtelDestination.filePath),
-          }
+      // never appeared where operators looked. Pass the operator-supplied
+      // --cwd (the project root the documented config pairs it with), else the
+      // process cwd, as the resolution base so the resolver pins the trace to
+      // an absolute, repo-correct path. Announce it on stderr (stdout stays
+      // reserved for ACP JSON-RPC frames) so the location is never a guess.
+      // firegrid-zed-acp-stdio-external-agent.CLI_HELPER.4
+      const otelDestination = resolveFiregridOtelFileDestination({
+        ...(cliFilePath === undefined ? {} : { filePath: cliFilePath }),
+        env: globalThis.process.env,
+        baseDir: Option.getOrUndefined(cwd) ?? globalThis.process.cwd(),
+      })
       if (otelDestination !== undefined && otelDestination._tag === "file") {
         yield* Console.error(
           `firegrid acp: writing OTEL spans to ${otelDestination.filePath}`,
