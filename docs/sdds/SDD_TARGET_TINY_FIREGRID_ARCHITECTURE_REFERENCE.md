@@ -30,9 +30,10 @@ Firegrid needs an executable reference implementation that answers the target
 composition questions in clean room:
 
 - how production client/edge APIs dispatch through a channel router;
-- how route bodies signal workflows without depending on workflow internals;
+- how channel route bodies lower to workflows without exposing workflow
+  internals;
 - how a host/kernel workflow launches and owns child session workflows;
-- how child workflows receive prompt/cancel/close/resume signals;
+- how child workflows receive prompt/cancel/close/resume inputs;
 - how resource state is represented without one table per CRUD operation;
 - how edge completion receipts are derived from route metadata and resource
   state.
@@ -48,8 +49,8 @@ clean-room implementation of the desired Firegrid host/runtime shape.
 
 The reference uses production contracts at every external seam:
 
-- production protocol schemas, channel targets, route descriptor types, and
-  completion metadata;
+- production protocol schemas, channel targets, route descriptor types,
+  channel read payloads, and completion metadata;
 - production client/session APIs for drivers;
 - production edge wire shapes for ACP/MCP-style dispatch where exercised;
 - production `FiregridHost`-shaped host output where the tiny runner requires
@@ -61,9 +62,9 @@ The reference replaces only the implementation behind those contracts:
 production client / edge surface
   -> production protocol route + channel contract
   -> tiny host-plane channel router
-  -> tiny kernel signal service
-  -> tiny HostKernelWorkflow resource state machine
-  -> tiny child SessionWorkflow instances
+  -> tiny channel route implementation
+  -> tiny workflow-owned durable resource state machine
+  -> tiny child workflow instances
   -> production-shaped channel reads, receipts, and trace evidence
 ```
 
@@ -108,6 +109,76 @@ type import or a small local adapter that proves the same public shape. If it
 needs production behavior, the reference is no longer clean-room enough to
 answer the target architecture question.
 
+## Minimum Primitives
+
+The reference should be built from the few primitives Firegrid already agreed
+on. Do not add new conceptual layers unless the implementation proves they are
+unavoidable.
+
+### Durable Resource
+
+A typed durable record with identity, status, revision, and domain fields. This
+is the state. Examples: host, session, run, channel mailbox. A resource should
+not split into separate request, claim, and completion table families just
+because it has multiple operations.
+
+### Workflow
+
+The state machine that owns transitions for a durable resource. It receives an
+operation through a channel route lowering, reads the current resource state,
+applies one transition, and may start child workflows or activities.
+
+### Channel
+
+The semantic API boundary. Callers and edge adapters interact through channel
+verbs:
+
+- `call` for durable request/response handshakes;
+- `send` for durable append or fire-and-continue behavior;
+- `wait_for` for semantic reads over ingress channels.
+
+Channels hide DurableTable handles, output tables, workflow handles,
+deferred rows, and low-level stream coordinates. A channel route may lower to
+any runtime-owned mechanism named by the host-plane router SDD: a workflow
+mailbox/signal, a durable row bridge, a future engine primitive, or a direct
+in-process service in a single-host test. That lowering is private to the
+runtime implementation.
+
+### Router
+
+The edge dispatch boundary over channels. It decodes, validates, authorizes,
+and traces `target + verb + payload`, then invokes the matching channel route.
+It does not own lifecycle, claims, retries, completion, child workflow
+ownership, or durable resource state.
+
+### Activity / Adapter
+
+The external side-effect boundary. Provider, process, ACP, MCP, sandbox, and
+fake-agent behavior lives here. Activities/adapters do not own durable
+lifecycle state; workflows do.
+
+The target shape is:
+
+```text
+edge/client
+  -> router
+  -> channel route
+  -> workflow-owned resource transition
+  -> channel read/call observes semantic state
+```
+
+The anti-shape is:
+
+```text
+edge/client
+  -> public request table
+  -> claim table
+  -> dispatcher
+  -> completion table
+  -> output/state helper
+  -> semantic API
+```
+
 ## State Model
 
 The reference treats workflows as state machines over durable resources.
@@ -141,10 +212,9 @@ Acceptable durable shapes:
 
 - one resource table per durable aggregate such as host, session, run, or
   channel mailbox;
-- public read rows only when they are part of a production-shaped channel being
-  modeled;
+- channel-visible read state only through production-shaped channel payloads;
 - workflow-engine state for idempotent workflow execution, activities,
-  deferred signals, and durable sleeps;
+  private deferred completions, and durable sleeps;
 - explicit queue rows only when the operation is truly a queue with claim/ack
   or work-stealing semantics.
 
@@ -158,45 +228,30 @@ Rejected reference shapes:
 - route bodies that implement ownership by scanning tables or writing terminal
   completion rows directly.
 
-## Router And Workflow Injection
+## Channels, Router, And Workflows
 
 The channel router is the edge/system-call boundary. It decodes wire payloads,
 checks target/verb validity, emits dispatch spans, and calls route
 implementations.
 
-Route implementations depend on a **kernel signal service**, not on workflow
-definitions or workflow-engine tables:
-
-```ts
-interface TinyKernelControl {
-  readonly signal: (
-    hostId: string,
-    intent: TinyKernelIntent,
-  ) => Effect.Effect<TinyKernelAck, TinyKernelSignalError>
-}
-```
-
-The signal service is a leaf contract. It contains schemas and a `Context.Tag`,
-but no workflow implementation. The workflow-backed Live implementation lives
-below it and may use `Workflow.execute`, `DurableDeferred`, workflow-engine
-tables, or a future engine signal API.
-
-This keeps the dependency direction clean:
+Route implementations are channel implementations. They are allowed to lower a
+channel verb into workflow-owned resource transitions, but the lowering
+mechanism stays below the channel/router boundary. Do not promote
+`signal`, `mailbox`, `deferred`, request-row, or workflow-engine vocabulary into
+the semantic API.
 
 ```text
-tiny router routes
-  -> tiny kernel signal contract
-  -/-> HostKernelWorkflow implementation
-  -/-> WorkflowEngineTable
-
-tiny HostKernelWorkflow implementation
-  -> tiny kernel signal contract
-  -> workflow engine / durable substrate
+tiny router
+  -> tiny channel route implementation
+  -> tiny workflow-owned resource transition
+  -/-> public DurableTable handles
+  -/-> public workflow handles
+  -/-> public request/claim/completion rows
 ```
 
-The reference should prove that the route layer can be tested with a fake
-`TinyKernelControl` and that the workflow layer can be tested without importing
-the router.
+The reference should prove that route behavior can be tested through production
+channel contracts and that workflow behavior can be tested as resource state
+transitions without importing edge adapters.
 
 ## Dispatch Flow
 
@@ -206,11 +261,9 @@ The minimum dispatch flow is:
 edge/client request
   -> router.dispatch.call/send(target, unknown)
   -> Schema.decodeUnknown(route request schema)
-  -> route maps request to TinyKernelIntent
-  -> TinyKernelControl.signal(hostId, intent)
-  -> HostKernelWorkflow mailbox receives intent
-  -> HostKernelWorkflow applies one state transition
-  -> optional child SessionWorkflow execute/signal
+  -> channel route lowers request to workflow-owned transition
+  -> HostKernelWorkflow applies one resource state transition
+  -> optional child SessionWorkflow execute or input delivery
   -> resource status/revision update
   -> channel read routes expose updated state where applicable
   -> route returns production-shaped receipt/response
@@ -226,10 +279,10 @@ The reference `HostKernelWorkflow` is one workflow per host identity. It owns:
 - host singleton identity for the reference host;
 - session resource create/load;
 - start transitions and child session workflow execution;
-- prompt delivery to the child workflow;
+- prompt delivery to the child workflow through a channel route lowering;
 - cancel, close, and resume transitions;
 - duplicate request identity;
-- terminal evidence projection.
+- terminal receipt state.
 
 It does not own:
 
@@ -240,19 +293,19 @@ It does not own:
 - public table family definitions.
 
 Duplicate identity is workflow-owned. Replaying the same route request with the
-same idempotency key must resolve to the existing resource revision or evidence
+same idempotency key must resolve to the existing resource revision or receipt
 instead of enqueueing another operation.
 
 ## Child SessionWorkflow
 
 The reference child workflow is intentionally small. It proves ownership and
-signal routing, not real provider execution.
+channel-to-workflow lowering, not real provider execution.
 
 Responsibilities:
 
 - start once for a session id;
-- consume prompt signals through the kernel/workflow signal path;
-- append production-shaped agent-output or session-output evidence;
+- consume prompt inputs delivered by channel route lowering;
+- record session-visible facts as resource state exposed only through channels;
 - respond to cancel/close/resume from the parent workflow;
 - expose enough state through ingress or callable channel routes for
   `session.wait.*`, `wait_for`, or snapshot-style calls to see the result.
@@ -299,22 +352,19 @@ packages/tiny-firegrid/src/simulations/target-architecture-reference/
 
   protocol/
     channels.ts                    # production channel targets/schemas re-exported or aliased
-    routes.ts                      # production route descriptor/receipt contracts
-    reads.ts                       # production read payload schemas used by channels
+    routes.ts                      # production route descriptor/receipt/read contracts
 
   runtime/
     resources/
       session-resource.ts          # tiny durable aggregate records
     channels/
-      host-control-routes.ts       # route bodies; depends on kernel contract only
-      session-agent-output.ts      # ingress read channel over resource/run state
-      state-changes.ts             # generic state-change ingress channel pattern
-      router-live.ts               # runtime dispatch interpreter / spans
-    kernel/
-      control-plane.ts             # signal contract: schemas + Context.Tag only
-      control-plane-live.ts        # workflow-backed signal implementation
-      host-kernel-workflow.ts      # parent workflow state machine
-      session-workflow.ts          # child workflow state machine
+      routes.ts                    # call/send/wait_for route implementations
+      router-live.ts               # dispatch interpreter / spans
+    workflows/
+      host-workflow.ts             # parent resource state machine
+      session-workflow.ts          # child resource state machine
+    adapters/
+      fake-session-adapter.ts      # external side-effect boundary for the sim
   host-sdk/
     host-live.ts                   # host topology: runtime + router + edges
     edges/
@@ -333,10 +383,11 @@ visible:
 
 | Tiny reference folder | Production boundary it represents |
 | --- | --- |
-| `protocol/` | `@firegrid/protocol`: schemas, targets, route contracts, receipts, read payloads |
+| `protocol/` | `@firegrid/protocol`: schemas, targets, route contracts, receipts, and channel read payloads |
 | `runtime/resources/` | runtime/kernel-private durable resource state |
-| `runtime/channels/` | `@firegrid/runtime/channels`: route implementations, ingress/read channels, and dispatch interpreter |
-| `runtime/kernel/` | `@firegrid/runtime/kernel`: workflow-owned lifecycle/control state |
+| `runtime/channels/` | `@firegrid/runtime/channels`: channel route implementations and dispatch interpreter |
+| `runtime/workflows/` | `@firegrid/runtime/kernel` / workflow modules: workflow-owned lifecycle/control state |
+| `runtime/adapters/` | runtime/host adapter boundary for external side effects |
 | `host-sdk/` | `@firegrid/host-sdk`: topology, config, drivers, and edge installation |
 | `client-sdk/` | `@firegrid/client-sdk`: optional transport adapter only, not semantic contracts |
 | `simulation/` | tiny-firegrid runner glue only |
@@ -350,29 +401,20 @@ small enough to read in one sitting and must not grow request/claim/completion
 table families per operation. OTel spans are the simulation evidence; durable
 resource tables are the modeled runtime state.
 
-`runtime/channels/host-control-routes.ts` builds route descriptors and route
-bodies. It imports `runtime/kernel/control-plane.ts` but not workflow
-implementations, workflow-engine tables, or `runtime/kernel/index.ts`-style
-barrels.
+`runtime/channels/routes.ts` builds route descriptors and route bodies. It may
+lower route calls into workflow-owned resource transitions, but it must not
+expose workflow handles, DurableTable handles, output tables, request rows,
+claim rows, or completion rows to callers.
 
 Reads are also channels. Streaming reads are ingress channels (`wait_for` /
 subscribe-style projections) and point-in-time reads are callable routes. The
-reference should model the architectural signal in existing code such as
-`packages/runtime/src/channels/session-agent-output.ts` and
-`packages/host-sdk/src/host/state-changes-channel.ts`: durable/resource state is
-hidden behind a channel contract, and callers see channel targets plus decoded
-payloads, not table handles or workflow internals.
+reference should model the architectural signal from existing channel code:
+durable/resource state is hidden behind a channel contract, and callers see
+channel targets plus decoded payloads, not table handles or workflow internals.
 
-`runtime/kernel/control-plane.ts` is the leaf signal contract. It defines
-schemas, the `Context.Tag`, and service interface only.
-
-`runtime/kernel/control-plane-live.ts` is the workflow-backed implementation of
-that contract. It may depend on `host-kernel-workflow.ts`,
-`session-workflow.ts`, and workflow substrate.
-
-`runtime/kernel/host-kernel-workflow.ts` and
-`runtime/kernel/session-workflow.ts` own workflow bodies. They do not import
-router files or edge adapters.
+`runtime/workflows/host-workflow.ts` and
+`runtime/workflows/session-workflow.ts` own workflow bodies. They do not import
+edge adapters and do not define public route contracts.
 
 `host-sdk/host-live.ts` composes the tiny host layer, selected router, runtime
 kernel implementation, and edge adapters. It should look like the target
@@ -393,7 +435,8 @@ artifacts:
    imports show the reference does not depend on production host-sdk/runtime
    implementation modules for behavior.
 3. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.3` - route tests
-   use a fake kernel signal service, proving router-to-workflow decoupling.
+   exercise production channel contracts while proving route bodies hide
+   workflow and DurableTable mechanics from callers.
 4. `firegrid-workflow-driven-runtime.PHASE_0_TARGET_REFERENCE.4` - durable
    artifacts contain resource records and workflow state, not per-operation
    request/claim/completion table families.
@@ -404,7 +447,6 @@ artifacts:
 Trace expectations:
 
 - `firegrid.channel.dispatch` spans with target, verb, and direction;
-- `firegrid.tiny_reference.kernel.signal` spans;
 - `firegrid.tiny_reference.host_workflow.transition` spans;
 - `firegrid.tiny_reference.child_workflow.*` spans;
 - no spans that imply production dispatcher/request-row bridges are involved.
@@ -419,7 +461,8 @@ router dispatch, or control-plane row families, reviewers should ask:
 
 - Does this production change move closer to the reference dependency graph?
 - Does it reduce request/claim/completion table sprawl?
-- Does route code depend only on the signal contract?
+- Does route code expose only channel contracts and keep workflow lowering
+  private?
 - Does workflow code own lifecycle transitions?
 - Is the public API still the production API used by the reference driver?
 
