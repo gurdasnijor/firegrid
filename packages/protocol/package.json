@@ -60,6 +60,10 @@
     "./verified-webhook": {
       "types": "./src/verified-webhook/index.ts",
       "default": "./src/verified-webhook/index.ts"
+    },
+    "./channels": {
+      "types": "./src/channels/index.ts",
+      "default": "./src/channels/index.ts"
     }
   },
   "files": [

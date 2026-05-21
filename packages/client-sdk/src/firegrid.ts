@@ -68,7 +68,9 @@ import {
   type SessionPermissionRespondInput,
 } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
+import { HostSessionsCreateOrLoadChannel } from "@firegrid/protocol/channels"
 import { Clock, Context, Data, Duration, Effect, Exit, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
+import { HostSessionsCreateOrLoadChannelStandaloneLive } from "./channels/host-sessions-create-or-load-default.ts"
 import { projectionWait } from "./internal/projection-wait.ts"
 import { FiregridClientOperations } from "./operations.ts"
 import {
@@ -516,6 +518,13 @@ const snapshotFromJournal = (
 const make = (config: ResolvedConfig) =>
   Effect.gen(function* () {
     const control = yield* RuntimeControlPlaneTable
+    // tf-35f4 Sim 2: createOrLoad now dispatches via the protocol-owned
+    // HostSessionsCreateOrLoadChannel Tag. Capturing the resolved channel
+    // here keeps the requirement at make-time (Layer composition), so the
+    // public FiregridSessionsClient.createOrLoad signature stays unchanged
+    // for callers.
+    const hostSessionsCreateOrLoadChannel =
+      yield* HostSessionsCreateOrLoadChannel
 
     // tf-ivl6 / tf-tw49 concern #1: per-contextId RuntimeOutputTable
     // cache. Baseline trace showed 75 of 80 layer.acquire spans landing
@@ -1007,15 +1016,32 @@ const make = (config: ResolvedConfig) =>
       }, Effect.gen(function* () {
         const decoded = yield* decodeSessionCreateOrLoadInput(request)
         const runtime = yield* decodePublicLaunchRuntimeIntent(decoded.runtime)
-        const contextId = sessionContextIdForExternalKey(decoded.externalKey)
+        // tf-35f4 Sim 2: dispatch via the protocol-owned channel binding
+        // instead of the in-client appendRuntimeContextRequest path. The
+        // binding's call() writes the same contextRequests row through
+        // RuntimeControlPlaneTable.insertOrGet — only the layer of
+        // indirection changes. Same substrate, same idempotency, same row
+        // shape; agent-tool / MCP projections share the same Tag.
+        const response = yield* hostSessionsCreateOrLoadChannel.binding.call({
+          externalKey: decoded.externalKey,
+          runtime,
+          ...(decoded.createdBy === undefined
+            ? {}
+            : { createdBy: decoded.createdBy }),
+        }).pipe(Effect.mapError(cause =>
+          new AppendError({
+            contextId: sessionContextIdForExternalKey(decoded.externalKey),
+            cause,
+          })))
         yield* Effect.annotateCurrentSpan({
-          "firegrid.context.id": contextId,
+          "firegrid.context.id": response.contextId,
           "firegrid.runtime.agent": runtime.config.agent ?? "",
           "firegrid.runtime.agent_protocol": runtime.config.agentProtocol ?? "",
           "firegrid.runtime_context_mcp.enabled": runtime.config.runtimeContextMcp?.enabled === true,
+          "firegrid.channel.target": "host.sessions.create_or_load",
+          "firegrid.channel.direction": "call",
         })
-        yield* createContextRequest(contextId, runtime, decoded.createdBy)
-        return yield* makeSessionHandle(contextId)
+        return yield* makeSessionHandle(response.contextId)
       }))
 
     const attachSession = (
@@ -1116,14 +1142,23 @@ const firegridServiceLayer = Layer.scoped(
  * RuntimeContext index with the runtime host layer when both are
  * composed in the same scope. Standalone consumers can fall back to
  * `FiregridControlPlaneTableLive`.
+ *
+ * Provides the client-sdk-internal default Layer for
+ * `HostSessionsCreateOrLoadChannel` so the rewired `createOrLoad`
+ * dispatch resolves the protocol-owned channel Tag without callers
+ * having to wire it. Production hosts may override by providing the
+ * host-sdk-owned `HostSessionsCreateOrLoadChannelLive` upstream of
+ * this Layer; both satisfy the SAME contract (per tf-35f4 / tf-kddg).
  */
-export const FiregridLive = firegridServiceLayer
+export const FiregridLive = firegridServiceLayer.pipe(
+  Layer.provide(HostSessionsCreateOrLoadChannelStandaloneLive),
+)
 
 /**
  * Standalone wiring: FiregridLive plus its own control-plane layer.
- * Suitable for clients that do not also run a runtime host in
- * process (e.g. a scenario that reads durable state through the
- * snapshot surface only).
+ * Suitable for clients that do not also run a runtime host in process
+ * (e.g. a scenario that reads durable state through the snapshot
+ * surface only).
  */
 export const FiregridStandaloneLive = FiregridLive.pipe(
   Layer.provide(FiregridControlPlaneTableLive),
