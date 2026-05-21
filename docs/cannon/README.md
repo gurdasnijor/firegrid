@@ -15,12 +15,13 @@ requested path for this curation pass.
 Read in this order:
 
 1. `architecture/host-sdk-runtime-boundary.md`
-2. `architecture/current-convergence-assessment-2026-05-20.md`
-3. `sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
-4. `sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
-5. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
-6. `research/workflow-body-single-suspension-rule.md`
-7. `vision/factory-vision.md`
+2. `architecture/transactional-cutover-rule.md`
+3. `architecture/current-convergence-assessment-2026-05-20.md`
+4. `sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
+5. `sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
+6. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+7. `research/workflow-body-single-suspension-rule.md`
+8. `vision/factory-vision.md`
 
 ## Canonical Documents
 
@@ -34,6 +35,9 @@ Read in this order:
   naming.
 - `architecture/current-convergence-assessment-2026-05-20.md` — current
   convergence and next-phase work sequencing.
+- `architecture/transactional-cutover-rule.md` — replacement work outside
+  `packages/tiny-firegrid/` must ship transactionally; tiny-firegrid remains the
+  allowed sandbox for partial spikes.
 - `architecture/sdd-alignment-sanity-check-2026-05-20.md` — alignment of the
   two high-load-bearing SDDs with current `main`.
 
@@ -104,6 +108,9 @@ Read in this order:
   canonical Firegrid channel for verified webhooks is the generic
   `firegrid.verifiedWebhooks` fact channel.
 - `packages/runtime/src/durable-tools/` stays deleted.
+- Half-ships are allowed only in `packages/tiny-firegrid/`. Production package
+  work must either complete the replacement, declare a temporary bridge with a
+  blocking deletion/reconciliation bead, or remain explicitly open.
 
 ## Current Scoreboard
 
