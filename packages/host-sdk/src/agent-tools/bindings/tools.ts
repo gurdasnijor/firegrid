@@ -298,3 +298,18 @@ export const FiregridAgentToolkit = Toolkit.make(
   CallTool,
   WaitForAnyTool,
 )
+
+/**
+ * Locked primitive profile for showcase participants.
+ *
+ * agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.1
+ * agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.2
+ * agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.3
+ * agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.4
+ */
+export const FiregridPrimitiveProfileToolkit = Toolkit.make(
+  WaitForTool,
+  WaitForAnyTool,
+  SendTool,
+  CallTool,
+)

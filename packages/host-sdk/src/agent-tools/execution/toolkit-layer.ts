@@ -22,6 +22,7 @@ import { toolExecutionFailed } from "../bindings/tool-error.ts"
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
+  FiregridPrimitiveProfileToolkit,
   type FiregridMcpToolFailure,
 } from "../bindings/tools.ts"
 import { AgentToolHost } from "./tool-host.ts"
@@ -138,17 +139,9 @@ const extractToolFailure = (content: unknown): FiregridMcpToolFailure => {
   }
 }
 
-/**
- * Toolkit handler Layer. Registering this with `McpServer` (via
- * `McpServer.registerToolkit`) projects the toolkit to MCP `tools/list`
- * and `tools/call`.
- *
- * Host services are captured once when the MCP layer is built; each handler
- * still resolves its route-scoped runtime context at call time and then runs
- * the tool-call workflow on that context's active host-scoped RuntimeContext engine.
- */
-export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
-  Effect.map(Effect.context<ToolCallHostEnvironment>(), captured => ({
+const makeToolkitHandlers = (
+  captured: Context.Context<ToolCallHostEnvironment>,
+) => ({
     sleep: (params: AgentToolSchemas.SleepToolInput) =>
       handleTool<AgentToolSchemas.SleepToolOutput>(captured, "sleep", params),
     wait_for: (params: AgentToolSchemas.WaitForToolInput) =>
@@ -171,5 +164,29 @@ export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
       handleTool<AgentToolSchemas.ScheduleMeToolOutput>(captured, "schedule_me", params),
     execute: (params: AgentToolSchemas.ExecuteToolInput) =>
       handleTool<AgentToolSchemas.ExecuteToolOutput>(captured, "execute", params),
-  })),
+  })
+
+/**
+ * Toolkit handler Layer. Registering this with `McpServer` (via
+ * `McpServer.registerToolkit`) projects the toolkit to MCP `tools/list`
+ * and `tools/call`.
+ *
+ * Host services are captured once when the MCP layer is built; each handler
+ * still resolves its route-scoped runtime context at call time and then runs
+ * the tool-call workflow on that context's active host-scoped RuntimeContext engine.
+ */
+export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
+  Effect.map(Effect.context<ToolCallHostEnvironment>(), makeToolkitHandlers),
+).pipe(Layer.annotateSpans("firegrid.side", "agent-tools"))
+
+export const FiregridPrimitiveProfileToolkitLayer = FiregridPrimitiveProfileToolkit.toLayer(
+  Effect.map(Effect.context<ToolCallHostEnvironment>(), captured => {
+    const handlers = makeToolkitHandlers(captured)
+    return {
+      wait_for: handlers.wait_for,
+      wait_for_any: handlers.wait_for_any,
+      send: handlers.send,
+      call: handlers.call,
+    }
+  }),
 ).pipe(Layer.annotateSpans("firegrid.side", "agent-tools"))

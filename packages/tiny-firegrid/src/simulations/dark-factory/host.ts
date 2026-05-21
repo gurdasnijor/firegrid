@@ -337,6 +337,9 @@ const darkFactoryChannelsLive = (
 
 export const darkFactoryHost = (
   env: TinyFiregridHostEnv,
+  options?: {
+    readonly toolProfile?: "full" | "primitive"
+  },
 ): Layer.Layer<FiregridHost, DurableTableError | ServeError, never> => {
   // Substrate-driven early stop belongs here by yielding env.stopSignal.complete,
   // not in the client-surface driver. Dark-factory leaves that to a follow-up.
@@ -395,6 +398,7 @@ export const darkFactoryHost = (
       host: mcpHost,
       port: 0,
       path: ensurePathInput(mcpPath),
+      ...(options?.toolProfile === undefined ? {} : { toolProfile: options.toolProfile }),
     }),
   ).pipe(
     Layer.provideMerge(host),

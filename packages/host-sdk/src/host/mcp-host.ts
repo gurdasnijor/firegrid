@@ -47,6 +47,8 @@ import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
   FiregridAgentToolkitLayer,
+  FiregridPrimitiveProfileToolkit,
+  FiregridPrimitiveProfileToolkitLayer,
 } from "../agent-tools/index.ts"
 import {
   enrichRuntimeContextMcpToolsListWithChannelMetadata,
@@ -99,6 +101,7 @@ export interface FiregridMcpServerLayerOptions {
    * configured base prefix"; it is not a catch-all route.
    */
   readonly path: HttpRouter.PathInput
+  readonly toolProfile?: "full" | "primitive"
 }
 
 export const runtimeContextMcpPath = (
@@ -232,20 +235,29 @@ const registerExpectedOAuthDiscoveryProbeRoutes = (
 
 export const FiregridMcpServerLayer = (
   options: FiregridMcpServerLayerOptions,
-) =>
-  Layer.mergeAll(
+) => {
+  const toolProfile = options.toolProfile ?? "full"
+  const toolNames = toolProfile === "primitive"
+    ? Object.keys(FiregridPrimitiveProfileToolkit.tools).sort()
+    : Object.keys(FiregridAgentToolkit.tools).sort()
+  return Layer.mergeAll(
     // firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.11
     registerExpectedOAuthDiscoveryProbeRoutes(options.path),
     Layer.scopedDiscard(
       Effect.gen(function* () {
-        yield* McpServer.registerToolkit(FiregridAgentToolkit)
+        if (toolProfile === "primitive") {
+          yield* McpServer.registerToolkit(FiregridPrimitiveProfileToolkit)
+        } else {
+          yield* McpServer.registerToolkit(FiregridAgentToolkit)
+        }
         yield* enrichRuntimeContextMcpToolsListWithChannelMetadata
       }).pipe(
         Effect.withSpan("firegrid.mcp.register_toolkit", {
           kind: "server",
           attributes: {
-            "firegrid.mcp.tool_count": Object.keys(FiregridAgentToolkit.tools).length,
-            "firegrid.mcp.tool_names": Object.keys(FiregridAgentToolkit.tools).sort().join(","),
+            "firegrid.mcp.tool_count": toolNames.length,
+            "firegrid.mcp.tool_names": toolNames.join(","),
+            "firegrid.mcp.tool_profile": toolProfile,
           },
         }),
       ),
@@ -269,7 +281,11 @@ export const FiregridMcpServerLayer = (
       ),
     ),
   ).pipe(
-    Layer.provide(FiregridAgentToolkitLayer),
+    Layer.provide(
+      toolProfile === "primitive"
+        ? FiregridPrimitiveProfileToolkitLayer
+        : FiregridAgentToolkitLayer,
+    ),
     Layer.provide(FiregridMcpRouteContextLayer),
     Layer.provide(
       Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
@@ -309,6 +325,7 @@ export const FiregridMcpServerLayer = (
     HttpMiddleware.withSpanNameGenerator(request =>
       runtimeContextMcpSpanName(request.url, request.method)),
   )
+}
 
 export const ensurePathInput = (path: string): HttpRouter.PathInput => {
   if (path === "*") return path
