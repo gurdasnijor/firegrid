@@ -20,6 +20,7 @@ components:
       5: The SDK split includes an ownership audit of current runtime folders and classifies each as runtime substrate, host-plane adapter/binding, session-plane API, command binding, integration package, or generic durable operator candidate.
       6: Verified webhook ingest is classified as a tracer-era host/integration adapter candidate or retirement candidate, not runtime execution substrate; its SourceCollections-based wait integration is stale after typed runtime wait-source cutover.
       7: "@firegrid/cli owns the command binding: @effect/cli command definitions, help text, flags, examples, local developer defaults, process exit behavior, and Node-only command execution wiring."
+      8: Runtime-context session byte-stream conversion and stdin write effects are owned by @firegrid/runtime; @firegrid/host-sdk may select and compose the raw or codec session adapter layers.
 
   PROJECTION_BINDINGS:
     requirements:

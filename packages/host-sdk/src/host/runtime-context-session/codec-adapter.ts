@@ -5,7 +5,6 @@ import {
   type McpServerDeclaration,
   type RuntimeAgentProtocol,
   type RuntimeContext,
-  type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
 import {
   asRuntimeContextError,
@@ -22,23 +21,21 @@ import {
   AgentInputEventSchema,
 } from "@firegrid/runtime/events"
 import {
+  runCodecRuntimeContextStderrJournal,
+} from "@firegrid/runtime/session-byte-stream-adapter"
+import {
   type AgentByteStream,
 } from "@firegrid/runtime/sources/sandbox"
 import {
-  Clock,
   Context,
   Effect,
   Layer,
   Match,
   Option,
-  Ref,
   Schema,
   Scope,
   Stream,
 } from "effect"
-import type {
-  PerContextRuntimeOutputWriter,
-} from "../per-context-runtime-output.ts"
 import {
   RuntimeContextWorkflowNative,
   type RuntimeContextWorkflowSessionService,
@@ -57,94 +54,10 @@ interface CodecRuntimeContextSession extends SessionCommon.RuntimeContextSession
   readonly agentSession: AgentSession["Type"]
 }
 
-const nowIso = Clock.currentTimeMillis.pipe(
-  Effect.map(millis => new Date(millis).toISOString()),
-)
-
 const protocolForContext = (
   context: RuntimeContext,
 ): Exclude<RuntimeAgentProtocol, "raw"> =>
   context.runtime.config.agentProtocol === "acp" ? "acp" : "stdio-jsonl"
-
-const codecStderrLines = (
-  contextId: string,
-  stderr: ReadableStream<Uint8Array>,
-): Stream.Stream<string, RuntimeContextError> =>
-  Stream.fromReadableStream({
-    evaluate: () => stderr,
-    onError: cause =>
-      asRuntimeContextError(
-        "sandbox.codec.stderr",
-        "failed reading codec process stderr",
-        contextId,
-        cause,
-      ),
-    releaseLockOnEnd: true,
-  }).pipe(
-    Stream.decodeText(),
-    Stream.splitLines,
-  )
-
-const logLineRowFromCodecStderr = (options: {
-  readonly context: RuntimeContext
-  readonly activityAttempt: number
-  readonly sequence: number
-  readonly raw: string
-  readonly receivedAt: string
-}): RuntimeLogLineRow => ({
-  logLineId: {
-    contextId: options.context.contextId,
-    activityAttempt: options.activityAttempt,
-    target: "logs",
-    sequence: options.sequence,
-  },
-  contextId: options.context.contextId,
-  activityAttempt: options.activityAttempt,
-  sequence: options.sequence,
-  source: "stderr",
-  format: "text-lines",
-  receivedAt: options.receivedAt,
-  raw: options.raw,
-})
-
-const runCodecStderrJournal = (
-  context: RuntimeContext,
-  activityAttempt: number,
-  bytes: AgentByteStream,
-  writer: PerContextRuntimeOutputWriter["Type"],
-) =>
-  Effect.gen(function* () {
-    const sequenceRef = yield* Ref.make(0)
-    yield* codecStderrLines(context.contextId, bytes.stderr).pipe(
-      Stream.mapEffect(line =>
-        Effect.gen(function* () {
-          const sequence = yield* Ref.getAndUpdate(sequenceRef, value => value + 1)
-          const receivedAt = yield* nowIso
-          yield* writer.appendLogLine(context, logLineRowFromCodecStderr({
-            context,
-            activityAttempt,
-            sequence,
-            raw: line,
-            receivedAt,
-          })).pipe(
-            mapRuntimeContextError(
-              "runtime-output.codec.stderr.write",
-              "failed to write codec stderr runtime log row",
-              context.contextId,
-            ),
-          )
-        })),
-      Stream.runDrain,
-    )
-  }).pipe(
-    Effect.withSpan("firegrid.agent_event_pipeline.codec.stderr_journal", {
-      kind: "internal",
-      attributes: {
-        "firegrid.context.id": context.contextId,
-        "firegrid.activity_attempt": activityAttempt,
-      },
-    }),
-  )
 
 const codecLayerForProtocol = (
   bytes: AgentByteStream,
@@ -359,7 +272,12 @@ export const makeCodecRuntimeContextWorkflowSessionService:
           return {
             session,
             run: Effect.gen(function*() {
-              yield* runCodecStderrJournal(context, activityAttempt, bytes, deps.writer).pipe(
+              yield* runCodecRuntimeContextStderrJournal({
+                context,
+                activityAttempt,
+                bytes,
+                writer: deps.writer,
+              }).pipe(
                 Effect.catchAll(cause =>
                   Effect.logWarning("[host-sdk] codec stderr journal failed").pipe(
                     Effect.annotateLogs({ contextId: context.contextId, cause }),
