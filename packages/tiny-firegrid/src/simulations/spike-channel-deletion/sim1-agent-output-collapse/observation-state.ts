@@ -10,8 +10,7 @@ export const sim1Token = "SIM1_AGENT_OUTPUT_COLLAPSE"
 
 export type Sim1ObserverPath =
   | "session.wait.forAgentOutput"
-  | "RuntimeAgentOutputAfterEvents.forContext"
-  | "RuntimeOutputTable.events.rows"
+  | "SessionAgentOutputChannel"
 
 export interface Sim1EventSignature {
   readonly sequence: number
@@ -23,8 +22,7 @@ const observations = new Map<Sim1ObserverPath, ReadonlyArray<Sim1EventSignature>
 
 export const sim1ObserverPaths: ReadonlyArray<Sim1ObserverPath> = [
   "session.wait.forAgentOutput",
-  "RuntimeAgentOutputAfterEvents.forContext",
-  "RuntimeOutputTable.events.rows",
+  "SessionAgentOutputChannel",
 ]
 
 export const resetSim1Observations: Effect.Effect<void> =

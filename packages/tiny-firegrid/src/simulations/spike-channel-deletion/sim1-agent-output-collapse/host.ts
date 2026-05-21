@@ -1,8 +1,4 @@
-import {
-  CurrentHostSession,
-  RuntimeOutputTable,
-  runtimeContextOutputStreamUrl,
-} from "@firegrid/protocol/launch"
+import { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
 import {
   sessionContextIdForExternalKey,
 } from "@firegrid/protocol/session-facade"
@@ -10,8 +6,6 @@ import {
   FiregridLocalHostLive,
   FiregridLocalProcessFromEnv,
 } from "@firegrid/host-sdk"
-import { runtimeAgentOutputObservationFromRow } from "@firegrid/runtime/events"
-import { RuntimeAgentOutputAfterEvents } from "@firegrid/runtime/runtime-output"
 import { Chunk, Effect, Layer, Stream } from "effect"
 import type { Scope } from "effect"
 import type { TinyFiregridHostEnv } from "../../../types.ts"
@@ -58,51 +52,19 @@ const collectExpected = <R = never>(
     Effect.asVoid,
   )
 
-const runtimeAgentOutputAfterEventsPath: Layer.Layer<
+const sessionAgentOutputChannelPath: Layer.Layer<
   never,
   unknown,
-  RuntimeAgentOutputAfterEvents
+  SessionAgentOutputChannel
 > =
   Layer.scopedDiscard(
     Effect.gen(function*() {
-      const output = yield* RuntimeAgentOutputAfterEvents
+      const output = yield* SessionAgentOutputChannel
       yield* collectExpected(
-        "RuntimeAgentOutputAfterEvents.forContext",
-        output.forContext(sim1ContextId),
+        "SessionAgentOutputChannel",
+        output.forContext(sim1ContextId).binding.stream,
       )
     }),
-  )
-
-const rawRuntimeOutputTableLayer = (
-  env: TinyFiregridHostEnv,
-) =>
-  Layer.unwrapEffect(
-    Effect.map(CurrentHostSession, hostSession =>
-      RuntimeOutputTable.layer({
-        streamOptions: {
-          url: runtimeContextOutputStreamUrl({
-            baseUrl: env.durableStreamsBaseUrl,
-            prefix: hostSession.streamPrefix,
-            contextId: sim1ContextId,
-          }),
-          contentType: "application/json",
-        },
-      })),
-  )
-
-const rawRuntimeOutputTablePath = (
-  env: TinyFiregridHostEnv,
-): Layer.Layer<never, unknown, CurrentHostSession> =>
-  Layer.scopedDiscard(
-    collectExpected(
-      "RuntimeOutputTable.events.rows",
-      Stream.unwrap(
-        Effect.map(RuntimeOutputTable, table =>
-          table.events.rows().pipe(
-            Stream.filterMap(runtimeAgentOutputObservationFromRow),
-          )),
-      ).pipe(Stream.provideLayer(rawRuntimeOutputTableLayer(env))),
-    ),
   )
 
 const resetLayer = Layer.scopedDiscard(resetSim1Observations)
@@ -120,8 +82,7 @@ export const sim1AgentOutputCollapseHost = (
 
   return Layer.mergeAll(
     resetLayer,
-    runtimeAgentOutputAfterEventsPath,
-    rawRuntimeOutputTablePath(env),
+    sessionAgentOutputChannelPath,
   ).pipe(
     Layer.provideMerge(host),
   )

@@ -379,21 +379,6 @@ const clientSessionAgentOutputChannel = (
     ),
   })
 
-const waitForIngressChannelProjection = (
-  channel: IngressChannel<typeof RuntimeAgentOutputObservationSchema>,
-  predicate: (observation: RuntimeAgentOutputObservation) => boolean,
-): Effect.Effect<void, unknown> =>
-  projectionWait(channel.binding.stream, predicate).pipe(
-    Effect.withSpan("firegrid.client.channel.wait_for", {
-      kind: "client",
-      attributes: {
-        "firegrid.channel.target": String(channel.target),
-        "firegrid.channel.direction": channel.direction,
-        "firegrid.wait.bucket": "projection",
-      },
-    }),
-  )
-
 // tf-ivl6: per-contextId cache entry for getOutputService. Each
 // handle owns its own CloseableScope so the make-body finalizer can
 // tear down all materialized RuntimeOutputTable layers on service
@@ -685,21 +670,23 @@ const make = (config: ResolvedConfig) =>
           })
         }
         const output = yield* getOutputService(context)
-        const run = Effect.gen(function* () {
-          let matched: RuntimeAgentOutputObservation | undefined
-          yield* waitForIngressChannelProjection(
-            clientSessionAgentOutputChannel(output),
-            observation => {
-              const isMatch = observation.contextId === contextId &&
-                (input.afterSequence === undefined ||
-                  observation.sequence > input.afterSequence) &&
-                predicate(observation)
-              if (isMatch) matched = observation
-              return isMatch
+        const channel = clientSessionAgentOutputChannel(output)
+        const run = channel.binding.stream.pipe(
+          Stream.filter(observation =>
+            observation.contextId === contextId &&
+            (input.afterSequence === undefined ||
+              observation.sequence > input.afterSequence) &&
+            predicate(observation),
+          ),
+          Stream.runHead,
+          Effect.withSpan("firegrid.client.channel.wait_for", {
+            kind: "client",
+            attributes: {
+              "firegrid.channel.target": String(channel.target),
+              "firegrid.channel.direction": channel.direction,
+              "firegrid.wait.bucket": "projection",
             },
-          )
-          return Option.fromNullable(matched)
-        }).pipe(
+          }),
           Effect.mapError(cause => new PreloadError({ cause })),
         )
         const awaited = input.timeoutMs === undefined
