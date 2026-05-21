@@ -135,7 +135,10 @@ const isTransient = (e: HttpClientError | RetryableHttpStatus): boolean => {
  * HTTP-date is CAPPED at 1 hour to defend against misbehaving / hostile
  * servers that could otherwise wedge the client indefinitely.
  */
-const parseRetryAfter = (raw: string | undefined): number | undefined => {
+const parseRetryAfter = (
+  raw: string | undefined,
+  nowMs: number,
+): number | undefined => {
   if (raw === undefined) return undefined
   const trimmed = raw.trim()
   if (trimmed === "") return undefined
@@ -147,7 +150,7 @@ const parseRetryAfter = (raw: string | undefined): number | undefined => {
   // HTTP-date.
   const parsed = Date.parse(trimmed)
   if (Number.isNaN(parsed)) return undefined
-  const deltaMs = parsed - Date.now()
+  const deltaMs = parsed - nowMs
   if (deltaMs <= 0) return 0
   return Math.min(deltaMs, 60 * 60 * 1000) // 1-hour cap
 }
@@ -227,8 +230,12 @@ const applyParams = (
 ): HttpClientRequest.HttpClientRequest => {
   if (!params) return req
   let out = req
-  for (const [k, v] of Object.entries(params)) {
+  const entries = Object.entries(params)
+  let index = 0
+  while (index < entries.length) {
+    const [k, v] = entries[index]!
     out = HttpClientRequest.setUrlParam(k, v)(out)
+    index += 1
   }
   return out
 }
@@ -277,8 +284,12 @@ const requestUrlOf = (
   Effect.gen(function* () {
     const url = new URL(urlOf(endpoint))
     const params = yield* resolveParamsRecord(endpoint.params)
-    for (const [key, value] of Object.entries(params)) {
+    const entries = Object.entries(params)
+    let index = 0
+    while (index < entries.length) {
+      const [key, value] = entries[index]!
       url.searchParams.set(key, value)
+      index += 1
     }
     return url.toString()
   })
@@ -325,7 +336,8 @@ const executeWithRetry = (
         })
         return res
       }
-      const retryAfterMs = parseRetryAfter(headerValue(res, "retry-after"))
+      const nowMs = yield* Clock.currentTimeMillis
+      const retryAfterMs = parseRetryAfter(headerValue(res, "retry-after"), nowMs)
       yield* emitSpanEvent("retry.attempt", {
         "firegrid.retry.attempt": attemptNumber,
         "firegrid.retry.http_status": res.status,

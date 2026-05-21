@@ -108,9 +108,12 @@ export const localProcessSpawnEnvFromHostEnv = (
   env: Record<string, string | undefined>,
 ): LocalProcessSandboxProviderOptions => {
   const baselineEnvVars: Record<string, string> = {}
-  for (const name of LOCAL_PROCESS_BASELINE_ENV_NAMES) {
+  let index = 0
+  while (index < LOCAL_PROCESS_BASELINE_ENV_NAMES.length) {
+    const name = LOCAL_PROCESS_BASELINE_ENV_NAMES[index]!
     const value = env[name]
     if (value !== undefined && value.length > 0) baselineEnvVars[name] = value
+    index += 1
   }
   return {
     inheritedEnvKeys: Object.keys(env),

@@ -285,13 +285,26 @@ const runtimeHostAgentToolHostService = (captured: {
           input,
         })),
     ),
-  callApprovalChannel: ({ toolUseId, contextId, channel, request }) =>
-    Effect.gen(function*() {
-      if (!channel.startsWith("approval.")) {
-        return yield* Effect.fail(
-          new Error(`unsupported approval channel target: ${channel}`),
-        )
-      }
+  callApprovalChannel: ({ toolUseId, contextId, channel, request }) => {
+    if (!channel.startsWith("approval.")) {
+      return Effect.fail(
+        toolExecutionFailed(
+          toolUseId,
+          "call",
+          `unsupported approval channel target: ${channel}`,
+        ),
+      ).pipe(
+        Effect.withSpan("firegrid.host.agent_tool.call.approval", {
+          kind: "internal",
+          attributes: {
+            "firegrid.context.id": contextId,
+            "firegrid.agent_tool.tool_use_id": toolUseId,
+          },
+        }),
+      )
+    }
+
+    return Effect.gen(function*() {
       yield* requireLocalContextWithHostCapabilities(captured, contextId)
       const matched = yield* waitForApprovalPermissionRequest(
         captured.agentOutputEvents,
@@ -334,7 +347,8 @@ const runtimeHostAgentToolHostService = (captured: {
           "firegrid.agent_tool.tool_use_id": toolUseId,
         },
       }),
-    ),
+    )
+  },
   appendSessionPrompt: ({ toolUseId, sessionId, inputId, prompt }) =>
     // firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2
     appendIngressWithHostCapabilities(captured, {

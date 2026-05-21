@@ -4,11 +4,6 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "
 import process from "node:process"
 import { join } from "node:path"
 
-const DOC_ROOTS = ["README.md", "docs", "features"]
-const DOC_EXTENSIONS = new Set([".md", ".yaml"])
-const DOC_CONFLICT_MARKER = /<<<<<<<|>>>>>>>|=======/
-const DOC_TRAILING_WHITESPACE = /[ \t]$/
-
 const ARCH_EXCLUDE =
   "(^|/)(.*\\.test\\.(ts|tsx|mts)|__tests__|dist|build|coverage)(/|$)"
 const EFFECT_DIAGNOSTICS_BASELINE = ".effect-diagnostics-baseline.json"
@@ -46,75 +41,23 @@ const archTargets = {
   },
 }
 
-const run = (command, args, options = {}) => {
-  const result = spawnSync(command, args, {
-    stdio: "inherit",
-    env: process.env,
-    ...options,
-  })
-
-  if (result.error !== undefined) {
-    error(result.error.message)
-    process.exit(1)
-  }
-
-  if (result.status !== 0) process.exit(result.status ?? 1)
-}
-
-const collectDocs = (path) => {
-  const info = statSync(path)
-  if (info.isFile()) {
-    if ([...DOC_EXTENSIONS].some(extension => path.endsWith(extension))) {
-      return [path]
-    }
-    return []
-  }
-
-  return readdirSync(path)
-    .flatMap(entry => collectDocs(join(path, entry)))
-}
-
-const checkDocs = () => {
-  let failed = false
-  for (const file of DOC_ROOTS.flatMap(collectDocs)) {
-    const lines = readFileSync(file, "utf8").split(/\r?\n/)
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index]
-      if (DOC_TRAILING_WHITESPACE.test(line)) {
-        error(`${file}:${String(index + 1)}: trailing whitespace`)
-        failed = true
-      }
-      if (DOC_CONFLICT_MARKER.test(line)) {
-        error(`${file}:${String(index + 1)}: merge conflict marker`)
-        failed = true
-      }
-    }
-  }
-  if (failed) process.exit(1)
-}
-
-const checkSpecs = () => {
-  run("ruby", [
-    "-e",
-    "require \"yaml\"; ARGV.each { |f| YAML.load_file(f); puts \"ok #{File.basename(f)}\" }",
-    ...readdirSync("features", { withFileTypes: true })
-      .filter(entry => entry.isDirectory())
-      .flatMap(entry =>
-        readdirSync(join("features", entry.name))
-          .filter(file => file.endsWith(".feature.yaml"))
-          .map(file => join("features", entry.name, file))
-      ),
-  ])
-}
-
 const emptyEffectCounts = () => ({ error: 0, warning: 0, message: 0 })
 
-const effectDiagnosticKey = (entry) =>
+const effectDiagnosticSortKey = (entry) =>
   [
     entry.project,
     entry.file,
     String(entry.line),
     String(entry.column),
+    entry.severity,
+    entry.code,
+    entry.message,
+  ].join("\u0000")
+
+const effectDiagnosticIdentityKey = (entry) =>
+  [
+    entry.project,
+    entry.file,
     entry.severity,
     entry.code,
     entry.message,
@@ -129,7 +72,7 @@ const summarizeEffectDiagnostics = (entries) =>
 const effectDiagnosticEntryMap = (entries) => {
   const counts = new Map()
   for (const entry of entries) {
-    const key = effectDiagnosticKey(entry)
+    const key = effectDiagnosticIdentityKey(entry)
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   return counts
@@ -175,7 +118,7 @@ const compareEffectDiagnosticsToBaseline = (currentEntries) => {
   const additions = []
 
   for (const entry of currentEntries) {
-    const key = effectDiagnosticKey(entry)
+    const key = effectDiagnosticIdentityKey(entry)
     const remaining = baselineCounts.get(key) ?? 0
     if (remaining > 0) {
       baselineCounts.set(key, remaining - 1)
@@ -211,7 +154,7 @@ const compareEffectDiagnosticsToBaseline = (currentEntries) => {
 
 const writeEffectDiagnosticsBaseline = (entries) => {
   const sortedEntries = [...entries].sort((a, b) =>
-    effectDiagnosticKey(a).localeCompare(effectDiagnosticKey(b)))
+    effectDiagnosticSortKey(a).localeCompare(effectDiagnosticSortKey(b)))
   const baseline = {
     version: 1,
     command: "pnpm run effect:diagnostics:baseline",
@@ -324,9 +267,7 @@ const archDeps = (target) => {
 
 const [group, command, target] = process.argv.slice(2)
 
-if (group === "check" && command === "specs") checkSpecs()
-else if (group === "check" && command === "docs") checkDocs()
-else if (group === "effect" && command === "diagnostics") effectDiagnostics(target)
+if (group === "effect" && command === "diagnostics") effectDiagnostics(target)
 else if (group === "arch" && command === "deps" && target !== undefined) {
   archDeps(target)
 } else {

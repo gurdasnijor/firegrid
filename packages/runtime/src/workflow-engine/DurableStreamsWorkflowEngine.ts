@@ -11,6 +11,11 @@ import {
 
 export * from "./internal/table.ts"
 
+const workerIdForOptions = (
+  options: WorkflowEngineDurableStateOptions,
+): string =>
+  options.workerId ?? `worker:${options.streamUrl}`
+
 export const make = (
   options: WorkflowEngineDurableStateOptions,
 ): Effect.Effect<
@@ -24,7 +29,7 @@ export const make = (
     const table = yield* WorkflowEngineTable
     return yield* makeWorkflowEngine(
       table,
-      options.workerId ?? `worker-${crypto.randomUUID()}`,
+      workerIdForOptions(options),
     )
   }).pipe(
     Effect.provide(WorkflowEngineTable.layer(workflowEngineTableLayerOptions(options))),
@@ -41,7 +46,7 @@ const layer = (
       const table = yield* WorkflowEngineTable
       const engine = yield* makeWorkflowEngine(
         table,
-        options.workerId ?? `worker-${crypto.randomUUID()}`,
+        workerIdForOptions(options),
       )
       return Context.make(WorkflowEngineTable, table).pipe(
         Context.add(WorkflowEngine.WorkflowEngine, engine),

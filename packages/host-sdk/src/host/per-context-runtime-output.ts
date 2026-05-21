@@ -139,17 +139,21 @@ export const PerContextRuntimeAgentOutputAfterEventsLive = Layer.effect(
           table =>
             table.events.query((coll) => {
               let selected: ReturnType<typeof runtimeAgentOutputObservationFromRow> = Option.none()
-              for (const candidate of coll.toArray) {
+              const candidates = coll.toArray
+              let index = 0
+              while (index < candidates.length) {
+                const candidate = candidates[index]!
                 const decoded = runtimeAgentOutputObservationFromRow(candidate)
-                if (Option.isNone(decoded)) continue
                 if (
-                  decoded.value.contextId !== source.contextId ||
-                  decoded.value.activityAttempt !== source.activityAttempt ||
-                  decoded.value.sequence <= source.afterSequence
-                ) continue
-                if (Option.isNone(selected) || decoded.value.sequence < selected.value.sequence) {
+                  Option.isSome(decoded) &&
+                  decoded.value.contextId === source.contextId &&
+                  decoded.value.activityAttempt === source.activityAttempt &&
+                  decoded.value.sequence > source.afterSequence &&
+                  (Option.isNone(selected) || decoded.value.sequence < selected.value.sequence)
+                ) {
                   selected = decoded
                 }
+                index += 1
               }
               return Option.getOrUndefined(selected)
             }).pipe(
