@@ -71,6 +71,10 @@ These are intentionally not agent event-pipeline stages:
   Host packages install live workflow Layers and provide topology; they do not
   own workflow names, payload schemas, success/error schemas, or
   idempotency/execution-id helpers.
+- `control-plane/`: runtime-owned dispatcher/daemon mechanics that bridge
+  durable control request rows into runtime workflow execution. Host packages
+  provide host-bound side effects, but they do not export or own the dispatcher
+  internals.
 - `agent-tools/`: tool schemas, lowering, MCP exposure, and host-coupled live
   services.
 - `agent-adapters/`: projections over codec sessions

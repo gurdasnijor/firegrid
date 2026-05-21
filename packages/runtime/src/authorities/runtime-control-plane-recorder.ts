@@ -2,14 +2,35 @@ import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
   makeLocalRuntimeContextForHostSession,
+  makeRuntimeControlRequestCompletionRow,
   type HostSessionRow,
+  type RuntimeContextRequestRow,
   type RuntimeContext,
   type RuntimeContextIntent,
+  type RuntimeControlRequestCompletionRow,
+  type RuntimeControlRequestKind,
+  type RuntimeLifecycleRequestRow,
   type RuntimeRunEventRow,
+  type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
 import { Clock, Context, Effect, Layer, Stream } from "effect"
 import type { Option } from "effect"
 import { authorityNowIso } from "./time.ts"
+
+type RuntimeControlRequestRow =
+  | RuntimeContextRequestRow
+  | RuntimeStartRequestRow
+  | RuntimeLifecycleRequestRow
+
+interface RuntimeControlRequestCompletionInput {
+  readonly status: RuntimeControlRequestCompletionRow["status"]
+  readonly hostId: string
+  readonly completedAtMs: number
+  readonly activityAttempt?: number
+  readonly exitCode?: number
+  readonly signal?: string
+  readonly message?: string
+}
 
 export interface RuntimeContextInsertService {
   readonly insertLocalContext: (
@@ -17,6 +38,14 @@ export interface RuntimeContextInsertService {
     options: {
       readonly contextId: string
       readonly createdBy?: string
+    },
+  ) => Effect.Effect<RuntimeContext, unknown>
+  readonly insertLocalContextIfAbsent: (
+    intent: RuntimeContextIntent,
+    options: {
+      readonly contextId: string
+      readonly createdBy?: string
+      readonly createdAtMs?: number
     },
   ) => Effect.Effect<RuntimeContext, unknown>
 }
@@ -50,6 +79,109 @@ export interface RuntimeRunAppendAndGetService {
   ) => Effect.Effect<void, unknown>
 }
 
+interface RuntimeControlRequestsService {
+  readonly writeCompletion: (
+    requestKind: RuntimeControlRequestKind,
+    request: RuntimeControlRequestRow,
+    input: RuntimeControlRequestCompletionInput,
+  ) => Effect.Effect<RuntimeControlRequestCompletionRow, unknown>
+  readonly completionForRequest: (
+    requestId: string,
+  ) => Effect.Effect<Option.Option<RuntimeControlRequestCompletionRow>, unknown>
+  readonly contextRequests: Effect.Effect<ReadonlyArray<RuntimeContextRequestRow>, unknown>
+  readonly startRequests: Effect.Effect<ReadonlyArray<RuntimeStartRequestRow>, unknown>
+  readonly lifecycleRequests: Effect.Effect<ReadonlyArray<RuntimeLifecycleRequestRow>, unknown>
+  readonly startRequestsForContext: (
+    contextId: string,
+  ) => Effect.Effect<ReadonlyArray<RuntimeStartRequestRow>, unknown>
+  readonly contextRequestRows: Stream.Stream<RuntimeContextRequestRow, unknown>
+  readonly startRequestRows: Stream.Stream<RuntimeStartRequestRow, unknown>
+  readonly lifecycleRequestRows: Stream.Stream<RuntimeLifecycleRequestRow, unknown>
+}
+
+const writeControlRequestCompletionTo = (
+  table: RuntimeControlPlaneTable["Type"],
+  requestKind: RuntimeControlRequestKind,
+  request: RuntimeControlRequestRow,
+  input: RuntimeControlRequestCompletionInput,
+) =>
+  Effect.gen(function* () {
+    const row = makeRuntimeControlRequestCompletionRow({
+      ...input,
+      requestKind,
+      requestId: request.requestId,
+      contextId: request.contextId,
+    })
+    const result = yield* table.controlRequestCompletions.insertOrGet(row)
+    return result._tag === "Found" ? result.row : row
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_control_plane.control_request.completion.write", {
+      kind: "producer",
+      attributes: {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+        "firegrid.control.request_kind": requestKind,
+        "firegrid.control.completion_status": input.status,
+      },
+    }),
+  )
+
+const controlRequestsFromTable = (
+  table: RuntimeControlPlaneTable["Type"],
+): RuntimeControlRequestsService => ({
+  writeCompletion: (requestKind, request, input) =>
+    writeControlRequestCompletionTo(table, requestKind, request, input),
+  completionForRequest: requestId =>
+    table.controlRequestCompletions.get(requestId).pipe(
+      Effect.withSpan("firegrid.runtime_control_plane.control_request.completion.read", {
+        kind: "consumer",
+        attributes: {
+          "firegrid.control.request_id": requestId,
+        },
+      }),
+    ),
+  contextRequests: table.contextRequests.query((coll) => coll.toArray).pipe(
+    Effect.withSpan("firegrid.runtime_control_plane.control_request.context.query", {
+      kind: "consumer",
+    }),
+  ),
+  startRequests: table.startRequests.query((coll) => coll.toArray).pipe(
+    Effect.withSpan("firegrid.runtime_control_plane.control_request.start.query", {
+      kind: "consumer",
+    }),
+  ),
+  lifecycleRequests: table.lifecycleRequests.query((coll) => coll.toArray).pipe(
+    Effect.withSpan("firegrid.runtime_control_plane.control_request.lifecycle.query", {
+      kind: "consumer",
+    }),
+  ),
+  startRequestsForContext: contextId =>
+    table.startRequests.query((coll) =>
+      coll.toArray.filter(request => request.contextId === contextId)).pipe(
+      Effect.withSpan("firegrid.runtime_control_plane.control_request.start.query_context", {
+        kind: "consumer",
+        attributes: {
+          "firegrid.context.id": contextId,
+        },
+      }),
+    ),
+  contextRequestRows: table.contextRequests.rows().pipe(
+    Stream.withSpan("firegrid.runtime_control_plane.control_request.context.rows", {
+      kind: "consumer",
+    }),
+  ),
+  startRequestRows: table.startRequests.rows().pipe(
+    Stream.withSpan("firegrid.runtime_control_plane.control_request.start.rows", {
+      kind: "consumer",
+    }),
+  ),
+  lifecycleRequestRows: table.lifecycleRequests.rows().pipe(
+    Stream.withSpan("firegrid.runtime_control_plane.control_request.lifecycle.rows", {
+      kind: "consumer",
+    }),
+  ),
+})
+
 const insertLocalContextTo = (
   table: RuntimeControlPlaneTable["Type"],
   session: HostSessionRow,
@@ -71,6 +203,42 @@ const insertLocalContextTo = (
         "firegrid.context.id": context.contextId,
       })),
     Effect.withSpan("firegrid.runtime_control_plane.context.insert", {
+      kind: "producer",
+      attributes: {
+        "firegrid.context.id": options.contextId,
+      },
+    }),
+  )
+
+const insertLocalContextIfAbsentTo = (
+  table: RuntimeControlPlaneTable["Type"],
+  session: HostSessionRow,
+  intent: RuntimeContextIntent,
+  options: {
+    readonly contextId: string
+    readonly createdBy?: string
+    readonly createdAtMs?: number
+  },
+) =>
+  Effect.gen(function* () {
+    const createdAtMs = options.createdAtMs ?? (yield* Clock.currentTimeMillis)
+    const runtimeContext = yield* makeLocalRuntimeContextForHostSession(
+      session,
+      intent,
+      {
+        contextId: options.contextId,
+        createdAtMs,
+        ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
+      },
+    )
+    const result = yield* table.contexts.insertOrGet(runtimeContext)
+    return result._tag === "Found" ? result.row : runtimeContext
+  }).pipe(
+    Effect.tap(context =>
+      Effect.annotateCurrentSpan({
+        "firegrid.context.id": context.contextId,
+      })),
+    Effect.withSpan("firegrid.runtime_control_plane.context.insert_if_absent", {
       kind: "producer",
       attributes: {
         "firegrid.context.id": options.contextId,
@@ -217,6 +385,8 @@ const contextInsertFromTable = (
 ): RuntimeContextInsertService => ({
   insertLocalContext: (intent, options) =>
     insertLocalContextTo(table, session, intent, options),
+  insertLocalContextIfAbsent: (intent, options) =>
+    insertLocalContextIfAbsentTo(table, session, intent, options),
 })
 
 const contextReadFromTable = (
@@ -262,6 +432,10 @@ export class RuntimeRunAppendAndGet extends Context.Tag(
   "@firegrid/runtime/RuntimeRunAppendAndGet",
 )<RuntimeRunAppendAndGet, RuntimeRunAppendAndGetService>() {}
 
+export class RuntimeControlRequests extends Context.Tag(
+  "@firegrid/runtime/RuntimeControlRequests",
+)<RuntimeControlRequests, RuntimeControlRequestsService>() {}
+
 export class RuntimeContexts extends Context.Tag(
   "@firegrid/runtime/RuntimeContexts",
 )<RuntimeContexts, Stream.Stream<RuntimeContext, unknown>>() {}
@@ -281,6 +455,10 @@ export const RuntimeContextInsertLive = Layer.effect(
 
 export const RuntimeControlPlaneRecorderLive = Layer.mergeAll(
   RuntimeContextInsertLive,
+  Layer.effect(
+    RuntimeControlRequests,
+    Effect.map(RuntimeControlPlaneTable, controlRequestsFromTable),
+  ),
   Layer.effect(
     RuntimeContextRead,
     Effect.map(RuntimeControlPlaneTable, contextReadFromTable),

@@ -113,21 +113,25 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
       access(new URL("../../src/host/runtime-context-engine-registry.ts", import.meta.url)),
     ).rejects.toThrow()
 
-    const sourceFiles = [
+    const hostSourceFiles = [
       "commands.ts",
       "agent-tool-host-live.ts",
-      "control-request-reconciler.ts",
       "channels/session-self/index.ts",
       "../agent-tools/execution/toolkit-layer.ts",
     ]
-    const contents = await Promise.all(
-      sourceFiles.map(file =>
+    const hostContents = await Promise.all(
+      hostSourceFiles.map(file =>
         readFile(new URL(`../../src/host/${file}`, import.meta.url), "utf8"),
       ),
     )
+    const runtimeContents = await readFile(
+      new URL("../../../runtime/src/control-plane/control-request-dispatcher.ts", import.meta.url),
+      "utf8",
+    )
+    const contents = [...hostContents, runtimeContents].join("\n")
 
-    expect(contents.join("\n")).not.toContain("RuntimeContextEngineRegistry")
-    expect(contents.join("\n")).not.toContain("runtime-context-engine-registry")
+    expect(contents).not.toContain("RuntimeContextEngineRegistry")
+    expect(contents).not.toContain("runtime-context-engine-registry")
   })
 
   it("firegrid-workflow-driven-runtime.BOUNDARIES.6-1 each host writes workflow rows only to its host-owned workflow stream", async () => {

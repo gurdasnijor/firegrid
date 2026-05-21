@@ -1,5 +1,6 @@
 export {
   RuntimeControlPlaneRecorderLive,
+  RuntimeControlRequests,
   RuntimeContexts,
   RuntimeContextInsertLive,
   RuntimeContextInsert,

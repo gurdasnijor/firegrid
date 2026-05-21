@@ -78,9 +78,10 @@ Bead acceptance criteria, mapped to the empirical run
 
 ## Substrate gap (the headline finding)
 
-`FiregridRuntimeHostLive`'s `RuntimeControlRequestReconciler` processes
-`startRequests` via `Effect.forEach(...)` with default concurrency=1
-(`packages/host-sdk/src/host/control-request-reconciler.ts:539-543`).
+Historical note: `FiregridRuntimeHostLive`'s control-request path processed
+`startRequests` via `Effect.forEach(...)` with default concurrency=1 before the
+runtime dispatcher moved to
+`packages/runtime/src/control-plane/control-request-dispatcher.ts`.
 For each start request it calls
 `claimAndRunRuntimeContextWorkflow(context, registry, agentToolHost)`,
 which BLOCKS until the per-context workflow terminates

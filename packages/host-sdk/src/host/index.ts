@@ -141,18 +141,6 @@ export {
   type SessionLogRow,
 } from "./session-log-channel.ts"
 export {
-  RuntimeControlRequestReconciler,
-  RuntimeControlRequestReconcilerDaemonLive,
-  RuntimeControlRequestReconcilerLive,
-  RuntimeControlRequestWorkflowEngine,
-  RuntimeControlRequestWorkflowEngineLive,
-  reconcileRuntimeControlRequestsOnce,
-  runRuntimeControlRequestReconciler,
-  runtimeControlRequestReconcilerDefaults,
-  type RuntimeControlRequestReconcilerOptions,
-  type RuntimeControlRequestReconcilerService,
-} from "./control-request-reconciler.ts"
-export {
   FiregridEnvBindingsFromEnv,
   FiregridLocalHostLive,
   FiregridLocalProcess,
