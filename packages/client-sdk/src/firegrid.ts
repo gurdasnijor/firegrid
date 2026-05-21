@@ -99,6 +99,15 @@ export interface ClientOptions {
   readonly contentType?: string
   readonly headers?: DurableTableHeaders
   readonly txTimeoutMs?: number
+  /**
+   * Upper bound (ms) for the reflected-context wait that dependent writes
+   * (e.g. `firegrid.prompt`) perform before appending. A real in-flight
+   * context materializes well within this window; an unknown/typo context
+   * id never materializes, so the wait must be bounded — on timeout the
+   * dependent write falls through to its append, whose context-existence
+   * check surfaces `ContextNotFound` instead of hanging forever. tf-1r3h.
+   */
+  readonly contextReflectionTimeoutMs?: number
 }
 
 export class FiregridConfig extends Context.Tag("@firegrid/client/FiregridConfig")<
@@ -298,6 +307,7 @@ interface ResolvedConfig {
   readonly contentType: string
   readonly headers: DurableTableHeaders | undefined
   readonly txTimeoutMs: number
+  readonly contextReflectionTimeoutMs: number
 }
 
 const resolveConfig = (
@@ -329,6 +339,7 @@ const resolveConfig = (
       contentType: cfg.contentType ?? "application/json",
       headers: cfg.headers,
       txTimeoutMs: cfg.txTimeoutMs ?? 2_000,
+      contextReflectionTimeoutMs: cfg.contextReflectionTimeoutMs ?? 30_000,
     }
   })
 
@@ -985,7 +996,18 @@ const make = (config: ResolvedConfig) =>
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
         const decoded = yield* decodePublicPromptRequest(request)
-        yield* awaitSessionDependentContext(decoded.contextId)
+        // tf-1r3h (#587 review): the reflected-context barrier must be
+        // BOUNDED. A real in-flight context materializes within the
+        // window and the append proceeds normally; an unknown/typo
+        // context id never materializes, so an unbounded wait would hang
+        // forever (the README-hang failure class). On timeout we fall
+        // through to appendHostPrompt, whose context-existence check
+        // surfaces ContextNotFound (mapped to AppendError) — the same
+        // bounded error the pre-barrier path produced for unknown ids.
+        yield* Effect.timeoutOption(
+          awaitSessionDependentContext(decoded.contextId),
+          Duration.millis(config.contextReflectionTimeoutMs),
+        )
         return yield* appendHostPrompt(decoded)
       }),
       sessions: {

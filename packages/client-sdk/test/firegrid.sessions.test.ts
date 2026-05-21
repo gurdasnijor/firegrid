@@ -40,6 +40,7 @@ import type * as Scope from "effect/Scope"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { TestStreamServer } from "../../effect-durable-operators/test/harness.ts"
 import {
+  AppendError,
   Firegrid,
   FiregridConfig,
   FiregridLive,
@@ -107,7 +108,9 @@ const testHostSessionsCreateOrLoadChannelLive = Layer.effect(
   }),
 )
 
-const makeFixture = () => {
+const makeFixture = (
+  overrides?: { readonly contextReflectionTimeoutMs?: number },
+) => {
   if (baseUrl === undefined) throw new Error("server not started")
   const namespace = `client-session-${crypto.randomUUID()}`
   const hostSession = makeHostSessionRow({
@@ -126,6 +129,9 @@ const makeFixture = () => {
     Layer.provide(Layer.succeed(FiregridConfig, {
       durableStreamsBaseUrl: baseUrl,
       namespace,
+      ...(overrides?.contextReflectionTimeoutMs === undefined
+        ? {}
+        : { contextReflectionTimeoutMs: overrides.contextReflectionTimeoutMs }),
     })),
     Layer.provide(
       testHostSessionsCreateOrLoadChannelLive.pipe(
@@ -517,6 +523,38 @@ describe("Firegrid session facade", () => {
       payload: { text: "barrier top-level prompt" },
       idempotencyKey: "host-prompt-before-reflection",
     })
+  })
+
+  it("firegrid-agent-ingress.INGRESS.6 firegrid.prompt for an unknown context id errors (bounded) instead of hanging", async () => {
+    // tf-1r3h (#587 review): the reflected-context barrier is bounded. With a
+    // short reflection window and a context id that never materializes, the
+    // wait must time out and fall through to the append's context-existence
+    // check (ContextNotFound -> AppendError) rather than hanging forever. The
+    // vitest per-test timeout would trip if this regressed to an unbounded wait.
+    const fixture = makeFixture({ contextReflectionTimeoutMs: 150 })
+    const unknownContextId = "ctx_does-not-exist"
+    const error = await runWithClient(
+      fixture,
+      Effect.gen(function*() {
+        const firegrid = yield* Firegrid
+        // Effect.flip turns the expected failure into a success value; if the
+        // prompt unexpectedly *succeeded*, flip fails the run (and the test).
+        return yield* firegrid.prompt({
+          contextId: unknownContextId,
+          payload: { text: "to nowhere" },
+          idempotencyKey: "unknown-context-prompt",
+        }).pipe(Effect.flip)
+      }),
+    )
+
+    expect(error).toBeInstanceOf(AppendError)
+    expect((error as AppendError).contextId).toBe(unknownContextId)
+    const cause = (error as AppendError).cause as {
+      readonly _tag?: string
+      readonly contextId?: string
+    }
+    expect(cause._tag).toBe("ContextNotFound")
+    expect(cause.contextId).toBe(unknownContextId)
   })
 
   it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.1 sessions.prompt keeps its ok output and stores the egress receipt", async () => {
