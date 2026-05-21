@@ -20,7 +20,7 @@ import {
 import {
   RuntimeToolUseExecutorLive,
 } from "../agent-tools/execution/runtime-tool-use-executor-live.ts"
-import type { ChannelInventory } from "./channel.ts"
+import type { RuntimeContextMcpChannelCatalog } from "./channel.ts"
 
 export type { HostRuntimeContextExecutionEnv }
 
@@ -53,7 +53,7 @@ export const runtimeContextWorkflowSupportLayer = (
   never,
   unknown,
   | HostRuntimeContextExecutionEnv
-  | ChannelInventory
+  | RuntimeContextMcpChannelCatalog
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngineTable
 > =>

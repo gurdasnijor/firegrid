@@ -5,36 +5,6 @@ import type {
 } from "@firegrid/protocol/channels"
 import { Context, Layer, Option, Schema } from "effect"
 
-export {
-  ChannelDirectionSchema,
-  ChannelSourceClassSchema,
-  ChannelTargetSchema,
-  makeBidirectionalChannel,
-  makeCallableChannel,
-  makeChannelTarget,
-  makeEgressChannel,
-  makeIngressChannel,
-} from "@firegrid/protocol/channels"
-export type {
-  AppendTargetBinding,
-  BidirectionalChannel,
-  CallableChannel,
-  CallTargetBinding,
-  ChannelDirection,
-  ChannelRegistration,
-  ChannelSourceClass,
-  ChannelTarget,
-  EgressChannel,
-  IngressChannel,
-  TypedStreamBinding,
-} from "@firegrid/protocol/channels"
-
-export const FactoryEventSchema = Schema.Struct({
-  eventType: Schema.String,
-  payload: Schema.Unknown,
-})
-export type FactoryEvent = Schema.Schema.Type<typeof FactoryEventSchema>
-
 export class UnknownChannelTarget extends Schema.TaggedError<UnknownChannelTarget>()(
   "UnknownChannelTarget",
   {
@@ -42,32 +12,35 @@ export class UnknownChannelTarget extends Schema.TaggedError<UnknownChannelTarge
   },
 ) {}
 
-export interface ChannelInventoryService {
+export interface RuntimeContextMcpChannelCatalogService {
   readonly channels: ReadonlyArray<ChannelRegistration>
 }
 
-export class ChannelInventory extends Context.Tag(
-  "firegrid/host-sdk/ChannelInventory",
-)<ChannelInventory, ChannelInventoryService>() {}
+export class RuntimeContextMcpChannelCatalog extends Context.Tag(
+  "firegrid/host-sdk/RuntimeContextMcpChannelCatalog",
+)<RuntimeContextMcpChannelCatalog, RuntimeContextMcpChannelCatalogService>() {}
 
-export const makeChannelInventory = (
+export const makeRuntimeContextMcpChannelCatalog = (
   channels: Iterable<ChannelRegistration>,
-): ChannelInventoryService => ({
+): RuntimeContextMcpChannelCatalogService => ({
   channels: Array.from(channels),
 })
 
-export const ChannelInventoryLive = (
+export const RuntimeContextMcpChannelCatalogLive = (
   channels: Iterable<ChannelRegistration> = [],
-): Layer.Layer<ChannelInventory> =>
-  Layer.succeed(ChannelInventory, makeChannelInventory(channels))
+): Layer.Layer<RuntimeContextMcpChannelCatalog> =>
+  Layer.succeed(
+    RuntimeContextMcpChannelCatalog,
+    makeRuntimeContextMcpChannelCatalog(channels),
+  )
 
-export const findChannel = (
-  inventory: ChannelInventoryService,
+export const findRuntimeContextMcpChannel = (
+  catalog: RuntimeContextMcpChannelCatalogService,
   target: ChannelTarget | string,
 ): Option.Option<ChannelRegistration> => {
   const normalized = String(target)
   return Option.fromNullable(
-    inventory.channels.find(channel => channel.target === normalized),
+    catalog.channels.find(channel => channel.target === normalized),
   )
 }
 

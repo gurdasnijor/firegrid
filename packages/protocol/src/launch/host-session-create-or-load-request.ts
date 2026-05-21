@@ -2,8 +2,8 @@ import {
   HostSessionsCreateOrLoadChannelTarget,
   HostSessionsCreateOrLoadRequestSchema,
   HostSessionsCreateOrLoadResponseSchema,
-  makeCallableChannel,
-} from "../channels/index.ts"
+} from "../channels/host-sessions-create-or-load.ts"
+import { makeCallableChannel } from "../channels/core.ts"
 import { stampRowOtel } from "../otel/row-otel.ts"
 import {
   sessionContextIdForExternalKey,

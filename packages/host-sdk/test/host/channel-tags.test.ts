@@ -10,9 +10,9 @@ import {
   type HostId,
 } from "@firegrid/protocol/launch"
 import {
-  ChannelInventory,
+  RuntimeContextMcpChannelCatalog,
   channelMetadata,
-  findChannel,
+  findRuntimeContextMcpChannel,
   FiregridRuntimeHostWithWorkflowLive,
   makeCallableChannel,
   makeChannelTarget,
@@ -131,8 +131,8 @@ describe("channel Tags", () => {
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
-        const inventory = yield* ChannelInventory
-        const provided = Option.getOrThrow(findChannel(inventory, "factory.events"))
+        const inventory = yield* RuntimeContextMcpChannelCatalog
+        const provided = Option.getOrThrow(findRuntimeContextMcpChannel(inventory, "factory.events"))
         const metadata = channelMetadata(provided)
         return {
           direction: metadata.direction,
@@ -145,7 +145,7 @@ describe("channel Tags", () => {
           namespace,
           hostId,
           controlRequestReconciler: false,
-          channels: [channel],
+          mcpChannels: [channel],
         })),
         Effect.scoped,
       ),

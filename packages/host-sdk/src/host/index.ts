@@ -6,42 +6,16 @@ export type {
 } from "./types.ts"
 
 export {
-  ChannelDirectionSchema,
-  ChannelInventory,
-  ChannelInventoryLive,
-  ChannelSourceClassSchema,
-  ChannelTargetSchema,
-  FactoryEventSchema,
   UnknownChannelTarget,
   channelMetadata,
-  findChannel,
-  makeChannelInventory,
-  makeIngressChannel,
-  makeBidirectionalChannel,
-  makeCallableChannel,
-  makeChannelTarget,
-  makeEgressChannel,
-  type IngressChannel,
-  type AppendTargetBinding,
-  type BidirectionalChannel,
-  type CallableChannel,
-  type CallTargetBinding,
-  type ChannelDirection,
-  type ChannelInventoryService,
+  findRuntimeContextMcpChannel,
+  makeRuntimeContextMcpChannelCatalog,
+  RuntimeContextMcpChannelCatalog,
+  RuntimeContextMcpChannelCatalogLive,
   type ChannelMetadata,
-  type ChannelRegistration,
-  type ChannelSourceClass,
-  type ChannelTarget,
-  type EgressChannel,
-  type FactoryEvent,
-  type TypedStreamBinding,
+  type RuntimeContextMcpChannelCatalogService,
 } from "./channel.ts"
-export {
-  SessionAgentOutputChannel,
-  SessionAgentOutputChannelTarget,
-  type SessionAgentOutputChannelRegistration,
-  type SessionAgentOutputChannelService,
-} from "@firegrid/protocol/channels"
+export * from "@firegrid/protocol/channels"
 export {
   SessionAgentOutputChannelLive,
   sessionAgentOutputChannel,
@@ -54,19 +28,12 @@ export {
 } from "./channels/session-permission/index.ts"
 export {
   SessionSelfChannelsLive,
-  SessionSelfCheckpointChannel,
-  SessionSelfCheckpointChannelTarget,
-  SessionSelfCheckpointEventSchema,
-  SessionSelfLifecycleChannel,
-  SessionSelfLifecycleChannelTarget,
-  SessionSelfLifecycleEventSchema,
   makeSessionSelfChannels,
-  type SessionSelfCheckpointEvent,
-  type SessionSelfLifecycleEvent,
 } from "./channels/session-self/index.ts"
 export {
   HostSessionsCreateOrLoadChannelLive,
 } from "./channels/host-sessions-create-or-load-live.ts"
+export { HostControlChannelsLive } from "./channels/host-control/index.ts"
 
 export {
   ContextNotFound,
@@ -110,37 +77,21 @@ export {
   type HostProjectionObserverOptions,
 } from "./projection-observer.ts"
 export {
-  EventChannelSourceClasses,
   eventChannel,
   eventChannelFromCollection,
-  eventChannelTarget,
-  type EventChannel,
 } from "./event-channel.ts"
 export {
-  StateRowsChannel,
   stateChangesChannel,
   stateChangesChannelFromCollection,
-  type StateChangesChannel,
 } from "./state-changes-channel.ts"
 export {
-  HumanMessageSchema,
   dmChannel,
   humanChannelPair,
-  humanChannelRegistrations,
-  humanChannelTarget,
   notificationChannel,
-  type HumanChannelKind,
-  type HumanChannelPair,
-  type HumanMessage,
 } from "./human-channel.ts"
 export {
-  SessionLogChannelTag,
-  SessionLogChannelTarget,
-  SessionLogRowSchema,
   sessionLogChannel,
   sessionLogChannelFromCollection,
-  type SessionLogChannel,
-  type SessionLogRow,
 } from "./session-log-channel.ts"
 export {
   FiregridEnvBindingsFromEnv,

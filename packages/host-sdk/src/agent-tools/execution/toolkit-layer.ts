@@ -28,7 +28,7 @@ import { AgentToolHost } from "./tool-host.ts"
 import {
   RuntimeContextWorkflowRuntime,
 } from "../../host/runtime-context-workflow-runtime.ts"
-import type { ChannelInventory } from "../../host/channel.ts"
+import type { RuntimeContextMcpChannelCatalog } from "../../host/channel.ts"
 import {
   toolCallWorkflowSupportLayer,
   type HostRuntimeContextExecutionEnv,
@@ -46,7 +46,7 @@ export { RuntimeToolCallWorkflowLayer as ToolCallWorkflowLayer } from "@firegrid
 type ToolCallHostEnvironment =
   | RuntimeContextWorkflowRuntime
   | AgentToolHost
-  | ChannelInventory
+  | RuntimeContextMcpChannelCatalog
   | HostRuntimeContextExecutionEnv
 
 /**

@@ -4,7 +4,7 @@ import {
   ApprovalCallRequestSchema,
 } from "@firegrid/protocol/agent-tools"
 import {
-  ChannelInventoryLive,
+  RuntimeContextMcpChannelCatalogLive,
   dmChannel,
   eventChannelTarget,
   ensurePathInput,
@@ -331,7 +331,7 @@ const darkFactoryChannelsLive = (
   | ApprovalOperatorChannel
 > =>
   Layer.mergeAll(
-    ChannelInventoryLive(darkFactoryChannelRegistrations(channels)),
+    RuntimeContextMcpChannelCatalogLive(darkFactoryChannelRegistrations(channels)),
     darkFactoryChannelTagsLive(channels),
   )
 
@@ -380,7 +380,7 @@ export const darkFactoryHost = (
       hostId,
       hostSessionId: `${hostId}-session`,
       input: true,
-      channels: darkFactoryChannelRegistrations(channels),
+      mcpChannels: darkFactoryChannelRegistrations(channels),
     },
     darkFactoryEnvPolicy(env.processEnv),
   ).pipe(

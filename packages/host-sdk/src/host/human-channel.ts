@@ -1,46 +1,16 @@
-import { Schema } from "effect"
 import type { Effect, Stream } from "effect"
 import {
   makeIngressChannel,
-  makeChannelTarget,
   makeEgressChannel,
-  type IngressChannel,
-  type ChannelRegistration,
+  makeChannelTarget,
   type ChannelTarget,
-  type EgressChannel,
-} from "./channel.ts"
-
-const HumanHandleSchema = Schema.String.pipe(Schema.minLength(1))
-
-export const HumanMessageSchema = Schema.Struct({
-  handle: HumanHandleSchema,
-  body: Schema.String,
-  payload: Schema.optional(Schema.Unknown),
-}).annotations({
-  identifier: "firegrid.host.humanChannel.message",
-  title: "Human channel message",
-})
-export type HumanMessage = Schema.Schema.Type<typeof HumanMessageSchema>
-
-export type HumanChannelKind = "dm" | "notification"
-
-export interface HumanChannelPair<S extends Schema.Schema.Any> {
-  readonly kind: HumanChannelKind
-  readonly handle: string
-  readonly target: ChannelTarget
-  readonly ingress: IngressChannel<S>
-  readonly egress: EgressChannel<S>
-  readonly registrations: readonly [
-    IngressChannel<S>,
-    EgressChannel<S>,
-  ]
-}
-
-export const humanChannelTarget = (
-  kind: HumanChannelKind,
-  handle: string,
-): ChannelTarget =>
-  makeChannelTarget(`${kind}.${Schema.decodeUnknownSync(HumanHandleSchema)(handle)}`)
+  type HumanChannelKind,
+  type HumanChannelPair,
+  HumanMessageSchema,
+  humanChannelTarget,
+  type HumanMessage,
+} from "@firegrid/protocol/channels"
+import type { Schema } from "effect"
 
 export const humanChannelPair = <S extends Schema.Schema.Any>(
   options: {
@@ -108,8 +78,3 @@ export const notificationChannel = (
   options: HumanMessageChannelOptions,
 ): HumanChannelPair<typeof HumanMessageSchema> =>
   humanMessageChannel("notification", options)
-
-export const humanChannelRegistrations = (
-  channels: Iterable<HumanChannelPair<Schema.Schema.Any>>,
-): ReadonlyArray<ChannelRegistration> =>
-  Array.from(channels).flatMap(channel => channel.registrations)

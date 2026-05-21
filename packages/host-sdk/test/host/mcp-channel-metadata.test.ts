@@ -2,15 +2,17 @@ import { McpSchema } from "@effect/ai"
 import { Effect, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
-  channelMetadata,
   makeBidirectionalChannel,
   makeCallableChannel,
   makeEgressChannel,
   makeIngressChannel,
+} from "@firegrid/protocol/channels"
+import {
+  channelMetadata,
 } from "../../src/host/channel.ts"
 import {
   enrichRuntimeContextMcpToolWithChannelMetadata,
-  runtimeContextMcpChannelInventory,
+  runtimeContextMcpChannelCatalog,
 } from "../../src/host/mcp-channel-metadata.ts"
 
 const FactoryEventRowSchema = Schema.Struct({
@@ -60,7 +62,7 @@ describe("runtime-context MCP channel metadata", () => {
         call: () => Effect.succeed({ approved: true }),
       }),
     ]
-    const inventory = runtimeContextMcpChannelInventory(channels.map(channelMetadata))
+    const inventory = runtimeContextMcpChannelCatalog(channels.map(channelMetadata))
 
     expect(inventory.map(entry => [entry.name, entry.direction])).toEqual([
       ["factory.events", "ingress"],
@@ -93,7 +95,7 @@ describe("runtime-context MCP channel metadata", () => {
       schema: FactoryEventRowSchema,
       stream: Stream.empty,
     })
-    const inventory = runtimeContextMcpChannelInventory([
+    const inventory = runtimeContextMcpChannelCatalog([
       {
         target: channel.target,
         direction: channel.direction,
