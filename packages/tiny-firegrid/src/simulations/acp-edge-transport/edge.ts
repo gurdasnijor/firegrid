@@ -20,21 +20,21 @@ interface FiregridAcpStdioHostEdgeOptions {
   readonly turnTimeoutMs?: number
 }
 
-export interface FiregridHostPlaneEdgeContext {
+interface FiregridHostPlaneEdgeContext {
   readonly durableStreamsBaseUrl: string
   readonly namespace: string
 }
 
-export interface FiregridAcpStdioEdgeConfig {
+interface FiregridAcpStdioEdgeConfig {
   readonly _tag: "AcpStdio"
   readonly input: ReadableStream<Uint8Array>
   readonly output: WritableStream<Uint8Array>
   readonly turnTimeoutMs?: number
 }
 
-export type FiregridHostPlaneEdgeConfig = FiregridAcpStdioEdgeConfig
+type FiregridHostPlaneEdgeConfig = FiregridAcpStdioEdgeConfig
 
-export interface FiregridHostPlaneEdgeTopology {
+interface FiregridHostPlaneEdgeTopology {
   readonly context: FiregridHostPlaneEdgeContext
   readonly edges: ReadonlyArray<FiregridHostPlaneEdgeConfig>
 }
@@ -268,7 +268,7 @@ class FiregridAcpHostEdgeAgent implements acp.Agent {
   }
 }
 
-export const FiregridAcpStdioHostEdgeLive = (
+const FiregridAcpStdioHostEdgeLive = (
   options: FiregridAcpStdioHostEdgeOptions,
 ): Layer.Layer<never, unknown> =>
   Layer.scopedDiscard(Effect.gen(function*() {
@@ -302,7 +302,7 @@ export const FiregridAcpStdioHostEdgeLive = (
     ),
   )
 
-export const FiregridHostPlaneEdgeLive = (
+const FiregridHostPlaneEdgeLive = (
   context: FiregridHostPlaneEdgeContext,
   edge: FiregridHostPlaneEdgeConfig,
 ): Layer.Layer<never, unknown> => {

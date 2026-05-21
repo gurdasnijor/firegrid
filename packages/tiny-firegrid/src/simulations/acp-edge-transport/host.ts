@@ -8,7 +8,6 @@ import type { TinyFiregridHostEnv } from "../../types.ts"
 import {
   acpStdioEdge,
   FiregridHostPlaneEdgesLive,
-  type FiregridHostPlaneEdgeTopology,
 } from "./edge.ts"
 import { inMemoryAcpEdgeHarness } from "./harness.ts"
 
@@ -22,7 +21,7 @@ export const acpEdgeTransportHost = (
   }).pipe(
     Layer.provide(FiregridLocalProcessFromEnv(env.processEnv)),
   )
-  const edgeTopology: FiregridHostPlaneEdgeTopology = {
+  const edgeTopology = {
     context: {
       durableStreamsBaseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
