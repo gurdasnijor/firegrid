@@ -1,0 +1,30 @@
+feature:
+  name: public-experiment-ergonomics
+  product: firegrid
+  description: Provide tiny-firegrid helpers for authoring public-surface experiments and asserting post-run evidence from native tiny-firegrid artifacts.
+
+components:
+  PARTICIPANT_AUTHORING:
+    requirements:
+      1: Experiment participant helpers create, prompt, and start sessions through the public Firegrid client/session API without exposing substrate readiness as an authoring step.
+      2: Participant prompt helpers describe role, task, success criteria, notes, and available channels without requiring exact JSON prompt-echo contracts.
+      3: Channel descriptions are derived from public channel router metadata rather than private host or runtime implementation details.
+
+  NATIVE_ARTIFACTS:
+    requirements:
+      1: Experiment artifact helpers load spans through the shared tiny-firegrid trace reader used by simulate:show and simulate:perf.
+      2: Experiment artifact helpers expose simulate:show output and simulate:perf output derived from the native runner formatters.
+      3: Experiment artifact helpers accept named durable row sources so experiment assertions can inspect native channel rows that the host already persisted.
+
+  THIN_ASSERTIONS:
+    requirements:
+      1: Experiment assertions can query spans by name, status, side, and attributes without reparsing trace JSONL at call sites.
+      2: Experiment assertions can query durable rows by named source and predicate without introducing an in-driver evidence model.
+      3: Assertion failures report the native artifact dimension that failed and do not compute a GREEN, YELLOW, or INCONCLUSIVE experiment verdict.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: The experiment ergonomics primitive does not add a coordination experiment, fixture simulation, or bespoke smoke harness.
+      2: Experiment drivers using the primitive remain responsible only for launching and waiting through public surfaces; post-run analysis reads native artifacts.
+      3: The primitive does not mutate findings files or beads while evaluating assertions.

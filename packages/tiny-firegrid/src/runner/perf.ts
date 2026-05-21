@@ -13,7 +13,7 @@ import {
   type SpanRecord,
 } from "./trace.ts"
 
-interface PerfOptions {
+export interface PerfOptions {
   readonly top: number
   readonly idleThresholdMs: number
   readonly findingDraft: boolean
@@ -41,7 +41,7 @@ interface IdleGap {
   readonly durationNs: bigint
 }
 
-interface PerfReport {
+export interface PerfReport {
   readonly runId: string
   readonly tracePath: string
   readonly spanCount: number
