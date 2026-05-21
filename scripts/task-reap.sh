@@ -20,7 +20,9 @@ RR="$(git rev-parse --show-toplevel)"
   || { echo "✋ task-reap runs from the PRIMARY checkout." >&2; exit 1; }
 ONLY="${1:-}"
 git -C "$RR" fetch -q origin main 2>/dev/null || true
-JSONL="$RR/.beads/issues.jsonl"
+# firegrid-worktree-lifecycle.STORE_BOUNDARY.1
+CANONICAL_BEADS_DIR="${BEADS_DIR:-"$(dirname "$RR")/.beads"}"
+JSONL="$CANONICAL_BEADS_DIR/issues.jsonl"
 
 reaped=0; kept=0; loose=""
 
@@ -49,6 +51,7 @@ while IFS=$'\t' read -r wt br; do
     # beads reconciliation: branch <class>/<bead>-<slug> → bead id
     bead="$(printf '%s' "$br" | sed 's|^[^/]*/||' | grep -oE '^tf-[a-z0-9]+' || true)"
     if [ -n "$bead" ] && [ -f "$JSONL" ]; then
+      # firegrid-worktree-lifecycle.TASK_REAP.1
       st="$(jq -r --arg b "$bead" 'select(.id==$b)|.status' "$JSONL" 2>/dev/null | head -1)"
       if [ -n "$st" ] && [ "$st" != "closed" ]; then
         loose="$loose  • $bead ($st) — branch $br merged+reaped but bead still open;\n    resolve via the structured path (br close --reason / signoff) — NOT auto-closed.\n"

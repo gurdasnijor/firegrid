@@ -57,17 +57,18 @@ else
   echo "✓ worktree: $WT  (branch $BR, fresh off origin/main)"
 fi
 
-# Claim the bead (local beads.db mutation only; the durable push is the
-# canonical beads-sync's job — never from a lane).
-BEADS_DIR="$RR/.beads" br update "$BEAD" --status in_progress >/dev/null 2>&1 \
+# Claim the bead through the canonical store inherited from the shell
+# environment. See firegrid-worktree-lifecycle.TASK_ENTER.1.
+br update "$BEAD" --status in_progress >/dev/null 2>&1 \
   && echo "✓ $BEAD → in_progress" || echo "⚠ could not br-update $BEAD (do it manually)"
 
+# firegrid-worktree-lifecycle.TASK_ENTER.2
 cat <<EOF
 
 NEXT:
   cd "$WT"
   # tag your lane so lane-sweep can see you (your cmux tab label):
-  BEADS_DIR="$RR/.beads" br update $BEAD --assignee <your-lane-label> --add-label pr-<n>
+  br update $BEAD --assignee <your-lane-label> --add-label pr-<n>
   # …work, commit here (NEVER in the primary)…
   bash scripts/task-exit.sh $BEAD          # when done
 EOF

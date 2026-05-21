@@ -1,0 +1,18 @@
+feature:
+  name: firegrid-worktree-lifecycle
+  product: firegrid
+  description: Keep Firegrid lane lifecycle wrappers aligned with the canonical external Beads store.
+
+components:
+  TASK_ENTER:
+    requirements:
+      1: task-enter claims the requested bead through the caller's canonical br configuration rather than forcing an in-repository Beads store.
+      2: task-enter prints follow-up br commands without overriding BEADS_DIR, so lane operators continue using the canonical store.
+  TASK_REAP:
+    requirements:
+      1: task-reap reads bead loose-end status from the canonical Beads JSONL, using BEADS_DIR when present and the external parent-directory store as its fallback.
+
+constraints:
+  STORE_BOUNDARY:
+    requirements:
+      1: Lifecycle wrappers do not treat the repository-local .beads directory as canonical task state after the Beads store relocation.
