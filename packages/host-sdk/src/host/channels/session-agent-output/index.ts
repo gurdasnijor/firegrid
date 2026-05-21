@@ -41,6 +41,11 @@ const outputTableLayer = (
     },
   })
 
+const runtimeAgentOutputRows = (table: RuntimeOutputTable["Type"]) =>
+  table.events.rows().pipe(
+    Stream.filterMap(runtimeAgentOutputObservationFromRow),
+  )
+
 export const sessionAgentOutputChannel = (
   options: {
     readonly hostConfig: RuntimeHostConfig["Type"]
@@ -53,10 +58,7 @@ export const sessionAgentOutputChannel = (
     schema: RuntimeAgentOutputObservationSchema,
     sourceClass: "static-source",
     stream: Stream.unwrap(
-      Effect.map(RuntimeOutputTable, table => {
-        const events = table.events.rows()
-        return events.pipe(Stream.filterMap(runtimeAgentOutputObservationFromRow))
-      }),
+      Effect.map(RuntimeOutputTable, runtimeAgentOutputRows),
     ).pipe(
       Stream.provideLayer(outputTableLayer(options)),
       Stream.withSpan("firegrid.host.channel.session_agent_output", {
