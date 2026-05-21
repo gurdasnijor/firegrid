@@ -311,6 +311,12 @@ const durableTableHeadersFromEnv = (): DurableTableHeaders | undefined => {
     : { Authorization: () => `Bearer ${token}` }
 }
 
+// tf-yxdd disposition (a): named CLI local-dev exception.
+// firegrid-local-mcp-run.EMBEDDED_DURABLE_STREAMS.2-3
+// firegrid-local-mcp-run.EFFECT_COMPOSITION.2
+// This owns only scoped loopback DurableStreamTestServer lifecycle when
+// DURABLE_STREAMS_BASE_URL is absent. Production runs attach to an explicit
+// endpoint; durable table/workflow authority stays in host/runtime layers.
 const durableStreamsEndpoint = Effect.acquireRelease(
   Effect.tryPromise(async (): Promise<
     DurableStreamsEndpoint & { readonly server?: DurableStreamTestServer }

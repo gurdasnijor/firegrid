@@ -16,7 +16,8 @@ Peer review wave 3 — tf-6w3s external-effect adapter inventory: adapter set
 confirmed finite, but package-boundary wording corrected. Durable transport
 libraries are substrate exceptions; host/CLI projection shims with byte,
 server, or dev-server effects are explicit follow-up work, not proof of a
-runtime-only boundary.)
+runtime-only boundary. tf-yxdd classified the CLI embedded Durable Streams
+dev-server lifecycle as a named local-dev exception.)
 Owner: Firegrid Architecture
 Supersedes/strengthens: `SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
 Extends: `SDD_FIREGRID_AGENT_BODY_PLAN.md`, `SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
@@ -628,7 +629,10 @@ semantics.
 - [ ] The external-effect adapter inventory is documented and finite
       (sandbox, codecs, webhook ingest, network clients, substrate transport
       libraries — nothing else), with host/CLI projection exceptions either
-      eliminated or named with a private-beta disposition
+      eliminated or named with a private-beta disposition. The CLI embedded
+      Durable Streams lifecycle is disposition (a): a scoped loopback local-dev
+      exception only when no explicit endpoint is configured; it owns no
+      durable table, workflow, provider, or production stream-routing authority.
 - [ ] No package outside `@firegrid/runtime` constructs `DurableTable.layer(...)`
       directly (except in test/sim infrastructure)
 - [ ] `currentHostSdkSubstrateDebt` carveout list reaches zero or contains
