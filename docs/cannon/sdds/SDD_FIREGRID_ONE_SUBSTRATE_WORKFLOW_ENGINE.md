@@ -45,10 +45,11 @@ wait_for(channel)
 ```
 
 That channel Layer can be generic over existing durable operators. For example,
-`Channel<LinearWebhook>` can hide a `DurableTable` collection's
-`ProjectionStream<LinearWebhook>` and expose inbound Linear webhook events to
-`wait_for("linear.webhook", ...)` without leaking table names, CDC
-subscriptions, or workflow handles.
+the generic `firegrid.verifiedWebhooks` channel can hide a verified webhook
+fact table's `ProjectionStream<VerifiedWebhookFact>` and expose inbound Linear
+webhook data to `wait_for("firegrid.verifiedWebhooks", { match: { source,
+eventType, webhookId } })` without making Linear a canonical protocol channel
+or leaking table names, CDC subscriptions, or workflow handles.
 
 ### Why this works specifically because the engine is stream-backed
 

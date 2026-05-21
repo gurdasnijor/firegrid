@@ -35,8 +35,10 @@ The architecture has moved faster than the prose. The right operating stance is:
 - `effect/Channel` should not become the Firegrid channel surface vocabulary.
   Firegrid channels are semantic capabilities backed by ordinary Effect
   `Stream`, `Sink`/effectful append, and `Effect` request-response shapes.
-- `Channel<LinearWebhook>` style generic channels over durable operator streams
-  remain the right model for inbound webhooks and other event sources.
+- Generic channels over durable operator streams remain the right model for
+  inbound webhooks and other event sources. The canonical verified-webhook
+  channel is source-neutral; provider-specific semantics are adapter/app
+  projections.
 
 ### Needs Interpretation
 

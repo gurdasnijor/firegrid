@@ -153,8 +153,8 @@ It should contain:
   config-to-Layer adapters;
 - host-author composition of channel Layers;
 - channel binding definitions that are presentation-level, such as
-  `LinearWebhookLive`, `session.self.lifecycle`, `session.log`, human-channel,
-  or app-owned `state.changes(collection)` bindings;
+  `VerifiedWebhookFactChannelLive`, `session.self.lifecycle`, `session.log`,
+  human-channel, or app-owned `state.changes(collection)` bindings;
 - MCP server exposure and metadata projection;
 - Effect AI tool binding: protocol schemas -> `Tool` / `Toolkit`;
 - Node/local-process topology selection and host-author options;
@@ -320,9 +320,11 @@ Some runtime exports are currently binding-facing and should be reviewed:
 
 - `verified-webhook-ingest` exposes public request/config/result types and a
   table. The ingestion implementation belongs in runtime; the channel binding
-  that turns a verified webhook fact table into `Channel<LinearWebhook>` belongs
-  in host-sdk or an app integration package. Protocol should own any stable
-  webhook fact schema that multiple bindings need.
+  that turns verified webhook fact rows into the generic
+  `firegrid.verifiedWebhooks` channel belongs in host-sdk or an app integration
+  package. Protocol owns stable webhook fact schemas that multiple bindings
+  need. Product-specific narrowing, such as Linear issue handling, belongs in
+  the product route/adaptor/app layer.
 - `runtime-output`, `streams`, and `events` export useful observation types.
   Stable normalized observation schemas should migrate or project through
   protocol. Runtime may keep richer internal envelopes and authority tags.
@@ -339,7 +341,7 @@ through protocol. If it is a capability implementation, keep it runtime.
 | --- | --- | --- |
 | `RuntimeContextWorkflow`, `WaitForWorkflow`, scheduled/tool-call workflows | runtime | Workflow definitions and Activities are execution substrate. Host SDK may install their Layers but should not own their bodies. |
 | `RuntimeContextProvisionWorkflow`, `RuntimeStartWorkflow`, `RuntimeLifecycleWorkflow` | runtime | `tf-ho99` proved the workflow-backed control path. The hybrid durable request-row compatibility surface can stay protocol/host-facing, but workflow execution belongs in runtime. |
-| Channel Layers such as `LinearWebhookLive`, `session.self.lifecycle`, `state.changes(collection)` | split | Channel contract/metadata schema in protocol when stable; channel binding Layer in host-sdk or app integration; substrate providers in runtime. |
+| Channel Layers such as `VerifiedWebhookFactChannelLive`, `session.self.lifecycle`, `state.changes(collection)` | split | Channel contract/metadata schema in protocol when stable; channel binding Layer in host-sdk or app integration; substrate providers in runtime. Product-specific convenience channels belong in app/adapter packages, not the protocol root. |
 | `channel-registry.ts` | replace with binding edge only | `tf-kddg` should delete central registry architecture. Use per-channel `Context.Tag` + Layer composition. Any string lookup is only the MCP/protocol adapter from agent-supplied `channel: string` to the typed capability. |
 | `tool-use-to-effect.ts` | split | Decode and `ToolResult` adaptation may remain host-sdk binding. Validated operation execution should move to runtime execution services, especially arms that use workflow engine, durable streams, or provider adapters. |
 | `runtime-substrate.ts` | split/move below | Current host-sdk knot for runtime authorities, observation streams, workflow support, and tool execution. Runtime should own the provider/capability seams; host-sdk should compose top-level host bindings and stop exporting substrate assembly. |
@@ -349,7 +351,7 @@ through protocol. If it is a capability implementation, keep it runtime.
 | MCP server / Effect AI toolkit | host-sdk | Disposition (a): this is a named binding-edge projection-server exception. Host-sdk owns loopback listener installation, route exposure, Effect AI toolkit projection, and generated HTTP spans, but it must consume runtime-provided capability tags for context resolution and execution. It must not own durable table, workflow-engine, or substrate authority. |
 | Session-handle / client facade helpers | client-sdk + protocol | Client SDK owns app-safe methods. Protocol owns schemas and normalized observations. Runtime supplies capabilities, never direct client imports. |
 | Durable Streams substrate access | runtime | Provider internals touch tables/streams. Host SDK consumes narrow tags or channel bindings; client SDK consumes protocol-safe transport/read capabilities. |
-| Verified webhook ingestion | runtime implementation, host/app channel binding | Signature verification and durable fact insert belong in runtime. Exposing those facts as `Channel<LinearWebhook>` is a host/app channel binding. |
+| Verified webhook ingestion | runtime implementation, host/app channel binding | Signature verification and durable fact insert belong in runtime. Exposing those facts as the generic `firegrid.verifiedWebhooks` channel is a host/app channel binding; Linear/GitHub semantics are demo or adapter-layer data and predicates. |
 | Webhook route installation | host-sdk or app integration | HTTP route/server binding is deployment composition. It calls runtime ingestion and provides a channel binding; it does not own verification substrate. |
 | `RuntimeStartCapability` | protocol tag, runtime/host implementation | The service shape is protocol-owned authority. Host/runtime composition provides the live implementation. |
 
@@ -375,7 +377,7 @@ consumer story should stay:
 
 ```ts
 const ChannelsLive = Layer.mergeAll(
-  LinearWebhookLive(...),
+  VerifiedWebhookFactChannelLive(...),
   HumanApprovalChannelLive(...),
 )
 

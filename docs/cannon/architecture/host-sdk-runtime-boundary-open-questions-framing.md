@@ -74,7 +74,8 @@ signature verification, durable writes, and substrate access are execution-tier
 concerns. The schema crosses into protocol when a binding needs to observe or
 project those facts, for example:
 
-- an agent-visible webhook channel such as `Channel<LinearWebhook>`;
+- an agent-visible verified-webhook fact channel such as
+  `firegrid.verifiedWebhooks`;
 - client-sdk or session-handle observation of webhook facts;
 - CLI inspection of webhook events;
 - dark-factory or another external driver consuming webhook facts through the

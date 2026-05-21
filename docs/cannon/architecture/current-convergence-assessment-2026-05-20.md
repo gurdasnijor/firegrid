@@ -58,18 +58,20 @@ Revisit a batch primitive only if a concrete workflow demonstrates that repeated
 
 ### P0/P1: External Trigger Path
 
-Verified webhook substrate exists in runtime and stable schemas are moving
-through protocol. The missing private-beta path is:
+Verified webhook substrate exists in runtime and stable schemas/channels now
+flow through protocol. The private-beta path is:
 
 ```text
 real webhook
   -> runtime verified ingest
-  -> durable fact / channel source
-  -> host or app channel binding
-  -> planner wait_for(channel)
+  -> durable verified-webhook fact
+  -> generic firegrid.verifiedWebhooks channel binding
+  -> planner wait_for(channel, { match })
 ```
 
-Linear is the natural first source because it matches the factory vision.
+Linear is the natural first demo source because it matches the factory vision,
+but Linear remains route/adaptor/demo data. The canonical channel is the
+generic verified-webhook fact channel.
 
 ### P1: First Real Side-Effect Adapter
 
