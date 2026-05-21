@@ -347,6 +347,7 @@ through protocol. If it is a capability implementation, keep it runtime.
 | `runtime/authorities/*` | runtime | Narrow Effect capability providers over durable table families. This is substrate, not public API; export tags/layers and prevent table facades from leaking upward. |
 | `runtime/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts` | move within runtime | Defines a runtime tool-execution service tag, not a subscriber driver. It should live under tool-execution/workflow seams; `subscribers/` should remain scoped observation drivers. |
 | MCP server / Effect AI toolkit | host-sdk | Disposition (a): this is a named binding-edge projection-server exception. Host-sdk owns loopback listener installation, route exposure, Effect AI toolkit projection, and generated HTTP spans, but it must consume runtime-provided capability tags for context resolution and execution. It must not own durable table, workflow-engine, or substrate authority. |
+| CLI embedded Durable Streams dev server | CLI execution exception | Disposition (a): this is a named local-dev exception. CLI execution may acquire/release a loopback `DurableStreamTestServer` when `DURABLE_STREAMS_BASE_URL` is absent, but it must not own durable table, workflow-engine, provider-adapter, host-owned stream-routing, or production substrate authority. |
 | Session-handle / client facade helpers | client-sdk + protocol | Client SDK owns app-safe methods. Protocol owns schemas and normalized observations. Runtime supplies capabilities, never direct client imports. |
 | Durable Streams substrate access | runtime | Provider internals touch tables/streams. Host SDK consumes narrow tags or channel bindings; client SDK consumes protocol-safe transport/read capabilities. |
 | Verified webhook ingestion | runtime implementation, host/app channel binding | Signature verification and durable fact insert belong in runtime. Exposing those facts as `Channel<LinearWebhook>` is a host/app channel binding. |
@@ -367,6 +368,20 @@ runtime-owned capability tags, with host-sdk only composing those capabilities
 into the server layer. If a future MCP change needs direct durable table,
 workflow-engine, or adapter-session access, that body belongs below the runtime
 line instead of widening this exception.
+
+### CLI Embedded Durable Streams Placement
+
+`packages/cli/src/bin/run.ts` keeps the embedded Durable Streams lifecycle under
+disposition (a): a named CLI local-dev exception. The CLI first honors an
+explicit `DURABLE_STREAMS_BASE_URL`; only when it is absent does it acquire a
+loopback `DurableStreamTestServer` as an Effect-scoped resource and pass the
+resulting base URL into the normal host/runtime composition.
+
+The exception is conditional. The CLI may own local process lifecycle for this
+developer convenience, but it must not own DurableTable writes, workflow-engine
+calls, provider adapter sessions, host-owned stream URL construction, or any
+production-capable Durable Streams server authority. Those bodies remain below
+the runtime/substrate line.
 
 ## Dark-Factory / Consumer Story
 

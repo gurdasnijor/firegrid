@@ -120,7 +120,7 @@ Four real boundary violations identified by tf-6w3s, each operationalized as an 
 | --- | --- | --- | --- |
 | 1 | `packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts:71,73` + `raw-adapter.ts:47,175,177,303` — byte-stream conversion + stdin writer | **`tf-pisb` (P1)** | Relocate adapter bodies below runtime (per Workstream C amendment in `a6b4e6636`); host-sdk retains adapter selection / composition only |
 | 2 | `packages/host-sdk/src/host/mcp-host.ts:45,168,270` — `node:http` createServer + `NodeHttpServer.layer(...)` | **`tf-r8ib` (P1)** | Binary decision: (a) keep as named binding-edge exception with no durable substrate authority, OR (b) relocate the server body to runtime/agent-tools |
-| 3 | `packages/cli/src/bin/run.ts:316,338` — embedded Durable Stream test server start/stop | **`tf-yxdd` (P2)** | Classify as named CLI exception OR move dev-server lifecycle below the binding line |
+| 3 | `packages/cli/src/bin/run.ts:316,338` — embedded Durable Stream test server start/stop | **`tf-yxdd` (P2)** | Classified as disposition (a): named CLI local-dev exception with no durable-substrate authority |
 | 4 | (covered by #1, #2, #3 above) | — | — |
 
 All three carveout beads are already filed and blocked on this synthesis. Cycle 2 doesn't author new beads for this axis; it **dispatches the three that exist** when their named blockers clear.
@@ -155,7 +155,7 @@ Channel-axis deletions intersect with adapter-axis carveouts at exactly **three 
 
 1. **`tf-pisb`** runs first among the adapter carveouts (largest scope; touches codec-adapter + raw-adapter relocation). On merge: any channel deletions in §3 that touched those files become dispatchable.
 2. **`tf-r8ib`** runs second (single decision + relocation OR exception-naming). On merge: MCP tool projection collapses can dispatch.
-3. **`tf-yxdd`** runs third (smallest scope; CLI dev-server classification). On merge: CLI projection cleanup can dispatch.
+3. **`tf-yxdd`** runs third (smallest scope; CLI dev-server classification). On merge: CLI projection cleanup can dispatch; the embedded dev server is a named local-dev exception, not durable-substrate authority.
 
 ### Phase 3 — Post-cutover
 
