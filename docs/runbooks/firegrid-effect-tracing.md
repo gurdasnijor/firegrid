@@ -203,6 +203,7 @@ frames. Enable host-process trace export explicitly:
 ```bash
 pnpm firegrid -- acp \
   --otel-file .firegrid/acp-trace.jsonl \
+  --cwd "$PWD" \
   --agent codex-acp \
   --agent-protocol acp \
   -- npx -y @zed-industries/codex-acp@0.14.0
@@ -211,6 +212,28 @@ pnpm firegrid -- acp \
 `FIREGRID_OTEL_FILE=.firegrid/acp-trace.jsonl` is equivalent. If
 `OTEL_EXPORTER_OTLP_ENDPOINT` is also set, the shared Layer routes spans to the
 OTLP endpoint rather than the local file.
+
+### Trace path under Zed (tf-r1gz)
+
+When an editor such as Zed launches `firegrid acp`, the agent process inherits
+**the editor's** working directory, not your repo. A *relative* `--otel-file`
+therefore used to resolve against that editor cwd, so `.firegrid/acp-trace.jsonl`
+landed somewhere outside the repo and appeared "missing." Two safeguards now
+remove that footgun:
+
+- A relative `--otel-file` is resolved against `--cwd` when you pass it (the
+  project root the example pairs it with); otherwise against the process cwd.
+  Pass `--cwd "$PWD"` — or an absolute `--otel-file` — to pin the artifact to
+  your repo regardless of where the editor launches the agent.
+- At startup the command prints the resolved **absolute** trace path to
+  `stderr` (`firegrid acp: writing OTEL spans to <abs>`). stdout stays reserved
+  for ACP JSON-RPC frames, so this is safe; check stderr/the Zed agent log if
+  you are unsure where the file went.
+
+File-destination spans are written immediately per ended span (a
+`SimpleSpanProcessor`, matching the console destination), so a long-running ACP
+agent populates the JSONL artifact continuously without needing to exit — and an
+abrupt editor disconnect no longer discards a pending batch.
 
 ## Full e2e traces through real agent runtimes
 

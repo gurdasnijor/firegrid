@@ -12,6 +12,7 @@ coverage/
 *.tsbuildinfo
 packages/tiny-firegrid/.simulate/
 .firegrid-smoke/
+.firegrid/
 tooling/analysis/mcp-tool-exposure-trace.json
 tooling/analysis/mcp-tool-exposure-trace.md
 

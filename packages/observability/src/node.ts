@@ -2,7 +2,6 @@ import * as NodeSdk from "@effect/opentelemetry/NodeSdk"
 import * as Otlp from "@effect/opentelemetry/Otlp"
 import { NodeHttpClient } from "@effect/platform-node"
 import {
-  BatchSpanProcessor,
   ConsoleSpanExporter,
   SimpleSpanProcessor,
   type ReadableSpan,
@@ -128,10 +127,18 @@ const fileTelemetryLive = (
     readonly destination: { readonly _tag: "file"; readonly filePath: string }
   },
 ) =>
+  // firegrid-observability.HOST_PROCESS_EXPORTERS.3
+  // tf-r1gz: a file-backed debug exporter must be lossless for long-running
+  // ACP processes that may be killed abruptly (e.g. Zed disconnecting the
+  // agent). BatchSpanProcessor only drains on its 5s/512-span timer or on a
+  // clean shutdown, so a short session or an abrupt SIGKILL within a batch
+  // window dropped recent spans. SimpleSpanProcessor writes each ended span
+  // immediately — matching the console destination — so the JSONL artifact
+  // is always current without needing the process to exit.
   NodeSdk.layer(() => ({
     resource: options.resource,
     spanProcessor: [
-      new BatchSpanProcessor(new JsonlFileSpanExporter(options.destination.filePath)),
+      new SimpleSpanProcessor(new JsonlFileSpanExporter(options.destination.filePath)),
       ...(options.spanProcessors ?? []),
     ],
   }))
