@@ -4,6 +4,14 @@ feature:
   description: Move runtime-context execution authority into durable workflows so runtime launch, synchronous agent runs, temporal waits, and future host supervision share one workflow-backed coordination plane.
 
 components:
+  PHASE_0_TARGET_REFERENCE:
+    requirements:
+      1: packages/tiny-firegrid contains an API-compatible clean-room reference implementation that drives production protocol, client, edge, channel, and host-surface contracts while replacing only the behind-contract runtime implementation.
+      2: The target reference composes a host-plane channel router, a runtime kernel workflow signal boundary, and child session workflows without importing production host-sdk or runtime implementation modules as behavioral dependencies.
+      3: Host-plane route bodies in the target reference dispatch typed intents into a workflow-owned signal or mailbox service and do not own lifecycle, retry, claim, completion, or child-workflow state transitions.
+      4: Workflow-owned resources in the target reference are modeled as state machines over a small number of durable resource records plus append-only evidence, not as separate request, claim, and completion table families per CRUD operation.
+      5: The target reference proves create/load, start, prompt, cancel, close or resume, duplicate request identity, and child workflow ownership through native tiny-firegrid trace and durable artifact evidence.
+
   PHASE_1_CONTEXT_WORKFLOW:
     requirements:
       1: startRuntime(contextId) starts or resumes a RuntimeContextWorkflow keyed by the contextId instead of directly owning local process execution.
