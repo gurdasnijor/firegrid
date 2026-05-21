@@ -7,8 +7,6 @@ export {
   RuntimeContextRead,
   RuntimeRuns,
   RuntimeRunAppendAndGet,
-  type RuntimeControlRequestCompletionInput,
-  type RuntimeControlRequestsService,
   type RuntimeContextInsertService,
   type RuntimeContextReadService,
   type RuntimeRunAppendAndGetService,

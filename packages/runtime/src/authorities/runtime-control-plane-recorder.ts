@@ -22,7 +22,7 @@ type RuntimeControlRequestRow =
   | RuntimeStartRequestRow
   | RuntimeLifecycleRequestRow
 
-export interface RuntimeControlRequestCompletionInput {
+interface RuntimeControlRequestCompletionInput {
   readonly status: RuntimeControlRequestCompletionRow["status"]
   readonly hostId: string
   readonly completedAtMs: number
@@ -79,7 +79,7 @@ export interface RuntimeRunAppendAndGetService {
   ) => Effect.Effect<void, unknown>
 }
 
-export interface RuntimeControlRequestsService {
+interface RuntimeControlRequestsService {
   readonly writeCompletion: (
     requestKind: RuntimeControlRequestKind,
     request: RuntimeControlRequestRow,
