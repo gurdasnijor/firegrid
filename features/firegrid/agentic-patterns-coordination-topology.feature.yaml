@@ -23,6 +23,7 @@ components:
       2: Each live topology arm emits deterministic scoring evidence derived from trace, participant markers, and artifact-channel use.
       3: The runner trace contains readable arm and participant spans for simulate:show.
       4: The run output includes participant-produced evidence for claims, artifacts, tool calls, and final markers.
+      5: The live experiment reports GREEN only when each arm meets its minimum participant marker and primitive-channel evidence contract; missing evidence is reported as non-GREEN or inconclusive.
 
   FIXTURE_SMOKE:
     requirements:

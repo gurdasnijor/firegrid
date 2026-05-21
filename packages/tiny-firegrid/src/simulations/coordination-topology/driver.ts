@@ -18,11 +18,18 @@ import {
 } from "./host.ts"
 
 type RunMode = "live-frontier" | "fixture-smoke"
+type CoordinationTopologyVerdict = "GREEN" | "INCONCLUSIVE"
+
+interface ToolUseEvidence {
+  readonly name: string
+  readonly channels: ReadonlyArray<string>
+}
 
 interface ParticipantEvidence {
   readonly label: string
   readonly sessionId: string
   readonly contextId: string
+  readonly toolUses: ReadonlyArray<ToolUseEvidence>
   readonly toolNames: ReadonlyArray<string>
   readonly text: string
   readonly sawMarker: boolean
@@ -37,9 +44,10 @@ interface ArmResult {
 }
 
 interface CoordinationTopologyResult {
-  readonly verdict: "GREEN"
+  readonly verdict: CoordinationTopologyVerdict
   readonly mode: RunMode
   readonly arms: ReadonlyArray<ArmResult>
+  readonly missingEvidence: ReadonlyArray<string>
 }
 
 const liveFlagConfig = Config.string("FIREGRID_COORDINATION_EXPERIMENT_LIVE")
@@ -241,13 +249,28 @@ const textDelta = (
 ): string | undefined =>
   observation._tag === "TextChunk" ? observation.event.part.delta : undefined
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+const toolChannels = (input: unknown): ReadonlyArray<string> => {
+  if (!isRecord(input)) return []
+  const channel = input["channel"]
+  if (typeof channel === "string") return [channel]
+  const channelsInput = input["channels"]
+  if (!Array.isArray(channelsInput)) return []
+  return channelsInput.flatMap(descriptor =>
+    isRecord(descriptor) && typeof descriptor["channel"] === "string"
+      ? [descriptor["channel"]]
+      : [])
+}
+
 const evidenceFromSession = (
   session: FiregridSessionHandle,
   label: string,
   timeoutMs: number,
 ): Effect.Effect<ParticipantEvidence, unknown> =>
   Effect.gen(function*() {
-    const toolNames = new Set<string>()
+    const toolUses: Array<ToolUseEvidence> = []
     let text = ""
     let sawMarker = false
     let sawTurnComplete = false
@@ -255,7 +278,10 @@ const evidenceFromSession = (
       const next = yield* session.wait.forAgentOutput({ timeoutMs })
       if (!next.matched) break
       if (next.output._tag === "ToolUse" && next.output.toolName !== undefined) {
-        toolNames.add(next.output.toolName)
+        toolUses.push({
+          name: next.output.toolName,
+          channels: toolChannels(next.output.event.part.params),
+        })
       }
       if (next.output._tag === "TurnComplete") {
         sawTurnComplete = true
@@ -270,7 +296,8 @@ const evidenceFromSession = (
       label,
       sessionId: session.sessionId,
       contextId: session.contextId,
-      toolNames: [...toolNames].sort(),
+      toolUses,
+      toolNames: [...new Set(toolUses.map(toolUse => toolUse.name))].sort(),
       text,
       sawMarker,
     }
@@ -344,6 +371,120 @@ const armResult = (
   ),
   markerCount: participants.filter(participant => participant.sawMarker).length,
 })
+
+const participantByLabel = (
+  arm: ArmResult,
+  label: string,
+): ParticipantEvidence | undefined =>
+  arm.participants.find(participant => participant.label === label)
+
+const sawToolChannel = (
+  participant: ParticipantEvidence | undefined,
+  name: string,
+  channel: string,
+): boolean =>
+  participant?.toolUses.some(toolUse =>
+    toolUse.name === name && toolUse.channels.includes(channel)) ?? false
+
+const missingParticipantEvidence = (
+  arm: CoordinationTopologyArm,
+  participant: ParticipantEvidence | undefined,
+  label: string,
+  requirements: ReadonlyArray<{
+    readonly name: string
+    readonly channel: string
+  }>,
+): ReadonlyArray<string> => {
+  const missing: Array<string> = []
+  if (participant === undefined) {
+    return [`${arm}/${label}:missing-participant`]
+  }
+  if (!participant.sawMarker) {
+    missing.push(`${arm}/${label}:missing-marker`)
+  }
+  return [
+    ...missing,
+    ...requirements.flatMap(requirement =>
+      sawToolChannel(participant, requirement.name, requirement.channel)
+        ? []
+        : [`${arm}/${label}:missing-${requirement.name}-${requirement.channel}`],
+    ),
+  ]
+}
+
+export const validateLiveEvidence = (
+  arms: ReadonlyArray<ArmResult>,
+): ReadonlyArray<string> => {
+  const armByName = new Map(arms.map(arm => [arm.arm, arm]))
+  const missing: Array<string> = []
+  const single = armByName.get("single")
+  if (single === undefined) {
+    missing.push("single:missing-arm")
+  } else {
+    missing.push(...missingParticipantEvidence(
+      "single",
+      participantByLabel(single, "single-agent"),
+      "single-agent",
+      [
+        { name: "call", channel: channels.workerAction },
+        { name: "send", channel: channels.artifacts },
+        { name: "send", channel: channels.scores },
+      ],
+    ))
+  }
+
+  const orchestration = armByName.get("developer-authored-orchestration")
+  if (orchestration === undefined) {
+    missing.push("developer-authored-orchestration:missing-arm")
+  } else {
+    missing.push(...missingParticipantEvidence(
+      "developer-authored-orchestration",
+      participantByLabel(orchestration, "investigator"),
+      "investigator",
+      [{ name: "send", channel: channels.artifacts }],
+    ))
+    missing.push(...missingParticipantEvidence(
+      "developer-authored-orchestration",
+      participantByLabel(orchestration, "builder"),
+      "builder",
+      [
+        { name: "wait_for", channel: channels.artifacts },
+        { name: "send", channel: channels.artifacts },
+      ],
+    ))
+    missing.push(...missingParticipantEvidence(
+      "developer-authored-orchestration",
+      participantByLabel(orchestration, "reviewer"),
+      "reviewer",
+      [
+        { name: "wait_for", channel: channels.artifacts },
+        { name: "send", channel: channels.artifacts },
+        { name: "send", channel: channels.scores },
+      ],
+    ))
+  }
+
+  const choreography = armByName.get("choreography")
+  if (choreography === undefined) {
+    missing.push("choreography:missing-arm")
+  } else {
+    missing.push(
+      ...["planner-peer", "builder-peer", "reviewer-peer"].flatMap(label =>
+        missingParticipantEvidence(
+          "choreography",
+          participantByLabel(choreography, label),
+          label,
+          [
+            { name: "send", channel: channels.claims },
+            { name: "wait_for_any", channel: channels.claims },
+            { name: "wait_for_any", channel: channels.artifacts },
+            { name: "send", channel: channels.artifacts },
+          ],
+        )),
+    )
+  }
+  return missing
+}
 
 const singlePrompt = (runId: string) => [
   "Arm A: single agent.",
@@ -604,6 +745,7 @@ const runFixtureSmoke = (
       verdict: "GREEN" as const,
       mode: "fixture-smoke" as const,
       arms: [arm],
+      missingEvidence: [],
     }
   }).pipe(
     Effect.withSpan("coordination_topology.fixture_smoke", {
@@ -620,10 +762,15 @@ const runLiveExperiment = (
     const orchestration = yield* runDeveloperAuthoredOrchestration(firegrid, runId)
     const choreography = yield* runChoreography(firegrid, runId)
     const arms = [single, orchestration, choreography]
+    const missingEvidence = validateLiveEvidence(arms)
+    // agentic-patterns-coordination-topology.OBSERVABILITY.5
     return {
-      verdict: "GREEN" as const,
+      verdict: missingEvidence.length === 0
+        ? "GREEN" as const
+        : "INCONCLUSIVE" as const,
       mode: "live-frontier" as const,
       arms,
+      missingEvidence,
     }
   })
 
@@ -660,6 +807,7 @@ export const coordinationTopologyDriver: Effect.Effect<
   // agentic-patterns-coordination-topology.OBSERVABILITY.2
   // agentic-patterns-coordination-topology.OBSERVABILITY.3
   // agentic-patterns-coordination-topology.OBSERVABILITY.4
+  // agentic-patterns-coordination-topology.OBSERVABILITY.5
   // agentic-patterns-coordination-topology.PUBLIC_SURFACE.1
   // agentic-patterns-coordination-topology.PUBLIC_SURFACE.2
   // agentic-patterns-coordination-topology.PUBLIC_SURFACE.3
@@ -675,9 +823,15 @@ export const coordinationTopologyDriver: Effect.Effect<
       .reduce((count, arm) => count + arm.toolUseCount, 0),
     "coordination.marker_count": result.arms
       .reduce((count, arm) => count + arm.markerCount, 0),
+    "coordination.missing_evidence_count": result.missingEvidence.length,
+    "coordination.missing_evidence": result.missingEvidence.join("|"),
     "coordination.participant_evidence": result.arms
       .flatMap(arm => arm.participants.map(participant =>
-        `${arm.arm}/${participant.label}:${participant.toolNames.join("+")}`))
+        `${arm.arm}/${participant.label}:${
+          participant.toolUses
+            .map(toolUse => `${toolUse.name}(${toolUse.channels.join("+")})`)
+            .join("+")
+        }`))
       .join("|"),
   })
 
