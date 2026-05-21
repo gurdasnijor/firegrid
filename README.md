@@ -44,26 +44,33 @@ flowchart TB
     direction TB
     S[("Durable Substrate<br/>━━━━━━━━━━━━━━━<br/>typed channels over durable rows<br/><br/>guarantees inherited from<br/>durable streams + workflow engine:<br/>• exactly-once delivery<br/>• ordering<br/>• replay + restart safety<br/>• durable scheduling<br/>• no central scheduler required")]
 
-    A1["Agent<br/><i>any LLM / codec / runtime</i>"]
-    A2["Agent<br/><i>any LLM / codec / runtime</i>"]
-    Sv["Service / Worker"]
+    %% Each participant connects to the substrate via channel verbs ONLY.
+    %% External-world relationships (HTTP routes, Slack APIs, sandbox processes)
+    %% are internal to the participant — the substrate doesn't know about them.
 
-    W["Webhook / External event<br/><b>(ingress)</b>"]
-    H["Human approval<br/><b>(ingress)</b>"]
-    Sched["Scheduled job / cron<br/><b>(ingress)</b>"]
-    T["Tool / Sandbox call<br/><b>(egress)</b>"]
-    N["Notification / Slack / Email<br/><b>(egress)</b>"]
-    Obs["Observer / Audit / Dashboard<br/><b>(read-only)</b>"]
+    W["Webhook participant<br/><i>HTTP route handler</i>"]
+    H["Human-approval participant<br/><i>UI / Slack interaction</i>"]
+    Sched["Scheduler participant<br/><i>cron / timer</i>"]
 
-    W -->|fact arrives| S
-    H -->|fact arrives| S
-    Sched -->|fact arrives| S
-    A1 <-->|wait_for / send / call| S
-    A2 <-->|wait_for / send / call| S
-    Sv <-->|wait_for / send| S
-    S -->|drives| T
-    S -->|drives| N
-    S -.->|observe-only| Obs
+    A1["Agent participant<br/><i>any LLM (Claude · codex · custom)</i><br/>via MCP / ACP / stdio-jsonl"]
+    A2["Agent participant<br/><i>another agent on its own runtime,<br/>possibly remote</i>"]
+    Sv["Service / Worker participant"]
+
+    T["Tool / Sandbox responder<br/><i>runs sandbox on observation</i>"]
+    N["Notifier participant<br/><i>posts to Slack / email on observation</i>"]
+    Obs["Audit / Dashboard participant<br/><i>read-only observer</i>"]
+
+    %% All labels are channel verbs. Nothing "drives" anyone — participants
+    %% subscribe to channels and decide their own behavior on observation.
+    W -->|publish channel| S
+    H -->|publish channel| S
+    Sched -->|publish channel| S
+    A1 <-->|subscribe · publish · call| S
+    A2 <-->|subscribe · publish · call| S
+    Sv <-->|subscribe · publish| S
+    T <-->|respond to call channel| S
+    N -->|subscribe channel| S
+    Obs -.->|subscribe read-only| S
   end
 
   classDef o fill:#fee,stroke:#c44
@@ -84,10 +91,34 @@ exactly-once, restart-safety are your code to write.
 **Choreography**: participants are peers reading and writing typed
 events to a shared durable substrate. No one routes; no one
 orchestrates. Coordination emerges from each participant acting on
-what it observes. **Ingress (webhooks, humans, schedulers) and
-egress (tools, notifications, side effects) are the same shape** —
-both are channel participants. Adding a new participant is registering
-a channel binding; removing one is unregistering.
+what it observes.
+
+**Every external integration is a channel participant — the substrate
+doesn't differentiate.** A webhook receiver runs an HTTP route and
+publishes to a channel. A Slack notifier subscribes to a channel and
+posts to Slack when it observes a matching event. A sandbox tool
+responds to a call channel and runs a process. Each one is a peer on
+the substrate; the substrate doesn't push to any of them.
+
+What this means concretely:
+
+- **The substrate doesn't "drive" Slack.** A notifier participant
+  subscribes to a channel; when it observes a `notify` event, it
+  decides to call the Slack API. The Slack integration lives entirely
+  inside the participant.
+- **The substrate doesn't "execute" tools.** A tool responder
+  subscribes to a call channel; when it observes a tool-call request,
+  it runs the sandbox and writes the result back to the channel.
+- **The substrate doesn't "schedule" jobs.** A scheduler participant
+  watches its own cron / timer; when its alarm fires, it publishes a
+  fact. Other participants observe the fact and act.
+
+Ingress (webhooks, humans, schedulers) and egress (tools,
+notifications, side effects) **look identical from the substrate's
+perspective** — they're all channel participants. The asymmetry is in
+the participant's relationship with the external world, not in the
+substrate. Adding a new integration is registering a channel binding;
+removing one is unregistering.
 
 The participants don't know each other exists. They share the
 environment.
@@ -447,28 +478,79 @@ Run the full local verification gate:
 pnpm run verify
 ```
 
-Start a local Firegrid host with a route-scoped MCP endpoint:
+### Start a local Firegrid host (route-scoped MCP endpoint)
 
 ```sh
 pnpm firegrid -- start
 ```
 
-Run one local-process context synchronously:
+Prints a `firegrid.start.ready` JSON record with `contextId`, `mcpUrl`,
+`namespace`, and durable-streams config, then keeps the host alive for
+MCP clients (your agent processes) to connect.
+
+### Run an agent against a Firegrid host
+
+The CLI is agent-agnostic — pass `--agent-protocol` (`acp`,
+`stdio-jsonl`, or `raw`) and the actual agent command after `--`.
+Firegrid auto-injects its runtime-context MCP server before launch so
+the agent sees the Firegrid tools (`wait_for`, `send`, `call`,
+`schedule_me`, etc.).
+
+**Run Claude (via `@agentclientprotocol/claude-agent-acp`):**
 
 ```sh
 pnpm firegrid -- run \
-  --cwd "$PWD" \
-  --prompt "hello from Firegrid" \
+  --agent claude-agent-acp \
+  --agent-protocol acp \
+  --secret-env ANTHROPIC_API_KEY \
+  --prompt "Summarize this repository's architecture from the cannon docs" \
   -- \
-  node agent.mjs
+  npx -y @agentclientprotocol/claude-agent-acp@0.36.1
 ```
 
-Run deterministic tiny-firegrid simulations:
+**Run Codex (via Zed's ACP wrapper):**
+
+```sh
+pnpm firegrid -- run \
+  --agent codex-acp \
+  --agent-protocol acp \
+  --prompt "List the open carveouts and propose next deletion" \
+  -- \
+  npx -y @zed-industries/codex-acp@0.14.0
+```
+
+**Run your own stdio-jsonl or MCP agent:**
+
+```sh
+# any binary that speaks stdio-jsonl:
+pnpm firegrid -- run \
+  --agent my-custom-agent \
+  --agent-protocol stdio-jsonl \
+  --prompt "wake up and work" \
+  -- \
+  node my-agent.mjs
+
+# any binary that speaks MCP (raw process; Firegrid will inject MCP):
+pnpm firegrid -- run \
+  --prompt "wake up and work" \
+  -- \
+  node my-mcp-agent.mjs
+```
+
+Each invocation creates a durable runtime context. The agent talks to
+Firegrid via MCP/ACP/stdio-jsonl; Firegrid persists the agent's
+durable tool calls into the substrate. If the host or the agent
+crashes, the same agent can be restarted against the same `contextId`
+and pick up where it left off.
+
+### Run deterministic tiny-firegrid simulations
 
 ```sh
 pnpm --filter @firegrid/tiny-firegrid simulate:list
 pnpm --filter @firegrid/tiny-firegrid simulate:perf
 ```
+
+Deterministic substrate validation without live provider calls.
 
 ---
 
