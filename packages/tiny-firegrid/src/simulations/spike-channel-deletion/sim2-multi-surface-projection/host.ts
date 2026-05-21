@@ -22,7 +22,7 @@
  */
 
 import {
-  HostSessionsCreateOrLoadChannel,
+  type HostSessionsCreateOrLoadChannel,
 } from "@firegrid/protocol/channels"
 import {
   RuntimeControlPlaneTable,
@@ -63,6 +63,7 @@ export const sim2ChannelLayer = (env: {
   const channel = HostSessionsCreateOrLoadChannelLive.pipe(
     Layer.provideMerge(controlPlane),
   )
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- Layer.provideMerge leaks `any` into the success channel through DurableTable's inferred generics (same any-leak class documented in PR #534 / control-request-side-effects.ts); the declared Layer.Layer<HostSessionsCreateOrLoadChannel | RuntimeControlPlaneTable, unknown, never> IS the intended host capability boundary.
   return channel
 }
 

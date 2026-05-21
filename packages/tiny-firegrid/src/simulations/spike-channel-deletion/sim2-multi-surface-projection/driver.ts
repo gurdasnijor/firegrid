@@ -141,6 +141,7 @@ const requireContextRequestRow = (
   unknown,
   RuntimeControlPlaneTable
 > =>
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.query still leaks `any` in its inferred generics (same any-leak class documented in PR #534 / control-request-side-effects.ts); the declared Effect type IS the intended host capability boundary.
   Effect.gen(function*() {
     const control = yield* RuntimeControlPlaneTable
     const rows = yield* control.contextRequests.query((coll) =>

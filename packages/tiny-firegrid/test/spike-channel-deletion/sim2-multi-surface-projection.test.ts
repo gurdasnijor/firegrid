@@ -22,7 +22,6 @@
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
-  Firegrid,
   FiregridConfig,
   FiregridLive,
 } from "@firegrid/client-sdk/firegrid"
@@ -202,7 +201,7 @@ describe("tf-35f4 Sim 2 — multi-surface projection equivalence", () => {
     // verify that the imported `HostSessionsCreateOrLoadChannel` Tag
     // identifier is the protocol-owned one.
     const { HostSessionsCreateOrLoadChannel } = await import(
-      "@firegrid/protocol/channels"
+      "@firegrid/protocol/channels",
     )
     // Tag identifier (the string used in error messages / Context
     // lookups) must contain "protocol/channels" to prove the contract
