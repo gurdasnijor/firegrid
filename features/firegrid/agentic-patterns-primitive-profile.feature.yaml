@@ -8,7 +8,7 @@ components:
     requirements:
       1: Showcase participants launch through the public Firegrid client session surface with a runtime-context MCP declaration enabled by launch config.
       2: The launch shape does not require callers to pass host-sdk, runtime, DurableTable, workflow-engine, or raw Durable Streams handles.
-      3: Any whenReady barrier in the launch path is documented as a temporary projection materialization barrier rather than as part of the primitive profile contract.
+      3: Showcase participant launch does not require a public readiness/materialization wait; operations that need reflected RuntimeContext state own bounded internal readiness before acting.
 
   LOCKED_TOOL_SURFACE:
     requirements:

@@ -171,7 +171,6 @@ describe("dark-factory sleep + wait_for substrate smoke", () => {
         expect(session.contextId).toBe(expectedContextId)
         expect(session.contextId).not.toBe("dark-factory")
 
-        yield* session.whenReady
         const snapshot = yield* session.snapshot()
         expect(snapshot.contextId).toBe(expectedContextId)
         expect(snapshot.context).toBeDefined()

@@ -525,7 +525,7 @@ describe("Firegrid session facade", () => {
     expect(stored).toEqual(result.intent)
   })
 
-  it("firegrid-agent-ingress.INGRESS.6 launch -> firegrid.prompt waits for reflected context without explicit whenReady", async () => {
+  it("firegrid-agent-ingress.INGRESS.6 launch -> firegrid.prompt waits for reflected context without an explicit readiness wait", async () => {
     const fixture = makeFixture()
     const effect: Effect.Effect<
       {
@@ -593,7 +593,7 @@ describe("Firegrid session facade", () => {
     expectBoundedContextNotFound(error, unknownContextId)
   })
 
-  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2 session.prompt for an unknown context id errors (bounded) instead of hanging", async () => {
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-1 firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2 session.prompt for an unknown context id errors (bounded) instead of hanging", async () => {
     // tf-1r3h (#587 review): session-handle prompt shares the bounded barrier.
     const fixture = makeFixture({ contextReflectionTimeoutMs: 150 })
     const unknownSessionId = "ctx_session-prompt-does-not-exist"
@@ -691,7 +691,7 @@ describe("Firegrid session facade", () => {
     })
   })
 
-  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2 createOrLoad -> prompt waits for reflected context without explicit whenReady", async () => {
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6 firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-2 createOrLoad -> prompt waits for reflected context without an explicit readiness wait", async () => {
     const fixture = makeFixture()
 
     const result = await runWithClient(
@@ -723,38 +723,6 @@ describe("Firegrid session facade", () => {
       contextId: result.contextId,
       payload: { text: "barrier turn" },
       idempotencyKey: "barrier-turn",
-    })
-  })
-
-  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6 firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-1 whenReady completes from RuntimeContext projection state before prompt append", async () => {
-    const fixture = makeFixture()
-
-    const result = await runWithClient(
-      fixture,
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
-        const session = yield* firegrid.sessions.createOrLoad({
-          externalKey: { source: "linear", id: "LIN-ready" },
-          runtime: runtimeConfig(),
-        })
-        const ready = yield* session.whenReady.pipe(Effect.fork)
-        yield* Effect.sleep("50 millis")
-        yield* materializeContextRequest(fixture.hostSession, session.contextId)
-        const readyExit = yield* ready.await
-        const intent = yield* session.prompt({
-          payload: { text: "ready turn" },
-          idempotencyKey: "ready-turn",
-        })
-        return { contextId: session.contextId, intent, readyExit }
-      }),
-    )
-    const stored = await readRuntimeInputIntent(fixture.hostSession, result.intent.intentId)
-
-    expect(result.readyExit._tag).toBe("Success")
-    expect(stored).toMatchObject({
-      contextId: result.contextId,
-      payload: { text: "ready turn" },
-      idempotencyKey: "ready-turn",
     })
   })
 

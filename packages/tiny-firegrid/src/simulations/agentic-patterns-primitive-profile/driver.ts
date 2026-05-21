@@ -33,7 +33,6 @@ export const agenticPatternsPrimitiveProfileDriver: Effect.Effect<
       }),
     })
 
-    yield* session.whenReady
     yield* session.prompt({
       payload: "tf-t47b primitive profile launch smoke",
       idempotencyKey: "tf-t47b:agentic-patterns-primitive-profile",

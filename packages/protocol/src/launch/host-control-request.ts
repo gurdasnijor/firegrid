@@ -223,8 +223,9 @@ export const makeHostPermissionRespondChannel = (
 // tf-qu7l: ingress binding for the contexts read-path. binding.stream is the
 // RuntimeContext ProjectionStream (current rows + live changes) over
 // control.contexts.rows(). Backs both watchContexts (filter by predicate) and
-// whenReady (first match on contextId) on the client surface; consumed by the
-// host-sdk HostControlChannelsLive too (single source of truth).
+// the internal context-materialization barrier (first match on contextId) on
+// the client surface; consumed by the host-sdk HostControlChannelsLive too
+// (single source of truth).
 export const makeHostContextsChannel = (
   control: RuntimeControlPlaneTableService,
 ): IngressChannel<typeof RuntimeContextSchema> =>

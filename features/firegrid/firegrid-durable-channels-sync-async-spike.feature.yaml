@@ -8,7 +8,7 @@ components:
     requirements:
       1: The spike proves a call-style create-or-load binding can wait for reflected runtime context evidence before returning.
       2: The sync mode uses the existing HostSessionsCreateOrLoad channel contract and request-row substrate rather than adding a new public verb.
-      3: The sync barrier completes before any client session whenReady projection helper is used.
+      3: The sync barrier is represented by the operation/channel contract itself, not by a separate client session readiness projection helper.
 
   ASYNC_MAILBOX:
     requirements:

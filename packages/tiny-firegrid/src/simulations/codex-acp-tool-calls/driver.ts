@@ -41,7 +41,6 @@ export const codexAcpToolCallDriver: Effect.Effect<void, unknown, Firegrid> =
       createdBy: "tiny-firegrid-simulation",
     })
 
-    yield* session.whenReady
     yield* session.prompt({
       payload: promptForToolCall,
       idempotencyKey: "codex-acp-tool-calls:turn-1",

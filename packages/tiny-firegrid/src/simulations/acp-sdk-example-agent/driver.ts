@@ -87,7 +87,6 @@ export const acpSdkExampleAgentDriver: Effect.Effect<
     createdBy: "tiny-firegrid-simulation",
   })
 
-  yield* session.whenReady
   const attached = yield* firegrid.sessions.attach({ sessionId: session.sessionId })
   if (attached.contextId !== session.contextId) {
     return yield* Effect.fail("expected attached session context id to match")

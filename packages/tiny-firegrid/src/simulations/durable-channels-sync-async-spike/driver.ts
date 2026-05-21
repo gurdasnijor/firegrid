@@ -195,11 +195,6 @@ const runDriver = Effect.gen(function*() {
   const session = yield* firegrid.sessions.attach({
     sessionId: handle.sessionId,
   })
-  // The reflected binding proves the sync barrier. The runner's public
-  // Firegrid client is separately materialized, so this only syncs that
-  // read model before the public prompt/start/wait surface is exercised.
-  yield* session.whenReady
-
   yield* session.prompt({
     payload: "tf-lfxs drive sync createOrLoad then async send/wait_for",
     idempotencyKey: `tf-lfxs:${env.runId}:turn-1`,

@@ -60,7 +60,6 @@ export const waitPreAttachDriver: Effect.Effect<void, unknown, Firegrid> = Effec
     createdBy: "tiny-firegrid-simulation",
   })
 
-  yield* session.whenReady
   yield* session.permissions.autoApprove("allow", { timeoutMs: 30_000 })
   yield* session.prompt({
     payload: promptForWaitForCall,

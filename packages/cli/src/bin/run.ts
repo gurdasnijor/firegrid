@@ -262,7 +262,8 @@ const executeRun = (config: LaunchConfig, externalKey: CliExternalKey) =>
       `firegrid:run: launched context ${session.contextId} (${config.agentArgv.join(" ")})`,
     )
 
-    yield* session.whenReady
+    // tf-2osu: no explicit readiness wait — appendRuntimeIngress and
+    // startRuntime own a bounded "context materialized" barrier internally.
     const initialPrompt = runConfigToIngressRequest(config, session.contextId)
     if (initialPrompt !== undefined) {
       yield* appendRuntimeIngress(initialPrompt)
@@ -424,7 +425,8 @@ const seedContextAndPrintReady = (
       runtime: launchConfigToPublicRuntimeIntent(runConfig),
       createdBy: startCreatedBy,
     })
-    yield* session.whenReady
+    // tf-2osu: no explicit readiness wait — appendRuntimeIngress owns a
+    // bounded "context materialized" barrier internally.
     const initialPrompt = runConfigToIngressRequest(runConfig, session.contextId)
     if (initialPrompt !== undefined) {
       yield* appendRuntimeIngress(initialPrompt)

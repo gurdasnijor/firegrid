@@ -137,7 +137,6 @@ describe("agentic-patterns primitive profile", () => {
           }),
         })
         expect(session.contextId).toBe(expectedContextId)
-        yield* session.whenReady
         yield* session.prompt({
           payload: "tf-t47b primitive profile smoke",
           idempotencyKey: `tf-t47b:${runId}:initial`,

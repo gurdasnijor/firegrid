@@ -20,9 +20,6 @@ const session = yield* firegrid.sessions.createOrLoad({
   }),
 })
 
-// Temporary materialization barrier: remove when createOrLoad guarantees the
-// prompt append path can observe the context row immediately.
-yield* session.whenReady
 yield* session.prompt({
   payload: "begin the coordination round",
   idempotencyKey: `participant:${participantId}:initial`,
@@ -33,9 +30,10 @@ yield* session.start()
 This is the smallest launch shape the showcase should depend on:
 `@firegrid/client-sdk/firegrid` plus a host-composed runtime-context MCP route.
 It does not pass `@firegrid/host-sdk`, runtime, workflow-engine, DurableTable,
-or raw Durable Streams handles through the app or agent surface. The
-`whenReady` line is a temporary projection materialization barrier for the
-current prompt append path; it is not part of the primitive profile contract.
+or raw Durable Streams handles through the app or agent surface. There is no
+explicit materialization barrier: `prompt`/`start` internally await the
+reflected context (tf-1r3h #587), and the public `whenReady` ceremony was
+deleted in tf-2osu.
 
 ## Locked Agent Tool Surface
 
