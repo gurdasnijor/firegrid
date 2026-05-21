@@ -48,10 +48,8 @@ import {
 import {
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"
-import {
-  RuntimeAgentOutputAfterEvents,
-  type RuntimeAgentOutputObservation,
-} from "@firegrid/runtime/runtime-output"
+import type { RuntimeAgentOutputObservation } from "@firegrid/runtime/runtime-output"
+import { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
 import type {
   ApprovalCallPermissionRequest,
   ApprovalCallRequest,
@@ -196,7 +194,7 @@ const runtimeHostAgentToolHostService = (captured: {
   readonly namespace: string
   readonly workflowRuntime: RuntimeContextWorkflowRuntime["Type"]
   readonly agentToolHost: AgentToolHostService
-  readonly agentOutputEvents: RuntimeAgentOutputAfterEvents["Type"]
+  readonly sessionAgentOutput: SessionAgentOutputChannel["Type"]
   // TFIND-031: ambient host durable substrate captured at layer-build
   // time, re-provided into the deferred child-context workflow run.
   readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv | RuntimeContextMcpChannelCatalog>
@@ -307,7 +305,7 @@ const runtimeHostAgentToolHostService = (captured: {
     return Effect.gen(function*() {
       yield* requireLocalContextWithHostCapabilities(captured, contextId)
       const matched = yield* waitForApprovalPermissionRequest(
-        captured.agentOutputEvents,
+        captured.sessionAgentOutput,
         contextId,
         request,
       )
@@ -427,11 +425,11 @@ const permissionRequestFromObservation = (
 }
 
 const waitForApprovalPermissionRequest = (
-  agentOutputEvents: RuntimeAgentOutputAfterEvents["Type"],
+  sessionAgentOutput: SessionAgentOutputChannel["Type"],
   contextId: string,
   request: ApprovalCallRequest,
 ): Effect.Effect<Option.Option<ApprovalCallPermissionRequest>, unknown> => {
-  const wait = agentOutputEvents.forContext(contextId).pipe(
+  const wait = sessionAgentOutput.forContext(contextId).binding.stream.pipe(
     Stream.filter(observation =>
       request.afterSequence === undefined ||
       observation.sequence > request.afterSequence,
@@ -556,7 +554,7 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     const controlTable = yield* RuntimeControlPlaneTable
     const hostConfig = yield* RuntimeHostConfig
     const workflowRuntime = yield* RuntimeContextWorkflowRuntime
-    const agentOutputEvents = yield* RuntimeAgentOutputAfterEvents
+    const sessionAgentOutput = yield* SessionAgentOutputChannel
     // TFIND-031: capture the ambient host durable substrate so the
     // deferred child-context workflow (run later, outside this gen) can
     // re-provide it. Always present here via the composed host layer.
@@ -575,7 +573,7 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
       durableStreamsBaseUrl: hostConfig.durableStreamsBaseUrl,
       namespace: hostConfig.namespace,
       workflowRuntime,
-      agentOutputEvents,
+      sessionAgentOutput,
       hostContext,
       sandboxProvider,
       get agentToolHost() {
