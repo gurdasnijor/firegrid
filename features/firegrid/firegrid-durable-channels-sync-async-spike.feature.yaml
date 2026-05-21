@@ -1,0 +1,29 @@
+feature:
+  name: firegrid-durable-channels-sync-async-spike
+  product: firegrid
+  description: Validate whether the durable channel sync/async framing centralizes real barriers without adding public API weight.
+
+components:
+  SYNC_HANDSHAKE:
+    requirements:
+      1: The spike proves a call-style create-or-load binding can wait for reflected runtime context evidence before returning.
+      2: The sync mode uses the existing HostSessionsCreateOrLoad channel contract and request-row substrate rather than adding a new public verb.
+      3: The sync barrier completes before any client session whenReady projection helper is used.
+
+  ASYNC_MAILBOX:
+    requirements:
+      1: The spike proves the existing send tool can append a decoded payload to an egress-capable durable channel.
+      2: The spike proves the existing wait_for tool can observe the same durable channel row later through an ingress-capable binding.
+      3: The async mode uses neutral test event data and no provider-specific channel contract.
+
+  VERDICT:
+    requirements:
+      1: The finding records a GREEN, YELLOW, or RED verdict using the spike criteria.
+      2: The finding includes trace evidence from simulate:show and simulate:perf.
+      3: The verdict evidence is recorded from the simulation driver after exercising the public client/session surface.
+
+constraints:
+  API_WEIGHT:
+    requirements:
+      1: The spike must not expose effect/Channel, Queue, Mailbox, Stream, or Sink as a Firegrid public channel API.
+      2: The spike must not add a production migration unless the sim exposes a trivial and obviously safe deletion.
