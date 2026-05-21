@@ -83,6 +83,12 @@ These are intentionally not agent event-pipeline stages:
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
 - `authorities/`: runtime control-plane lifecycle capabilities
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.2`).
+- `channels/`: the durable channel Live implementations (tf-bffo). protocol
+  owns the channel contracts/Tags; the runtime owns these durable Live bindings
+  (reached above-box only through channels); host-sdk only COMPOSES them by
+  injecting host topology config. This is the doorway-enforcing co-location: the
+  durable channel implementations live below the substrate boundary, not in
+  host-sdk.
 
 This namespace move follows the host split and codec session Layer refactor
 (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.5`,

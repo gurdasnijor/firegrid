@@ -137,6 +137,13 @@ boundary reconciliation pass with three concrete outcomes:
 3. decide which `waits/` pieces are runtime-specific and which need a separate
    `effect-durable-operators` extraction SDD.
 
+tf-bffo adds a `channels/` top-level folder holding the durable channel Live
+implementations co-located below the substrate boundary: protocol owns the
+channel contracts/Tags, the runtime owns these durable Live bindings, and
+host-sdk only COMPOSES them by injecting host topology config. This enforces
+"channels are the only above-box doorway" — host-sdk/src/host no longer owns the
+durable channel wiring.
+
 The first implementation PR should break folder cycles because it is the
 lowest-risk change that unlocks cleaner host extraction. The waits extraction
 is design work first; do not move wait internals to another package until that
