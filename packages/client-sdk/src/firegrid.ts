@@ -66,6 +66,7 @@ import {
 } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
 import {
+  HostContextsChannel,
   HostContextsCreateChannel,
   HostPermissionRespondChannel,
   HostSessionsCreateOrLoadChannel,
@@ -521,6 +522,12 @@ const make = (config: ResolvedConfig) =>
     const hostContextsCreateChannel = yield* HostContextsCreateChannel
     const hostSessionsStartChannel = yield* HostSessionsStartChannel
     const hostPermissionRespondChannel = yield* HostPermissionRespondChannel
+    // tf-qu7l: read-path ingress. watchContexts + whenReady consume the
+    // HostContextsChannel binding.stream (the RuntimeContext ProjectionStream
+    // over control.contexts.rows()) instead of poking control.contexts
+    // directly. whenReady routes here (NOT SessionLifecycle): its contract is
+    // "context materialized" (contexts.rows), confirmed by CLIENT_SESSION.6.
+    const hostContextsChannel = yield* HostContextsChannel
 
     // tf-ivl6 / tf-tw49 concern #1: per-contextId RuntimeOutputTable
     // cache. Baseline trace showed 75 of 80 layer.acquire spans landing
@@ -636,19 +643,11 @@ const make = (config: ResolvedConfig) =>
     const watchContexts = (
       predicate: (context: RuntimeContext) => boolean = () => true,
     ): Stream.Stream<RuntimeContext, PreloadError> =>
-      control.contexts.subscribe<RuntimeContext>((coll, emit) => {
-        const sub = coll.subscribeChanges(
-          changes => {
-            for (const change of changes) {
-              if (change.value !== undefined && predicate(change.value)) {
-                emit(change.value)
-              }
-            }
-          },
-          { includeInitialState: true },
-        )
-        return () => sub.unsubscribe()
-      }).pipe(
+      // tf-qu7l: ingress over HostContextsChannel.binding.stream (the
+      // RuntimeContext ProjectionStream: current rows + live changes) filtered
+      // by predicate — replaces the bespoke control.contexts.subscribe block.
+      hostContextsChannel.binding.stream.pipe(
+        Stream.filter(predicate),
         Stream.mapError(cause => new PreloadError({ cause })),
       )
 
@@ -745,8 +744,12 @@ const make = (config: ResolvedConfig) =>
     const waitUntilContextReady = (
       contextId: string,
     ): Effect.Effect<void, PreloadError> =>
+      // tf-qu7l: "context materialized" wait over the same HostContextsChannel
+      // ingress stream (NOT SessionLifecycle, which is run-lifecycle events).
+      // Preserves the contexts.rows() first-match semantics CLIENT_SESSION.6
+      // pins.
       projectionWait(
-        control.contexts.rows(),
+        hostContextsChannel.binding.stream,
         context => context.contextId === contextId,
       ).pipe(
         Effect.mapError(cause => new PreloadError({ cause })),

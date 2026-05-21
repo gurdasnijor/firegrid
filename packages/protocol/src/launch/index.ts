@@ -117,6 +117,7 @@ export {
   requestHostSessionCreateOrLoad,
 } from "./host-session-create-or-load-request.ts"
 export {
+  makeHostContextsChannel,
   makeHostContextsCreateChannel,
   makeHostPermissionRespondChannel,
   makeHostPromptChannel,

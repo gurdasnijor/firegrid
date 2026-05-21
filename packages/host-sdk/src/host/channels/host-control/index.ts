@@ -3,7 +3,6 @@ import {
   HostContextSnapshotChannelTarget,
   HostContextSnapshotRequestSchema,
   HostContextsChannel,
-  HostContextsChannelTarget,
   HostContextsCreateChannel,
   HostPermissionRespondChannel,
   HostPromptChannel,
@@ -20,9 +19,9 @@ import {
 } from "@firegrid/protocol/channels"
 import {
   RuntimeControlPlaneTable,
-  RuntimeContextSchema,
   RuntimeOutputTable,
   RuntimeRunEventSchema,
+  makeHostContextsChannel,
   makeHostContextsCreateChannel,
   makeHostPermissionRespondChannel,
   makeHostPromptChannel,
@@ -165,12 +164,7 @@ export const HostControlChannelsLive =
         ),
         Layer.succeed(
           HostContextsChannel,
-          makeIngressChannel({
-            target: HostContextsChannelTarget,
-            schema: RuntimeContextSchema,
-            sourceClass: "static-source",
-            stream: control.contexts.rows(),
-          }),
+          makeHostContextsChannel(control),
         ),
         Layer.succeed(SessionLifecycleChannel, {
           forSession: sessionId =>

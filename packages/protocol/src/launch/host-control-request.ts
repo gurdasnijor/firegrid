@@ -14,6 +14,7 @@
 // + egress channel verbs.
 
 import {
+  HostContextsChannelTarget,
   HostContextsCreateChannelTarget,
   HostContextsCreateRequestSchema,
   HostContextsCreateResponseSchema,
@@ -30,9 +31,12 @@ import {
 import {
   makeCallableChannel,
   makeEgressChannel,
+  makeIngressChannel,
   type CallableChannel,
   type EgressChannel,
+  type IngressChannel,
 } from "../channels/core.ts"
+import { RuntimeContextSchema } from "./schema.ts"
 import { stampRowOtel } from "../otel/row-otel.ts"
 import {
   PublicPromptRequestSchema,
@@ -230,4 +234,19 @@ export const makeHostPermissionRespondChannel = (
           },
         }),
       ),
+  })
+
+// tf-qu7l: ingress binding for the contexts read-path. binding.stream is the
+// RuntimeContext ProjectionStream (current rows + live changes) over
+// control.contexts.rows(). Backs both watchContexts (filter by predicate) and
+// whenReady (first match on contextId) on the client surface; consumed by the
+// host-sdk HostControlChannelsLive too (single source of truth).
+export const makeHostContextsChannel = (
+  control: RuntimeControlPlaneTableService,
+): IngressChannel<typeof RuntimeContextSchema> =>
+  makeIngressChannel({
+    target: HostContextsChannelTarget,
+    schema: RuntimeContextSchema,
+    sourceClass: "static-source",
+    stream: control.contexts.rows(),
   })
