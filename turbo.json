@@ -13,6 +13,11 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@firegrid/tiny-firegrid#test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "cache": false
+    },
     "check": {
       "dependsOn": ["build"],
       "outputs": []
