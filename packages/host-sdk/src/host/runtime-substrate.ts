@@ -34,6 +34,9 @@ import { type AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
 } from "./per-context-runtime-output.ts"
+import {
+  SessionAgentOutputChannelLive,
+} from "./channels/session-agent-output/index.ts"
 
 // TFIND-031: the host-provided runtime context that a per-context
 // workflow execution genuinely requires. Deferred-execution seams
@@ -59,6 +62,7 @@ export type HostRuntimeContextExecutionEnv =
 // Runtime-owned workflows consume typed observation tags directly; host-sdk
 // installs the host-backed providers at the composition boundary.
 export const HostRuntimeObservationSubstrateLive = PerContextRuntimeAgentOutputAfterEventsLive.pipe(
+  Layer.provideMerge(SessionAgentOutputChannelLive),
   Layer.provideMerge(RuntimeAgentOutputEventsLayer),
   Layer.provideMerge(RuntimeControlPlaneRecorderLive),
   Layer.withSpan("firegrid.host.runtime_substrate.observation.layer", {

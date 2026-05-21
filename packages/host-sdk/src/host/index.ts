@@ -37,6 +37,16 @@ export {
   type TypedStreamBinding,
 } from "./channel.ts"
 export {
+  SessionAgentOutputChannel,
+  SessionAgentOutputChannelTarget,
+  type SessionAgentOutputChannelRegistration,
+  type SessionAgentOutputChannelService,
+} from "@firegrid/protocol/channels"
+export {
+  SessionAgentOutputChannelLive,
+  sessionAgentOutputChannel,
+} from "./channels/session-agent-output/index.ts"
+export {
   SessionSelfChannelsLive,
   SessionSelfCheckpointChannel,
   SessionSelfCheckpointChannelTarget,

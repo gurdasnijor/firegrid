@@ -59,6 +59,10 @@ import {
 import {
   SessionSelfChannelsLive,
 } from "./channels/session-self/index.ts"
+import type { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
+import {
+  SessionAgentOutputChannelLive,
+} from "./channels/session-agent-output/index.ts"
 
 export class FiregridLocalProcess extends Context.Tag(
   "firegrid/host-sdk/FiregridLocalProcess",
@@ -253,13 +257,11 @@ const hostScopedLayer = (
     hostOwnedOutputLayer(sharedOptions),
     hostOwnedSandboxCommandLayer(sharedOptions),
   )
-  const hostServices = Layer.mergeAll(
-    PerContextRuntimeOutputWriterLive,
-    RuntimeHostAgentToolHostLive.pipe(
-      Layer.provide(RuntimeControlPlaneRecorderLive),
-      Layer.provideMerge(PerContextRuntimeAgentOutputAfterEventsLive),
-    ),
-  ).pipe(
+  const hostServices = RuntimeHostAgentToolHostLive.pipe(
+    Layer.provide(RuntimeControlPlaneRecorderLive),
+    Layer.provideMerge(PerContextRuntimeAgentOutputAfterEventsLive),
+    Layer.provideMerge(PerContextRuntimeOutputWriterLive),
+    Layer.provideMerge(SessionAgentOutputChannelLive),
     Layer.provideMerge(hostTables),
   )
   const stdinClaim = SandboxStdinEmissionClaimLive.pipe(
@@ -289,6 +291,7 @@ const hostScopedLayer = (
 /** @category models */
 export type FiregridHost =
   | RuntimeStartCapability
+  | SessionAgentOutputChannel
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
@@ -307,19 +310,21 @@ export const FiregridRuntimeHostLive = (
   const namespaceScoped = namespaceScopedLayer(options)
   const hostScoped = hostScopedLayer(options)
   const hostChannels = SessionSelfChannelsLive(options.channels)
+  const controlRequestServices = RuntimeControlRequestReconcilerLive.pipe(
+    Layer.provideMerge(RuntimeControlRequestWorkflowEngineLive),
+    Layer.provideMerge(RuntimeStartCapabilityLive),
+    Layer.provideMerge(hostChannels),
+  )
+  const controlRequestDaemon = options.controlRequestReconciler === false
+    ? controlRequestServices
+    : RuntimeControlRequestReconcilerDaemonLive.pipe(
+      Layer.provideMerge(controlRequestServices),
+    )
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
-  return Layer.mergeAll(
-    RuntimeInputIntentDispatcherLive,
-    RuntimeStartCapabilityLive,
-    RuntimeControlRequestReconcilerLive,
-    RuntimeControlRequestWorkflowEngineLive,
-    hostChannels,
-    ...(options.controlRequestReconciler === false
-      ? []
-      : [RuntimeControlRequestReconcilerDaemonLive]),
-  ).pipe(
+  return RuntimeInputIntentDispatcherLive.pipe(
+    Layer.provideMerge(controlRequestDaemon),
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),

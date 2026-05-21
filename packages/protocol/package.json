@@ -41,6 +41,10 @@
       "types": "./src/agent-output/index.ts",
       "default": "./src/agent-output/index.ts"
     },
+    "./channels": {
+      "types": "./src/channels/index.ts",
+      "default": "./src/channels/index.ts"
+    },
     "./observations": {
       "types": "./src/observations/index.ts",
       "default": "./src/observations/index.ts"

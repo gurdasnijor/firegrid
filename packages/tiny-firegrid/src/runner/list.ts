@@ -34,30 +34,55 @@ const hiddenFolders = new Set(["to-be-migrated"])
 const isHidden = (folder: string): boolean =>
   hiddenFolders.has(folder) || folder.startsWith("_") || folder.startsWith(".")
 
-export const listSimulations = Effect.gen(function*() {
-  const entries = yield* Effect.promise(() =>
-    readdir(simulationsUrl, { withFileTypes: true }),
-  )
-  const directories = entries
-    .filter(entry => entry.isDirectory() && !isHidden(entry.name))
-    .map(entry => entry.name)
-    .sort()
+interface SimulationModuleRef {
+  readonly folder: string
+  readonly moduleUrl: URL
+}
 
-  return yield* Effect.forEach(directories, directory =>
+const discoverSimulationModules = (
+  root: URL,
+  segments: ReadonlyArray<string> = [],
+): Effect.Effect<ReadonlyArray<SimulationModuleRef>> =>
+  Effect.gen(function*() {
+    const entries = yield* Effect.promise(() =>
+      readdir(root, { withFileTypes: true }),
+    )
+    const hasIndex = entries.some(entry => entry.isFile() && entry.name === "index.ts")
+    if (hasIndex) {
+      return [{
+        folder: segments.at(-1) ?? "",
+        moduleUrl: new URL("index.ts", root),
+      }]
+    }
+    const directories = entries
+      .filter(entry => entry.isDirectory() && !isHidden(entry.name))
+      .map(entry => entry.name)
+      .sort()
+    const nested = yield* Effect.forEach(directories, directory =>
+      discoverSimulationModules(
+        new URL(`${directory}/`, root),
+        [...segments, directory],
+      ))
+    return nested.flat()
+  })
+
+export const listSimulations = Effect.gen(function*() {
+  const modules = yield* discoverSimulationModules(simulationsUrl)
+
+  return yield* Effect.forEach(modules, moduleRef =>
     Effect.gen(function*() {
-      const moduleUrl = new URL(`${directory}/index.ts`, simulationsUrl)
       const module = yield* Effect.promise(
-        () => import(moduleUrl.href) as Promise<{ readonly default?: unknown }>,
+        () => import(moduleRef.moduleUrl.href) as Promise<{ readonly default?: unknown }>,
       )
       if (!isSimulation(module.default)) {
         return yield* Effect.fail(new SimulationFolderInvalid({
-          folder: directory,
+          folder: moduleRef.folder,
           reason: "missing default export of simulation shape",
         }))
       }
-      if (module.default.id !== directory) {
+      if (module.default.id !== moduleRef.folder) {
         return yield* Effect.fail(new SimulationFolderInvalid({
-          folder: directory,
+          folder: moduleRef.folder,
           reason: `id ${module.default.id} does not match folder`,
         }))
       }
