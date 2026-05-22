@@ -28,7 +28,7 @@ primitives:
    request row, claim row, completion row, **deferred mailbox**, or adapter
    subsystem"; `.2` requires "a durable observer cursor by output sequence …
    resume after the last observed sequence"; `.3` forbids "re-read the full
-   output history inside the replay boundary." `WORKFLOW_ADMISSION.6` states the
+   output history inside the replay boundary." `PHASE_0_TARGET_REFERENCE.6` states the
    target reference "**does not reference `appendRuntimeInputDeferred`,
    `WorkflowEngineTable.deferreds`**."
 2. **SDD target** (`SDD_TARGET…REFERENCE.md:180`): "The cursor lives in table
@@ -60,7 +60,7 @@ per turn) and it is the obvious symmetric thing to reach for. **Reject it for
 outputs** for three reasons:
 
 - It is the **explicitly forbidden** surface for the convergent target
-  (`WORKFLOW_ADMISSION.6`, `PHASE_0B…1`, SDD `:172`).
+  (`PHASE_0_TARGET_REFERENCE.6`, `PHASE_0B…1`, SDD `:172`).
 - It is **O(outputs²) engine-internal point-lookups**: `@effect/workflow`
   replays the body top-to-bottom, re-running every `next()` step, each a point
   lookup into `deferreds` — `Σ(1..D)` lookups across a D-output turn. Sparse
@@ -233,9 +233,9 @@ elsewhere; this only removes them from the *workflow body's* env.)
 
 ### Q5 — First production migration slice (after lane 1's hotfix)
 
-Lane 1 (`tf-7kq8`) ships the in-place hotfix (resume-after-last-sequence /
-once-per-turn) so production is already safe. The **first structural slice** is
-the smallest additive change that makes the storm unexpressible:
+Lane 1 (`tf-7kq8`) owns the in-place hotfix (resume-after-last-sequence /
+once-per-turn). After that bridge, the **first structural slice** is the
+smallest additive change that makes the storm unexpressible:
 
 1. **Add** `durable-output-cursor.ts`: the `RuntimeOutputCursorTable` cursor row
    (`{ contextId, activityAttempt }` PK, `lastDeliveredSequence`), the key
@@ -250,9 +250,10 @@ the smallest additive change that makes the storm unexpressible:
    the in-memory `stateRef` (`:347-352,820`) to the durable cursor row.
 4. **Remove `RuntimeAgentOutputAfterEvents` from the body env**
    (`:125-133`) so the scan is unexpressible (Q4). Keep it for wait-router.
-5. **Gate** with the §3 trace contract on a live **≥ 8-output ACP turn** on the
-   #607 Phase 0A baseline (the lane that owns real-engine acceptance is
-   `tf-ly2g`; this slice adopts its trace prefix).
+5. **Gate** with the §3 trace contract on a live **≥ 8-output ACP turn** against
+   the merged Phase 0A/0B reference baseline (#607/#610). The production
+   implementation slice that adopts this primitive must carry the same trace
+   contract forward.
 
 Slice boundary: **does not touch** inputs, tool execution, session adapters,
 channels, host-sdk, or client. One new runtime file + one edited workflow arm.
@@ -274,10 +275,10 @@ channels, host-sdk, or client. One new runtime file + one edited workflow arm.
    resume-on-write) and assert the §3 trace gate: `log_reads ≤ 2×distinct`,
    no `agent_output.initial` span, `turn_complete == 1`, and that outputs
    `0..position` are not re-read after a resume.
-4. **Real-engine acceptance** is `tf-ly2g`'s on the #607 baseline (verbose
-   stream + ToolUse/ToolResult/TurnComplete must hold the same ratio); this lane
-   hands it the contract above. `check:specs` / `check:docs` run if specs/docs
-   touched.
+4. **Real-engine acceptance** builds on the merged #607/#610 reference baseline
+   (verbose stream + ToolUse/ToolResult/TurnComplete must hold the same ratio);
+   the production implementation slice that adopts this primitive owns that
+   proof. `check:specs` / `check:docs` run if specs/docs touched.
 
 ---
 
@@ -301,7 +302,7 @@ reconstructs progress from table state" (`SDD_TARGET…:300`).
 
 - **No `DurableDeferred` per output sequence** / no `appendRuntimeInputDeferred`
   analogue / no `WorkflowEngineTable.deferreds` for outputs
-  (`WORKFLOW_ADMISSION.6`, `PHASE_0B…1`).
+  (`PHASE_0_TARGET_REFERENCE.6`, `PHASE_0B…1`).
 - **No `events.query` / `coll.toArray` / `reduce`-over-rows on the read path.**
   The read is `events.get(position+1)`; the wait is `events.rows()` filtered to
   `> position`. A `…agent_output.initial` span on the workflow path is a
@@ -313,7 +314,7 @@ reconstructs progress from table state" (`SDD_TARGET…:300`).
   client** (`WORKFLOW_ADMISSION.3`). The body sees only `cursor.next()`.
 - **No second source of truth for position.** Position is the durable cursor
   column, not also a journal-implicit count.
-- **Stop-and-re-evaluate** (SDD `:200-211`, `WORKFLOW_ADMISSION.7`) if the slice
+- **Stop-and-re-evaluate** (SDD `:200-211`, `PHASE_0_TARGET_REFERENCE.7`) if the slice
   needs a new public abstraction, a request/claim/completion bridge, a registry,
   an adapter subsystem, or a secondary-index primitive — the substrate already
   has the O(1) point read, so none of these should be necessary.
