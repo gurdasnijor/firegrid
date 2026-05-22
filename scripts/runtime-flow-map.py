@@ -499,20 +499,87 @@ def report_skeleton(G, top):
 
 _ACID = re.compile(r'\b([a-z][a-z0-9]*(?:-[a-z0-9]+)+\.[A-Z][A-Z0-9_]+\.[0-9]+(?:-[0-9]+)?)\b')
 
+# tf-fp3a: feature.yaml structure pieces, so a section ACID resolves even when
+# it is never printed as a full contiguous token. The schema is fixed:
+#   feature: / name: <feature-name> (@indent 2)
+#   components: | constraints:      (@indent 0)
+#     SECTION:                       (@indent 2, UPPER_SNAKE)
+#       requirements:                (@indent 4)
+#         N: | N-M: ...              (@indent 6, numeric key)
+_FEATURE_NAME = re.compile(r'^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$')
+_SECTION_KEY = re.compile(r'^([A-Z][A-Z0-9_]*):\s*$')
+_REQ_KEY = re.compile(r'^([0-9]+(?:-[0-9]+)?):')
+
+
+def _section_acids(path):
+    """Derive valid `<feature-name>.SECTION.N` / `.N-M` contract ids from a
+    feature.yaml's structure (components/constraints -> SECTION -> requirements
+    -> numeric keys). Indentation-based against the fixed schema above, so an
+    author can cite a section id without the full dotted token appearing
+    literally. Only real (section, requirement-key) pairs are emitted — no
+    cross-section product — so a typo'd section/number still fails to resolve."""
+    ids = set()
+    feature_name = None
+    container = None        # "components" / "constraints" / None
+    in_feature = False
+    section = None
+    in_requirements = False
+    try:
+        lines = open(path, errors="ignore").read().splitlines()
+    except OSError:
+        return ids
+    for raw in lines:
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        body = raw.strip()
+        if indent == 0:
+            in_feature = body == "feature:"
+            container = body[:-1] if body in ("components:", "constraints:") else None
+            section = None
+            in_requirements = False
+        elif indent == 2:
+            if in_feature and body.startswith("name:"):
+                cand = body.split(":", 1)[1].strip()
+                if _FEATURE_NAME.match(cand):
+                    feature_name = cand
+            elif container is not None:
+                m = _SECTION_KEY.match(body)
+                section = m.group(1) if m else None
+                in_requirements = False
+        elif indent == 4:
+            in_requirements = (
+                container is not None and section is not None and body == "requirements:"
+            )
+        elif indent == 6:
+            m = _REQ_KEY.match(body)
+            if in_requirements and feature_name and section and m:
+                ids.add(f"{feature_name}.{section}.{m.group(1)}")
+        # indent >= 8 (nested requirement maps, block scalars) is ignored
+    return ids
+
 
 def _contract_index(repo):
     """Deterministic set of valid contract ids: ACID tokens declared in any
-    *.feature.yaml / .semgrep.yml. (contract.id also resolves if it is an
-    existing repo path — checked separately.)"""
+    *.feature.yaml / .semgrep.yml (literal contiguous tokens), PLUS section
+    ACIDs derived from each feature.yaml's structure (tf-fp3a). (contract.id
+    also resolves if it is an existing repo path — checked separately.)"""
     ids = set()
     for dp, dirs, fs in os.walk(repo):
         if "node_modules" in dp or "/.git" in dp or "/.turbo" in dp:
             dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", ".turbo")]
             continue
         for fn in fs:
-            if fn.endswith(".feature.yaml") or fn == ".semgrep.yml":
+            p = os.path.join(dp, fn)
+            if fn.endswith(".feature.yaml"):
                 try:
-                    ids.update(_ACID.findall(open(os.path.join(dp, fn), errors="ignore").read()))
+                    ids.update(_ACID.findall(open(p, errors="ignore").read()))
+                except OSError:
+                    pass
+                ids.update(_section_acids(p))
+            elif fn == ".semgrep.yml":
+                try:
+                    ids.update(_ACID.findall(open(p, errors="ignore").read()))
                 except OSError:
                     pass
     return ids
@@ -522,6 +589,50 @@ def _resolve_contract(repo, idx, cid):
     if not cid or cid.strip().lower() in ("", "todo", "tbd", "fixme", "xxx"):
         return False
     return cid in idx or os.path.exists(os.path.join(repo, cid))
+
+
+def _self_check(repo):
+    """`--self-check`: prove the contract.id resolver, against the real repo.
+    Section ACIDs derived from feature.yaml structure resolve; typo'd
+    section/number and TODO-shaped ids fail; path-based decision-doc ids
+    resolve. Mostly self-derived (picks real tokens from the live index) so it
+    does not rot when feature files change; exits 1 on any failed assertion."""
+    idx = _contract_index(repo)
+    section_ids = sorted(t for t in idx if "/" not in t)
+    checks = []
+    def check(name, ok):
+        checks.append((name, bool(ok)))
+
+    check("derived >= 1 section ACID from feature.yaml structure", section_ids)
+    sample = next((t for t in section_ids if re.fullmatch(_ACID, t)), None)
+    if sample:
+        name_part, section, key = sample.rsplit(".", 2)
+        check(f"section ACID resolves: {sample}", _resolve_contract(repo, idx, sample))
+        check(f"typo'd requirement number fails: {name_part}.{section}.99999",
+              not _resolve_contract(repo, idx, f"{name_part}.{section}.99999"))
+        check(f"typo'd section fails: {name_part}.ZZZ_NONEXISTENT.{key}",
+              not _resolve_contract(repo, idx, f"{name_part}.ZZZ_NONEXISTENT.{key}"))
+    nm = next((t for t in section_ids if re.search(r"\.[0-9]+-[0-9]+$", t)), None)
+    check("derived an N-M section ACID", nm)
+
+    for bad in ("TODO", "tbd", "FIXME", "", "firegrid-not-a-feature.NOPE.1"):
+        check(f"rejects non-resolving id {bad!r}", not _resolve_contract(repo, idx, bad))
+
+    # path-based decision-doc resolution preserved (and the tf-ykd5 regression
+    # target: a section ACID that previously required a feature-file path).
+    apath = "features/firegrid/firegrid-zed-acp-stdio-external-agent.feature.yaml"
+    if os.path.exists(os.path.join(repo, apath)):
+        check(f"path-based decision-doc resolves: {apath}",
+              _resolve_contract(repo, idx, apath))
+        target = "firegrid-zed-acp-stdio-external-agent.PROTOCOL_DISCIPLINE.3"
+        check(f"tf-ykd5 target section ACID now resolves: {target}",
+              _resolve_contract(repo, idx, target))
+
+    ok = all(p for _, p in checks)
+    for name, p in checks:
+        print(f"  [{'PASS' if p else 'FAIL'}] {name}")
+    print(f"SELF-CHECK {'PASS' if ok else 'FAIL'} ({sum(p for _, p in checks)}/{len(checks)})")
+    return 0 if ok else 1
 
 
 def compute_metrics(spans, attr, G, repo):
@@ -691,10 +802,12 @@ def main(argv):
         if a.startswith("--"):
             k, _, v = a[2:].partition("=")
             flags[k] = v if v else True
+    repo = flags.get("repo", ".")
+    if flags.get("self-check"):
+        return _self_check(repo)
     if not args:
         print(__doc__)
         return 2
-    repo = flags.get("repo", ".")
     gran = flags.get("granularity", "file")
     focus = flags.get("focus") or None
     top = int(flags.get("top", 15))

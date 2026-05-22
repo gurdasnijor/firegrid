@@ -18,3 +18,4 @@ tooling/analysis/mcp-tool-exposure-trace.md
 
 # bv (beads viewer) local config and caches
 .bv/
+scripts/__pycache__/
