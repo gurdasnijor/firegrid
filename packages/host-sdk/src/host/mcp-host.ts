@@ -271,14 +271,7 @@ export const FiregridMcpServerLayer = (
     // `FiregridRuntimeContextMcpBaseUrl` is provided by the runtime host
     // (B) this layer is `provideMerge`'d with.
     Layer.scopedDiscard(
-      publishRuntimeContextMcpBase(options.path).pipe(
-        Effect.withSpan("firegrid.mcp.publish_runtime_context_base", {
-          kind: "server",
-          attributes: {
-            "firegrid.mcp.path": String(options.path),
-          },
-        }),
-      ),
+      publishRuntimeContextMcpBase(options.path),
     ),
   ).pipe(
     Layer.provide(
