@@ -105,5 +105,13 @@ export const publishRuntimeContextMcpBase = (
       Effect.succeed(addr),
     )
     const service = yield* FiregridRuntimeContextMcpBaseUrl
-    yield* service.publish({ address, basePath })
+    yield* service.publish({ address, basePath }).pipe(
+      Effect.withSpan("firegrid.mcp.publish_runtime_context_base", {
+        kind: "server",
+        attributes: {
+          "firegrid.mcp.bound_address": address,
+          "firegrid.mcp.path": String(basePath),
+        },
+      }),
+    )
   })

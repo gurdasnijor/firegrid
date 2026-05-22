@@ -108,6 +108,12 @@ describe("Firegrid MCP HTTP host", () => {
           const context = yield* Layer.buildWithScope(mcpHostLayer(capturedSpans), scope)
           const server = Context.get(context, HttpServer.HttpServer)
           const address = HttpServer.formatAddress(server.address)
+          const publishSpan = capturedSpans.find(span =>
+            span.name === "firegrid.mcp.publish_runtime_context_base")
+
+          expect(publishSpan).toBeDefined()
+          expect(publishSpan?.attributes["firegrid.mcp.bound_address"]).toBe(address)
+          expect(publishSpan?.attributes["firegrid.mcp.path"]).toBe("/mcp")
 
           yield* Effect.forEach(
             probePaths,
