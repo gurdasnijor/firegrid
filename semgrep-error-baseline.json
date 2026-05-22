@@ -86,6 +86,18 @@
       "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
       "line": 212,
       "note": "C4 admissible bridge exception: per-sequence DurableDeferred input mailbox is the workflow-engine bridge (tf-5cn1); RFC-conforming deletion targets tf-vrz6/tf-w6qj. docs/cannon/architecture/runtime-design-constraints.md \"Runtime Input Mailbox\"."
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/shape-d-workflow-admission/resources.ts",
+      "line": 191,
+      "note": "Shape D admission proof artifact: tf-28b8 exercises the per-tool-call Workflow.make wrapper to classify it as Shape D (operation-shaped, deletion target)."
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/shape-d-workflow-admission/resources.ts",
+      "line": 212,
+      "note": "Shape D admission proof artifact: tf-28b8 exercises a second Workflow.make wrapper for the alternate-shape contrast within the same admission classification proof."
     }
   ]
 }

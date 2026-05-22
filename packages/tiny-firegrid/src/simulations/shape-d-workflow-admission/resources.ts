@@ -63,7 +63,7 @@ const ToolResultRowSchema = Schema.Struct({
   at: Schema.String,
 }).annotations({ identifier: "firegrid.tf28b8.toolResultRow" })
 
-export class ToolResultTable extends DurableTable("tf28b8.toolResults", {
+class ToolResultTable extends DurableTable("tf28b8.toolResults", {
   results: ToolResultRowSchema,
 }) {}
 
@@ -78,7 +78,7 @@ const CompletionRowSchema = Schema.Struct({
   at: Schema.String,
 }).annotations({ identifier: "firegrid.tf28b8.completionRow" })
 
-export class CompletionTable extends DurableTable("tf28b8.completions", {
+class CompletionTable extends DurableTable("tf28b8.completions", {
   completions: CompletionRowSchema,
 }) {}
 
@@ -94,7 +94,7 @@ const DueTimeRowSchema = Schema.Struct({
   at: Schema.String,
 }).annotations({ identifier: "firegrid.tf28b8.dueTimeRow" })
 
-export class DueTimeTable extends DurableTable("tf28b8.dueTimes", {
+class DueTimeTable extends DurableTable("tf28b8.dueTimes", {
   dueTimes: DueTimeRowSchema,
 }) {}
 
@@ -115,11 +115,11 @@ const tableOptions = (
   txTimeoutMs: 2_000,
 })
 
-export const toolResultTableLayer = (env: TinyFiregridHostEnv) =>
+const toolResultTableLayer = (env: TinyFiregridHostEnv) =>
   ToolResultTable.layer(tableOptions(env, "tool-results"))
-export const completionTableLayer = (env: TinyFiregridHostEnv) =>
+const completionTableLayer = (env: TinyFiregridHostEnv) =>
   CompletionTable.layer(tableOptions(env, "completions"))
-export const dueTimeTableLayer = (env: TinyFiregridHostEnv) =>
+const dueTimeTableLayer = (env: TinyFiregridHostEnv) =>
   DueTimeTable.layer(tableOptions(env, "due-times"))
 
 // Run a Shape C handler against a freshly-provided table layer. Each call is a
