@@ -68,8 +68,17 @@ const toolCallId = "phase0b-sleep-tool-call"
 
 const now = (): string => new Date().toISOString()
 
-const inputKeyFor = (input: Pick<WorkflowInputRow, "sessionId" | "inputId">) =>
-  `${input.sessionId}/${input.inputId}`
+// tf-bz4x: inputs are addressed by `${sessionId}/${sequence}`, symmetric with
+// `outputKeyForSequence`, so the workflow can point-`get` the next input by
+// sequence instead of scanning the input log on the replay path. The driver
+// supplies the sequence per session (SDD target model) and resends a duplicate
+// with the SAME (inputId, sequence) pair, so a sequence-addressed primary key
+// still converges duplicate input identity via `insertOrGet`. `inputId` stays
+// on the row as identity evidence.
+const inputKeyForSequence = (
+  ownedSessionId: string,
+  sequence: number,
+) => `${ownedSessionId}/${sequence}`
 
 const outputKeyForSequence = (
   ownedSessionId: string,
@@ -281,24 +290,38 @@ const processInput = (
     }),
   )
 
+// tf-bz4x: point-addressed next-input read, symmetric with
+// `nextOutputForObserver`. Reads exactly the row at `sequence` by primary key —
+// no `coll.toArray`/filter scan over the input log.
+const nextInputForSequence = (
+  table: TargetArchitectureReferenceTable["Type"],
+  ownedSessionId: string,
+  sequence: number,
+) =>
+  table.inputs.get(inputKeyForSequence(ownedSessionId, sequence)).pipe(
+    Effect.map(Option.getOrUndefined),
+  )
+
+// tf-bz4x: drain contiguous pending inputs by point `get` from
+// `lastInputSequence + 1`, mirroring the durable output observer. On replay the
+// durable cursor lets this resume at its position with O(1) reads per input,
+// not an O(history) re-scan inside the replay boundary.
 const processPendingInputs = (
   table: TargetArchitectureReferenceTable["Type"],
 ) =>
   Effect.gen(function*() {
     yield* ensureSession(table)
-    const cursor = yield* readWorkflowCursor(table)
-    const rows = yield* table.inputs.query((coll) =>
-      coll.toArray
-        .filter(row =>
-          row.sessionId === cursor.sessionId &&
-          row.sequence > cursor.lastInputSequence)
-        .sort((left, right) => left.sequence - right.sequence),
-    )
-    return yield* Effect.reduce(
-      rows,
-      cursor,
-      (current, row) => processInput(table, current, row),
-    )
+    let cursor = yield* readWorkflowCursor(table)
+    while (true) {
+      const next = yield* nextInputForSequence(
+        table,
+        cursor.sessionId,
+        cursor.lastInputSequence + 1,
+      )
+      if (next === undefined) break
+      cursor = yield* processInput(table, cursor, next)
+    }
+    return cursor
   })
 
 const replayBoundaryFor = (
@@ -364,7 +387,7 @@ const writeInput = (
     })(payload)
     const row: WorkflowInputRow = {
       ...decoded,
-      inputKey: inputKeyFor(decoded),
+      inputKey: inputKeyForSequence(decoded.sessionId, decoded.sequence),
       acceptedAt: now(),
     }
     yield* ensureSession(table)
