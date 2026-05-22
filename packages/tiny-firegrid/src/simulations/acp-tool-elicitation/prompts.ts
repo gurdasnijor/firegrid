@@ -14,7 +14,7 @@
 // fail-fast walk caps the downside when a provider window goes bad.
 
 /** Coarse concern each prompt targets; surfaces as a per-turn span attribute. */
-export type ElicitationGroup = "baseline" | "channel" | "child" | "scheduler"
+type ElicitationGroup = "baseline" | "channel" | "child" | "scheduler"
 
 export interface ElicitationPrompt {
   /** Short stable label — surfaces as the per-turn span's prompt_label. */
