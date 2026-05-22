@@ -2,6 +2,13 @@ export {
   appendRuntimeInputDeferred,
 } from "./runtime-input-deferred.ts"
 export {
+  makePerContextRuntimeContextStateStore,
+  type PerContextRuntimeContextStateConfig,
+  RuntimeContextStateStore,
+  type RuntimeContextStateStoreService,
+  RuntimeContextStateTable,
+} from "./runtime-context-state.ts"
+export {
   DurableStreamsWorkflowEngine,
   make,
   type WorkflowActivityClaimRow,
