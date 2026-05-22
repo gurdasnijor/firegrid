@@ -241,7 +241,7 @@ Prompt: *"use schedule_me to sleep for 3sec and then prompt yourself to say 'hi'
 Verified facts:
 - Permission ratio is clean **1:1:1** and all from the `sleep` turn — `schedule_me` **never sent a permission request**, so this is not the §3 deadlock.
 - The schedule_me turn's wire (after the sleep turn's `end_turn`) is only `agent_thought_chunk`/`agent_message_chunk`, then **30s of silence** → timeout.
-- The handler **started**: a second `firegrid.workflow_engine.clock.schedule` fired with `firegrid.side:"agent-tools"` (the first schedule+`clock.fire` pair is `sleep`'s). 
+- The handler **started**: a second `firegrid.workflow_engine.clock.schedule` fired with `firegrid.side:"agent-tools"` (the first schedule+`clock.fire` pair is `sleep`'s).
 - **No completed `McpServer.tools/call` for schedule_me** — only `sleep`'s. The schedule_me tool-call span is open/unfinished.
 
 **Verified conclusion:** schedule_me's tool handler started (registered a clock wakeup) but **never returned a result**, so the agent waited, emitted no further output, and the host timed out.
