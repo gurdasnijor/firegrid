@@ -300,6 +300,52 @@ The tiny-firegrid trace reader (`simulate:show` / `simulate:perf`) already drops
 `phase:"start"` records, so enabling phases during a simulation does not skew
 those views.
 
+## Inspecting live durable-stream state (durable-streams test-ui)
+
+Effect spans show *what the host did*; the durable streams show *what state
+landed*. For "row written vs row observed" questions (see the DurableTable and
+runtime-output boundaries below) it is often faster to look at the actual stream
+rows in a live host than to read spans.
+
+When `DURABLE_STREAMS_BASE_URL` is unset, `firegrid run`/`start`/`acp` start an
+embedded `DurableStreamTestServer`. It binds **`127.0.0.1:4437`** and installs
+`createRegistryHooks`, so every stream it creates is announced on a
+`__registry__` stream. A durable-streams stream inspector pointed at that port
+can then enumerate and read the host's live streams with no extra wiring.
+
+The durable-streams project ships such an inspector at `examples/test-ui` (a
+Vite app that hardcodes `http://<host>:4437` and subscribes to `__registry__`).
+To use it against a live Firegrid host:
+
+```bash
+# 1. Run any Firegrid process — it serves the embedded store on :4437.
+#    (e.g. the Zed ACP agent, or:)
+pnpm firegrid -- acp --agent claude-acp --agent-protocol acp \
+  --otel-file .firegrid/acp-trace.jsonl --cwd "$PWD" \
+  -- npx -y @agentclientprotocol/claude-agent-acp@0.36.1
+
+# 2. In a second terminal, launch the durable-streams test-ui (Vite, :3000).
+#    From a checkout/vendored copy of durable-streams/examples/test-ui:
+pnpm --filter @durable-streams/example-test-ui dev   # or: pnpm dev in that dir
+# open http://localhost:3000
+```
+
+The sidebar lists the live streams from `__registry__` — e.g.
+`firegrid-local.firegrid.host.<host>.workflow`,
+`…runtimeOutput.context.<contextId>`, `…runtime`, and the per-context
+`firegrid.runtime-context.state.<contextId>` rows. Click a stream to see its
+JSON rows update live; the runtime-context `…output.N.after.0.M` keys make the
+durable output-observation cursor visible as it advances.
+
+Notes:
+- The fixed `:4437` means only one embedded-server Firegrid process can run at a
+  time (production attaches to an explicit `DURABLE_STREAMS_BASE_URL` and is
+  unaffected). To inspect across restarts instead, run a standalone
+  durable-streams server on `:4437` and point the host at it with
+  `DURABLE_STREAMS_BASE_URL=http://localhost:4437`.
+- The test-ui is a generic durable-streams viewer, not Firegrid-aware: it shows
+  raw stream paths/rows, not Firegrid-semantic views.
+
 ## Full e2e traces through real agent runtimes
 
 There are three different meanings of "end-to-end" for real ACP, Claude, and
