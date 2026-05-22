@@ -1,8 +1,10 @@
-# SDD — `DurableOutputCursor`: replay-safe output observation primitive (tf-qk6h, Phase 0C)
+# SDD — `DurableOutputCursor`: replay-safe output observation bridge (tf-qk6h, Phase 0C)
 
 **Bead:** `tf-qk6h` (P0). Lane = primitive/design. **Not** lane 1's production
 hotfix (`tf-7kq8`), **not** lane 4's migration map.
-**Status:** design + prototype plan. No production patching in this lane.
+**Status:** superseded as target architecture; retained as the bridge/hotfix
+rationale for the dense raw-output replay storm. The target replacement is a
+workflow-owned sparse state-transition output log.
 **Inputs:** `docs/investigations/2026-05-21-phase0b-output-replay-oracle.md`
 (tf-q4uz oracle + spec, PR #609/#610),
 `docs/investigations/2026-05-21-live-acp-tool-call-triage.md` (the live P0),
@@ -12,12 +14,71 @@ hotfix (`tf-7kq8`), **not** lane 4's migration map.
 
 ---
 
+## §-1 2026-05-22 Reclassification
+
+This SDD correctly diagnosed the `tf-7kq8` replay storm and justified the
+bridge that made the dense raw-output stream safe enough to consume:
+
+```text
+raw agent output stream
+  -> durable loop state / cursor
+  -> runtime-context body point-walks output sequence
+```
+
+That is no longer the target architecture.
+
+The sharper source-read is `transitionOutputEvent` in
+`packages/runtime/src/workflow-engine/workflows/runtime-context.ts`. The runtime
+body only transitions on a sparse semantic subset of output observations:
+
+- `PermissionRequest` — correlate permission response or stash the request;
+- `ToolUse` when `agentProtocol !== "acp"` — dispatch tool execution;
+- `Terminated` — record exit evidence and end the runtime loop.
+
+`Ready`, `TextChunk`, `Status`, `Error`, and `TurnComplete` currently produce no
+runtime action beyond cursor advance. `TurnComplete` is not terminal for the
+runtime body; `Terminated` is.
+
+Therefore the dense-stream cursor is a bridge over a self-inflicted topology:
+the runtime state machine is reading producer/UI noise to find a few semantic
+transition triggers. The target is:
+
+```text
+raw output log
+  -> streaming UI / session clients / telemetry / debug
+
+workflow-owned output transition log
+  -> RuntimeContextWorkflow body
+```
+
+The appender/projector that observes raw output writes only body-relevant
+semantic facts to the workflow-owned transition log and owns the wake for the
+runtime-context workflow. This aligns the output side with the kernel-owned
+write+arm rule: write the fact the owner body cares about, arm the owner, and
+recover pending owned facts on restart. The runtime body must not consume the
+raw agent-output stream as target architecture.
+
+Consequences for this document:
+
+- Keep the no-scan, no-volatile-cursor, no-output-deferred guardrails as bridge
+  regression protection.
+- Do not treat `DurableOutputCursor` over the raw stream as the final Phase 0C
+  primitive.
+- Re-scope terminal prompt completion and route-completion work to bind to the
+  sparse transition/result log, not to raw-output cursoring or ACP edge-local
+  synthesis over `TurnComplete`.
+
+---
+
 ## §0 The load-bearing decision (read this first)
 
 > **The primitive is a workflow-owned durable table cursor advanced by output
 > sequence, whose `next()` is an O(1) point `get` at `position + 1` and whose
 > wait is an incremental tail re-derived from the durable cursor. It is NOT a
 > per-sequence `DurableDeferred` mail slot, and NOT an `Activity`-memoized read.**
+
+This was the correct bridge decision for the dense raw-output stream. It is not
+the target decision after the `transitionOutputEvent` source-read above.
 
 This is decisive — not a preference — because **three independent sources
 agree**, and a fourth (the substrate) makes it feasible with zero new

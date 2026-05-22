@@ -38,9 +38,10 @@ index anchors to:
   target host/runtime shape: edge → channel router → host kernel workflow →
   workflow-owned durable resources → child session workflows. It is the review
   oracle production migrations compare against, not a parallel API. Phase 0A is
-  the host/session resource + router baseline; **Phase 0B** is replay-safe
-  output observation — `tf-q4uz`/#609 (amplification oracle + `DurableOutputCursor`
-  primitive spec) and `tf-ly2g`/#610 (output-result oracle).
+  the host/session resource + router baseline; **Phase 0B** identified the
+  replay-amplification failure class and shipped a dense-stream cursor bridge.
+  The target replacement is a sparse workflow-owned output transition log: the
+  runtime body consumes only semantic transition triggers, not raw text chunks.
 - **Workflow-identity admission guard** — `tf-gomx`/#611. A static `Workflow.make`
   inventory plus a CI gate (`tooling/ast-grep/rules/workflow-make-inventory.yml`,
   `.semgrep.yml`): new production workflow identities must be owner-shaped and
@@ -75,9 +76,9 @@ Read in this order:
 10. `sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md` — the
    migration frame: the production DurableDeferred mailbox is a transitional
    bridge, not target architecture.
-11. `../investigations/2026-05-21-phase0b-output-replay-oracle.md` — the tf-7kq8
-   replay-amplification failure class and the `DurableOutputCursor` / O(outputs)
-   contract for Phase 0B output observation.
+11. `../sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` — the tf-7kq8
+   replay-amplification bridge, now superseded as target architecture by sparse
+   workflow-owned output transition logs.
 12. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
 13. `research/workflow-body-single-suspension-rule.md`
 14. `vision/factory-vision.md`
@@ -151,13 +152,13 @@ Read in this order:
 
 - `research/workflow-body-single-suspension-rule.md` — current workflow body
   authoring rule.
-- `../investigations/2026-05-21-phase0b-output-replay-oracle.md` —
-  **dispatchable for Phase 0B output observation.** Defines the `tf-7kq8`
-  replay-amplification failure class (output observation that scales O(resumes ×
-  history) instead of O(distinct outputs)), the `DurableOutputCursor` primitive
-  contract (durable position + journaled/memoized read), the O(outputs) trace
-  invariant, and additive constraints for `tf-ly2g`. Lanes implementing Phase 0B
-  output observation dispatch from this.
+- `../sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` — **bridge reference, not the
+  target.** Defines the `tf-7kq8` replay-amplification failure class and the
+  dense-stream cursor bridge that prevented O(resumes × history). Its 2026-05-22
+  addendum reclassifies the target as a sparse workflow-owned output transition
+  log.
+- `../investigations/2026-05-21-phase0b-output-replay-oracle.md` — historical
+  evidence for the replay-amplification failure and O(outputs) gate.
 - `research/tf-2y01-import-guardrails-baseline.md` — guardrail baseline.
 - `research/tf-ygz3-shim-retirement-iteration-4.FINDING.md` — why the remaining
   carveouts need real moves or consumer migration.
@@ -235,12 +236,11 @@ Read in this order:
   justification and a deliberate static-inventory entry; operation-shaped
   workflows already in production are **migration debt, not precedent** (feature
   `firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION`, `tf-gomx`/#611).
-- Output observation inside a workflow body is O(distinct outputs), never
-  O(resumes × history). The delivered cursor is durable workflow state
-  (reconstructed on replay, not re-derived by re-scanning) and the "observe next
-  output" read is a journaled/memoized step — the `DurableOutputCursor` shape.
-  The volatile-cursor + live-full-scan-on-replay shape is the `tf-7kq8` failure
-  class and must not be reintroduced.
+- Output observation inside a workflow body must not read the dense raw output
+  stream as target architecture. The landed durable cursor bridge prevents the
+  `tf-7kq8` O(resumes × history) replay storm, but the target is a sparse
+  workflow-owned transition log containing only body-relevant semantic triggers
+  such as permission requests, non-ACP tool uses, and termination.
 - Half-ships are allowed only in `packages/tiny-firegrid/`. Production package
   work must either complete the replacement, declare a temporary bridge with a
   blocking deletion/reconciliation bead, or remain explicitly open.
