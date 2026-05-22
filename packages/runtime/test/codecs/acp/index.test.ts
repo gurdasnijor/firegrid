@@ -3,7 +3,7 @@ import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
 import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
-import { Chunk, Context, Deferred, Effect, Fiber, Layer, Stream } from "effect"
+import { Chunk, Context, Deferred, Duration, Effect, Fiber, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import type { AgentOutputEvent } from "../../../src/agent-event-pipeline/events/index.ts"
 import type { AgentByteStream } from "../../../src/agent-event-pipeline/sources/byte-stream.ts"
@@ -670,6 +670,48 @@ describe("AcpSessionLive", () => {
       messageId: "prompt-2",
     })
     expect(result.staleResponse._tag).toBe("Right")
+  })
+
+  it("tf-90w5 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3 bounds the permission wait and resolves ACP as cancelled when no response arrives", async () => {
+    // The codec must never wait unboundedly on a PermissionDecision: a response
+    // that never arrives would otherwise hang the agent's requestPermission()
+    // until the opaque ~30s edge turn timeout. With a bounded wait and NO
+    // PermissionResponse delivered, requestPermission still resolves (cancelled)
+    // so ACP is always owed a response.
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const harness = yield* makeHarness
+          startAgent(harness, connection => new PermissionFixtureAgent(connection))
+          const session = yield* openSession(
+            harness.bytes,
+            { permissionResponseTimeout: Duration.millis(50) },
+            deterministicIdGenerator(),
+          )
+          // Deliberately never send a PermissionResponse — exercise the bound.
+          const fiber = yield* collectOutputs(session, 5).pipe(Effect.fork)
+          yield* session.send({
+            _tag: "Prompt",
+            correlationId: "prompt-timeout",
+            prompt: userMessage("edit config"),
+          })
+          return yield* Fiber.join(fiber)
+        }),
+      ),
+    )
+
+    expect(result[2]?._tag).toBe("PermissionRequest")
+    // The fixture echoes permission.outcome.outcome as the message text; a timed-
+    // out wait resolves to a Cancelled decision -> ACP "cancelled" outcome.
+    expect(result[3]?._tag).toBe("TextChunk")
+    if (result[3]?._tag === "TextChunk") {
+      expect(result[3].part.delta).toBe("cancelled")
+    }
+    expect(result[4]).toEqual({
+      _tag: "TurnComplete",
+      finishReason: "stop",
+      messageId: "prompt-timeout",
+    })
   })
 
   it("sends SDK session/cancel and maps cancelled prompt completion", async () => {

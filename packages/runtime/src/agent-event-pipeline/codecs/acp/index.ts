@@ -1,6 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
-import { Deferred, Effect, Layer, Match, Queue, Ref, Runtime, Stream } from "effect"
+import { Deferred, Duration, Effect, Layer, Match, Queue, Ref, Runtime, Stream } from "effect"
 import type {
   AgentCapabilities,
   AgentInputEvent,
@@ -17,6 +17,21 @@ import {
 
 const codec = "acp"
 
+// tf-90w5: the codec must never wait unboundedly on a PermissionDecision. A
+// response that never arrives (e.g. a dropped/observation-only edge, a torn-down
+// response plane) would otherwise hang the agent's `requestPermission` until the
+// opaque ~30s edge turn timeout. Bound the wait and resolve ACP with a typed
+// default so the invariant "ACP is always owed a response" holds even when no
+// decision is delivered — mirrors agent-adapters/acp/adapter.ts ("always reply
+// cancelled, even when we cannot notify a (gone) turn queue").
+//
+// This is a SAFETY NET under the edge turn timeout, not a human-approval UX
+// policy: it is generous, fires only when no decision arrives, and the host can
+// widen it via `AcpSessionOptions.permissionResponseTimeout` when wiring a real
+// human approval surface. It is independent of the edge auto-allow stopgap.
+const DEFAULT_PERMISSION_RESPONSE_TIMEOUT = Duration.seconds(20)
+const PERMISSION_TIMEOUT_DECISION: PermissionDecision = { _tag: "Cancelled" }
+
 export interface AcpMcpServerDeclaration {
   readonly name: string
   readonly server: {
@@ -32,6 +47,14 @@ export interface AcpMcpServerDeclaration {
 export interface AcpSessionOptions {
   readonly cwd?: string
   readonly mcpServers?: ReadonlyArray<AcpMcpServerDeclaration>
+  /**
+   * Upper bound on how long the codec waits for a PermissionDecision before it
+   * fails fast with a typed default (`Cancelled`) so ACP is always owed a
+   * response. Defaults to {@link DEFAULT_PERMISSION_RESPONSE_TIMEOUT}; a safety
+   * net under the edge turn timeout, widen it when a real human-approval surface
+   * is wired (tf-90w5).
+   */
+  readonly permissionResponseTimeout?: Duration.DurationInput
 }
 
 export const AcpCapabilities: AgentCapabilities = {
@@ -421,6 +444,9 @@ export const AcpSessionLive = (
       const pendingPermissions = yield* Ref.make<
         ReadonlyMap<string, Deferred.Deferred<PermissionDecision>>
       >(new Map())
+      const permissionResponseTimeout = Duration.decode(
+        options.permissionResponseTimeout ?? DEFAULT_PERMISSION_RESPONSE_TIMEOUT,
+      )
       const emitEffect = (event: AgentOutputEvent): Effect.Effect<void> =>
         Queue.offer(outputEvents, event).pipe(Effect.asVoid)
       const textDeltaId = (
@@ -456,7 +482,30 @@ export const AcpSessionLive = (
         permissionRequestId: string,
         deferred: Deferred.Deferred<PermissionDecision>,
       ): Effect.Effect<PermissionDecision> =>
+        // tf-90w5: bound the wait. A delivered decision wins; otherwise fail
+        // fast with a typed default (Cancelled) so `requestPermission` always
+        // resolves and ACP is never left hanging. The timeout branch is
+        // distinguished structurally (not by decision identity) so a genuine
+        // `Cancelled` response is never mislabeled as a timeout.
         Deferred.await(deferred).pipe(
+          Effect.map(decision => ({ decision, timedOut: false })),
+          Effect.timeoutTo({
+            duration: permissionResponseTimeout,
+            onSuccess: (resolved) => resolved,
+            onTimeout: () => ({ decision: PERMISSION_TIMEOUT_DECISION, timedOut: true }),
+          }),
+          Effect.tap(({ timedOut }) =>
+            timedOut
+              ? Effect.annotateCurrentSpan({
+                "firegrid.acp.permission_timed_out": true,
+                "firegrid.acp.permission_timeout_ms": Duration.toMillis(permissionResponseTimeout),
+              }).pipe(
+                Effect.zipRight(Effect.logWarning(
+                  "ACP permission wait timed out; defaulting to Cancelled so ACP receives a response",
+                ).pipe(Effect.annotateLogs("firegrid.acp.permission_request_id", permissionRequestId))),
+              )
+              : Effect.void),
+          Effect.map(({ decision }) => decision),
           Effect.ensuring(Ref.update(pendingPermissions, pending => {
             const next = new Map(pending)
             next.delete(permissionRequestId)
