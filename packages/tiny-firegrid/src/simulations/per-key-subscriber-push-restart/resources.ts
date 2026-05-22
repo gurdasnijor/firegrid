@@ -53,7 +53,6 @@ const EventRowSchema = Schema.Struct({
   identifier: "firegrid.tf4fy3.eventRow",
   title: "Per-key durable ordered fact",
 })
-type EventRow = Schema.Schema.Type<typeof EventRowSchema>
 
 // The per-key durable subscriber state container. This is the keyed durable
 // state — reconstructed from the table on every materialization, never threaded
