@@ -503,6 +503,12 @@ export const AcpSessionLive = (
               Effect.withSpan("firegrid.agent_event_pipeline.acp.permission_request", {
                 kind: "consumer",
                 attributes: {
+                  // tf-ykd5 (annotation batch C): permission gate — crosses the
+                  // authority/trust boundary. The PermissionRequest must remain
+                  // a durable observation resumable by PermissionResponse ingress
+                  // (not auto-granted by the base model path).
+                  "firegrid.seam.kind": "authority",
+                  "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.INGREDIENTS.4",
                   "firegrid.agent_output.tool_id": params.toolCall.toolCallId,
                 },
               }),
@@ -520,6 +526,12 @@ export const AcpSessionLive = (
               Effect.withSpan("firegrid.agent_event_pipeline.acp.session_update", {
                 kind: "consumer",
                 attributes: {
+                  // tf-ykd5 (annotation batch C): codec transform — decodes ACP
+                  // sessionUpdate frames into AgentOutputEvent flows. Pure
+                  // protocol→event conversion; the codec writes no durable rows
+                  // here (tool_call updates become durable observations downstream).
+                  "firegrid.seam.kind": "transform",
+                  "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.STAGES.3",
                   "firegrid.acp.session_update": params.update.sessionUpdate,
                 },
               }),
@@ -538,6 +550,13 @@ export const AcpSessionLive = (
         })).pipe(
           Effect.withSpan("firegrid.agent_event_pipeline.acp.initialize", {
             kind: "client",
+            attributes: {
+              // tf-ykd5 (annotation batch C): ACP protocol negotiation over the
+              // live process connection — scoped codec connection/negotiation
+              // state that does not survive session restart. Process boundary.
+              "firegrid.seam.kind": "process",
+              "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.STAGES.3-10",
+            },
           }),
         )
 
@@ -575,6 +594,11 @@ export const AcpSessionLive = (
           Effect.withSpan("firegrid.codec.sdk.call", {
             kind: "client",
             attributes: {
+              // tf-ykd5 (annotation batch C): the codec's newSession call into
+              // the public ACP SDK — process/network boundary to the agent,
+              // using public ACP protocol shapes (no custom dialect).
+              "firegrid.seam.kind": "process",
+              "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.STAGES.3-10",
               ...codecSdkCallAttributes(newSessionRequest, mcpServerDeclarations),
               "firegrid.codec.request_payload_hash": requestPayloadHash,
             },
@@ -630,6 +654,12 @@ export const AcpSessionLive = (
               Effect.withSpan("firegrid.agent_event_pipeline.acp.prompt", {
                 kind: "client",
                 attributes: {
+                  // tf-ykd5 (annotation batch C): send-side codec dispatch —
+                  // lowers an AgentInput Prompt onto the ACP prompt wire call;
+                  // resolves only after TurnComplete. Process boundary to the
+                  // agent; carries stable join attributes for wire correlation.
+                  "firegrid.seam.kind": "process",
+                  "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.STAGES.3-5",
                   "firegrid.acp.session_id": sessionId,
                   "firegrid.acp.prompt_id": event.correlationId,
                   "firegrid.acp.turn_id": event.correlationId,
@@ -674,6 +704,11 @@ export const AcpSessionLive = (
           Effect.withSpan("firegrid.agent_event_pipeline.acp.permission_response", {
             kind: "producer",
             attributes: {
+              // tf-ykd5 (annotation batch C): authority resolution — the codec
+              // resolves the pending ACP requestPermission promise from a
+              // delivered PermissionResponse input, closing the permission gate.
+              "firegrid.seam.kind": "authority",
+              "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3",
               "firegrid.agent_input.tag": event._tag,
             },
           }),

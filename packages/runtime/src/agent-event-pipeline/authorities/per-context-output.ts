@@ -62,6 +62,11 @@ const appendEventRow = (
     Effect.withSpan("firegrid.runtime_output.per_context.event.append", {
       kind: "producer",
       attributes: {
+        // tf-ykd5 (annotation batch C): durable commit of an agent-output row
+        // into RuntimeOutputTable.events — the single-authority commit seam for
+        // that table family.
+        "firegrid.seam.kind": "durability",
+        "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.AUTHORITIES.1",
         "firegrid.context.id": context.contextId,
         "firegrid.runtime.activity_attempt": row.activityAttempt,
         "firegrid.runtime.output.sequence": row.sequence,
@@ -147,6 +152,11 @@ export const makePerContextRuntimeAgentOutputAfterEvents = (
       Effect.withSpan("firegrid.runtime_output.per_context.agent_output.initial", {
         kind: "internal",
         attributes: {
+          // tf-ykd5 (annotation batch C): replay-path output-observation read.
+          // Must stay replay-safe / bounded O(outputs) (the tf-7kq8/tf-aseo
+          // storm invariant) — crosses the durability/replay seam.
+          "firegrid.seam.kind": "durability",
+          "firegrid.contract.id": "firegrid-workflow-driven-runtime.VALIDATION.10-1",
           "firegrid.context.id": source.contextId,
           "firegrid.runtime.activity_attempt": source.activityAttempt,
           "firegrid.runtime.output.after_sequence": source.afterSequence,
