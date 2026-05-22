@@ -36,7 +36,6 @@ import {
 import {
   RuntimeContextStateStore,
   RuntimeContextEventStateSchema,
-  initialRuntimeContextEventState,
   type RuntimeContextEventState,
   type PendingPermissionResponse,
 } from "../runtime-context-state.ts"
@@ -53,7 +52,6 @@ import {
 } from "./runtime-context-run.ts"
 import { agentInputEventFromRuntimeIngressRow } from "./runtime-ingress-transform.ts"
 import {
-  type RuntimeExitEvidence,
   type StartRuntimeResult,
   RuntimeContextWorkflowPayload,
   StartRuntimeResultSchema,
@@ -772,7 +770,7 @@ const handleRuntimeContextEvent = (
 const runMergedEventLoop = (
   context: RuntimeContext,
   activityAttempt: number,
-): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, RuntimeContextStateStore | unknown> =>
+) =>
   Effect.gen(function*() {
     const stateStore = yield* RuntimeContextStateStore
     // tf-aseo: reconstruct loop progress from the workflow-owned durable state

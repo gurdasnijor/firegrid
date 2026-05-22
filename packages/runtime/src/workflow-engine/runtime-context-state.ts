@@ -196,7 +196,6 @@ const stateTableLayer = (
   streamPrefix: HostStreamPrefix,
   contextId: string,
 ) =>
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer leaks `any`; the Layer capability boundary is the intended type.
   RuntimeContextStateTable.layer({
     streamOptions: streamOptions(config, stateStreamUrl(config, streamPrefix, contextId)),
   })
@@ -206,7 +205,6 @@ const outputTableLayer = (
   streamPrefix: HostStreamPrefix,
   contextId: string,
 ) =>
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer leaks `any`; the Layer capability boundary is the intended type.
   RuntimeOutputTable.layer({
     streamOptions: streamOptions(config, outputStreamUrl(config, streamPrefix, contextId)),
   })

@@ -21,7 +21,6 @@ import {
 import { encodeRuntimeAgentOutputEnvelope } from "../../src/agent-event-pipeline/events/index.ts"
 import {
   makeRuntimeIngressInputRow,
-  type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 import {
   initialRuntimeContextEventState,
