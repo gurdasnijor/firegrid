@@ -58,4 +58,3 @@ No production code changed. Did **not** touch input intents, the deferred mailbo
 ## Source index
 
 `packages/runtime/src/workflow-engine/workflows/runtime-context.ts` (`:357-364` state schema, `:393-398` init, `:621-676` permission transitions, `:708-757` sequence-keyed memoized transition activity, `:795-816` `completedRuntimeContextEvent`, `:863-894` `runMergedEventLoop`, `:126-134` body env, `:308-344` #612 memo'd `completedRuntimeOutput`); `packages/runtime/src/workflow-engine/internal/engine-runtime.ts` (`:175-245` resume, `:415-463` deferredResult/deferredDone); `packages/runtime/src/workflow-engine/internal/table.ts:81-84`; `packages/runtime/src/agent-event-pipeline/authorities/per-context-output.ts:46-155`; `packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts:346-366`; `packages/protocol/src/launch/table.ts:80-93,189-219`; `docs/sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` (§0, §2 Q1/Q4/Q5, §5).
-</content>
