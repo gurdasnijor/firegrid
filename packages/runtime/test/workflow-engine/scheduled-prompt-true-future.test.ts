@@ -4,7 +4,7 @@ import {
   runtimeControlPlaneStreamUrl,
   type RuntimeControlPlaneTableService,
 } from "@firegrid/protocol/launch"
-import { Clock, Duration, Effect, Fiber, Layer } from "effect"
+import { Clock, Data, Duration, Effect, Fiber, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   DurableStreamsWorkflowEngine,
@@ -114,6 +114,10 @@ const inspectEngine = async <A>(
 
 const SCHEDULE_WORKFLOW_NAME = "firegrid.agent_tools.schedule_me"
 
+class ClockWakeupTimeout extends Data.TaggedError("ClockWakeupTimeout")<{
+  readonly clockName: string
+}> {}
+
 const waitForClockWakeupRow = (clockName: string) =>
   Effect.gen(function* () {
     const table = yield* WorkflowEngineTable
@@ -127,7 +131,7 @@ const waitForClockWakeupRow = (clockName: string) =>
       )
       if (rows.length > 0) return
       if ((yield* Clock.currentTimeMillis) >= deadlineMs) {
-        return yield* Effect.fail(new Error(`timed out waiting for clock wakeup ${clockName}`))
+        return yield* new ClockWakeupTimeout({ clockName })
       }
       yield* Effect.sleep(Duration.millis(25))
     }
