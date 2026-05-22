@@ -54,6 +54,16 @@
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/host.ts",
       "line": 84
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/input-suspend-crash-recovery/workflow.ts",
+      "line": 62
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/input-suspend-crash-recovery/workflow.ts",
+      "line": 108
     }
   ]
 }

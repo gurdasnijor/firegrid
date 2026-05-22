@@ -40,7 +40,7 @@ export interface ClockProbeResult {
   readonly autoCompletedAfterRestart: boolean
 }
 
-export interface S1Runtime {
+interface S1Runtime {
   readonly runProbeA: Effect.Effect<ProbeResult, unknown>
   readonly runProbeB: Effect.Effect<ProbeResult, unknown>
   readonly runProbeC: Effect.Effect<ClockProbeResult, unknown>

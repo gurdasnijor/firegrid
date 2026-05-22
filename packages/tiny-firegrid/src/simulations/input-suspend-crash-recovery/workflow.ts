@@ -27,7 +27,7 @@ import { DurableTable } from "effect-durable-operators"
 // reconstruction — exactly what `DurableStreamsWorkflowEngine.test.ts`
 // VALIDATION.3/.5 exercise across `runWith` calls.
 
-export const now = (): string => new Date().toISOString()
+const now = (): string => new Date().toISOString()
 
 const InputRowSchema = Schema.Struct({
   key: Schema.String.pipe(DurableTable.primaryKey),
@@ -51,7 +51,7 @@ const ProcessedRowSchema = Schema.Struct({
   title: "S1 processed-input marker",
 })
 
-export class S1Table extends DurableTable("s1.input", {
+class S1Table extends DurableTable("s1.input", {
   inputs: InputRowSchema,
   processed: ProcessedRowSchema,
 }) {}
@@ -150,7 +150,7 @@ export interface GenerationUrls {
 // loose typing.
 type WakeGenerationCtx = WorkflowEngine.WorkflowEngine | WorkflowEngineTable | S1Table
 
-export interface WakeServices {
+interface WakeServices {
   readonly engineTable: WorkflowEngineTableService
   readonly inputTable: S1Table["Type"]
 }
