@@ -1,15 +1,15 @@
 import * as acp from "@agentclientprotocol/sdk"
-import { Effect } from "effect"
+import { Duration, Effect } from "effect"
 import { elicitationHarness } from "./harness.ts"
 import { elicitationPrompts, type ElicitationPrompt } from "./prompts.ts"
 
-// Backstop per-turn timeout. The edge's own turnTimeoutMs (30s) usually fires
-// first; this guards the case where a prompt() never settles.
-const PER_TURN_TIMEOUT_MS = 60_000
+// Backstop per-turn timeout via Effect's clock (no JS timer): the edge's own
+// turnTimeoutMs (30s) usually fires first; this guards a prompt() that never
+// settles, and keeps one hung turn from consuming the whole runner budget.
+const PER_TURN_TIMEOUT = Duration.seconds(60)
 
 interface TurnResult {
   readonly label: string
-  readonly ms: number
   readonly stopReason?: acp.StopReason
   readonly error?: string
   readonly text: string
@@ -73,52 +73,41 @@ class ElicitationClient implements acp.Client {
   }
 }
 
-const withTimeout = <A>(promise: Promise<A>, ms: number, label: string): Promise<A> =>
-  Promise.race([
-    promise,
-    new Promise<A>((_, reject) =>
-      setTimeout(() => reject(new Error(`turn timeout after ${ms}ms (${label})`)), ms)),
-  ])
-
-// One agent turn = one span. The prompt, stop reason, duration, streamed text,
-// and tool-call names land as span attributes, so the runner's captured trace
-// (and the DuckDB/OTLP bundle) is the transcript — no separate artifact file.
+// One agent turn = one span. The prompt label, stop reason, streamed text, and
+// tool-call names land as span attributes (the span's own duration captures
+// timing), so the runner's captured trace — and its DuckDB/OTLP bundle — is the
+// transcript; no separate artifact file.
 const runTurn = (
   connection: acp.ClientSideConnection,
   sessionId: string,
   prompt: ElicitationPrompt,
   client: ElicitationClient,
 ): Effect.Effect<TurnResult, never> =>
-  Effect.promise(async (): Promise<TurnResult> => {
-    client.beginTurn()
-    const start = Date.now()
-    let stopReason: acp.StopReason | undefined
-    let error: string | undefined
-    try {
-      const res = await withTimeout(
-        connection.prompt({ sessionId, prompt: [{ type: "text", text: prompt.text }] }),
-        PER_TURN_TIMEOUT_MS,
-        prompt.label,
-      )
-      stopReason = res.stopReason
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause)
-    }
-    return {
+  Effect.sync(() => client.beginTurn()).pipe(
+    Effect.zipRight(
+      Effect.tryPromise({
+        try: () => connection.prompt({ sessionId, prompt: [{ type: "text", text: prompt.text }] }),
+        catch: (cause) => cause,
+      }).pipe(Effect.timeout(PER_TURN_TIMEOUT)),
+    ),
+    Effect.map((response): TurnResult => ({
       label: prompt.label,
-      ms: Date.now() - start,
-      ...(stopReason === undefined ? {} : { stopReason }),
-      ...(error === undefined ? {} : { error }),
+      stopReason: response.stopReason,
       text: client.text(),
       toolCalls: client.toolCalls(),
-    }
-  }).pipe(
+    })),
+    Effect.catchAll((cause) =>
+      Effect.succeed<TurnResult>({
+        label: prompt.label,
+        error: cause instanceof Error ? cause.message : String(cause),
+        text: client.text(),
+        toolCalls: client.toolCalls(),
+      })),
     Effect.tap((result) =>
       Effect.annotateCurrentSpan({
         "firegrid.acp_elicitation.label": result.label,
         "firegrid.acp_elicitation.stop_reason": result.stopReason ?? "",
         "firegrid.acp_elicitation.error": result.error ?? "",
-        "firegrid.acp_elicitation.duration_ms": result.ms,
         "firegrid.acp_elicitation.tool_calls": result.toolCalls.join(","),
         // bounded: keep the trace readable
         "firegrid.acp_elicitation.text": result.text.slice(0, 2000),
@@ -134,19 +123,12 @@ interface ElicitationResult {
   readonly turns: ReadonlyArray<TurnResult>
 }
 
+// The host authorizes ANTHROPIC_API_KEY into the agent subprocess
+// (FiregridEnvBindingsFromEnv); if it is absent the agent fails to authenticate
+// and every turn records an error — surfaced in the trace rather than gated
+// here (reading process.env from a simulation is disallowed by repo policy).
 export const acpToolElicitationDriver: Effect.Effect<ElicitationResult, unknown> = Effect.gen(
   function*() {
-    if (
-      globalThis.process.env["ANTHROPIC_API_KEY"] === undefined ||
-      globalThis.process.env["ANTHROPIC_API_KEY"] === ""
-    ) {
-      return yield* Effect.fail(
-        new Error(
-          "acp-tool-elicitation requires ANTHROPIC_API_KEY in the environment (it drives a real claude-acp agent).",
-        ),
-      )
-    }
-
     const client = new ElicitationClient()
     const stream = acp.ndJsonStream(
       elicitationHarness.clientOutput,
