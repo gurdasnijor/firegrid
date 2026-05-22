@@ -6,7 +6,7 @@
     "forOfInPackageSourceCount": 0,
     "anyNoContextCastCount": 0,
     "nodeCryptoImportCount": 0,
-    "dataTaggedErrorDeclarationCount": 12,
+    "dataTaggedErrorDeclarationCount": 13,
     "newDurableStreamSiteCount": 0,
     "perCallLayerProvideSiteCount": 0,
     "effectOrDieSiteCount": 1
