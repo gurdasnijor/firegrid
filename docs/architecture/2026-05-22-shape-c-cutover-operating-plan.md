@@ -140,3 +140,44 @@ completion work.
   branch verification loop, and maintain the line-count report.
 - Greenfield deletion is allowed and expected. If deleting a wrong-shape module
   exposes a missing target capability, build the target capability directly.
+
+## Test Triage During Wave 1
+
+The existing tests are evidence, not architecture. Some tests encode the
+parked-body, deferred-mailbox, dense-output-scan, or workflow-local assumptions
+that this branch is deleting. Those tests must not force production code back
+into the wrong shape.
+
+Every failing test in a Wave 1 slice must be classified before the slice is
+ready:
+
+- **Target regression:** the test covers a public behavior or target contract
+  that still matters. Fix the code or the target test before merging the slice.
+- **Stale legacy assumption:** the test asserts an implementation detail of the
+  retiring shape. Rewrite it against the Shape C contract, or delete it in the
+  same PR with a note naming the replacement test or behavior.
+- **Pre-existing / unrelated failure:** the same test fails on
+  `origin/rearch/shape-c-cutover` without the slice. Record the command,
+  failure, and comparison evidence in the PR. Do not bend the slice to fix it
+  unless it blocks the final integration branch.
+
+Burden of proof:
+
+```text
+if a test passes on origin/rearch/shape-c-cutover and fails on the slice,
+the slice owns it.
+
+if a test fails on origin/rearch/shape-c-cutover and fails on the slice,
+the slice records the evidence and keeps moving unless the failure touches
+the slice's target contract.
+```
+
+Rules:
+
+- Do not add compatibility code only to satisfy a stale legacy test.
+- Do not leave stale tests skipped without a deletion/rewrite note in the PR.
+- Do not merge a final Wave 1 branch with unclassified failures.
+- Prefer rewriting public-behavior tests over deleting them; prefer deleting
+  internal implementation tests that only describe the retired shape.
+- `pnpm preflight` is the local pre-push gate. A red preflight is acceptable
+  only when the PR records the classification evidence above.
