@@ -1,6 +1,7 @@
 import * as acp from "@agentclientprotocol/sdk"
 import {
   HostContextsChannel,
+  HostPermissionRespondChannelTarget,
   HostSessionsCreateOrLoadChannelTarget,
   HostSessionsStartChannelTarget,
   SessionAgentOutputChannel,
@@ -395,8 +396,23 @@ class FiregridAcpStdioAgent implements acp.Agent {
       case "Status":
         // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6
         break
-      case "Ready":
       case "PermissionRequest":
+        // tf-46i4: ACP permission requests are request/response protocol
+        // messages. Dropping one leaves the codec waiting on its permission
+        // decision and deadlocks the live turn.
+        await this.run(
+          this.router.dispatch({
+            target: HostPermissionRespondChannelTarget,
+            verb: "call",
+            payload: {
+              contextId: output.contextId,
+              permissionRequestId: output.permissionRequestId,
+              decision: { _tag: "Allow" },
+            },
+          }),
+        )
+        break
+      case "Ready":
       case "TurnComplete":
       case "Error":
       case "Terminated":
