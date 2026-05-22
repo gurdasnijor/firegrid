@@ -33,8 +33,9 @@ import { Effect } from "effect"
  * counts them — see `docs/architecture/runtime-shrink-loop.md`.
  */
 
-/** Seam classification vocabulary (runtime-dynamics-map.md §4). */
-export type FiregridSeamKind =
+/** Seam classification vocabulary (runtime-dynamics-map.md §4). Internal: call
+ *  sites pass a string literal to {@link withActivityContract}. */
+type FiregridSeamKind =
   | "transform"
   | "authority"
   | "durability"
@@ -44,7 +45,7 @@ export type FiregridSeamKind =
   | "bridge_debt"
   | "relay"
 
-export interface ActivityContract {
+interface ActivityContract {
   readonly seamKind: FiregridSeamKind
   /**
    * A resolving `firegrid.contract.id`: an ACID token (declared in a
@@ -78,7 +79,7 @@ export const withActivityContract = <A extends Activity.Any>(
 }
 
 /** The contract attributes attached via {@link withActivityContract}, if any. */
-export const activityContractAttributes = (
+const activityContractAttributes = (
   activity: Activity.Any,
 ): Readonly<Record<string, string>> | undefined =>
   (activity as Activity.Any & ContractCarrier)[ContractAttributes]
