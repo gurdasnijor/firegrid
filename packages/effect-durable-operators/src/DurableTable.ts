@@ -97,7 +97,7 @@ export type DurableTableCollection<Row extends object> =
   TanStackCollection<Row, string>
 
 export type InsertOrGetResult<Row> =
-  | { readonly _tag: "Inserted" }
+  | { readonly _tag: "Inserted"; readonly offset: DurableStream.Offset }
   | { readonly _tag: "Found"; readonly row: Row }
 
 export interface CollectionFacade<Row extends object, Key> {
@@ -120,6 +120,14 @@ export interface CollectionFacade<Row extends object, Key> {
    *
    * This is not a lock, claim, mutex, semaphore, lease, or general
    * coordination primitive.
+   *
+   * On `Inserted` the result carries the durable-stream append `offset`: the
+   * row's arrival position in append order. For a per-stream collection it is a
+   * monotonic per-stream arrival sequence (distinct concurrent inserts receive
+   * distinct, lexicographically-ordered offsets). It is a read-only receipt of
+   * an already-assigned position — not a writable sequence and not a
+   * coordination token. `Found` carries no offset (a duplicate writes no event
+   * and reports no position).
    */
   readonly insertOrGet: (
     row: Row,
@@ -797,12 +805,22 @@ const makeFacade = <Row extends object, Key>(options: {
           })
           return {
             _tag: "Inserted",
+            // The durable-stream append position of THIS insert. Offsets are
+            // server-assigned in append order and zero-padded for total
+            // lexicographic order, so for a per-stream collection this is the
+            // row's arrival sequence (monotonic across concurrent inserts).
+            offset: result.offset,
           } satisfies InsertOrGetResult<Row>
         }
 
         // A duplicate producer response means no loser event was appended,
         // so there is no loser txid for awaitTxId. Wait narrowly for the
         // winning row to become visible in this materialized table handle.
+        // Found carries no offset: the duplicate (idempotent-fenced) response
+        // reports no append position (it wrote nothing), and the winning row's
+        // original arrival offset is not stored on the row. Callers that need
+        // the original arrival order must capture the Inserted offset at first
+        // write. (`result.offset` is empty here.)
         return {
           _tag: "Found",
           row: yield* Effect.tryPromise({
