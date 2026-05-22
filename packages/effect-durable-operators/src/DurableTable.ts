@@ -454,6 +454,11 @@ const runAction = (
     Effect.withSpan("firegrid.durable_table.action", {
       kind: "internal",
       attributes: {
+        // tf-a07s: durable schema-checked write (insert/upsert/delete lower
+        // here; awaits isPersisted). Invariant declared by SDD §"What
+        // DurableTable Actually Provides" — WRITES + schema-checked writes.
+        "firegrid.seam.kind": "storage-commit",
+        "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
         "firegrid.durable_table.name": tableName,
         "firegrid.durable_table.collection": collection.collectionKey,
         "firegrid.durable_table.durable_type": collection.durableType,
@@ -528,6 +533,12 @@ const appendInsertWithPrimaryKeyFence = (options: {
     Effect.withSpan("firegrid.durable_table.producer_append", {
       kind: "internal",
       attributes: {
+        // tf-a07s: durable append through the State Protocol producer
+        // identity (producerId/epoch/seq). Invariant declared by SDD §"What
+        // DurableTable Actually Provides" — primary-key fencing for
+        // idempotent producers.
+        "firegrid.seam.kind": "durable-append",
+        "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
         "firegrid.durable_table.collection": collection.collectionKey,
         "firegrid.durable_table.durable_type": collection.durableType,
         "firegrid.durable_table.primary_key": collection.primaryKey,
@@ -818,6 +829,13 @@ const makeFacade = <Row extends object, Key>(options: {
         Effect.withSpan("firegrid.durable_table.insert_or_get", {
           kind: "internal",
           attributes: {
+            // tf-a07s: first-writer-wins idempotent claim — duplicate
+            // producer resolves to the winning row, no loser append.
+            // Invariant declared by SDD §"What DurableTable Actually
+            // Provides" — primary-key fencing for idempotent producers
+            // (insertOrGet).
+            "firegrid.seam.kind": "claim-idempotency",
+            "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
             "firegrid.durable_table.name": tableName,
             "firegrid.durable_table.collection": collection.collectionKey,
             "firegrid.durable_table.durable_type": collection.durableType,
@@ -859,6 +877,11 @@ const makeFacade = <Row extends object, Key>(options: {
         Effect.withSpan("firegrid.durable_table.get", {
           kind: "internal",
           attributes: {
+            // tf-a07s: point read of current state from the materialized
+            // view (Option<Row>). Invariant declared by SDD §"What
+            // DurableTable Actually Provides" — READS / query current state.
+            "firegrid.seam.kind": "storage-read",
+            "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
             "firegrid.durable_table.name": tableName,
             "firegrid.durable_table.collection": collection.collectionKey,
             "firegrid.durable_table.durable_type": collection.durableType,
@@ -882,6 +905,11 @@ const makeFacade = <Row extends object, Key>(options: {
         Effect.withSpan("firegrid.durable_table.query", {
           kind: "internal",
           attributes: {
+            // tf-a07s: read query over the materialized read-only view.
+            // Invariant declared by SDD §"What DurableTable Actually
+            // Provides" — READS / query current state.
+            "firegrid.seam.kind": "storage-read",
+            "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
             "firegrid.durable_table.name": tableName,
             "firegrid.durable_table.collection": collection.collectionKey,
             "firegrid.durable_table.durable_type": collection.durableType,
@@ -1035,6 +1063,12 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
     Effect.withSpan("firegrid.durable_table.layer.acquire", {
       kind: "internal",
       attributes: {
+        // tf-a07s: scope-managed acquire of the DurableTable service (opens
+        // collections / preload on acquire, released with the scope).
+        // Invariant declared by SDD §"What DurableTable Actually Provides" —
+        // scope-managed acquire/release with preload on acquire.
+        "firegrid.seam.kind": "resource-acquire",
+        "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
         "firegrid.durable_table.namespace": table.namespace,
         "firegrid.durable_table.collection_count": table.collections.length,
       },
