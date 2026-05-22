@@ -8,12 +8,15 @@
  * connection without changing the codec API.
  */
 
-import type { Effect } from "effect"
+import type { Effect, Ref } from "effect"
+
+export type AgentByteStreamTraceAttributes = Record<string, unknown>
 
 export interface AgentByteStream {
   readonly stdin: WritableStream<Uint8Array>
   readonly stdout: ReadableStream<Uint8Array>
   readonly stderr: ReadableStream<Uint8Array>
+  readonly traceAttributes?: Ref.Ref<AgentByteStreamTraceAttributes>
   readonly exit: Effect.Effect<
     {
       readonly exitCode?: number

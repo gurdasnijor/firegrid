@@ -4,8 +4,8 @@ import {
   type CommandExecutor,
   type Process,
 } from "@effect/platform/CommandExecutor"
-import { Effect, Layer, Queue, Runtime, type Scope, Stream } from "effect"
-import type { AgentByteStream } from "../byte-stream.ts"
+import { Effect, Layer, Queue, Ref, Runtime, type Scope, Stream } from "effect"
+import type { AgentByteStream, AgentByteStreamTraceAttributes } from "../byte-stream.ts"
 import {
   type ExecutionResult,
   type ProcessOutputChunk,
@@ -161,13 +161,17 @@ const buildCommand = (
 const commandSpanAttributes = (
   sandbox: Sandbox,
   command: SandboxCommand,
-): Record<string, unknown> => ({
-  "firegrid.process.provider": providerName,
-  "firegrid.process.id": sandbox.id,
-  "firegrid.command.executable": command.argv[0] ?? "",
-  "firegrid.command.arg_count": command.argv.length,
-  "firegrid.command.stdin_configured": command.stdin !== undefined,
-})
+): AgentByteStreamTraceAttributes => {
+  const contextId = sandbox.labels.firegridRuntimeContextId
+  return {
+    "firegrid.process.provider": providerName,
+    "firegrid.process.id": sandbox.id,
+    "firegrid.command.executable": command.argv[0] ?? "",
+    "firegrid.command.arg_count": command.argv.length,
+    "firegrid.command.stdin_configured": command.stdin !== undefined,
+    ...(contextId === undefined ? {} : { "firegrid.context.id": contextId }),
+  }
+}
 
 // tf-ofq: Subprocess wire capture as OTel span attributes.
 //
@@ -198,11 +202,16 @@ const wireDecoder = new TextDecoder("utf-8", { fatal: false })
 const annotateWireChunk = (
   direction: "in" | "out" | "stderr",
   chunk: Uint8Array,
+  traceAttributes: Ref.Ref<AgentByteStreamTraceAttributes>,
 ): Effect.Effect<void> =>
-  Effect.annotateCurrentSpan({
-    [ATTR_WIRE_DIRECTION]: direction,
-    [ATTR_WIRE_BYTES]: chunk.byteLength,
-    [ATTR_WIRE_RAW]: wireDecoder.decode(chunk, { stream: true }),
+  Effect.gen(function* () {
+    const attributes = yield* Ref.get(traceAttributes)
+    yield* Effect.annotateCurrentSpan({
+      ...attributes,
+      [ATTR_WIRE_DIRECTION]: direction,
+      [ATTR_WIRE_BYTES]: chunk.byteLength,
+      [ATTR_WIRE_RAW]: wireDecoder.decode(chunk, { stream: true }),
+    })
   })
 
 // firegrid agent-io: convert an @effect/platform Process's Effect-shaped
@@ -212,10 +221,12 @@ const annotateWireChunk = (
 // WritableStream the caller writes into.
 const makeAgentByteStreamFromProcess = (
   process: Process,
+  baseTraceAttributes: AgentByteStreamTraceAttributes,
 ): Effect.Effect<AgentByteStream, SandboxProviderError, Scope.Scope> =>
   Effect.gen(function* () {
     const runtime = yield* Effect.runtime<never>()
     const runPromise = Runtime.runPromise(runtime)
+    const traceAttributes = yield* Ref.make(baseTraceAttributes)
     const stdinQueue = yield* Queue.unbounded<Uint8Array>()
     yield* Stream.fromQueue(stdinQueue, { shutdown: true }).pipe(
       Stream.run(process.stdin),
@@ -229,7 +240,7 @@ const makeAgentByteStreamFromProcess = (
         // out-of-band file. Mirrors the existing stdout/stderr shape.
         await runPromise(
           Effect.gen(function* () {
-            yield* annotateWireChunk("in", chunk)
+            yield* annotateWireChunk("in", chunk, traceAttributes)
             yield* Queue.offer(stdinQueue, chunk)
           }).pipe(
             Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.stdin_bytes", {
@@ -255,7 +266,7 @@ const makeAgentByteStreamFromProcess = (
     const stdout: ReadableStream<Uint8Array> = Stream.toReadableStreamRuntime(runtime)(
       process.stdout.pipe(
         Stream.tap(chunk =>
-          annotateWireChunk("out", chunk).pipe(
+          annotateWireChunk("out", chunk, traceAttributes).pipe(
             Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.stdout_bytes", {
               kind: "producer",
             }),
@@ -265,7 +276,7 @@ const makeAgentByteStreamFromProcess = (
     const stderr: ReadableStream<Uint8Array> = Stream.toReadableStreamRuntime(runtime)(
       process.stderr.pipe(
         Stream.tap(chunk =>
-          annotateWireChunk("stderr", chunk).pipe(
+          annotateWireChunk("stderr", chunk, traceAttributes).pipe(
             Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.stderr_bytes", {
               kind: "producer",
             }),
@@ -285,10 +296,11 @@ const makeAgentByteStreamFromProcess = (
         kind: "internal",
       }),
     )
-    return { stdin, stdout, stderr, exit } satisfies AgentByteStream
+    return { stdin, stdout, stderr, traceAttributes, exit } satisfies AgentByteStream
   }).pipe(
     Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.byte_stream", {
       kind: "internal",
+      attributes: baseTraceAttributes,
     }),
   )
 
@@ -398,7 +410,10 @@ const makeLocalProcessSandboxProvider = (
         ),
         (p) => p.kill().pipe(Effect.ignore),
       )
-      return yield* makeAgentByteStreamFromProcess(process)
+      return yield* makeAgentByteStreamFromProcess(
+        process,
+        commandSpanAttributes(sandbox, command),
+      )
     }).pipe(
       Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.open_byte_pipe", {
         kind: "producer",

@@ -76,6 +76,43 @@ rl.on("line", line => {
 })
 `
 
+const backingAcpAgentProgram = `
+import * as acp from "@agentclientprotocol/sdk"
+import { Readable, Writable } from "node:stream"
+
+class Agent {
+  constructor(connection) {
+    this.connection = connection
+  }
+  async initialize() {
+    return { protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: { loadSession: false } }
+  }
+  async newSession() {
+    return { sessionId: "backing-acp-session" }
+  }
+  async authenticate() {
+    return {}
+  }
+  async prompt(params) {
+    await this.connection.sessionUpdate({
+      sessionId: params.sessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "linked:" + params.messageId },
+      },
+    })
+    return { stopReason: "end_turn", userMessageId: params.messageId }
+  }
+  async cancel() {}
+}
+
+const stream = acp.ndJsonStream(
+  Writable.toWeb(process.stdout),
+  Readable.toWeb(process.stdin),
+)
+new acp.AgentSideConnection(connection => new Agent(connection), stream)
+`
+
 const textFromUpdates = (
   updates: ReadonlyArray<acp.SessionNotification>,
 ): ReadonlyArray<string> =>
@@ -449,4 +486,106 @@ describe("ACP stdio edge", () => {
       "firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7",
     )
   })
+
+  it("firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.9 links ACP edge prompt spans to subprocess byte spans", async () => {
+    const harness = makeInMemoryAcpHarness()
+    const namespace = `acp-edge-byte-link-${crypto.randomUUID()}`
+    const updates: Array<acp.SessionNotification> = []
+    const capturedSpans: Array<CapturedSpan> = []
+    const promptId = "host-sdk-acp-edge-trace-link"
+
+    const layer = AcpStdioEdgeLive({
+      input: harness.edgeInput,
+      output: harness.edgeOutput,
+      turnTimeoutMs: 10_000,
+      runtime: ({ request }) =>
+        local.jsonl({
+          argv: [
+            globalThis.process.execPath,
+            "--input-type=module",
+            "-e",
+            backingAcpAgentProgram,
+          ],
+          agent: "host-sdk-acp-edge-test-acp-agent",
+          agentProtocol: "acp",
+          cwd: request.cwd,
+        }),
+    }).pipe(
+      Layer.provideMerge(
+        FiregridLocalHostLive({
+          durableStreamsBaseUrl: baseUrl!,
+          namespace,
+          input: true,
+        }).pipe(
+          Layer.provide(FiregridLocalProcessFromEnv(globalThis.process.env)),
+        ),
+      ),
+      Layer.provideMerge(capturingTracerLayer(capturedSpans)),
+    )
+
+    await Effect.runPromise(Effect.scoped(
+      Effect.gen(function*() {
+        yield* Layer.build(layer)
+        const stream = acp.ndJsonStream(
+          harness.clientOutput,
+          harness.clientInput,
+        )
+        const connection = new acp.ClientSideConnection(
+          () => makeClient(updates),
+          stream,
+        )
+        yield* Effect.promise(() =>
+          connection.initialize({
+            protocolVersion: acp.PROTOCOL_VERSION,
+            clientCapabilities: {},
+          }))
+        const session = yield* Effect.promise(() =>
+          connection.newSession({
+            cwd: globalThis.process.cwd(),
+            mcpServers: [],
+          }))
+        const response = yield* Effect.promise(() =>
+          connection.prompt({
+            sessionId: session.sessionId,
+            messageId: promptId,
+            prompt: [{ type: "text", text: "trace linkage" }],
+          }))
+
+        expect(response.stopReason).toBe("end_turn")
+      }),
+    ))
+
+    const edgePromptSpan = capturedSpans.find(span =>
+      span.name === "firegrid.acp_stdio_edge.prompt" &&
+      span.attributes["firegrid.acp.client_prompt_id"] === promptId)
+    const contextId = edgePromptSpan?.attributes["firegrid.context.id"]
+    const turnId = edgePromptSpan?.attributes["firegrid.acp.turn_id"]
+    expect(typeof contextId).toBe("string")
+    expect(typeof turnId).toBe("string")
+    expect(edgePromptSpan?.attributes["firegrid.acp.prompt_id"]).toBe(turnId)
+    expect(edgePromptSpan?.attributes["firegrid.input.correlation_id"]).toBe(turnId)
+    expect(textFromUpdates(updates)).toEqual([`linked:${String(turnId)}`])
+
+    const codecPromptSpan = capturedSpans.find(span =>
+      span.name === "firegrid.agent_event_pipeline.acp.prompt" &&
+      span.attributes["firegrid.acp.prompt_id"] === turnId)
+    expect(codecPromptSpan?.attributes["firegrid.input.correlation_id"]).toBe(turnId)
+
+    const linkedByteSpans = capturedSpans.filter(span =>
+      (
+        span.name === "firegrid.agent_event_pipeline.source.local_process.stdin_bytes" ||
+        span.name === "firegrid.agent_event_pipeline.source.local_process.stdout_bytes"
+      ) &&
+      span.attributes["firegrid.acp.prompt_id"] === turnId)
+    expect(linkedByteSpans.map(span => span.name)).toEqual(
+      expect.arrayContaining([
+        "firegrid.agent_event_pipeline.source.local_process.stdin_bytes",
+        "firegrid.agent_event_pipeline.source.local_process.stdout_bytes",
+      ]),
+    )
+    expect(linkedByteSpans.every(span =>
+      span.attributes["firegrid.context.id"] === contextId &&
+      span.attributes["firegrid.acp.turn_id"] === turnId,
+    )).toBe(true)
+  }, 15_000)
 })

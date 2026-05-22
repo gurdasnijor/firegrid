@@ -582,6 +582,30 @@ export const AcpSessionLive = (
         )
       const sessionId = session.sessionId
 
+      const withPromptWireTraceAttributes = <A, E, R>(
+        promptId: string,
+        effect: Effect.Effect<A, E, R>,
+      ): Effect.Effect<A, E, R> => {
+        const traceAttributes = bytes.traceAttributes
+        if (traceAttributes === undefined) return effect
+        const promptAttributes = {
+          "firegrid.acp.session_id": sessionId,
+          "firegrid.acp.prompt_id": promptId,
+          "firegrid.acp.turn_id": promptId,
+          "firegrid.input.correlation_id": promptId,
+        }
+        return Effect.gen(function*() {
+          const previous = yield* Ref.get(traceAttributes)
+          yield* Ref.set(traceAttributes, {
+            ...previous,
+            ...promptAttributes,
+          })
+          return yield* effect.pipe(
+            Effect.ensuring(Ref.set(traceAttributes, previous)),
+          )
+        })
+      }
+
       const sendPrompt = (
         event: Extract<AgentInputEvent, { _tag: "Prompt" }>,
       ): Effect.Effect<void, AgentCodecError> =>
@@ -594,16 +618,21 @@ export const AcpSessionLive = (
           // subprocess wire capture (tf-ofq), which can also hash the
           // outbound system-message frame as the SDK sees it.
           const promptTextHash = yield* sha256Prefix(JSON.stringify(prompt))
-          yield* acpPromise("prompt", "ACP prompt failed", () =>
-            connection.prompt({
-              sessionId,
-              messageId: event.correlationId,
-              prompt,
-            })).pipe(
+          yield* withPromptWireTraceAttributes(
+            event.correlationId,
+            acpPromise("prompt", "ACP prompt failed", () =>
+              connection.prompt({
+                sessionId,
+                messageId: event.correlationId,
+                prompt,
+              })),
+          ).pipe(
               Effect.withSpan("firegrid.agent_event_pipeline.acp.prompt", {
                 kind: "client",
                 attributes: {
                   "firegrid.acp.session_id": sessionId,
+                  "firegrid.acp.prompt_id": event.correlationId,
+                  "firegrid.acp.turn_id": event.correlationId,
                   "firegrid.input.correlation_id": event.correlationId,
                   "firegrid.codec.prompt_text_hash": promptTextHash,
                   "firegrid.codec.prompt_part_count": prompt.length,
