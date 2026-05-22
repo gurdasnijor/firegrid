@@ -29,7 +29,7 @@ const ContextRowSchema = Schema.Struct({
   identifier: "firegrid.tinyPhase0C.contextRow",
   title: "Tiny Phase 0C runtime context row",
 })
-export type ContextRow = Schema.Schema.Type<typeof ContextRowSchema>
+type ContextRow = Schema.Schema.Type<typeof ContextRowSchema>
 
 const WorkflowInputRowSchema = Schema.Struct({
   inputKey: Schema.String.pipe(DurableTable.primaryKey),
@@ -55,9 +55,9 @@ const InputIdRowSchema = Schema.Struct({
   identifier: "firegrid.tinyPhase0C.inputIdRow",
   title: "Tiny Phase 0C workflow input idempotency row",
 })
-export type InputIdRow = Schema.Schema.Type<typeof InputIdRowSchema>
+type InputIdRow = Schema.Schema.Type<typeof InputIdRowSchema>
 
-export class TinyInputAppendWakeupTable extends DurableTable(
+class TinyInputAppendWakeupTable extends DurableTable(
   "tinyInputAppendWakeup",
   {
     contexts: ContextRowSchema,
@@ -134,7 +134,7 @@ export const tinyInputAppendRuntime = runtimeLatch.promise
 
 const now = (): string => new Date().toISOString()
 
-export const inputKeyFor = (
+const inputKeyFor = (
   ownedContextId: string,
   sequence: number,
 ): string => `${ownedContextId}/${sequence}`

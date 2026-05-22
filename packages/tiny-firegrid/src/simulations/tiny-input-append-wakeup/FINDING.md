@@ -21,14 +21,14 @@ Run:
 ```bash
 pnpm --filter @firegrid/tiny-firegrid typecheck
 pnpm --filter @firegrid/tiny-firegrid simulate:run -- tiny-input-append-wakeup
-pnpm --filter @firegrid/tiny-firegrid simulate:show -- 2026-05-22T00-39-02-368Z__tiny-input-append-wakeup
-pnpm --dir packages/tiny-firegrid exec tsx src/index.ts perf --finding-draft 2026-05-22T00-39-02-368Z__tiny-input-append-wakeup
+pnpm --filter @firegrid/tiny-firegrid simulate:show -- 2026-05-22T00-49-01-260Z__tiny-input-append-wakeup
+pnpm --dir packages/tiny-firegrid exec tsx src/index.ts perf --finding-draft 2026-05-22T00-49-01-260Z__tiny-input-append-wakeup
 ```
 
 Trace:
 
 ```text
-packages/tiny-firegrid/.simulate/runs/2026-05-22T00-39-02-368Z__tiny-input-append-wakeup/trace.jsonl
+packages/tiny-firegrid/.simulate/runs/2026-05-22T00-49-01-260Z__tiny-input-append-wakeup/trace.jsonl
 ```
 
 Verdict span:
@@ -73,7 +73,7 @@ Perf:
 
 ```text
 spans: 147
-window: 76.6ms
+window: 88.0ms
 idle gaps: (none above threshold)
 simulate:perf finding draft: no idle gaps exceeded 30000ms
 ```
