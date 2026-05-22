@@ -23,8 +23,10 @@ import {
   FiregridRuntimeHostWithWorkflowLive,
   appendRuntimeIngress,
 } from "../../src/host/index.ts"
+// sidecar/shape-c-input-facts: RuntimeContextInput retired with the
+// per-sequence DurableDeferred mailbox + dispatcher; the "reconciles durable
+// intents" test that exercised it is removed below.
 import {
-  RuntimeContextInput,
   RuntimeContextWorkflowRuntime,
 } from "@firegrid/runtime/kernel"
 
@@ -225,54 +227,12 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 runtime input intents", 
     expect(await readContextDeferredInputs({ baseUrl, namespace, hostId: hostA, contextId })).toEqual([])
   })
 
-  it("reconciles durable intents when the owning host-scoped engine starts", async () => {
-    if (!baseUrl) throw new Error("server not started")
-    const namespace = `prompt-routing-reconcile-${crypto.randomUUID()}`
-    const hostA = `host_A_${crypto.randomUUID()}` as HostId
-    const contextId = `ctx_${crypto.randomUUID()}`
-
-    await Effect.runPromise(
-      seedContext({ namespace, hostId: hostA, contextId }).pipe(
-        Effect.provide(controlPlaneLayer({ baseUrl, namespace })),
-        Effect.scoped,
-      ),
-    )
-    await Effect.runPromise(
-      runWithHost({ baseUrl, namespace, hostId: hostA }, appendRuntimeIngress({
-        contextId,
-        inputId: "input-reconcile",
-        kind: "message",
-        authoredBy: "client",
-        payload: "hello before engine",
-        idempotencyKey: "reconcile",
-      })),
-    )
-
-    await Effect.runPromise(
-      runWithHost(
-        { baseUrl, namespace, hostId: hostA },
-        Effect.gen(function*() {
-          const table = yield* RuntimeControlPlaneTable
-          const context = yield* table.contexts.get(contextId)
-          if (context._tag === "None") return yield* Effect.fail(new Error("missing context"))
-          const runtime = yield* RuntimeContextWorkflowRuntime
-          const input = yield* RuntimeContextInput
-          yield* runtime.ensureActive(context.value)
-          yield* input.reconcile(context.value)
-        }),
-      ),
-    )
-
-    expect((await readContextDeferredInputs({ baseUrl, namespace, hostId: hostA, contextId })).map(row => ({
-      inputId: row.inputId,
-      sequence: row.sequence,
-      status: row.status,
-    }))).toEqual([{
-      inputId: "input-reconcile",
-      sequence: 0,
-      status: "sequenced",
-    }])
-  })
+  // sidecar/shape-c-input-facts: the "reconciles durable intents when the
+  // owning host-scoped engine starts" test exercised the deleted
+  // RuntimeContextInput.reconcile / per-sequence DurableDeferred mailbox path.
+  // Shape C consumes inputIntents directly via RuntimeContextInputFacts; no
+  // host-scoped reconcile step exists. Replacement coverage lives in
+  // packages/runtime/test/agent-event-pipeline/runtime-context-input-facts.test.ts.
 
   it("dispatches session_prompt through the active local host-scoped engine", async () => {
     if (!baseUrl) throw new Error("server not started")

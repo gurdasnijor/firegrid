@@ -2,23 +2,8 @@
   "findings": [
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
-      "line": 83
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
-      "line": 129
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/scheduled-prompt.ts",
-      "line": 37
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 900
+      "line": 844
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
@@ -37,6 +22,11 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/runtime/src/workflow-engine/workflows/scheduled-prompt.ts",
+      "line": 37
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/workflow-engine/workflows/tool-call.ts",
       "line": 16
     },
@@ -44,26 +34,6 @@
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/workflow-engine/workflows/wait-for.ts",
       "line": 63
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/host.ts",
-      "line": 596
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/wait-for-workflow.ts",
-      "line": 63
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/phase0-wave-2b-stream-zip-restart-replay/host.ts",
-      "line": 575
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/host.ts",
-      "line": 84
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
@@ -76,16 +46,24 @@
       "line": 108
     },
     {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 204,
-      "note": "C4 admissible bridge exception: per-sequence DurableDeferred input mailbox is the workflow-engine bridge (tf-5cn1); RFC-conforming deletion targets tf-vrz6/tf-w6qj. docs/cannon/architecture/runtime-design-constraints.md \"Runtime Input Mailbox\"."
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/wait-for-workflow.ts",
+      "line": 63
     },
     {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 212,
-      "note": "C4 admissible bridge exception: per-sequence DurableDeferred input mailbox is the workflow-engine bridge (tf-5cn1); RFC-conforming deletion targets tf-vrz6/tf-w6qj. docs/cannon/architecture/runtime-design-constraints.md \"Runtime Input Mailbox\"."
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
+      "line": 83
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
+      "line": 129
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/host.ts",
+      "line": 84
     }
   ]
 }

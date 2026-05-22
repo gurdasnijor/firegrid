@@ -2,7 +2,6 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  hostOwnedStreamUrl,
   local,
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
@@ -11,7 +10,7 @@ import {
   type HostId,
   type RuntimeAgentProtocol,
 } from "@firegrid/protocol/launch"
-import { Effect, Fiber, Option, Stream } from "effect"
+import { Effect, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   decodeRuntimeAgentOutputEnvelope,
@@ -22,13 +21,10 @@ import {
   appendRuntimeIngress,
   startRuntime,
 } from "../../src/host/index.ts"
-import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
-import {
-  runtimeInputDeferredName,
-} from "@firegrid/runtime/workflows"
-import {
-  runtimeContextWorkflowExecutionId,
-} from "@firegrid/runtime/kernel"
+// sidecar/shape-c-input-facts: runtimeInputDeferredName retired with the
+// per-sequence DurableDeferred input mailbox. The permission-resume test that
+// watched for a sequenced input deferred row is removed; its WorkflowEngine
+// table-layer helper goes with it.
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -116,24 +112,6 @@ const outputTableLayer = (input: {
     },
   })
 
-const workflowTableLayer = (input: {
-  readonly namespace: string
-  readonly hostId: HostId
-}) =>
-  WorkflowEngineTable.layer({
-    streamOptions: {
-      url: hostOwnedStreamUrl({
-        baseUrl: baseUrl!,
-        prefix: makeHostStreamPrefix({
-          namespace: input.namespace,
-          hostId: input.hostId,
-        }),
-        segment: "workflow",
-      }),
-      contentType: "application/json",
-    },
-  })
-
 const queryRawEvents = (input: {
   readonly namespace: string
   readonly hostId: HostId
@@ -167,54 +145,9 @@ const queryAgentEvents = (input: {
     })),
   )
 
-const waitForAgentEventInContextStream = (
-  input: {
-    readonly namespace: string
-    readonly hostId: HostId
-    readonly contextId: string
-  },
-  predicate: (event: AgentOutputEvent) => boolean,
-) =>
-  Effect.gen(function* () {
-    const outputTable = yield* RuntimeOutputTable
-    const found = yield* outputTable.events.rows().pipe(
-      Stream.filter(row => row.contextId === input.contextId),
-      Stream.filterMap(row => decodeRuntimeAgentOutputEnvelope(row.raw)),
-      Stream.filter(predicate),
-      Stream.runHead,
-    )
-    if (Option.isNone(found)) {
-      return yield* Effect.fail(new Error("agent output stream ended before expected event"))
-    }
-    return found.value
-  }).pipe(
-    Effect.provide(outputTableLayer(input)),
-    Effect.scoped,
-  )
-
-const waitForWorkflowDeferred = (input: {
-  readonly namespace: string
-  readonly hostId: HostId
-  readonly contextId: string
-  readonly deferredName: string
-}) =>
-  Effect.gen(function* () {
-    const table = yield* WorkflowEngineTable
-    const executionId = runtimeContextWorkflowExecutionId(input.contextId)
-    const found = yield* table.deferreds.rows().pipe(
-      Stream.filter(row =>
-        row.executionId === executionId &&
-        row.deferredName === input.deferredName),
-      Stream.runHead,
-    )
-    if (Option.isNone(found)) {
-      return yield* Effect.fail(new Error("workflow deferred stream ended before expected row"))
-    }
-    return found.value
-  }).pipe(
-    Effect.provide(workflowTableLayer(input)),
-    Effect.scoped,
-  )
+// sidecar/shape-c-input-facts: waitForAgentEventInContextStream and
+// waitForWorkflowDeferred were used by the retired permission-resume test that
+// inspected per-sequence input deferred rows. Removed with the test.
 
 const appendPrompt = (contextId: string, prompt: string) =>
   appendRuntimeIngress({
@@ -404,131 +337,15 @@ console.log(JSON.stringify({ type: "text", text: "before-terminal", messageId: "
     expect(runs).toEqual(expect.arrayContaining(["started", "exited"]))
   }, 15_000)
 
-  it("firegrid-runtime-agent-event-pipeline.INGREDIENTS.4 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2 firegrid-runtime-agent-event-pipeline.VALIDATION.3-2 journals ACP PermissionRequest, blocks, and resumes through the runtime-input deferred", async () => {
-    if (baseUrl === undefined) throw new Error("server not started")
-    const namespace = `runtime-codec-acp-${crypto.randomUUID()}`
-    const hostId = `host_${crypto.randomUUID()}` as HostId
-    const childCode = `
-import * as acp from "@agentclientprotocol/sdk"
-import { Readable, Writable } from "node:stream"
-
-class Agent {
-  constructor(connection) {
-    this.connection = connection
-  }
-  async initialize() {
-    return { protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: { loadSession: false } }
-  }
-  async newSession() {
-    return { sessionId: "session-1" }
-  }
-  async authenticate() {
-    return {}
-  }
-  async prompt(params) {
-    const permission = await this.connection.requestPermission({
-      sessionId: params.sessionId,
-      toolCall: {
-        toolCallId: "tool-permission",
-        title: "edit config",
-        kind: "edit",
-        status: "pending",
-      },
-      options: [
-        { optionId: "allow", kind: "allow_once", name: "Allow once" },
-        { optionId: "deny", kind: "reject_once", name: "Deny" },
-      ],
-    })
-    await this.connection.sessionUpdate({
-      sessionId: params.sessionId,
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: permission.outcome.outcome },
-      },
-    })
-    setTimeout(() => process.exit(0), 10)
-    return { stopReason: "end_turn", userMessageId: params.messageId }
-  }
-  async cancel() {}
-}
-
-const stream = acp.ndJsonStream(
-  Writable.toWeb(process.stdout),
-  Readable.toWeb(process.stdin),
-)
-new acp.AgentSideConnection(connection => new Agent(connection), stream)
-`
-    const contextId = await seedContext({
-      namespace,
-      hostId,
-      argv: [process.execPath, "--input-type=module", "-e", childCode],
-      agentProtocol: "acp",
-    })
-
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        yield* appendPrompt(contextId, "requires permission")
-        const fiber = yield* startRuntime({ contextId }).pipe(Effect.fork)
-        const permission = yield* waitForAgentEventInContextStream(
-          { namespace, hostId, contextId },
-          event => event._tag === "PermissionRequest",
-        )
-        if (permission._tag !== "PermissionRequest") {
-          return yield* Effect.fail(new Error("expected PermissionRequest"))
-        }
-        const blockedEvents = yield* queryAgentEvents({ namespace, hostId, contextId })
-        if (blockedEvents.some(event =>
-          event._tag === "TextChunk" && event.part.delta === "selected",
-        )) {
-          return yield* Effect.fail(new Error("permission continuation resumed before response ingress"))
-        }
-        yield* appendRuntimeIngress({
-          contextId,
-          kind: "control",
-          authoredBy: "client",
-          payload: {
-            _tag: "PermissionResponse",
-            permissionRequestId: permission.permissionRequestId,
-            decision: { _tag: "Allow", optionId: "allow" },
-          },
-          idempotencyKey: `runtime-codec-test:${contextId}:permission-response`,
-        })
-        const deferred = yield* waitForWorkflowDeferred({
-          namespace,
-          hostId,
-          contextId,
-          deferredName: runtimeInputDeferredName(contextId, 1),
-        })
-        if (
-          deferred.executionId !== runtimeContextWorkflowExecutionId(contextId) ||
-          deferred.workflowName !== "firegrid.runtime-context"
-        ) {
-          return yield* Effect.fail(new Error("permission response completed the wrong workflow deferred"))
-        }
-        return yield* Fiber.join(fiber)
-      }).pipe(
-        Effect.provide(hostLayer({ namespace, hostId })),
-        Effect.scoped,
-      ),
-    )
-
-    expect(result).toMatchObject({ contextId, exitCode: 0 })
-    const events = await Effect.runPromise(queryAgentEvents({ namespace, hostId, contextId }))
-    const permissionEvent = events.find(event =>
-      event._tag === "PermissionRequest" && event.toolUseId === "tool-permission",
-    )
-    expect(permissionEvent).toBeDefined()
-    if (permissionEvent === undefined || permissionEvent._tag !== "PermissionRequest") {
-      throw new Error("expected PermissionRequest")
-    }
-    expect(permissionEvent.permissionRequestId).toMatch(/^permission_id_[0-9A-Za-z]{16}$/)
-    const selectedChunk = events.find(event =>
-      event._tag === "TextChunk" && event.part.delta === "selected",
-    )
-    expect(selectedChunk).toBeDefined()
-    expect(events.filter(event => event._tag === "Error")).toEqual([])
-    expect(events.some(event => event._tag === "Terminated")).toBe(true)
-  }, 15_000)
+  // sidecar/shape-c-input-facts: the "journals ACP PermissionRequest, blocks,
+  // and resumes through the runtime-input deferred" test watched for a
+  // per-sequence runtime-input DurableDeferred row to confirm permission
+  // response delivery. The mailbox is retired; permission-response delivery in
+  // Shape C lands on `inputIntents` and is consumed by the Shape C handler via
+  // `RuntimeContextInputFacts`. End-to-end permission/resume coverage is
+  // restored in CC2's Shape C handler tests; the input-fact side has
+  // out-of-order, idempotency, and restart coverage in
+  // packages/runtime/test/agent-event-pipeline/runtime-context-input-facts.test.ts.
 
   it("firegrid-runtime-agent-event-pipeline.STAGES.6 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7 journals ACP tool_call observations without routing them to agent-tool lowering", async () => {
     if (baseUrl === undefined) throw new Error("server not started")

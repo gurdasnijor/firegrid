@@ -30,12 +30,13 @@ export {
   type WaitForWorkflowOutcome,
   type WaitForWorkflowPayload,
 } from "./wait-for.ts"
+// sidecar/shape-c-input-facts: runtimeInputDeferredFor / runtimeInputDeferredName
+// retired with the per-sequence DurableDeferred mailbox. Shape C input flow
+// uses RuntimeContextInputFacts; the OLD body itself is CC2's deletion target.
 export {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,
   RuntimeContextWorkflowSession,
-  runtimeInputDeferredFor,
-  runtimeInputDeferredName,
   type RuntimeContextSessionCommand,
   type RuntimeContextSessionCommandAccepted,
   type RuntimeContextSessionStartedEvidence,

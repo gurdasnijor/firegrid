@@ -1,6 +1,6 @@
-export {
-  appendRuntimeInputDeferred,
-} from "./runtime-input-deferred.ts"
+// sidecar/shape-c-input-facts: appendRuntimeInputDeferred / runtime-input-deferred.ts
+// retired. Shape C consumes RuntimeContextInputFacts directly (see
+// agent-event-pipeline/authorities/runtime-context-input-facts.ts).
 export {
   makePerContextRuntimeContextStateStore,
   nextOutputObservation,

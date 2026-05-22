@@ -1,17 +1,10 @@
 import { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
-  RuntimeControlPlaneTable,
   hostOwnedStreamUrl,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import {
-  runtimeInputIntentToRuntimeIngressRequest,
-  type RuntimeIngressInputRow,
-  type RuntimeInputIntentRow,
-} from "@firegrid/protocol/runtime-ingress"
-import {
-  appendRuntimeInputDeferred,
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
 } from "@firegrid/runtime/workflow-engine"
@@ -20,11 +13,19 @@ import {
   mapRuntimeContextError,
   type RuntimeContextError,
 } from "@firegrid/runtime/errors"
-import { Context, Effect, Exit, Layer, Option, Ref, Scope, Stream, type Tracer } from "effect"
+import { Context, Effect, Exit, Layer, Option, Ref, Scope, type Tracer } from "effect"
 import { RuntimeHostConfig } from "./runtime-host-config.ts"
 import {
   runtimeContextWorkflowExecutionId,
 } from "./runtime-context-helpers.ts"
+
+// sidecar/shape-c-input-facts: RuntimeContextInput / RuntimeInputIntentDispatcher
+// were the workflow-engine bridge that sequenced producer intents into the
+// per-context DurableDeferred mailbox to wake a parked body. Shape C consumes
+// inputIntents directly via RuntimeContextInputFacts (no kernel sequencer, no
+// mailbox, no dispatcher fiber). The kernel runtime now only owns
+// host-scoped workflow-engine provisioning for the remaining Shape D
+// subscribers (tool-call, scheduled-prompt, wait-for).
 
 interface ActiveRuntimeContextExecution {
   readonly context: RuntimeContext
@@ -61,15 +62,6 @@ interface RuntimeContextWorkflowRuntimeService {
   readonly deregister: (contextId: string) => Effect.Effect<void>
 }
 
-interface RuntimeContextInputService {
-  readonly reconcile: (
-    context: RuntimeContext,
-  ) => Effect.Effect<void, RuntimeContextError>
-  readonly dispatchIntent: (
-    intent: RuntimeInputIntentRow,
-  ) => Effect.Effect<Option.Option<RuntimeIngressInputRow>, RuntimeContextError>
-}
-
 interface RuntimeContextCheckpointSourceService {
   readonly get: (
     contextId: string,
@@ -81,38 +73,15 @@ export class RuntimeContextWorkflowRuntime extends Context.Tag(
   "@firegrid/host-sdk/RuntimeContextWorkflowRuntime",
 )<RuntimeContextWorkflowRuntime, RuntimeContextWorkflowRuntimeService>() {}
 
-export class RuntimeContextInput extends Context.Tag(
-  "@firegrid/host-sdk/RuntimeContextInput",
-)<RuntimeContextInput, RuntimeContextInputService>() {}
-
 export class RuntimeContextCheckpointSource extends Context.Tag(
   "@firegrid/host-sdk/RuntimeContextCheckpointSource",
 )<RuntimeContextCheckpointSource, RuntimeContextCheckpointSourceService>() {}
 
-const runtimeInputIntentOrder = (
-  left: RuntimeInputIntentRow,
-  right: RuntimeInputIntentRow,
-) => {
-  const created = left.createdAt.localeCompare(right.createdAt)
-  return created === 0 ? left.intentId.localeCompare(right.intentId) : created
-}
-
-const provideActiveExecution = <A, E, R>(
-  handle: ActiveRuntimeContextExecution,
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E,
-  Exclude<Exclude<R, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>
-> =>
-  effect.pipe(
-    Effect.provideService(WorkflowEngine.WorkflowEngine, handle.engine),
-    Effect.provideService(WorkflowEngineTable, handle.table),
-  ) as Effect.Effect<
-    A,
-    E,
-    Exclude<Exclude<R, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>
-  >
+// sidecar/shape-c-input-facts: `provideActiveExecution` was the helper that
+// installed the host-scoped workflow engine for the deleted
+// `appendIntentToExecution` mailbox call. The remaining `run` call installs
+// the engine inline (Effect.provideService below) and `supportLayerWithHostEngine`
+// covers the Layer variant.
 
 const supportLayerWithHostEngine = <R>(
   handle: ActiveRuntimeContextExecution,
@@ -148,40 +117,10 @@ const deregisterActiveExecution = (
     }),
   )
 
-const appendIntentToExecution = (
-  handle: ActiveRuntimeContextExecution,
-  intent: RuntimeInputIntentRow,
-): Effect.Effect<RuntimeIngressInputRow, RuntimeContextError> =>
-  provideActiveExecution(
-    handle,
-    // firegrid-workflow-driven-runtime.BOUNDARIES.7-1
-    appendRuntimeInputDeferred(
-      runtimeInputIntentToRuntimeIngressRequest(intent),
-      handle.context,
-      intent._otel,
-    ),
-  ).pipe(
-    Effect.mapError(cause =>
-      asRuntimeContextError(
-        "runtime-context.input-intent.dispatch",
-        "failed dispatching runtime input intent to local host-scoped engine",
-        intent.contextId,
-        cause,
-      )),
-    Effect.withSpan("firegrid.host.runtime_context.input.append_intent", {
-      kind: "internal",
-      attributes: {
-        "firegrid.context.id": intent.contextId,
-        "firegrid.input.intent_id": intent.intentId,
-      },
-    }),
-  )
-
 export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
   Effect.gen(function*() {
     const config = yield* RuntimeHostConfig
     const hostSession = yield* CurrentHostSession
-    const control = yield* RuntimeControlPlaneTable
     const executions = yield* Ref.make(new Map<string, ActiveRuntimeContextExecution>())
     const engineScope = yield* Scope.make()
     // firegrid-workflow-driven-runtime.BOUNDARIES.6-1
@@ -303,65 +242,9 @@ export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
         Effect.map(map => Option.fromNullable(map.get(contextId))),
       )
 
-    const reconcile = (
-      context: RuntimeContext,
-    ): Effect.Effect<void, RuntimeContextError> =>
-      Effect.gen(function*() {
-        const handle = yield* ensureActiveHandle(context)
-        const intents = yield* control.inputIntents.query((coll) =>
-          coll.toArray
-            .filter(intent => intent.contextId === context.contextId)
-            .sort(runtimeInputIntentOrder)).pipe(
-          mapRuntimeContextError(
-            "runtime-context.input-intent.reconcile",
-            "failed reading runtime input intents for startup reconciliation",
-            context.contextId,
-          ),
-        )
-        yield* Effect.annotateCurrentSpan({
-          "firegrid.input.intent_count": intents.length,
-        })
-        yield* Effect.forEach(intents, intent => appendIntentToExecution(handle, intent), {
-          discard: true,
-        })
-      }).pipe(
-        Effect.withSpan("firegrid.host.runtime_context.input.reconcile", {
-          kind: "internal",
-          attributes: {
-            "firegrid.context.id": context.contextId,
-          },
-        }),
-      )
-
-    const dispatchIntent = (
-      intent: RuntimeInputIntentRow,
-    ): Effect.Effect<Option.Option<RuntimeIngressInputRow>, RuntimeContextError> =>
-      Effect.gen(function*() {
-        const handle = yield* get(intent.contextId)
-        if (Option.isNone(handle)) {
-          yield* Effect.annotateCurrentSpan({
-            "firegrid.runtime_context.engine.active": false,
-          })
-          return Option.none()
-        }
-        yield* Effect.annotateCurrentSpan({
-          "firegrid.runtime_context.execution.active": true,
-        })
-        return Option.some(yield* appendIntentToExecution(handle.value, intent))
-      }).pipe(
-        Effect.withSpan("firegrid.host.runtime_context.input.dispatch_intent", {
-          kind: "internal",
-          attributes: {
-            "firegrid.context.id": intent.contextId,
-            "firegrid.input.intent_id": intent.intentId,
-          },
-        }),
-      )
-
     const run: RuntimeContextWorkflowRuntimeService["run"] = options =>
       Effect.gen(function*() {
         const handle = yield* ensureActiveHandle(options.context)
-        yield* reconcile(options.context)
         yield* buildWorkflowSupport(
           options.workflowName,
           options.context.contextId,
@@ -393,37 +276,12 @@ export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
       run,
       deregister: contextId => deregisterActiveExecution(executions, contextId),
     }).pipe(
-      Context.add(RuntimeContextInput, {
-        reconcile,
-        dispatchIntent,
-      }),
       Context.add(RuntimeContextCheckpointSource, {
         get: checkpointGet,
         activeContextIds: Ref.get(executions).pipe(
           Effect.map(map => [...map.keys()]),
         ),
       }),
-    )
-  }),
-)
-
-export const RuntimeInputIntentDispatcherLive = Layer.scopedDiscard(
-  Effect.gen(function*() {
-    const table = yield* RuntimeControlPlaneTable
-    const input = yield* RuntimeContextInput
-    // firegrid-workflow-driven-runtime.BOUNDARIES.7
-    yield* table.inputIntents.rows().pipe(
-      Stream.withSpan("firegrid.host.runtime_input_intent.dispatcher", {
-        kind: "internal",
-      }),
-      Stream.runForEach(intent =>
-        input.dispatchIntent(intent).pipe(
-          Effect.catchAll(cause =>
-            Effect.logError("[host-sdk] runtime input intent dispatch failed").pipe(
-              Effect.annotateLogs({ contextId: intent.contextId, intentId: intent.intentId, cause }),
-            )),
-        )),
-      Effect.forkScoped,
     )
   }),
 )
