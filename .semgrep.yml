@@ -786,6 +786,11 @@ rules:
         - "/packages/runtime/src/agent-tools/mcp-host.ts"
         - "/packages/runtime/src/durable-tools/DurableToolsWaitFor.ts"
         - "/packages/runtime/src/durable-tools/internal/table.ts"
+        # tf-aseo: workflow-owned durable loop-state provider. Like the
+        # per-context output authority, it is provider internals — it owns the
+        # RuntimeContextStateStore capability and reads outputs by O(1) point
+        # `get` (no scan), never handing a table handle to the workflow body.
+        - "/packages/runtime/src/workflow-engine/runtime-context-state.ts"
     message: |
       Runtime-owned DurableTable service yielded outside provider internals or
       explicit host composition.
@@ -978,6 +983,10 @@ rules:
         - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
         - "/packages/runtime/src/durable-tools/internal/table.ts"
+        # tf-aseo: workflow-owned durable loop-state provider internals. It holds
+        # the per-context table services privately (cached, reused) and exposes
+        # only the RuntimeContextStateStore capability tag to the workflow body.
+        - "/packages/runtime/src/workflow-engine/runtime-context-state.ts"
     message: |
       Runtime production component accepts a runtime-owned DurableTable service.
       Use Effect capability tags instead.

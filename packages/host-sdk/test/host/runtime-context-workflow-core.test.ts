@@ -45,6 +45,9 @@ import { WorkflowEngine } from "@effect/workflow"
 import {
   appendRuntimeInputDeferred,
   DurableStreamsWorkflowEngine,
+  makePerContextRuntimeContextStateStore,
+  nextOutputObservation,
+  RuntimeContextStateStore,
   WorkflowEngineTable,
 } from "@firegrid/runtime/workflow-engine"
 import {
@@ -147,6 +150,31 @@ const testHostWideRuntimeAgentOutputAfterEventsLive = Layer.effect(
     })
   }),
 ).pipe(Layer.provide(RuntimeAgentOutputEventsLayer))
+
+// tf-aseo: these tests write outputs to a single host-wide RuntimeOutputTable
+// (above), whereas the production state store reads a per-context output
+// stream. Mirror the host-wide output double for the loop-state store: durable
+// load/save come from the production per-context `.state` stream (so state
+// survives the workflow restart), and the output point read goes through the
+// host-wide RuntimeOutputTable via the shared gap-skip walker.
+const testHostWideRuntimeContextStateStoreLive = Layer.scoped(
+  RuntimeContextStateStore,
+  Effect.gen(function*() {
+    const outputTable = yield* RuntimeOutputTable
+    const hostConfig = yield* RuntimeHostConfig
+    const hostSession = yield* CurrentHostSession
+    const durable = yield* makePerContextRuntimeContextStateStore(
+      { durableStreamsBaseUrl: hostConfig.durableStreamsBaseUrl },
+      hostSession.streamPrefix,
+    )
+    return RuntimeContextStateStore.of({
+      load: durable.load,
+      save: durable.save,
+      nextOutput: (context, activityAttempt, afterSequence) =>
+        nextOutputObservation(outputTable, context.contextId, activityAttempt, afterSequence),
+    })
+  }),
+)
 
 const outputRow = (input: {
   readonly contextId: string
@@ -339,6 +367,7 @@ const runtimeContextWorkflowTestLayer = (input: {
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(RuntimeAgentOutputEventsLayer),
     Layer.provideMerge(testHostWideRuntimeAgentOutputAfterEventsLive),
+    Layer.provideMerge(testHostWideRuntimeContextStateStoreLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: input.workflowUrl,
       ...(input.workerId === undefined ? {} : { workerId: input.workerId }),
@@ -945,6 +974,7 @@ describe("workflow-native runtime-context core", () => {
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
       Layer.provideMerge(RuntimeAgentOutputEventsLayer),
       Layer.provideMerge(testHostWideRuntimeAgentOutputAfterEventsLive),
+      Layer.provideMerge(testHostWideRuntimeContextStateStoreLive),
       Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
       Layer.provideMerge(RuntimeControlPlaneTable.layer({
         streamOptions: { url: controlUrl, contentType: "application/json" },

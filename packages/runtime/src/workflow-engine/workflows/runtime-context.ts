@@ -16,7 +16,6 @@ import {
   Context,
   Cause,
   Effect,
-  HashMap,
   Layer,
   Option,
   Predicate,
@@ -36,8 +35,11 @@ import {
   type RuntimeAgentOutputObservation,
 } from "../../agent-event-pipeline/events/index.ts"
 import {
-  RuntimeAgentOutputAfterEvents,
-} from "../../agent-event-pipeline/authorities/runtime-output-public.ts"
+  RuntimeContextStateStore,
+  RuntimeContextEventStateSchema,
+  type RuntimeContextEventState,
+  type PendingPermissionResponse,
+} from "../runtime-context-state.ts"
 import {
   RuntimeContextError,
   asRuntimeContextError,
@@ -51,8 +53,6 @@ import {
 } from "./runtime-context-run.ts"
 import { agentInputEventFromRuntimeIngressRow } from "./runtime-ingress-transform.ts"
 import {
-  RuntimeExitEvidence as RuntimeExitEvidenceSchema,
-  type RuntimeExitEvidence,
   type StartRuntimeResult,
   RuntimeContextWorkflowPayload,
   StartRuntimeResultSchema,
@@ -127,7 +127,7 @@ export class RuntimeContextWorkflowSession extends Context.Tag(
 export type RuntimeContextWorkflowExecutionEnv =
   | RuntimeContextRead
   | RuntimeRunAppendAndGet
-  | RuntimeAgentOutputAfterEvents
+  | RuntimeContextStateStore
   | RuntimeToolUseExecutor
   | RuntimeContextWorkflowSession
   | WorkflowEngine.WorkflowEngine
@@ -269,118 +269,9 @@ const RuntimeAgentOutputObservationSchema = Schema.Struct({
   toolName: Schema.optional(Schema.String),
 }) as unknown as Schema.Schema<RuntimeAgentOutputObservation>
 
-const runtimeOutputAfterSource = (
-  context: RuntimeContext,
-  activityAttempt: number,
-  afterSequence: number,
-) => ({
-  _tag: "AgentOutputAfter",
-  contextId: context.contextId,
-  activityAttempt,
-  afterSequence,
-} as const)
-
-// tf-7kq8 hotfix: replay-safe memo for the "next output after N" observation.
-//
-// `events.initial(afterSequence)` is a full output-table scan executed inside
-// the @effect/workflow body. The body re-executes on every workflow replay and
-// `runMergedEventLoop`'s cursor lives in a non-durable `Ref` that resets to
-// sequence -1 each replay, so the body re-walks the entire output history and
-// re-scans the table for every sequence on every resume — O(resumes × history
-// × rows). A live agent turn (many output chunks → many resumes) collapses into
-// the `agent_output.initial` storm and the turn never delivers TurnComplete
-// inside the edge's turn timeout (root cause line-pinned in
-// docs/investigations/2026-05-21-live-acp-tool-call-triage.md).
-//
-// The result of `initial(afterSequence)` is IMMUTABLE: the minimal output with
-// sequence > afterSequence does not change once it exists (outputs are appended
-// in monotonic sequence order). So a `Some` result can be memoized and reused on
-// every subsequent replay, turning the re-walk into O(1) cache hits and bounding
-// real table reads to O(distinct outputs). A `None` (caught-up frontier) is
-// never cached, so it always re-polls live and still observes new outputs.
-//
-// The memo `Ref` is created once at workflow registration (process scope) and
-// threaded down, so it survives the in-process replays the engine drives. This
-// is a deliberately narrow bridge; the durable replay-safe streaming consumer is
-// the lane-2 target (tf-ly2g).
-type RuntimeOutputObservationMemo = Ref.Ref<
-  HashMap.HashMap<string, RuntimeAgentOutputObservation>
->
-
-const runtimeOutputMemoKey = (
-  context: RuntimeContext,
-  activityAttempt: number,
-  afterSequence: number,
-): string => `${context.contextId}:${activityAttempt}:${afterSequence}`
-
-const completedRuntimeOutput = (
-  context: RuntimeContext,
-  activityAttempt: number,
-  afterSequence: number,
-  memo: RuntimeOutputObservationMemo,
-) =>
-  Effect.gen(function*() {
-    const memoKey = runtimeOutputMemoKey(context, activityAttempt, afterSequence)
-    const cached = HashMap.get(yield* Ref.get(memo), memoKey)
-    if (Option.isSome(cached)) {
-      // Replay-safe hit: skip the table scan AND the span, so the
-      // `agent_output.initial`/`output.completed` span count stays O(outputs).
-      return cached
-    }
-    // nosemgrep: firegrid-no-replay-path-output-scan -- tf-7kq8 memoized bridge: this live read runs only on a cache miss (immutable Some results cached above), so it is O(distinct outputs), not O(replays*history). To be replaced by DurableOutputCursor (tf-qk6h / SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE).
-    const events = yield* RuntimeAgentOutputAfterEvents
-    const result = yield* events.initial(runtimeOutputAfterSource(context, activityAttempt, afterSequence)).pipe(
-      Effect.mapError(cause =>
-        asRuntimeContextError(
-          "runtime-context.output.initial",
-          "failed checking initial runtime output observation",
-          context.contextId,
-          cause,
-        )),
-      Effect.withSpan("firegrid.runtime_context.workflow.output.completed", {
-        kind: "internal",
-        attributes: {
-          "firegrid.context.id": context.contextId,
-          "firegrid.runtime.activity_attempt": activityAttempt,
-          "firegrid.runtime.output.after_sequence": afterSequence,
-          // Seam classification (runtime-shrink contract-coverage, tf-mmh2):
-          // BRIDGE_DEBT, not a hardened contract. This is the tf-7kq8 memoized
-          // live output-after read inside the workflow body (see the memo note
-          // above) — load-bearing operationally but architecturally a stopgap.
-          // contract.id points at the RESHAPE TARGET it must move toward, not an
-          // invariant that legitimizes the current shape: the body-side scan is
-          // to be replaced by the workflow-owned DurableOutputCursor primitive.
-          // Do NOT harden this seam (no new deferred/engine bridge); reshape it.
-          "firegrid.seam.kind": "bridge_debt",
-          "firegrid.contract.id": "docs/sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md",
-        },
-      }),
-    )
-    if (Option.isSome(result)) {
-      yield* Ref.update(memo, HashMap.set(memoKey, result.value))
-    }
-    return result
-  })
-
 type RuntimeContextMergedEvent =
   | { readonly _tag: "Input"; readonly event: RuntimeIngressInputRow }
   | { readonly _tag: "Output"; readonly event: RuntimeAgentOutputObservation }
-
-const PendingPermissionResponseSchema = Schema.Struct({
-  permissionRequestId: Schema.String,
-  row: RuntimeIngressInputRowSchema,
-  event: AgentInputEventSchema,
-})
-type PendingPermissionResponse = Schema.Schema.Type<typeof PendingPermissionResponseSchema>
-
-const RuntimeContextEventStateSchema = Schema.Struct({
-  lastProcessedInputSequence: Schema.Number,
-  lastProcessedOutputSequence: Schema.Number,
-  pendingPermissionRequests: Schema.Array(Schema.String),
-  pendingPermissionResponses: Schema.Array(PendingPermissionResponseSchema),
-  exitEvidence: Schema.optional(RuntimeExitEvidenceSchema),
-})
-type RuntimeContextEventState = Schema.Schema.Type<typeof RuntimeContextEventStateSchema>
 
 const RuntimeContextTransitionActionSchema = Schema.Union(
   Schema.TaggedStruct("None", {}),
@@ -408,13 +299,6 @@ const RuntimeContextTransitionResultSchema = Schema.Struct({
 type RuntimeContextTransitionResult = Schema.Schema.Type<
   typeof RuntimeContextTransitionResultSchema
 >
-
-const initialRuntimeContextEventState: RuntimeContextEventState = {
-  lastProcessedInputSequence: -1,
-  lastProcessedOutputSequence: -1,
-  pendingPermissionRequests: [],
-  pendingPermissionResponses: [],
-}
 
 const toolExecutionFailed = (
   toolUseId: string,
@@ -620,7 +504,8 @@ const withPermissionResponse = (
   response,
 ]
 
-const transitionInputEvent = (
+// Exported for focused tests: pure state transition for an input event.
+export const transitionInputEvent = (
   state: RuntimeContextEventState,
   row: RuntimeIngressInputRow,
   event: AgentInputEvent,
@@ -665,7 +550,8 @@ const transitionInputEvent = (
   }
 }
 
-const transitionOutputEvent = (
+// Exported for focused tests: pure state transition for an output observation.
+export const transitionOutputEvent = (
   context: RuntimeContext,
   state: RuntimeContextEventState,
   output: RuntimeAgentOutputObservation,
@@ -833,7 +719,7 @@ const completedRuntimeContextEvent = (
   context: RuntimeContext,
   activityAttempt: number,
   state: RuntimeContextEventState,
-  memo: RuntimeOutputObservationMemo,
+  stateStore: RuntimeContextStateStore["Type"],
 ) =>
   Effect.gen(function*() {
     const input = yield* completedRuntimeInput(
@@ -843,11 +729,21 @@ const completedRuntimeContextEvent = (
     if (input !== undefined) {
       return Option.some<RuntimeContextMergedEvent>({ _tag: "Input", event: input })
     }
-    const output = yield* completedRuntimeOutput(
+    // Output observation is a durable-cursor point read at
+    // `lastProcessedOutputSequence + 1` (no live scan, no replay re-walk;
+    // tf-aseo / SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE INV-3).
+    const output = yield* stateStore.nextOutput(
       context,
       activityAttempt,
       state.lastProcessedOutputSequence,
-      memo,
+    ).pipe(
+      Effect.mapError(cause =>
+        asRuntimeContextError(
+          "runtime-context.output.cursor",
+          "failed reading next runtime output observation",
+          context.contextId,
+          cause,
+        )),
     )
     return Option.map(output, (event): RuntimeContextMergedEvent => ({ _tag: "Output", event }))
   })
@@ -909,17 +805,49 @@ const handleRuntimeContextEvent = (
 const runMergedEventLoop = (
   context: RuntimeContext,
   activityAttempt: number,
-  memo: RuntimeOutputObservationMemo,
-): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> =>
+) =>
   Effect.gen(function*() {
-    const stateRef = yield* Ref.make(initialRuntimeContextEventState)
-    let shouldContinue = true
+    const stateStore = yield* RuntimeContextStateStore
+    // tf-aseo: reconstruct loop progress from the workflow-owned durable state
+    // row with one point read. On replay/resume the body resumes from the saved
+    // cursors + pending-permission sets instead of re-walking the output
+    // history (the tf-7kq8 re-walk; SDD INV-1/INV-2).
+    const stateRef = yield* Ref.make(
+      yield* stateStore.load(context, activityAttempt).pipe(
+        Effect.mapError(cause =>
+          asRuntimeContextError(
+            "runtime-context.state.load",
+            "failed loading durable runtime-context loop state",
+            context.contextId,
+            cause,
+          )),
+      ),
+    )
+    const persistState = Effect.suspend(() =>
+      Ref.get(stateRef).pipe(
+        Effect.flatMap(current => stateStore.save(context, activityAttempt, current)),
+        Effect.mapError(cause =>
+          asRuntimeContextError(
+            "runtime-context.state.save",
+            "failed persisting durable runtime-context loop state",
+            context.contextId,
+            cause,
+          )),
+      ))
+    let shouldContinue = (yield* Ref.get(stateRef)).exitEvidence === undefined
     while (shouldContinue) {
       const state = yield* Ref.get(stateRef)
-      const completed = yield* completedRuntimeContextEvent(context, activityAttempt, state, memo)
+      const completed = yield* completedRuntimeContextEvent(context, activityAttempt, state, stateStore)
+      // Persist the advanced cursor + pending-permission sets at the suspension
+      // boundary (when no event is ready) BEFORE blocking, so a resume reloads
+      // progress with one point read instead of re-walking outputs. Side
+      // effects are all memoized activities, so re-running an unsaved tail after
+      // a crash is idempotent (tf-aseo durability/ordering invariant).
       const event = Option.isSome(completed)
         ? completed.value
-        : yield* awaitNextRuntimeContextEvent(context, state)
+        : yield* persistState.pipe(
+          Effect.zipRight(awaitNextRuntimeContextEvent(context, state)),
+        )
       shouldContinue = yield* handleRuntimeContextEvent(
         context,
         activityAttempt,
@@ -927,6 +855,7 @@ const runMergedEventLoop = (
         event,
       )
     }
+    yield* persistState
     const state = yield* Ref.get(stateRef)
     return state.exitEvidence ?? { exitCode: 0 }
   }).pipe(
@@ -941,7 +870,6 @@ const runMergedEventLoop = (
 
 const runWorkflowNativeRuntimeContext = (
   contextId: string,
-  memo: RuntimeOutputObservationMemo,
 ): Effect.Effect<StartRuntimeResult, RuntimeContextError, unknown> =>
   Effect.gen(function*() {
     const context = yield* readRuntimeContext(contextId)
@@ -953,7 +881,7 @@ const runWorkflowNativeRuntimeContext = (
       if (start._tag === "Failed") {
         return yield* writeRunFailedResult(context, activityAttempt, start.error)
       }
-      return yield* runMergedEventLoop(context, activityAttempt, memo)
+      return yield* runMergedEventLoop(context, activityAttempt)
     }).pipe(
       Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),
     )
@@ -988,14 +916,8 @@ export const RuntimeContextWorkflowNativeLayer = Layer.scopedDiscard(
     // gen, so it must re-provide the captured substrate. `never` was
     // only sound while `DurableTable.layer` leaked `any`.
     const captured = yield* Effect.context<RuntimeContextWorkflowExecutionEnv>()
-    // tf-7kq8: process-scoped memo for immutable "next output after N"
-    // observations, created once at registration so it survives the in-process
-    // workflow replays the engine drives. See `completedRuntimeOutput`.
-    const outputMemo: RuntimeOutputObservationMemo = yield* Ref.make(
-      HashMap.empty<string, RuntimeAgentOutputObservation>(),
-    )
     yield* engine.register(RuntimeContextWorkflowNative, ({ contextId }) =>
-      runWorkflowNativeRuntimeContext(contextId, outputMemo).pipe(
+      runWorkflowNativeRuntimeContext(contextId).pipe(
         Effect.provide(captured),
       ))
   }).pipe(
