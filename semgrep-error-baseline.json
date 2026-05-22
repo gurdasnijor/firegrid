@@ -3,7 +3,7 @@
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 926
+      "line": 927
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
