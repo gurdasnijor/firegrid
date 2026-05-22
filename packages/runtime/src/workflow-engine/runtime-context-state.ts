@@ -44,6 +44,46 @@ import {
 import { RuntimeExitEvidence as RuntimeExitEvidenceSchema } from "./workflows/runtime-context-run.ts"
 
 // ---------------------------------------------------------------------------
+// Sparse state-relevance predicate.
+//
+// `transitionOutputEvent` in `workflows/runtime-context.ts` reduces RuntimeContext
+// state for exactly THREE output kinds:
+//   - PermissionRequest                       (pending sets / rendezvous)
+//   - ToolUse, when agentProtocol !== "acp"   (RunToolUse dispatch)
+//   - Terminated                              (exitEvidence)
+// Every other output (TextChunk, Ready, TurnComplete, Status, Error, and ToolUse
+// under ACP) is inert with respect to the handler — it would just bump the
+// cursor and emit `action: None`. Today the body wraps EACH such inert
+// observation in a per-event `Activity.make` (durable memo row + span), which is
+// the dense-output cost the Shape C cutover is removing.
+//
+// This predicate is the single source of truth for "state-relevant"; the
+// next-output forward walker (see `nextOutputObservation`) skips non-relevant
+// observations so the body's handler is only invoked for the sparse subset
+// (constraints C2/C6; "RuntimeContext state no longer scans dense raw output
+// for transition progress" — `docs/architecture/2026-05-22-shape-c-cutover-baseline.md`).
+// `transitionOutputEvent` also carries a leading guard that mirrors this
+// predicate so the dual stays in sync at review time.
+//
+// Skipped (dense) rows REMAIN in the durable RuntimeOutputTable: UI/telemetry
+// and parent→child observation continue to read them through the route-backed
+// `sessionAgentOutputChannel` / `sessionAgentOutputObservationRoute` (C6 typed
+// source + cursor + match). The predicate filters only the RuntimeContext
+// handler's per-event invocation surface.
+// ---------------------------------------------------------------------------
+
+export const isStateRelevantOutputObservation = (
+  context: RuntimeContext,
+  observation: RuntimeAgentOutputObservation,
+): boolean => {
+  const event = observation.event
+  if (event._tag === "PermissionRequest") return true
+  if (event._tag === "ToolUse") return context.runtime.config.agentProtocol !== "acp"
+  if (event._tag === "Terminated") return true
+  return false
+}
+
+// ---------------------------------------------------------------------------
 // Loop state (moved from workflows/runtime-context.ts so the durable row and
 // the body share one schema source of truth).
 // ---------------------------------------------------------------------------
@@ -216,10 +256,21 @@ const outputTableLayer = (
  * collection is sparse: a sequence may hold a log row, or an event row that
  * doesn't decode to an observation. Distinguish a real frontier from such a gap
  * by also point-`get`-ing `logs`:
- *   - decodable event  -> deliver it (cursor advances to its sequence)
- *   - undecodable event -> skip forward
- *   - log row present   -> gap, skip forward
- *   - neither present   -> frontier, stop (Option.none)
+ *   - decodable + relevant event  -> deliver it (cursor advances to its sequence)
+ *   - decodable + non-relevant    -> skip forward (handler stays sparse)
+ *   - undecodable event           -> skip forward
+ *   - log row present             -> gap, skip forward
+ *   - neither present             -> frontier, stop (Option.none)
+ *
+ * `relevant` is an OPTIONAL handler-side predicate. When provided, decodable
+ * observations the handler would reduce to `action: None` (e.g. `TextChunk`,
+ * `Ready`, `TurnComplete`) are skipped during the forward walk so the body's
+ * per-event `Activity` never fires for them. Skipped rows REMAIN in the
+ * durable RuntimeOutputTable; UI/telemetry and the route-backed
+ * `sessionAgentOutputChannel` (parent→child / projection consumers) still
+ * observe the dense stream. Without a predicate, every decodable observation
+ * is returned (pre-cutover behavior, retained for callers that want the dense
+ * sequence).
  *
  * Exported so the workflow body's per-context store and the test host-wide
  * double share one gap-skip implementation over whichever RuntimeOutputTable
@@ -230,6 +281,7 @@ export const nextOutputObservation = (
   contextId: string,
   activityAttempt: number,
   afterSequence: number,
+  relevant?: (observation: RuntimeAgentOutputObservation) => boolean,
 ): Effect.Effect<Option.Option<RuntimeAgentOutputObservation>, unknown> =>
   Effect.map(
     Effect.iterate(
@@ -250,9 +302,16 @@ export const nextOutputObservation = (
             })
             if (Option.isSome(eventRow)) {
               const observation = runtimeAgentOutputObservationFromRow(eventRow.value)
-              return Option.isSome(observation)
-                ? { sequence: s.sequence, found: observation, done: true }
-                : { sequence: s.sequence + 1, found: Option.none<RuntimeAgentOutputObservation>(), done: false }
+              if (Option.isNone(observation)) {
+                return { sequence: s.sequence + 1, found: Option.none<RuntimeAgentOutputObservation>(), done: false }
+              }
+              if (relevant !== undefined && !relevant(observation.value)) {
+                // Dense inert observation: skip forward without invoking the
+                // RuntimeContext handler. The row stays in the table for
+                // UI/telemetry/parent→child observation through the route.
+                return { sequence: s.sequence + 1, found: Option.none<RuntimeAgentOutputObservation>(), done: false }
+              }
+              return { sequence: s.sequence, found: observation, done: true }
             }
             const logRow = yield* outputTable.logs.get({
               contextId,
@@ -345,7 +404,20 @@ export const makePerContextRuntimeContextStateStore = (
         ),
       nextOutput: (context, activityAttempt, afterSequence) =>
         Effect.flatMap(tablesFor(context.contextId), ({ outputTable }) =>
-          nextOutputObservation(outputTable, context.contextId, activityAttempt, afterSequence)).pipe(
+          nextOutputObservation(
+            outputTable,
+            context.contextId,
+            activityAttempt,
+            afterSequence,
+            // Shape C sparse consumption: the body's handler is only invoked
+            // for state-relevant observations. Dense inert rows (TextChunk,
+            // Ready, TurnComplete, Status, Error, ACP-side ToolUse) are
+            // skipped during the forward walk — they remain in the table for
+            // UI/telemetry and parent→child route-backed observation
+            // (`sessionAgentOutputChannel`), but never become per-event
+            // RuntimeContext Activities.
+            observation => isStateRelevantOutputObservation(context, observation),
+          )).pipe(
           Effect.withSpan("firegrid.runtime_context.workflow.output.cursor.next", {
             kind: "internal",
             attributes: {
@@ -354,6 +426,9 @@ export const makePerContextRuntimeContextStateStore = (
               // INV-3: the read is a point lookup at position+1, never a scan.
               "firegrid.runtime.output.read_indexed": true,
               "firegrid.runtime.output.after_sequence": afterSequence,
+              // Shape C cutover: the cursor walker now also skips state-irrelevant
+              // (dense inert) observations so the per-event handler stays sparse.
+              "firegrid.runtime.output.sparse_filter": true,
               // Seam classification (runtime-shrink contract-coverage): this is
               // the REALIZED reshape target the tf-7kq8 memoized body-side scan
               // pointed at (it carried seam.kind=bridge_debt → contract.id=this
