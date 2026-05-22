@@ -40,6 +40,7 @@ components:
       6: ACP protocol-status observations from a backing ACP runtime are handled as protocol events by the edge and are not projected to the ACP client as assistant text chunks.
       7: The production ACP stdio edge emits Effect spans for ACP initialize, newSession, and prompt requests with bounded protocol/session attributes and no prompt or credential payload attributes.
       8: ACP stdio edge handling of RuntimeAgentOutputObservation tags is exhaustive; every tag is intentionally forwarded, answered, treated as terminal, or no-oped.
+      9: ACP stdio edge prompt spans, ACP codec prompt spans, and subprocess byte-stream spans expose stable context, prompt, or turn attributes so operator traces can join a prompt turn to raw wire evidence without wall-clock correlation.
 
   CLI_HELPER:
     requirements:

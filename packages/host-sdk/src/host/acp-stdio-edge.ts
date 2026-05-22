@@ -8,6 +8,7 @@ import {
   SessionPromptChannelTarget,
 } from "@firegrid/protocol/channels"
 import type { PublicLaunchRuntimeIntent } from "@firegrid/protocol/launch"
+import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 import { HostPlaneChannelRouter } from "@firegrid/runtime/channels"
 import { Clock, Context, Duration, Effect, Layer, Option, Runtime, Stream } from "effect"
@@ -223,11 +224,17 @@ class FiregridAcpStdioAgent implements acp.Agent {
     if (session === undefined) {
       return reject(`unknown ACP session ${params.sessionId}`)
     }
+    const clientPromptId = params.messageId ?? `acp-prompt-${crypto.randomUUID()}`
+    const turnId = runtimeIngressInputIdForIdempotencyKey(session.contextId, clientPromptId)
 
     return this.run(
       Effect.gen(function*() {
         yield* Effect.annotateCurrentSpan({
           "firegrid.context.id": session.contextId,
+          "firegrid.acp.client_prompt_id": clientPromptId,
+          "firegrid.acp.prompt_id": turnId,
+          "firegrid.acp.turn_id": turnId,
+          "firegrid.input.correlation_id": turnId,
         })
         // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.3
         yield* router.dispatch({
@@ -237,7 +244,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
             sessionId: session.contextId,
             prompt: {
               payload: promptText(params),
-              idempotencyKey: params.messageId ?? `acp-prompt-${crypto.randomUUID()}`,
+              idempotencyKey: clientPromptId,
             },
           },
         })
@@ -264,6 +271,10 @@ class FiregridAcpStdioAgent implements acp.Agent {
           attributes: {
             "firegrid.acid": "firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7",
             "firegrid.acp.session_id": params.sessionId,
+            "firegrid.acp.client_prompt_id": clientPromptId,
+            "firegrid.acp.prompt_id": turnId,
+            "firegrid.acp.turn_id": turnId,
+            "firegrid.input.correlation_id": turnId,
             "firegrid.acp.message_id_present": params.messageId !== undefined && params.messageId !== null,
             "firegrid.acp.prompt_part_count": params.prompt.length,
           },
