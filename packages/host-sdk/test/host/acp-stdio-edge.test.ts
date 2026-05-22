@@ -1,7 +1,29 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { local } from "@firegrid/protocol/launch"
-import { Effect, Layer, Tracer } from "effect"
+import {
+  HostContextsChannel,
+  HostContextsChannelTarget,
+  HostPermissionRespondChannelTarget,
+  HostSessionsCreateOrLoadChannelTarget,
+  HostSessionsStartChannelTarget,
+  makeIngressChannel,
+  SessionAgentOutputChannel,
+  SessionAgentOutputChannelTarget,
+  SessionPromptChannelTarget,
+  UnknownChannelTarget,
+} from "@firegrid/protocol/channels"
+import {
+  HostIdSchema,
+  local,
+  makeHostStreamPrefix,
+  normalizeRuntimeIntent,
+  RuntimeContextSchema,
+} from "@firegrid/protocol/launch"
+import { FiregridRuntimeObservationSourceNames } from "@firegrid/protocol/observations"
+import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
+import { RuntimeAgentOutputObservationSchema } from "@firegrid/protocol/session-facade"
+import { HostPlaneChannelRouter } from "@firegrid/runtime/channels"
+import { Effect, Layer, Schema, Stream, Tracer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   AcpStdioEdgeLive,
@@ -79,6 +101,71 @@ const makeClient = (
   }),
 })
 
+const fakeRuntimeContext = (contextId: string) =>
+  Schema.decodeUnknownSync(RuntimeContextSchema)({
+    contextId,
+    createdAt: new Date(0).toISOString(),
+    runtime: normalizeRuntimeIntent(local.jsonl({
+      argv: [globalThis.process.execPath, "-e", ""],
+      agent: "fake-agent",
+      agentProtocol: "stdio-jsonl",
+      cwd: globalThis.process.cwd(),
+    })),
+    host: {
+      hostId: Schema.decodeUnknownSync(HostIdSchema)("host-test"),
+      streamPrefix: makeHostStreamPrefix({
+        namespace: "test",
+        hostId: Schema.decodeUnknownSync(HostIdSchema)("host-test"),
+      }),
+      boundAtMs: 0,
+    },
+  })
+
+const permissionRequestOutput = (
+  contextId: string,
+): RuntimeAgentOutputObservation =>
+  Schema.decodeUnknownSync(RuntimeAgentOutputObservationSchema)({
+    _tag: "PermissionRequest",
+    source: FiregridRuntimeObservationSourceNames.agentOutputEvents,
+    sessionId: contextId,
+    contextId,
+    activityAttempt: 1,
+    sequence: 0,
+    permissionRequestId: "permission-test",
+    toolUseId: "tool-test",
+    options: [{
+      optionId: "allow-once",
+      kind: "allow_once",
+      name: "Allow once",
+    }],
+    event: {
+      _tag: "PermissionRequest",
+      permissionRequestId: "permission-test",
+      toolUseId: "tool-test",
+      options: [{
+        optionId: "allow-once",
+        kind: "allow_once",
+        name: "Allow once",
+      }],
+    },
+  })
+
+const turnCompleteOutput = (
+  contextId: string,
+): RuntimeAgentOutputObservation =>
+  Schema.decodeUnknownSync(RuntimeAgentOutputObservationSchema)({
+    _tag: "TurnComplete",
+    source: FiregridRuntimeObservationSourceNames.agentOutputEvents,
+    sessionId: contextId,
+    contextId,
+    activityAttempt: 1,
+    sequence: 1,
+    event: {
+      _tag: "TurnComplete",
+      finishReason: "stop",
+    },
+  })
+
 interface CapturedSpan {
   readonly name: string
   readonly attributes: Record<string, unknown>
@@ -119,6 +206,120 @@ const capturingTracerLayer = (
 }
 
 describe("ACP stdio edge", () => {
+  it("tf-46i4 answers PermissionRequest observations through host.permissions.respond so ACP tool calls cannot deadlock silently", async () => {
+    const harness = makeInMemoryAcpHarness()
+    const contextId = `ctx-${crypto.randomUUID()}`
+    const dispatched: Array<{ readonly target: string; readonly verb: string; readonly payload: unknown }> = []
+    const layer = AcpStdioEdgeLive({
+      input: harness.edgeInput,
+      output: harness.edgeOutput,
+      turnTimeoutMs: 1_000,
+      runtime: local.jsonl({
+        argv: [globalThis.process.execPath, "-e", backingAgentProgram],
+        agent: "host-sdk-acp-edge-test-agent",
+        agentProtocol: "stdio-jsonl",
+        cwd: globalThis.process.cwd(),
+      }),
+    }).pipe(
+      Layer.provideMerge(
+        Layer.succeed(HostPlaneChannelRouter, {
+          descriptor: { routes: [], metadata: [] },
+          metadata: [],
+          route: target => Effect.fail(new UnknownChannelTarget({ target: String(target) })),
+          dispatch: request =>
+            Effect.sync(() => {
+              dispatched.push({
+                target: String(request.target),
+                verb: request.verb,
+                payload: request.payload,
+              })
+              switch (String(request.target)) {
+                case String(HostSessionsCreateOrLoadChannelTarget):
+                  return { contextId, sessionId: contextId }
+                case String(SessionPromptChannelTarget):
+                  return { accepted: true }
+                case String(HostSessionsStartChannelTarget):
+                  return { accepted: true }
+                case String(HostPermissionRespondChannelTarget):
+                  return { accepted: true }
+                default:
+                  throw new Error(`unexpected dispatch target ${String(request.target)}`)
+              }
+            }),
+        } satisfies HostPlaneChannelRouter["Type"]),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(
+          HostContextsChannel,
+          makeIngressChannel({
+            target: HostContextsChannelTarget,
+            schema: RuntimeContextSchema,
+            stream: Stream.make(fakeRuntimeContext(contextId)),
+          }),
+        ),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(SessionAgentOutputChannel, {
+          forContext: () =>
+            makeIngressChannel({
+              target: SessionAgentOutputChannelTarget,
+              schema: RuntimeAgentOutputObservationSchema,
+              stream: Stream.make(
+                permissionRequestOutput(contextId),
+                turnCompleteOutput(contextId),
+              ),
+            }),
+        } satisfies SessionAgentOutputChannel["Type"]),
+      ),
+    )
+
+    await Effect.runPromise(Effect.scoped(
+      Effect.gen(function*() {
+        yield* Layer.build(layer)
+        const stream = acp.ndJsonStream(
+          harness.clientOutput,
+          harness.clientInput,
+        )
+        const connection = new acp.ClientSideConnection(
+          () => makeClient([]),
+          stream,
+        )
+        yield* Effect.promise(() =>
+          connection.initialize({
+            protocolVersion: acp.PROTOCOL_VERSION,
+            clientCapabilities: {},
+          }))
+        const session = yield* Effect.promise(() =>
+          connection.newSession({
+            cwd: globalThis.process.cwd(),
+            mcpServers: [],
+          }))
+        const prompt = yield* Effect.promise(() =>
+          connection.prompt({
+            sessionId: session.sessionId,
+            messageId: "host-sdk-acp-edge-permission",
+            prompt: [{ type: "text", text: "run a tool" }],
+          }))
+
+        expect(prompt.stopReason).toBe("end_turn")
+      }),
+    ))
+
+    expect(dispatched).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: String(HostPermissionRespondChannelTarget),
+          verb: "call",
+          payload: {
+            contextId,
+            permissionRequestId: "permission-test",
+            decision: { _tag: "Allow" },
+          },
+        }),
+      ]),
+    )
+  })
+
   it("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7 routes turns and traces ACP edge requests", async () => {
     const harness = makeInMemoryAcpHarness()
     const namespace = `acp-edge-${crypto.randomUUID()}`
