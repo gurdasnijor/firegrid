@@ -295,63 +295,70 @@ class FiregridAcpStdioAgent implements acp.Agent {
     )
   }
 
-  private waitForAgentOutput(
-    session: EdgeSession,
-  ): Effect.Effect<Option.Option<RuntimeAgentOutputObservation>, unknown> {
-    const channel = this.sessionAgentOutput.forContext(session.contextId)
-    const run = channel.binding.stream.pipe(
-      Stream.filter(observation =>
-        observation.contextId === session.contextId &&
-        (session.lastSequence === undefined ||
-          observation.sequence > session.lastSequence),
-      ),
-      Stream.runHead,
-    )
-    return Effect.raceFirst(
-      run,
-      Clock.sleep(Duration.millis(this.turnTimeoutMs)).pipe(
-        Effect.as(Option.none<RuntimeAgentOutputObservation>()),
-      ),
-    )
-  }
-
+  // tf-t7rb (Phase 0C F5 "cheap win"): consume one long-lived output
+  // subscription per turn instead of re-creating the stream + Stream.runHead on
+  // every output. The prior loop re-subscribed from the source head per output,
+  // and `rows()` replays its initial state on each subscription
+  // (DurableTable.rows -> subscribeChanges({ includeInitialState: true })), so a
+  // turn of N outputs cost O(N^2) initial-state replays — the consumer-side
+  // analogue of tf-7kq8. Here the ordered stream is filtered once past the
+  // turn's start sequence, each output is forwarded as it arrives, and the
+  // subscription stops at the terminal observation. Terminal-ness comes ONLY
+  // from a TurnComplete/Terminated output observation; no route-completion
+  // metadata is consulted. The volatile per-connection cursor (lastSequence)
+  // and the per-output idle timeout are preserved.
   private waitForTurnCompleteEffect(
     session: EdgeSession,
   ): Effect.Effect<Extract<RuntimeAgentOutputObservation, { readonly _tag: "TurnComplete" }>, unknown> {
-    const waitForAgentOutput = (edgeSession: EdgeSession) => this.waitForAgentOutput(edgeSession)
-    const forwardOutput = (
-      acpSessionId: string,
-      output: RuntimeAgentOutputObservation,
-    ) => this.forwardOutput(acpSessionId, output)
-    return Effect.gen(function*() {
-      for (;;) {
-        const next = yield* waitForAgentOutput(session)
-        if (Option.isNone(next)) {
-          return yield* Effect.fail(
+    const forwardOutput = (output: RuntimeAgentOutputObservation) =>
+      this.forwardOutput(session.acpSessionId, output)
+    const startSequence = session.lastSequence
+    const channel = this.sessionAgentOutput.forContext(session.contextId)
+    return channel.binding.stream.pipe(
+      Stream.filter(observation =>
+        observation.contextId === session.contextId &&
+        (startSequence === undefined || observation.sequence > startSequence),
+      ),
+      // Idle timeout: fail the turn if the next output does not arrive in time
+      // (preserves the prior per-output Clock.sleep(turnTimeoutMs) semantics).
+      Stream.timeoutFail(
+        () =>
+          acpStdioEdgeTurnOutputError(
+            "timeout",
+            "timed out waiting for Firegrid agent output",
+          ),
+        Duration.millis(this.turnTimeoutMs),
+      ),
+      Stream.mapEffect(output =>
+        Effect.gen(function*() {
+          session.lastSequence = output.sequence
+          yield* Effect.tryPromise(() => forwardOutput(output))
+          return output
+        }),
+      ),
+      Stream.takeUntil(output =>
+        output._tag === "TurnComplete" || output._tag === "Terminated",
+      ),
+      Stream.runLast,
+      Effect.flatMap(Option.match({
+        onNone: () =>
+          Effect.fail(
             acpStdioEdgeTurnOutputError(
               "timeout",
-              "timed out waiting for Firegrid agent output",
+              "Firegrid agent output stream ended before ACP TurnComplete",
             ),
-          )
-        }
-        const output = next.value
-        session.lastSequence = output.sequence
-        yield* Effect.tryPromise(() => forwardOutput(session.acpSessionId, output))
-        switch (output._tag) {
-          case "TurnComplete":
-            return output
-          case "Terminated":
-            return yield* Effect.fail(
+          ),
+        onSome: output =>
+          output._tag === "TurnComplete"
+            ? Effect.succeed(output)
+            : Effect.fail(
               acpStdioEdgeTurnOutputError(
                 "terminated",
                 "Firegrid session terminated before ACP TurnComplete",
               ),
-            )
-          default:
-            break
-        }
-      }
-    })
+            ),
+      })),
+    )
   }
 
   private async forwardOutput(

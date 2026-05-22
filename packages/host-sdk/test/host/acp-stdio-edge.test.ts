@@ -199,6 +199,14 @@ describe("ACP stdio edge", () => {
       "host-sdk acp edge turn 1",
       "host-sdk acp edge turn 2",
     ])
+    // tf-t7rb: the edge opens ONE long-lived SessionAgentOutput subscription per
+    // turn, not one per output. Each backing turn emits status + text +
+    // turn_complete (3 outputs); the prior runHead-per-output loop re-subscribed
+    // ~once per output. The session_agent_output channel span fires once per
+    // subscription, so two prompt turns => exactly two subscriptions.
+    const outputSubscriptions = capturedSpans.filter(span =>
+      span.name === "firegrid.host.channel.session_agent_output")
+    expect(outputSubscriptions).toHaveLength(2)
     expect(capturedSpans.map(span => span.name)).toEqual(
       expect.arrayContaining([
         "firegrid.acp_stdio_edge.initialize",
