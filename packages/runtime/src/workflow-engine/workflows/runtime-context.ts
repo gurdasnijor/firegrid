@@ -1,6 +1,5 @@
 import {
   Activity,
-  DurableDeferred,
   Workflow,
   WorkflowEngine,
 } from "@effect/workflow"
@@ -18,7 +17,6 @@ import {
   Effect,
   Layer,
   Option,
-  Predicate,
   Ref,
   Schema,
 } from "effect"
@@ -186,68 +184,16 @@ const sendSessionActivity = (
     ),
   })
 
-const inputWaitName = (
-  contextId: string,
-  sequence: number,
-) => `runtime-context/${contextId}/input/${sequence}`
-
-const workflowWaitBucketAttribute = {
-  "firegrid.wait.bucket": "workflow",
-} as const
-
-export const runtimeInputDeferredName = inputWaitName
-
-export const runtimeInputDeferredFor = (
-  contextId: string,
-  sequence: number,
-) =>
-  DurableDeferred.make(inputWaitName(contextId, sequence), {
-    success: RuntimeIngressInputRowSchema,
-  })
-
-const awaitRuntimeInput = (
-  context: RuntimeContext,
-  sequence: number,
-) =>
-  DurableDeferred.await(runtimeInputDeferredFor(context.contextId, sequence)).pipe(
-    Effect.withSpan("firegrid.runtime_context.workflow.input.await", {
-      kind: "internal",
-      attributes: {
-        ...workflowWaitBucketAttribute,
-        "firegrid.context.id": context.contextId,
-        "firegrid.input.sequence": sequence,
-      },
-    }),
-  )
-
-const completedRuntimeInput = (
-  context: RuntimeContext,
-  sequence: number,
-) =>
-  Effect.gen(function*() {
-    const engine = yield* WorkflowEngine.WorkflowEngine
-    const exit = yield* Workflow.wrapActivityResult(
-      engine.deferredResult(runtimeInputDeferredFor(context.contextId, sequence)),
-      Predicate.isUndefined,
-    )
-    if (exit === undefined) return undefined
-    return yield* exit
-  }).pipe(
-    Effect.withSpan("firegrid.runtime_context.workflow.input.completed", {
-      kind: "internal",
-      attributes: {
-        "firegrid.context.id": context.contextId,
-        "firegrid.input.sequence": sequence,
-        // Seam contract (runtime-shrink contract-coverage, tf-mmh2): replay-safe
-        // delivery of the next inbound input — reads the per-sequence runtime
-        // input DurableDeferred so the body observes input exactly once across
-        // replay (firegrid-workflow-driven-runtime; engine durability via
-        // workflow-engine-durable-state.VALIDATION.2).
-        "firegrid.seam.kind": "durability",
-        "firegrid.contract.id": "features/firegrid/firegrid-workflow-driven-runtime.feature.yaml",
-      },
-    }),
-  )
+// sidecar/shape-c-input-facts: the per-sequence DurableDeferred input mailbox
+// (inputWaitName / runtimeInputDeferredFor / runtimeInputDeferredName /
+// awaitRuntimeInput / completedRuntimeInput) is RETIRED. RuntimeContext input
+// arrival now flows through the typed `RuntimeContextInputFacts` source backed
+// by `RuntimeControlPlaneTable.inputIntents`. The OLD body's input-await call
+// sites below are stubbed to `Effect.never` while CC2's Shape C handler slice
+// replaces this whole body. See:
+//   - packages/runtime/src/agent-event-pipeline/authorities/runtime-context-input-facts.ts
+//   - docs/cannon/architecture/runtime-pipeline-type-boundaries.md  (Shape C)
+//   - docs/cannon/architecture/runtime-design-constraints.md         (C2, C4)
 
 const RuntimeAgentOutputObservationSchema = Schema.Struct({
   contextId: Schema.String,
@@ -722,16 +668,9 @@ const completedRuntimeContextEvent = (
   stateStore: RuntimeContextStateStore["Type"],
 ) =>
   Effect.gen(function*() {
-    const input = yield* completedRuntimeInput(
-      context,
-      state.lastProcessedInputSequence + 1,
-    )
-    if (input !== undefined) {
-      return Option.some<RuntimeContextMergedEvent>({ _tag: "Input", event: input })
-    }
-    // Output observation is a durable-cursor point read at
-    // `lastProcessedOutputSequence + 1` (no live scan, no replay re-walk;
-    // tf-aseo / SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE INV-3).
+    // sidecar/shape-c-input-facts: input-arm pull removed. Shape C inputs
+    // arrive by push via RuntimeContextInputFacts; this OLD body's loop is
+    // output-only until CC2 deletes it entirely.
     const output = yield* stateStore.nextOutput(
       context,
       activityAttempt,
@@ -750,15 +689,20 @@ const completedRuntimeContextEvent = (
 
 const awaitNextRuntimeContextEvent = (
   context: RuntimeContext,
-  state: RuntimeContextEventState,
-) =>
-  awaitRuntimeInput(context, state.lastProcessedInputSequence + 1).pipe(
-    Effect.map(event => ({ _tag: "Input" as const, event })),
-    Effect.withSpan("firegrid.runtime_context.workflow.event.await", {
+  _state: RuntimeContextEventState,
+): Effect.Effect<RuntimeContextMergedEvent, RuntimeContextError> =>
+  // sidecar/shape-c-input-facts: the OLD merged event loop awaited the next
+  // input via the per-sequence DurableDeferred mailbox. That mailbox is
+  // deleted. Shape C inputs flow through RuntimeContextInputFacts to the new
+  // handler (CC2). This OLD body has no "next event to await" — once it
+  // drains the durable output cursor it has nothing to do — so this stub
+  // suspends forever. CC2's slice deletes this body entirely.
+  Effect.never.pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.event.await.retired", {
       kind: "internal",
       attributes: {
         "firegrid.context.id": context.contextId,
-        "firegrid.input.sequence": state.lastProcessedInputSequence + 1,
+        "firegrid.shape_c.input_facts_cutover": "sidecar/shape-c-input-facts",
       },
     }),
   )

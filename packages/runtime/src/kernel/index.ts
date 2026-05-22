@@ -35,11 +35,13 @@ export {
   runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
 } from "./runtime-context-helpers.ts"
+// sidecar/shape-c-input-facts: RuntimeContextInput / RuntimeInputIntentDispatcherLive
+// retired with the per-sequence DurableDeferred mailbox + dispatcher fiber.
+// Shape C input flow uses RuntimeContextInputFacts (see
+// agent-event-pipeline/authorities/runtime-context-input-facts.ts).
 export {
   RuntimeContextCheckpointSource,
-  RuntimeContextInput,
   RuntimeContextWorkflowRuntime,
   RuntimeContextWorkflowRuntimeLive,
-  RuntimeInputIntentDispatcherLive,
   type RuntimeContextWorkflowCheckpointHandle,
 } from "./runtime-context-workflow-runtime.ts"

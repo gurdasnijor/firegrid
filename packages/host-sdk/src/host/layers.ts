@@ -51,9 +51,12 @@ import {
 import {
   makeRawRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/raw-adapter.ts"
+// sidecar/shape-c-input-facts: RuntimeInputIntentDispatcherLive retired with
+// the per-sequence DurableDeferred input mailbox. Shape C input flow uses
+// RuntimeContextInputFacts; the CC1 helper provides per-key serialization at
+// the subscriber boundary, not a host-scoped dispatcher fiber.
 import {
   RuntimeContextWorkflowRuntimeLive,
-  RuntimeInputIntentDispatcherLive,
 } from "@firegrid/runtime/kernel"
 import {
   type RuntimeChannelRouter,
@@ -317,10 +320,12 @@ export const FiregridRuntimeHostLive = (
   const hostScoped = hostScopedLayer(options)
   const hostChannels = SessionSelfChannelsLive(options.mcpChannels)
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
-  // Production host composition installs the native workflow/session path
-  // directly; deleted legacy runner/subscriber symbols are not fallback paths.
-  const hostPublic = RuntimeInputIntentDispatcherLive.pipe(
-    Layer.provideMerge(RuntimeStartCapabilityLive),
+  // sidecar/shape-c-input-facts: the host-scoped RuntimeInputIntentDispatcherLive
+  // fiber (one-fiber arrival-order serializer over the input-intent table) is
+  // retired. Shape C input flow tails RuntimeControlPlaneTable.inputIntents
+  // directly via RuntimeContextInputFacts; per-key serialization is owned by
+  // the subscriber-runtime helper (CC1 tf-4fy3).
+  const hostPublic = RuntimeStartCapabilityLive.pipe(
     Layer.provideMerge(hostChannels),
     Layer.provideMerge(HostControlChannelsLive),
   )

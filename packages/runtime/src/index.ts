@@ -42,8 +42,6 @@ export {
   runtimeContextWorkflowExecutionId,
   runtimeControlRequestWorkflowExecutionId,
   runtimeControlRequestWorkflowStreamUrl,
-  runtimeInputDeferredFor,
-  runtimeInputDeferredName,
   waitForWorkflowExecutionId,
   type RuntimeControlRequestDispatchOutcome,
   type RuntimeContextSessionCommand,
