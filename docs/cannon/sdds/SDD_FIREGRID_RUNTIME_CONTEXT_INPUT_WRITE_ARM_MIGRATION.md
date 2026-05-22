@@ -1,106 +1,213 @@
-# SDD — Runtime-context input write+arm migration
+# SDD: Runtime Context Input Write+Arm Migration
 
-Status: draft (cutover surface enumerated; implementation is a future
-transactional wave, NOT tf-c9r9)
+Doc-Class: dispatchable
+Status: draft architecture
 Date: 2026-05-22
-Beads: tf-c9r9 (validated the target shape in tiny-firegrid; this SDD scopes the
-production cutover)
-Depends on: `docs/cannon/architecture/kernel-owned-write-arm.md`,
-`docs/cannon/architecture/transactional-cutover-rule.md`
+Owner: Firegrid Architecture
+Related:
+- `../architecture/kernel-owned-write-arm.md`
+- `../../architecture/2026-05-22-runtime-rearch-closeout.md`
+- `../../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md`
 
-## §0 — Load-bearing decision
+## Problem
 
-Migrate the runtime-context **input** path from the per-sequence
-`DurableDeferred` mailbox to a **workflow-owned table input + kernel-owned
-write+arm** (the shape validated green in
-`packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/`). The body parks
-on a table read (`Workflow.suspend`), and a single serialized kernel command
-writes the input row and arms the owning execution as one durable fact, with
-restart recovery replaying only owned pending facts. The mailbox + intent-stream
-dispatcher is the path being retired.
+The runtime-context input path is migrating from a legacy mailbox shape to the
+target workflow-owned table shape.
 
-This SDD does **not** implement the cutover. It enumerates the exact production
-surface so the cutover lands as one transactional wave (per the cutover rule —
-no half-ship).
+Current production input delivery uses a DurableDeferred mailbox:
 
-## Current production path (to retire)
+```text
+channel / authority route
+  -> RuntimeControlPlaneTable.inputIntents
+  -> RuntimeContextWorkflowRuntimeLive dispatcher
+  -> appendRuntimeInputDeferred
+  -> engine.deferredDone(input/N, sequenced input row)
+  -> RuntimeContextWorkflow awaits DurableDeferred input/N
+```
 
-The runtime-context body waits on a **per-sequence `DurableDeferred` mailbox**,
-not a table input:
+That path is not the target architecture. It is a working transitional bridge
+whose reliability depends on machinery the re-architecture is retiring:
 
-| Concern | Location | Behavior |
-|---|---|---|
-| Body await | `packages/runtime/src/workflow-engine/workflows/runtime-context.ts:208-221` (`awaitRuntimeInput`) | `DurableDeferred.await(runtimeInputDeferredFor(contextId, sequence))` — suspends on a per-sequence deferred. |
-| Replay-safe read | `runtime-context.ts:223-250` (`completedRuntimeInput`) | reads `engine.deferredResult(...)`. |
-| Deferred factory | `runtime-context.ts:200-206` (`runtimeInputDeferredFor`) | `DurableDeferred.make(inputWaitName(contextId, sequence), {success: RuntimeIngressInputRowSchema})`. |
-| Write **and** arm (coupled in one call) | `packages/runtime/src/workflow-engine/runtime-input-deferred.ts:94-171` (`appendRuntimeInputDeferred`) | sequences the input, then `engine.deferredDone(...)` writes the deferred row (exit = the sequenced input row) **and** resumes the body. Idempotent (dedup by `inputId`; deferredDone first-writer-wins). |
-| Arm trigger (dispatcher) | `packages/runtime/src/kernel/runtime-context-workflow-runtime.ts` (`RuntimeInputIntentDispatcherLive`, `dispatchIntent`, `appendIntentToExecution`) | a forked daemon subscribes to `RuntimeControlPlaneTable.inputIntents.rows()` and calls `appendRuntimeInputDeferred` per intent. Replays all intent rows on restart (re-subscribe from start) — the current recovery mechanism. |
-| Edge write (intent) | `packages/host-sdk/src/host/commands.ts:115-132` (`insertRuntimeInputIntent`), `:260-270` (`appendRuntimeIngress`); also `runtime/src/channels/session-permission.ts:46-62`, `runtime/src/agent-event-pipeline/authorities/scheduled-prompt-append.ts:34-42` | `control.inputIntents.insertOrGet(intent)` — idempotent intent write at the edge. |
-| Authority position | `kernel/runtime-context-workflow-runtime.ts` (`RuntimeContextWorkflowRuntimeLive`) | owns the host-scoped engine + active-execution map; holds the engine reference and execution identity to drive write+arm. The old-shape position; there is no `HostKernelWorkflow` symbol. |
+- per-input deferred names;
+- sequence allocation above the workflow-owned state model;
+- `inputIntents` as a public-ish staging table;
+- a host-scoped dispatcher/reconciler fiber;
+- `appendRuntimeInputDeferred` as mailbox adapter.
 
-Note: the production path is already crash-recoverable *via the mailbox* (the
-dispatcher re-subscribes to `inputIntents` on restart and re-delivers
-idempotently). The migration is not a bug-fix; it removes the mailbox in favor of
-the table-wait + owned-fact model so input has the same workflow-owned table
-shape as the rest of the runtime, with bounded kernel-owned recovery.
+The target shape is:
 
-## Target path (validated shape)
+```text
+channel / edge route
+  -> host kernel/controller command
+  -> write workflow-owned input row
+  -> arm or resume the owning runtime-context workflow
+  -> restart recovery for that owned command
+  -> RuntimeContextWorkflow reads its workflow-owned table state
+```
 
-Mirror `kernel-owned-write-arm` sim into production:
+The migration question is not whether the DurableDeferred mailbox is accepted
+architecture. It is not. The question is:
 
-1. **Body parks on a table input.** Replace `awaitRuntimeInput`/
-   `completedRuntimeInput` with a point-read of a workflow-owned runtime-context
-   input row keyed by `(contextId, sequence)`; absent ⇒ `Workflow.suspend`;
-   present ⇒ proceed. Remove `runtimeInputDeferredFor` and the per-sequence
-   `DurableDeferred`.
-2. **Kernel-owned write+arm command + control table.** Introduce a kernel-private
-   table of write+arm facts (`{commandKey, contextId, executionId, sequence,
-   inputRef, status}`). The kernel command: record the fact → write the
-   workflow-owned input row (`insertOrGet`) → arm via `engine.resume(executionId)`.
-   This replaces `appendRuntimeInputDeferred`'s `deferredDone`.
-3. **Restart replay of owned facts.** In the kernel layer
-   (`RuntimeContextWorkflowRuntimeLive`), after engine build + workflow
-   registration, replay pending owned facts (input present, execution not
-   `finalResult`) → re-write + re-arm. Replaces the dispatcher's re-subscribe-all
-   recovery. Bounded to owned facts; no generic sweep.
-4. **Edge unchanged in spirit.** Edge still records the intent; the kernel
-   command consumes the intent and performs the durable write+arm. The
-   `inputIntents` edge write (`commands.ts:115-132`, `session-permission.ts`,
-   `scheduled-prompt-append.ts`) stays as the request channel; the dispatcher's
-   `deferredDone` is replaced by the kernel write+arm.
+> What bridge state and cutover sequence retires the current mailbox while
+> preserving idempotent input delivery, crash recovery, and body progress?
 
-## Cutover surface (files that must change together)
+## Decision
 
-- `runtime/src/workflow-engine/workflows/runtime-context.ts` — body await → table read.
-- `runtime/src/workflow-engine/runtime-input-deferred.ts` — **delete/replace**; `deferredDone` write+arm → kernel command write+arm. (Retire `runtimeInputDeferredFor`, `appendRuntimeInputDeferred`, `runtimeInputDeferredName`.)
-- `runtime/src/kernel/runtime-context-workflow-runtime.ts` — dispatcher (`RuntimeInputIntentDispatcherLive`, `dispatchIntent`, `appendIntentToExecution`) → kernel write+arm controller + restart replay; add kernel control table to the kernel layer.
-- `runtime/src/workflow-engine/internal/table.ts` — add the kernel write+arm control row schema (kernel-private) + the workflow-owned runtime-context input row schema (if not already a table row).
-- Callers of the edge intent write are unaffected by signature (`commands.ts`, `session-permission.ts`, `scheduled-prompt-append.ts`), but the delivery semantics behind them change.
-- Tests/contracts referencing `runtimeInputDeferred*` / `firegrid.runtime_context.workflow.input.await|completed` seam spans (e.g. tf-mmh2 contract annotations) must be re-pointed to the table-wait + write+arm seams.
+Treat the current DurableDeferred mailbox as a bridge, not an invariant.
 
-## Constraints (carried from the architecture canon)
+The canonical target is workflow-owned table input plus host-kernel/controller
+owned write+arm. The host kernel/controller may evolve from today's
+`RuntimeContextWorkflowRuntimeLive` authority position, but it must expose the
+target primitive rather than preserving the dispatcher/mailbox contract.
 
-- No input deferred mailbox in the target.
-- No generic resume-all engine sweep (recovery keyed off owned facts).
-- No ordering authority (facts independent; kernel is not a sequencer). The
-  existing per-sequence numbering, if retained, is a body/edge concern, not a
-  kernel ordering guarantee.
-- Transactional: the mailbox path (`runtime-input-deferred.ts` + dispatcher) is
-  removed in the same wave that lands the table-wait + kernel write+arm, or
-  retired behind a named compatibility boundary with a blocking deletion bead.
+`tf-c9r9` should validate the target primitive in the S1/tiny-firegrid
+reference path first. A production runtime-context cutover is a later,
+separately scoped transactional replacement.
 
-## Open questions for the cutover wave
+## Current Bridge Contract
 
-1. **Multi-input sequencing.** The reference sim is single-input per execution.
-   Runtime-context takes a sequence of inputs; the table-input + write+arm model
-   needs a per-sequence input row and a body loop that point-reads the next
-   sequence. Confirm this stays free of kernel-side ordering authority (the body
-   advances its own sequence cursor; the kernel only writes+arms a given
-   sequence's row).
-2. **Output path interaction.** This SDD covers the INPUT path only. The output
-   cursor work (tf-aseo / DurableOutputCursor) is independent; confirm no shared
-   deferred assumptions break when the input mailbox is removed.
-3. **Intent → command handoff identity.** Confirm the kernel can resolve the
-   owning `executionId` (`runtime-context:{contextId}`) and the engine reference
-   for every intent source (edge prompt, permission response, scheduled prompt)
-   at the point it performs write+arm.
+The bridge may remain in production until the target cutover is ready, but only
+as transitional compatibility. It must not be cited as precedent for new input,
+tool, or lifecycle surfaces.
+
+The bridge must preserve these properties while it remains:
+
+- input delivery is idempotent by stable input identity;
+- duplicate delivery converges without double-processing;
+- existing contexts continue making progress;
+- restart re-subscription through the dispatcher recovers unprocessed intents;
+- no caller receives workflow handles, deferred names, stream URLs, table names,
+  or engine services.
+
+The bridge may not grow new architecture around:
+
+- cross-author arrival ordering;
+- per-source or global sequence authority beyond what existing compatibility
+  needs;
+- new public `DurableDeferred` input APIs;
+- new dispatcher/reconciler responsibilities.
+
+## Target Contract
+
+The target host kernel/controller command owns both halves of input delivery:
+
+1. persist the workflow-owned input row;
+2. arm or resume the owning workflow execution;
+3. persist enough command state for restart recovery;
+4. serialize with lifecycle operations that can affect the same context.
+
+The workflow body consumes from its own durable state. It does not await
+`input/N` deferred names and does not rely on a separate input-intent dispatcher.
+
+The command must be identity-driven, not order-driven. The runtime-context body
+does not require cross-author arrival ordering. If an edge needs weak
+same-source FIFO for agent ergonomics, that is an edge concern, not the runtime
+body's wake primitive.
+
+### Input Identity Model
+
+The target input identity model is per input, not per `(contextId, sequence)`.
+Each input is an independent controller write+arm fact keyed by stable input
+identity. The kernel/controller:
+
+- does not allocate input sequences;
+- does not scan existing rows for `max(sequence) + 1`;
+- does not preserve sequence ordering across crashes;
+- does not become an ordering authority.
+
+The body state machine consumes visible inputs by identity and applies its own
+state transitions. `transitionInputEvent` / `transitionOutputEvent` do not
+depend on cross-author arrival order, so the controller only proves durable
+delivery and wake ownership for the input fact it owns.
+
+If `sequence` remains during the production bridge, it is compatibility
+bookkeeping for existing mailbox-backed contexts, not target architecture.
+
+## Migration Sequence
+
+### Phase 1 - Reference Controller
+
+Build the host-kernel/controller-owned write+arm shape in the S1 or
+tiny-firegrid table-wait reference path.
+
+Acceptance:
+
+- S1 Probe A and Probe B auto-recover through the controller path without an
+  explicit test redrive;
+- S1 Probe C clock recovery stays green;
+- no generic engine suspended-workflow sweep is introduced;
+- interrupt terminality and `deferredDone` idempotency stay green by not
+  changing production engine semantics;
+- the trace clearly attributes row write and wake to the same controller
+  command.
+
+### Phase 2 - Production Cutover Design
+
+Before editing production runtime-context input delivery, write the concrete
+cutover plan against the current files. The plan must name the replacement
+surface for:
+
+- `RuntimeContextWorkflowRuntimeLive` dispatcher responsibilities;
+- `RuntimeControlPlaneTable.inputIntents`;
+- `appendRuntimeInputDeferred`;
+- `awaitRuntimeInput`;
+- compatibility for existing contexts that still have sequence-tagged mailbox
+  inputs;
+- restart recovery of pending controller commands.
+
+The plan must also state whether there is a dual-read or drain period for
+contexts that already have pending mailbox inputs.
+
+### Phase 3 - Transactional Production Replacement
+
+Production cutover must follow the transactional cutover rule. It either lands
+the complete replacement with deletion/reconciliation of the old mailbox path,
+or it lands an explicitly named temporary bridge with a blocking deletion bead.
+
+Acceptance:
+
+- existing mailbox-backed contexts do not lose or double-process pending input;
+- new contexts use workflow-owned table input plus controller write+arm;
+- the old dispatcher/mailbox path is deleted or marked as a bounded bridge with
+  a deletion bead;
+- trace-health shows the input-intent/deferred-mailbox nodes leaving the
+  runtime graph after the cutover;
+- the engine still does not perform a generic suspended-workflow recovery
+  sweep.
+
+## Non-Goals
+
+This SDD does not:
+
+- re-legitimize the DurableDeferred mailbox as target architecture;
+- require immediate production runtime-context cutover in `tf-c9r9`;
+- introduce an input ordering authority;
+- require engine-level typed suspension kinds;
+- change output observation cursor work (`tf-aseo`);
+- delete `DurableDeferred` generally. Ordinary deferred completion remains an
+  engine primitive.
+
+## Stop Conditions
+
+Stop and report instead of coding if:
+
+- the implementation needs to preserve the DurableDeferred mailbox as the target
+  wake primitive;
+- the implementation needs a generic engine sweep over all suspended workflows;
+- there is no durable identity tying a controller command to the context,
+  workflow execution, and row/tool-use key it owns;
+- production cutover cannot preserve pending mailbox inputs for existing
+  contexts;
+- the change crosses runtime-context input, tool-call results, output cursors,
+  and lifecycle semantics in one PR.
+
+## Work Mapping
+
+- `tf-c9r9`: validate the controller-owned write+arm target in the reference
+  path and produce the concrete production cutover finding if needed.
+- `tf-vrz6`: production runtime-context input table cutover, after the target
+  primitive is validated and the cutover plan is explicit.
+- `tf-jpcg`: tool-use result/request seam should reuse the same ownership class,
+  not preserve a separate per-call workflow mailbox.
+- `tf-vfq9`: delete `ToolCallWorkflow` only after `tf-jpcg` lands.
+- `tf-aseo`: independent output cursor work.

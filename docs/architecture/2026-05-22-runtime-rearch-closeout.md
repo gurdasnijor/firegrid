@@ -4,6 +4,40 @@
 
 ---
 
+## 0. 2026-05-22 addendum — S1 result and current durability prior
+
+S1 has now answered the axis-2 question. Table-row waits do not recover like
+clock waits: a durable row can survive while the body remains parked unless a
+resume is re-driven.
+
+The cheap engine-level "pending suspension recovery sweep" was also falsified.
+It can make S1 green, but it is unsafe because the engine's suspended row does
+not distinguish table waits from durable-deferred waits, interrupts, or other
+suspension kinds. A blanket resume can race the legitimate deferred completion
+or interrupt and corrupt terminality/idempotency.
+
+The current architecture prior is therefore:
+
+```text
+channel/edge route
+  -> host kernel/controller command
+  -> workflow-owned row write
+  -> arm/resume owning execution
+  -> restart recovery for that owned command
+```
+
+There is no concrete `HostKernelWorkflow` implementation today. The name refers
+to this target ownership role, not to a class or workflow engineers can find in
+the codebase. The dispatchable cannon note is
+`docs/cannon/architecture/kernel-owned-write-arm.md`.
+
+Current production runtime-context input delivery still uses a DurableDeferred
+mailbox. Treat that as a working bridge to retire, not as an architecture
+invariant. The migration SDD is
+`docs/cannon/sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md`.
+
+---
+
 ## 1. Settled (evidence, not inference)
 
 | Finding | Status | Evidence |

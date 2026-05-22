@@ -69,12 +69,18 @@ Read in this order:
    shipped this session (router/ACP-edge cutover).
 8. `../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md` — the Phase 0
    target host/runtime shape the migrations converge toward.
-9. `../investigations/2026-05-21-phase0b-output-replay-oracle.md` — the tf-7kq8
+9. `architecture/kernel-owned-write-arm.md` — the empirically grounded
+   write+arm ownership rule. Important: `HostKernelWorkflow` is a target role,
+   not an existing implementation symbol.
+10. `sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md` — the
+   migration frame: the production DurableDeferred mailbox is a transitional
+   bridge, not target architecture.
+11. `../investigations/2026-05-21-phase0b-output-replay-oracle.md` — the tf-7kq8
    replay-amplification failure class and the `DurableOutputCursor` / O(outputs)
    contract for Phase 0B output observation.
-10. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
-11. `research/workflow-body-single-suspension-rule.md`
-12. `vision/factory-vision.md`
+12. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+13. `research/workflow-body-single-suspension-rule.md`
+14. `vision/factory-vision.md`
 
 ## Canonical Documents
 
@@ -98,6 +104,11 @@ Read in this order:
 - `architecture/transactional-cutover-rule.md` — replacement work outside
   `packages/tiny-firegrid/` must ship transactionally; tiny-firegrid remains the
   allowed sandbox for partial spikes.
+- `architecture/kernel-owned-write-arm.md` — canonical wake/durability rule for
+  workflow-owned table writes: a host kernel/controller command owns both the
+  durable write and the wake. A generic restart sweep over suspended engine rows
+  is unsafe under the current engine model, and `HostKernelWorkflow` is a target
+  role, not an existing implementation symbol.
 - `architecture/sdd-alignment-sanity-check-2026-05-20.md` — alignment of the
   two high-load-bearing SDDs with current `main`.
 
@@ -119,15 +130,22 @@ Read in this order:
   host/session resources → child session workflows) that production migrations
   compare against. Defines the state model (one resource record per aggregate,
   *not* request/claim/completion table families per operation) and the
-  `HostKernelWorkflow` control-plane ownership. Lanes building Phase 0A/0B
-  dispatch from this; production PRs touching host-control routes, kernel
-  workflows, or control-plane rows use it as the review oracle.
+  `HostKernelWorkflow` control-plane ownership. As of 2026-05-22,
+  `HostKernelWorkflow` is a target ownership role, not an implemented symbol;
+  lanes building the wake/durability path must also read
+  `architecture/kernel-owned-write-arm.md`. Lanes building Phase 0A/0B dispatch
+  from this; production PRs touching host-control routes, kernel workflows, or
+  control-plane rows use it as the review oracle.
 - `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md` — protocol owns shared
   schemas; TypeScript SDK, CLI, MCP/tool, and future REST/gRPC/JSON-RPC
   bindings project from protocol; runtime executes.
 - `sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md` — canonical
   contingency/performance track for `streamWait`, `streamWaitAny`, reducers,
   and signal primitives.
+- `sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md` — canonical
+  migration frame from the current production DurableDeferred input mailbox to
+  workflow-owned table input plus host-kernel/controller-owned write+arm. The
+  mailbox is a bridge to retire, not a target invariant.
 
 ### Research / Evidence
 
@@ -174,7 +192,8 @@ Read in this order:
 - Docs that present per-operation / per-verb workflow identities, or
   request/claim/completion table families per CRUD operation, as the design
   model are historical. The target reference models these as one resource record
-  per aggregate owned by a `HostKernelWorkflow`; existing operation-shaped
+  per aggregate owned by the `HostKernelWorkflow` target role; there is no
+  existing implementation symbol with that name. Existing operation-shaped
   workflows are migration debt (see the `WORKFLOW_ADMISSION` invariant above).
   Do not cite them as precedent for new surfaces.
 
@@ -210,8 +229,9 @@ Read in this order:
   long-running process state machine. One-shot commands, CRUD/lifecycle
   requests, tool calls, waits, and routing/request-claim bridges are operation
   wrappers — lower them through the owning workflow state machine
-  (`HostKernelWorkflow`) or an explicitly named engine primitive, not a new
-  workflow identity. New `Workflow.make` sites need SDD-backed owner
+  (`HostKernelWorkflow` as a target role, not an existing implementation) or an
+  explicitly named engine primitive, not a new workflow identity. New
+  `Workflow.make` sites need SDD-backed owner
   justification and a deliberate static-inventory entry; operation-shaped
   workflows already in production are **migration debt, not precedent** (feature
   `firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION`, `tf-gomx`/#611).
