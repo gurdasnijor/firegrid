@@ -269,6 +269,14 @@ const makeAgentByteStreamFromProcess = (
           annotateWireChunk("out", chunk, traceAttributes).pipe(
             Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.stdout_bytes", {
               kind: "producer",
+              attributes: {
+                // tf-ykd5 (annotation batch C): source-stage subprocess byte
+                // boundary — acquires the process/byte resource with scoped
+                // lifetime and does NOT decode protocol or write durable rows
+                // (the source-stage discipline; see feature STAGES.2).
+                "firegrid.seam.kind": "process",
+                "firegrid.contract.id": "features/firegrid/firegrid-runtime-agent-event-pipeline.feature.yaml",
+              },
             }),
           )),
       ),

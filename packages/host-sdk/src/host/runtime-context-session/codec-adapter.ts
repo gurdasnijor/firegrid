@@ -368,6 +368,13 @@ export const makeCodecRuntimeContextWorkflowSessionService:
                     Effect.withSpan("firegrid.agent_event_pipeline.subscriber.runtime_output", {
                       kind: "producer",
                       attributes: {
+                        // tf-ykd5 (annotation batch C): the codec-output
+                        // subscriber that durably commits each AgentOutputEvent
+                        // before downstream dispatch depends on it — the seam
+                        // that must replay from committed RuntimeOutput rows
+                        // after restart.
+                        "firegrid.seam.kind": "durability",
+                        "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.VALIDATION.5",
                         "firegrid.context.id": context.contextId,
                         "firegrid.output.sequence": sequence,
                         "firegrid.agent_output.tag": event._tag,
