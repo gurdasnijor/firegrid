@@ -8,13 +8,61 @@ import { elicitationPrompts, type ElicitationPrompt } from "./prompts.ts"
 // settles, and keeps one hung turn from consuming the whole runner budget.
 const PER_TURN_TIMEOUT = Duration.seconds(60)
 
+// Abort the matrix walk after this many consecutive provider/timeout failures.
+// A single bad provider window (e.g. an Anthropic 529) otherwise starves every
+// remaining turn until the runner's global timeout, contaminating the whole
+// capture. Two-in-a-row tolerates a one-off blip but bails on a sustained outage.
+const ABORT_AFTER_CONSECUTIVE_FAILURES = 2
+
+// How a turn ended, disambiguated from the raw error string so the trace is
+// self-explanatory without the edge's (not-yet-merged) typed timeout reasons.
+type TurnOutcome =
+  | "ok"
+  | "empty_end_turn" // settled with end_turn but produced no text and no tool calls
+  | "provider_overloaded" // upstream model API 529 / overloaded — not a Firegrid bug
+  | "acp_timeout" // edge turn timeout or our PER_TURN_TIMEOUT backstop
+  | "internal_error" // agent/edge internal error or non-529 API error
+  | "driver_error" // anything else (unexpected client/connection failure)
+
+// Outcomes that signal the agent/provider is unhealthy (vs. doing nothing or
+// succeeding). Consecutive runs of these trip the fail-fast.
+const FAILURE_OUTCOMES: ReadonlySet<TurnOutcome> = new Set<TurnOutcome>([
+  "provider_overloaded",
+  "acp_timeout",
+  "internal_error",
+  "driver_error",
+])
+
 interface TurnResult {
   readonly label: string
+  readonly outcome: TurnOutcome
   readonly stopReason?: acp.StopReason
   readonly error?: string
   readonly text: string
   readonly toolCalls: ReadonlyArray<string>
 }
+
+// Raw turn outcome before classification. Both the success and failure paths of
+// runTurn produce this shape; classifyOutcome derives the TurnOutcome from it.
+type RawTurn = Omit<TurnResult, "outcome">
+
+const classifyError = (message: string): TurnOutcome => {
+  const lower = message.toLowerCase()
+  return lower.includes("529") || lower.includes("overload")
+    ? "provider_overloaded"
+    : lower.includes("timeout")
+    ? "acp_timeout"
+    : lower.includes("internal error") || lower.includes("api error")
+    ? "internal_error"
+    : "driver_error"
+}
+
+const classifyOutcome = (raw: RawTurn): TurnOutcome =>
+  raw.error !== undefined
+    ? classifyError(raw.error)
+    : raw.stopReason === "end_turn" && raw.text.trim() === "" && raw.toolCalls.length === 0
+    ? "empty_end_turn"
+    : "ok"
 
 const textFromUpdates = (
   updates: ReadonlyArray<acp.SessionNotification>,
@@ -90,22 +138,25 @@ const runTurn = (
         catch: (cause) => cause,
       }).pipe(Effect.timeout(PER_TURN_TIMEOUT)),
     ),
-    Effect.map((response): TurnResult => ({
+    Effect.map((response): RawTurn => ({
       label: prompt.label,
       stopReason: response.stopReason,
       text: client.text(),
       toolCalls: client.toolCalls(),
     })),
     Effect.catchAll((cause) =>
-      Effect.succeed<TurnResult>({
+      Effect.succeed<RawTurn>({
         label: prompt.label,
         error: cause instanceof Error ? cause.message : String(cause),
         text: client.text(),
         toolCalls: client.toolCalls(),
       })),
+    Effect.map((raw): TurnResult => ({ ...raw, outcome: classifyOutcome(raw) })),
     Effect.tap((result) =>
       Effect.annotateCurrentSpan({
         "firegrid.acp_elicitation.label": result.label,
+        "firegrid.acp_elicitation.group": prompt.group,
+        "firegrid.acp_elicitation.outcome": result.outcome,
         "firegrid.acp_elicitation.stop_reason": result.stopReason ?? "",
         "firegrid.acp_elicitation.error": result.error ?? "",
         "firegrid.acp_elicitation.tool_calls": result.toolCalls.join(","),
@@ -121,7 +172,44 @@ const runTurn = (
 interface ElicitationResult {
   readonly sessionId: string
   readonly turns: ReadonlyArray<TurnResult>
+  /** Label of the turn after which the walk fail-fast aborted, if any. */
+  readonly abortedAfter?: string | undefined
 }
+
+// Accumulator for the fail-fast walk: completed turns, the current consecutive
+// run of failure outcomes, and the label we bailed after (once tripped).
+interface WalkState {
+  readonly turns: ReadonlyArray<TurnResult>
+  readonly consecutiveFailures: number
+  readonly abortedAfter?: string | undefined
+}
+
+const initialWalk: WalkState = { turns: [], consecutiveFailures: 0 }
+
+// Walk the prompt matrix in order, one turn at a time. Once a sustained provider
+// outage trips the fail-fast, remaining prompts are skipped (not run) so a bad
+// window can't drain the whole runner budget.
+const walkPrompts = (
+  connection: acp.ClientSideConnection,
+  sessionId: string,
+  client: ElicitationClient,
+): Effect.Effect<WalkState, never> =>
+  Effect.reduce(elicitationPrompts, initialWalk, (state, prompt) =>
+    state.abortedAfter !== undefined
+      ? Effect.succeed(state)
+      : runTurn(connection, sessionId, prompt, client).pipe(
+        Effect.map((result) => {
+          const consecutiveFailures = FAILURE_OUTCOMES.has(result.outcome)
+            ? state.consecutiveFailures + 1
+            : 0
+          const tripped = consecutiveFailures >= ABORT_AFTER_CONSECUTIVE_FAILURES
+          return {
+            turns: [...state.turns, result],
+            consecutiveFailures,
+            abortedAfter: tripped ? result.label : undefined,
+          }
+        }),
+      ))
 
 // The host authorizes ANTHROPIC_API_KEY into the agent subprocess
 // (FiregridEnvBindingsFromEnv); if it is absent the agent fails to authenticate
@@ -144,20 +232,19 @@ export const acpToolElicitationDriver: Effect.Effect<ElicitationResult, unknown>
       return connection.newSession({ cwd: globalThis.process.cwd(), mcpServers: [] })
     })
 
-    const turns = yield* Effect.forEach(
-      elicitationPrompts,
-      (prompt) => runTurn(connection, session.sessionId, prompt, client),
-      { concurrency: 1 },
-    )
+    const walk = yield* walkPrompts(connection, session.sessionId, client)
 
-    return { sessionId: session.sessionId, turns }
+    return { sessionId: session.sessionId, turns: walk.turns, abortedAfter: walk.abortedAfter }
   },
 ).pipe(
   Effect.tap((result) =>
     Effect.annotateCurrentSpan({
       "firegrid.acp_tool_elicitation.acp_session_id": result.sessionId,
       "firegrid.acp_tool_elicitation.turn_count": result.turns.length,
+      "firegrid.acp_tool_elicitation.planned_turn_count": elicitationPrompts.length,
       "firegrid.acp_tool_elicitation.error_count": result.turns.filter((t) => t.error !== undefined).length,
+      "firegrid.acp_tool_elicitation.aborted": result.abortedAfter !== undefined,
+      "firegrid.acp_tool_elicitation.aborted_after": result.abortedAfter ?? "",
     })),
   Effect.withSpan("firegrid.acp_tool_elicitation.driver", {
     kind: "client",
