@@ -75,6 +75,8 @@
   "keyless_subset": {
     "scenarios": ["delegation-proof-cap4", "control-plane-cancel-close"],
     "N": 25,
-    "note": "Deterministic-only subset (no API keys). Runnable in CI without keys; the cancel/close scenario adds the control-request-dispatcher / RuntimeLifecycleWorkflow nodes (23 -> 25 vs delegation alone). Lower than the full gate because the live tool-call/wait paths are absent."
+    "C": 17,
+    "anchor": "runtime-shape-baseline.keyless.json",
+    "note": "Deterministic-only subset (no API keys). Runnable in CI without keys; the cancel/close scenario adds the control-request-dispatcher / RuntimeLifecycleWorkflow nodes (23 -> 25 vs delegation alone). N and C are both lower than the full gate because the live tool-call/wait paths are absent, so this subset uses its OWN anchor (runtime-shape-baseline.keyless.json); the recipe selects it when no live trace is present. The full keyed anchor (runtime-shape-baseline.json) stays authoritative."
   }
 }
