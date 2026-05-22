@@ -237,6 +237,13 @@ const completedRuntimeInput = (
       attributes: {
         "firegrid.context.id": context.contextId,
         "firegrid.input.sequence": sequence,
+        // Seam contract (runtime-shrink contract-coverage, tf-mmh2): replay-safe
+        // delivery of the next inbound input — reads the per-sequence runtime
+        // input DurableDeferred so the body observes input exactly once across
+        // replay (firegrid-workflow-driven-runtime; engine durability via
+        // workflow-engine-durable-state.VALIDATION.2).
+        "firegrid.seam.kind": "durability",
+        "firegrid.contract.id": "features/firegrid/firegrid-workflow-driven-runtime.feature.yaml",
       },
     }),
   )
@@ -335,6 +342,16 @@ const completedRuntimeOutput = (
           "firegrid.context.id": context.contextId,
           "firegrid.runtime.activity_attempt": activityAttempt,
           "firegrid.runtime.output.after_sequence": afterSequence,
+          // Seam classification (runtime-shrink contract-coverage, tf-mmh2):
+          // BRIDGE_DEBT, not a hardened contract. This is the tf-7kq8 memoized
+          // live output-after read inside the workflow body (see the memo note
+          // above) — load-bearing operationally but architecturally a stopgap.
+          // contract.id points at the RESHAPE TARGET it must move toward, not an
+          // invariant that legitimizes the current shape: the body-side scan is
+          // to be replaced by the workflow-owned DurableOutputCursor primitive.
+          // Do NOT harden this seam (no new deferred/engine bridge); reshape it.
+          "firegrid.seam.kind": "bridge_debt",
+          "firegrid.contract.id": "docs/sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md",
         },
       }),
     )
@@ -752,7 +769,19 @@ const transitionRuntimeContextEventActivity = (
     }).pipe(
       Effect.withSpan("firegrid.runtime_context.workflow.state.transition", {
         kind: "internal",
-        attributes: runtimeContextEventSpanAttributes(context, activityAttempt, event),
+        attributes: {
+          ...runtimeContextEventSpanAttributes(context, activityAttempt, event),
+          // Seam contract (runtime-shrink contract-coverage, tf-mmh2):
+          // deterministic state-machine reduction (event, state) -> (nextState,
+          // action) — a pure transform. It is the durably-memoized body of the
+          // transition Activity; the durable at-most-once boundary itself is the
+          // engine `workflow_engine.activity.execute` span, and the Activity-name
+          // span (`firegrid.runtime-context.state.*.after.*`) is emitted by
+          // vendored @effect/workflow Activity.make and cannot carry attributes
+          // here. (firegrid-workflow-driven-runtime).
+          "firegrid.seam.kind": "transform",
+          "firegrid.contract.id": "features/firegrid/firegrid-workflow-driven-runtime.feature.yaml",
+        },
       }),
     ),
   })
@@ -857,7 +886,16 @@ const handleRuntimeContextEvent = (
   }).pipe(
     Effect.withSpan("firegrid.runtime_context.workflow.event.handle", {
       kind: "internal",
-      attributes: runtimeContextEventSpanAttributes(context, activityAttempt, event),
+      attributes: {
+        ...runtimeContextEventSpanAttributes(context, activityAttempt, event),
+        // Seam contract (runtime-shrink contract-coverage, tf-mmh2): ordering —
+        // the merged input/output event loop processes events in monotonic
+        // sequence and idempotently skips any event at or below the last
+        // processed sequence (eventAlreadyProcessed), so replay re-delivery does
+        // not double-apply a transition (firegrid-workflow-driven-runtime).
+        "firegrid.seam.kind": "ordering",
+        "firegrid.contract.id": "features/firegrid/firegrid-workflow-driven-runtime.feature.yaml",
+      },
     }),
   )
 
