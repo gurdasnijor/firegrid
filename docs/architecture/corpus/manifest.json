@@ -2,9 +2,9 @@
   "$schema_note": "Fixed corpus for the runtime-shrink loop (docs/architecture/runtime-shrink-loop.md, Phase 0). 'Fixed' means a fixed SCENARIO SET + run recipe + stable artifact path — NOT frozen raw trace files. C is read from span attributes, so after source seam annotations land the corpus is REGENERATED from these same scenarios (via scripts/runtime-corpus.sh) so C rises. N (condensation node count) is volume-independent, so short re-captures of the same scenarios reproduce the same N.",
   "baseline": {
     "N": 33,
-    "C": 0,
+    "C": 23,
     "measured": "2026-05-22",
-    "note": "Union of the four in_gate scenarios. 31 -> 33 when control-plane-cancel-close was added (tf-hgcd): it legitimately exercises the control-request-dispatcher / RuntimeLifecycleWorkflow nodes the prior corpus never reached. Reproduce with: bash scripts/runtime-corpus.sh check (keys present); the keyless subset reproduces N=25."
+    "note": "Union of the four in_gate scenarios. N 31 -> 33 when control-plane-cancel-close was added (tf-hgcd): it exercises the control-request-dispatcher / RuntimeLifecycleWorkflow nodes the prior corpus never reached. C 0 -> 23 once the merged seam-annotation PRs (#646/#647/#648) landed and the corpus was regenerated to observe their firegrid.contract.id spans (all resolve; unresolved-contracts=0). C is regenerated from source each run, never assumed. Reproduce with: bash scripts/runtime-corpus.sh check (keys present); the keyless subset reproduces N=25."
   },
   "checkpoint_command": "bash scripts/runtime-corpus.sh check",
   "regenerate_command": "bash scripts/runtime-corpus.sh regen",

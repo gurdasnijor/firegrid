@@ -49,7 +49,14 @@ bash scripts/runtime-corpus.sh baseline
 CORPUS_NO_REGEN=1 bash scripts/runtime-corpus.sh check
 ```
 
-## Scenario set (current baseline `N=33`, `C=0`)
+## Scenario set (current baseline `N=33`, `C=23`)
+
+> `C` rose from 0 to 23 once the seam-annotation PRs (#646/#647/#648) merged and
+> the corpus was regenerated to observe their `firegrid.contract.id` spans (all
+> resolve; `unresolved-contracts=0`). `C` is regenerated from source each run,
+> never assumed. **Known gate limitation:** the keyless subset observes only the
+> deterministic seams (`C=17`), so it does not satisfy the full `C=23` anchor —
+> see the keyless note below.
 
 | Scenario | Kind | Covers |
 |---|---|---|
@@ -60,8 +67,14 @@ CORPUS_NO_REGEN=1 bash scripts/runtime-corpus.sh check
 
 - **Live scenarios are env-gated:** the recipe skips them when their key is
   unset and prints a SKIP line. With no keys, only the deterministic subset runs
-  (`delegation-proof-cap4` + `control-plane-cancel-close`, stable `N=25`) —
-  runnable in CI without keys; it is a subset of the full `N=33` gate.
+  (`delegation-proof-cap4` + `control-plane-cancel-close`, stable `N=25`, `C=17`)
+  — runnable in CI without keys; it is a subset of the full `N=33`/`C=23` gate.
+- **⚠ Keyless gate vs. the shared baseline (open):** since annotations landed,
+  the keyless subset (`C=17`) is *below* the full-corpus baseline `C=23`, so
+  `check` without keys fails on "C fell". The keyless and full corpora now need
+  *separate* baseline anchors (e.g. `runtime-shape-baseline.keyless.json` the
+  recipe selects when live traces are absent). Until that lands, run the gate
+  with keys present (`C=23`); the keyless run is informational (`N`-drift only).
 - **A live run that `TimedOut` still yields a topology-complete trace.** The
   recipe tolerates a live scenario's non-zero exit and collects its trace
   anyway (`N` is volume-independent); a missing live trace is non-fatal
