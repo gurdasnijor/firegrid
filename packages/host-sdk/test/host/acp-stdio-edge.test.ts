@@ -30,6 +30,7 @@ import {
   FiregridLocalHostLive,
   FiregridLocalProcessFromEnv,
 } from "../../src/host/index.ts"
+import { classifyTurnIdleTimeoutReason } from "../../src/host/acp-stdio-edge.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -203,6 +204,30 @@ const turnCompleteOutput = (
     },
   })
 
+const toolUseOutput = (
+  contextId: string,
+): RuntimeAgentOutputObservation =>
+  Schema.decodeUnknownSync(RuntimeAgentOutputObservationSchema)({
+    _tag: "ToolUse",
+    source: FiregridRuntimeObservationSourceNames.agentOutputEvents,
+    sessionId: contextId,
+    contextId,
+    activityAttempt: 1,
+    sequence: 0,
+    toolUseId: "tool-test",
+    toolName: "not_a_real_tool",
+    event: {
+      _tag: "ToolUse",
+      part: {
+        type: "tool-call",
+        id: "tool-test",
+        name: "not_a_real_tool",
+        params: {},
+        providerExecuted: false,
+      },
+    },
+  })
+
 const acpEdgeOutputHandlingIntentions = {
   Ready: "no-op",
   TextChunk: "forward",
@@ -256,7 +281,147 @@ const capturingTracerLayer = (
   return Layer.setTracer(tracer)
 }
 
+// tf-lgb1: drive a single ACP turn against fully-mocked router + output
+// channel so a test controls the exact output observation sequence. An
+// `outputStream` that never emits a terminal (use Stream.never to stay open)
+// forces the idle timeout; the classified reason lands on the
+// `firegrid.acp_stdio_edge.turn_output` span.
+const runMockEdgeTurn = (options: {
+  readonly contextId: string
+  readonly turnTimeoutMs: number
+  readonly outputStream: Stream.Stream<RuntimeAgentOutputObservation>
+}): Promise<{
+  readonly capturedSpans: ReadonlyArray<CapturedSpan>
+  readonly promptResolved: boolean
+}> => {
+  const harness = makeInMemoryAcpHarness()
+  const { contextId } = options
+  const capturedSpans: Array<CapturedSpan> = []
+  const layer = AcpStdioEdgeLive({
+    input: harness.edgeInput,
+    output: harness.edgeOutput,
+    turnTimeoutMs: options.turnTimeoutMs,
+    runtime: local.jsonl({
+      argv: [globalThis.process.execPath, "-e", ""],
+      agent: "mock-agent",
+      agentProtocol: "stdio-jsonl",
+      cwd: globalThis.process.cwd(),
+    }),
+  }).pipe(
+    Layer.provideMerge(
+      Layer.succeed(HostPlaneChannelRouter, {
+        descriptor: { routes: [], metadata: [] },
+        metadata: [],
+        route: target => Effect.fail(new UnknownChannelTarget({ target: String(target) })),
+        dispatch: request =>
+          Effect.sync(() => {
+            switch (String(request.target)) {
+              case String(HostSessionsCreateOrLoadChannelTarget):
+                return { contextId, sessionId: contextId }
+              case String(SessionPromptChannelTarget):
+              case String(HostSessionsStartChannelTarget):
+              case String(HostPermissionRespondChannelTarget):
+                return { accepted: true }
+              default:
+                throw new Error(`unexpected dispatch target ${String(request.target)}`)
+            }
+          }),
+      } satisfies HostPlaneChannelRouter["Type"]),
+    ),
+    Layer.provideMerge(
+      Layer.succeed(HostContextsChannel, makeIngressChannel({
+        target: HostContextsChannelTarget,
+        schema: RuntimeContextSchema,
+        stream: Stream.make(fakeRuntimeContext(contextId)),
+      })),
+    ),
+    Layer.provideMerge(
+      Layer.succeed(SessionAgentOutputChannel, {
+        forContext: () =>
+          makeIngressChannel({
+            target: SessionAgentOutputChannelTarget,
+            schema: RuntimeAgentOutputObservationSchema,
+            stream: options.outputStream,
+          }),
+      } satisfies SessionAgentOutputChannel["Type"]),
+    ),
+    Layer.provideMerge(capturingTracerLayer(capturedSpans)),
+  )
+  return Effect.runPromise(Effect.scoped(
+    Effect.gen(function*() {
+      yield* Layer.build(layer)
+      const stream = acp.ndJsonStream(harness.clientOutput, harness.clientInput)
+      const connection = new acp.ClientSideConnection(() => makeClient([]), stream)
+      yield* Effect.promise(() =>
+        connection.initialize({
+          protocolVersion: acp.PROTOCOL_VERSION,
+          clientCapabilities: {},
+        }))
+      const session = yield* Effect.promise(() =>
+        connection.newSession({ cwd: globalThis.process.cwd(), mcpServers: [] }))
+      const promptResolved = yield* Effect.promise(() =>
+        connection.prompt({
+          sessionId: session.sessionId,
+          messageId: "mock-turn",
+          prompt: [{ type: "text", text: "go" }],
+        }).then(() => true, () => false))
+      return { capturedSpans, promptResolved }
+    }),
+  ))
+}
+
+const turnTimeoutReason = (
+  spans: ReadonlyArray<CapturedSpan>,
+): unknown =>
+  spans.find(span => span.name === "firegrid.acp_stdio_edge.turn_output")
+    ?.attributes["firegrid.acp.turn.timeout_reason"]
+
 describe("ACP stdio edge", () => {
+  it("tf-lgb1 classifies an idle turn timeout from the last output observation", () => {
+    expect(classifyTurnIdleTimeoutReason(undefined)).toBe("agent_silent")
+    expect(classifyTurnIdleTimeoutReason("TextChunk")).toBe("agent_silent")
+    expect(classifyTurnIdleTimeoutReason("Status")).toBe("agent_silent")
+    expect(classifyTurnIdleTimeoutReason("Ready")).toBe("agent_silent")
+    expect(classifyTurnIdleTimeoutReason("ToolUse")).toBe("tool_call_in_flight")
+    expect(classifyTurnIdleTimeoutReason("PermissionRequest")).toBe("permission_unanswered")
+  })
+
+  it("tf-lgb1 agent_silent: a turn with no output times out as agent_silent", async () => {
+    const contextId = `ctx-${crypto.randomUUID()}`
+    const { capturedSpans, promptResolved } = await runMockEdgeTurn({
+      contextId,
+      turnTimeoutMs: 250,
+      outputStream: Stream.never,
+    })
+    expect(promptResolved).toBe(false)
+    expect(turnTimeoutReason(capturedSpans)).toBe("agent_silent")
+  })
+
+  it("tf-lgb1 tool_call_in_flight: a ToolUse then silence times out as tool_call_in_flight", async () => {
+    const contextId = `ctx-${crypto.randomUUID()}`
+    const { capturedSpans, promptResolved } = await runMockEdgeTurn({
+      contextId,
+      turnTimeoutMs: 250,
+      outputStream: Stream.concat(Stream.make(toolUseOutput(contextId)), Stream.never),
+    })
+    expect(promptResolved).toBe(false)
+    expect(turnTimeoutReason(capturedSpans)).toBe("tool_call_in_flight")
+  })
+
+  it("tf-lgb1 permission_unanswered: a PermissionRequest then silence times out as permission_unanswered", async () => {
+    const contextId = `ctx-${crypto.randomUUID()}`
+    const { capturedSpans, promptResolved } = await runMockEdgeTurn({
+      contextId,
+      turnTimeoutMs: 250,
+      outputStream: Stream.concat(
+        Stream.make(permissionRequestOutput(contextId)),
+        Stream.never,
+      ),
+    })
+    expect(promptResolved).toBe(false)
+    expect(turnTimeoutReason(capturedSpans)).toBe("permission_unanswered")
+  })
+
   it("firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.8 names every RuntimeAgentOutputObservation handling intention", () => {
     expect(acpEdgeOutputHandlingIntentions).toEqual({
       Ready: "no-op",
