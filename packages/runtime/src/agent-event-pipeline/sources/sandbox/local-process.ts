@@ -273,9 +273,9 @@ const makeAgentByteStreamFromProcess = (
                 // tf-ykd5 (annotation batch C): source-stage subprocess byte
                 // boundary — acquires the process/byte resource with scoped
                 // lifetime and does NOT decode protocol or write durable rows
-                // (the source-stage discipline; see feature STAGES.2).
+                // (the source-stage discipline).
                 "firegrid.seam.kind": "process",
-                "firegrid.contract.id": "features/firegrid/firegrid-runtime-agent-event-pipeline.feature.yaml",
+                "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.STAGES.2",
               },
             }),
           )),
