@@ -10,7 +10,14 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base"
 import { Config, Effect, Layer, Option } from "effect"
-import { createWriteStream, mkdirSync, type WriteStream } from "node:fs"
+import {
+  accessSync,
+  constants as fsConstants,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  type WriteStream,
+} from "node:fs"
 import path from "node:path"
 
 export type {
@@ -77,6 +84,40 @@ export const resolveFiregridOtelFileDestination = (
   return {
     _tag: "file",
     filePath: baseDir === undefined ? filePath : path.resolve(baseDir, filePath),
+  }
+}
+
+// tf-3718: typed result of a startup writability check for a file destination,
+// so callers can fail loud with a clear error instead of letting
+// `JsonlFileSpanExporter`'s constructor throw an opaque mkdir/createWriteStream
+// defect when the OTel layer is built.
+export type FiregridOtelFileWritability =
+  | { readonly _tag: "writable" }
+  | { readonly _tag: "unwritable"; readonly reason: string }
+
+// firegrid-observability.HOST_PROCESS_EXPORTERS.3
+// Mirrors what `JsonlFileSpanExporter`'s constructor does (mkdir the parent dir
+// recursively, then open the file for append) as an up-front, idempotent check.
+// Validates the parent directory is creatable + writable and, when the file
+// already exists, that it is writable. Returns a typed result rather than
+// throwing so the CLI can surface a typed usage error.
+export const checkFiregridOtelFileWritable = (
+  filePath: string,
+): FiregridOtelFileWritability => {
+  try {
+    const resolved = path.resolve(filePath)
+    const dir = path.dirname(resolved)
+    mkdirSync(dir, { recursive: true })
+    accessSync(dir, fsConstants.W_OK)
+    if (existsSync(resolved)) {
+      accessSync(resolved, fsConstants.W_OK)
+    }
+    return { _tag: "writable" }
+  } catch (cause) {
+    return {
+      _tag: "unwritable",
+      reason: cause instanceof Error ? cause.message : String(cause),
+    }
   }
 }
 

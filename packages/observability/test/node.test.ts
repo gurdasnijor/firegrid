@@ -1,9 +1,13 @@
 import {
+  checkFiregridOtelFileWritable,
   resolveFiregridOtelActiveExporter,
   resolveFiregridOtelFileDestination,
   spanToJsonLine,
 } from "../src/node.ts"
 import { describe, expect, it } from "vitest"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import type { ReadableSpan } from "../src/node.ts"
 
 describe("@firegrid/observability node helpers", () => {
@@ -77,6 +81,36 @@ describe("@firegrid/observability node helpers", () => {
       destination: { _tag: "console" },
       env: { OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.example/v1/traces" },
     })).toEqual({ _tag: "otlp", endpoint: "https://otlp.example/v1/traces" })
+  })
+
+  it("tf-3718 checkFiregridOtelFileWritable accepts a creatable, writable destination", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "tf-3718-ok-"))
+    try {
+      // nested dir does not exist yet; the check should create it.
+      expect(
+        checkFiregridOtelFileWritable(path.join(dir, "nested", "acp-trace.jsonl")),
+      ).toEqual({ _tag: "writable" })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("tf-3718 checkFiregridOtelFileWritable reports an unwritable path with a reason", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "tf-3718-bad-"))
+    try {
+      // Put a FILE where the check needs a directory, so mkdir fails (ENOTDIR).
+      const fileAsParent = path.join(dir, "not-a-dir")
+      writeFileSync(fileAsParent, "x")
+      const result = checkFiregridOtelFileWritable(
+        path.join(fileAsParent, "sub", "acp-trace.jsonl"),
+      )
+      expect(result._tag).toBe("unwritable")
+      if (result._tag === "unwritable") {
+        expect(result.reason.length).toBeGreaterThan(0)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it("firegrid-observability.HOST_PROCESS_EXPORTERS.2 serializes ended spans as one JSONL record", () => {
