@@ -696,3 +696,52 @@ function* tfE49hReplayPathOutputScanFixtures(): Generator<unknown, void, unknown
   const memoized = yield* someMemoizedActivity
   return void [events, materialized, next, cursor, memoized]
 }
+
+// ===========================================================================
+// tf-zchu: runtime design constraint guards (C4 / C6 / C7).
+// docs/cannon/architecture/runtime-design-constraints.md
+// ===========================================================================
+
+// C4 — async waits are durable completions keyed by domain identity, not new
+// per-sequence DurableDeferred mailboxes on RuntimeContext input/tool/
+// permission/child-session paths. The existing input bridge is baselined.
+function* tfZchuC4DurableDeferredFixtures(): Generator<unknown, void, unknown> {
+  // ruleid: firegrid-c4-no-new-durable-deferred-runtime-wait
+  const inputDeferred = DurableDeferred.make("input:ctx:1", {})
+  // ruleid: firegrid-c4-no-new-durable-deferred-runtime-wait
+  const arrived = yield* DurableDeferred.await(inputDeferred)
+  // ok: firegrid-c4-no-new-durable-deferred-runtime-wait
+  const completion = yield* durableCompletionFor("tool:ctx:tool-1")
+  return void [inputDeferred, arrived, completion]
+}
+
+// C6 — agent-tool protocol schemas must not invent source-specific cursor /
+// event-tag taxonomies or a parallel child-output read stack; reuse the
+// router-backed SessionAgentOutputChannel schema. (Token literals live only on
+// the annotated lines below, so this comment does not self-trigger the rule.)
+
+// ruleid: firegrid-c6-no-source-specific-cursor-event-taxonomy-in-agent-tools
+type ChildOutputReadProtocol = { readonly afterSequence: number }
+
+function* tfZchuC6AgentToolSchemaFixtures(): Generator<unknown, void, unknown> {
+  // ruleid: firegrid-c6-no-source-specific-cursor-event-taxonomy-in-agent-tools
+  const readTool = "session_read"
+  // ruleid: firegrid-c6-no-source-specific-cursor-event-taxonomy-in-agent-tools
+  const cursorSchema = { cursor: Schema.Number }
+  // ruleid: firegrid-c6-no-source-specific-cursor-event-taxonomy-in-agent-tools
+  const eventTagSchema = { eventTag: Schema.String }
+  // ok: firegrid-c6-no-source-specific-cursor-event-taxonomy-in-agent-tools
+  const channelBackedMatch = { sequence: Schema.Number }
+  return void [readTool, cursorSchema, eventTagSchema, channelBackedMatch]
+}
+
+// C7 — terminal prompt completion is durable runtime result state. A transport
+// edge must not synthesize a terminal Done from raw TurnComplete; it observes
+// the durable terminal fact or decodes a runtime-produced receipt.
+function* tfZchuC7EdgeTerminalFixtures(): Generator<unknown, void, unknown> {
+  // ruleid: firegrid-c7-no-edge-local-terminal-synthesis
+  const synthesizedTerminal = { _tag: "Done", detail: "end_turn" }
+  // ok: firegrid-c7-no-edge-local-terminal-synthesis
+  const observedTerminal = someOutput._tag === "TurnComplete"
+  return void [synthesizedTerminal, observedTerminal]
+}

@@ -74,6 +74,18 @@
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/input-suspend-crash-recovery/workflow.ts",
       "line": 108
+    },
+    {
+      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
+      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
+      "line": 204,
+      "note": "C4 admissible bridge exception: per-sequence DurableDeferred input mailbox is the workflow-engine bridge (tf-5cn1); RFC-conforming deletion targets tf-vrz6/tf-w6qj. docs/cannon/architecture/runtime-design-constraints.md \"Runtime Input Mailbox\"."
+    },
+    {
+      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
+      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
+      "line": 212,
+      "note": "C4 admissible bridge exception: per-sequence DurableDeferred input mailbox is the workflow-engine bridge (tf-5cn1); RFC-conforming deletion targets tf-vrz6/tf-w6qj. docs/cannon/architecture/runtime-design-constraints.md \"Runtime Input Mailbox\"."
     }
   ]
 }
