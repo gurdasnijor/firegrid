@@ -30,15 +30,31 @@ export interface AcpStdioEdgeOptions {
   readonly externalKeySource?: string
   readonly turnTimeoutMs?: number
   /**
-   * How the edge answers a RuntimeAgentOutput PermissionRequest (tf-l5px):
-   * - `"forward"` (default): ask the connected ACP client (Zed's native
+   * How the edge answers a RuntimeAgentOutput PermissionRequest (tf-l5px/tf-jvjm):
+   * - `"forward"` (default, safe): ask the connected ACP client (Zed's native
    *   permission UI) via `AgentSideConnection.requestPermission` and map the
    *   selected/rejected/cancelled outcome back through `host.permissions.respond`.
-   * - `"allow"`: auto-allow without prompting — the tf-46i4 stopgap, retained
-   *   only behind this explicit opt-in. tf-jvjm formalizes the policy surface.
+   * - `"deny"`: reject every request without prompting (a safe non-interactive
+   *   default for local/CI testing).
+   * - `"allow"`: auto-allow without prompting — must be an intentional operator
+   *   choice (not the default).
+   *
+   * Every branch still dispatches a typed decision through the same
+   * `host.permissions.respond` route: this selects WHICH decision, never who
+   * owns the permission authority.
    */
-  readonly permissionPolicy?: "forward" | "allow"
+  readonly permissionPolicy?: AcpPermissionPolicy
 }
+
+// tf-jvjm: the explicit ACP permission policy surface. "forward" is the safe
+// default; "allow" is an intentional operator opt-in.
+export type AcpPermissionPolicy = "forward" | "deny" | "allow"
+export const acpPermissionPolicies: ReadonlyArray<AcpPermissionPolicy> = [
+  "forward",
+  "deny",
+  "allow",
+]
+export const defaultAcpPermissionPolicy: AcpPermissionPolicy = "forward"
 
 // tf-l5px: structural shape of the decision dispatched to host.permissions.respond.
 type EdgePermissionDecision =
@@ -529,9 +545,12 @@ class FiregridAcpStdioAgent implements acp.Agent {
     acpSessionId: string,
     output: Extract<RuntimeAgentOutputObservation, { readonly _tag: "PermissionRequest" }>,
   ): Promise<void> {
+    const policy = this.options.permissionPolicy ?? defaultAcpPermissionPolicy
     const decision: EdgePermissionDecision =
-      this.options.permissionPolicy === "allow"
+      policy === "allow"
         ? { _tag: "Allow" }
+        : policy === "deny"
+        ? { _tag: "Deny" }
         : await this.requestPermissionFromClient(acpSessionId, output)
     await this.run(
       this.router.dispatch({
