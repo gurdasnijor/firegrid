@@ -24,6 +24,53 @@ export type ChannelTarget = Schema.Schema.Type<typeof ChannelTargetSchema>
 export const makeChannelTarget = (target: string): ChannelTarget =>
   Schema.decodeUnknownSync(ChannelTargetSchema)(target)
 
+/**
+ * Protocol-owned terminal completion receipt
+ * (`SDD_FIREGRID_DURABLE_CHANNELS_SYNC_ASYNC.md` §"Completion Contracts", point
+ * 2). A route whose result is terminal completion evidence returns one of these;
+ * transport edges (ACP/MCP/CLI/HTTP) project it to their wire response — e.g. an
+ * ACP `PromptResponse` + stop reason. Kept transport-neutral: the protocol layer
+ * distinguishes the terminal outcome (`Done` / `Rejected`) and carries an
+ * optional opaque detail, but does not encode ACP/MCP-specific reason vocab.
+ */
+export const RouteCompletionReceipt = Schema.Union(
+  Schema.TaggedStruct("Done", {
+    detail: Schema.optional(Schema.String),
+  }),
+  Schema.TaggedStruct("Rejected", {
+    reason: Schema.optional(Schema.String),
+  }),
+)
+export type RouteCompletionReceipt = typeof RouteCompletionReceipt.Type
+
+/**
+ * Route completion metadata: declares how an edge must read a route's dispatch
+ * result, so transports know what invoking the route means before they map the
+ * result to a wire response.
+ *
+ * - `acknowledgement` (default): the dispatch result is an append/identity
+ *   receipt, not terminal completion evidence. Edges decode it against the
+ *   route's own response schema (the immediate receipt).
+ * - `terminal`: the dispatch result IS terminal completion evidence, carried by
+ *   `receiptSchema` (typically {@link RouteCompletionReceipt}).
+ *
+ * This is route-owned descriptor metadata, NOT a call-site sync flag /
+ * `isComplete` boolean / await-mode enum. The SDD rejects caller flags because a
+ * caller can diverge from the route result and router metadata cannot inspect a
+ * caller's flag.
+ */
+export type ChannelRouteCompletion =
+  | { readonly mode: "acknowledgement" }
+  | { readonly mode: "terminal"; readonly receiptSchema: Schema.Schema.Any }
+
+export const acknowledgementCompletion: ChannelRouteCompletion = {
+  mode: "acknowledgement",
+}
+
+export const terminalCompletion = (
+  receiptSchema: Schema.Schema.Any = RouteCompletionReceipt,
+): ChannelRouteCompletion => ({ mode: "terminal", receiptSchema })
+
 export interface TypedStreamBinding<S extends Schema.Schema.Any = Schema.Schema.Any> {
   readonly _tag: "TypedStream"
   readonly stream: Stream.Stream<Schema.Schema.Type<S>, unknown, never>
@@ -56,6 +103,7 @@ export interface IngressChannel<
   readonly direction: "ingress"
   readonly schema: S
   readonly sourceClass?: ChannelSourceClass
+  readonly completion?: ChannelRouteCompletion
   readonly binding: TypedStreamBinding<S>
 }
 
@@ -66,6 +114,7 @@ export interface EgressChannel<
   readonly target: ChannelTarget
   readonly direction: "egress"
   readonly schema: S
+  readonly completion?: ChannelRouteCompletion
   readonly binding: AppendTargetBinding<S, Receipt>
 }
 
@@ -77,6 +126,7 @@ export interface BidirectionalChannel<
   readonly directions: readonly ["ingress", "egress"]
   readonly schema: S
   readonly sourceClasses: ReadonlyArray<ChannelSourceClass>
+  readonly completion?: ChannelRouteCompletion
   readonly binding: {
     readonly _tag: "Bidirectional"
     readonly stream: Stream.Stream<Schema.Schema.Type<S>, unknown, never>
@@ -94,6 +144,7 @@ export interface CallableChannel<
   readonly direction: "call"
   readonly requestSchema: Request
   readonly responseSchema: Response
+  readonly completion?: ChannelRouteCompletion
   readonly binding: CallTargetBinding<Request, Response>
 }
 
@@ -108,6 +159,7 @@ export const makeIngressChannel = <S extends Schema.Schema.Any>(
     readonly target: ChannelTarget | string
     readonly schema: S
     readonly sourceClass?: ChannelSourceClass
+    readonly completion?: ChannelRouteCompletion
     readonly stream: Stream.Stream<Schema.Schema.Type<S>, unknown, never>
   },
 ): IngressChannel<S> => ({
@@ -119,6 +171,9 @@ export const makeIngressChannel = <S extends Schema.Schema.Any>(
   ...(options.sourceClass === undefined
     ? {}
     : { sourceClass: options.sourceClass }),
+  ...(options.completion === undefined
+    ? {}
+    : { completion: options.completion }),
   binding: {
     _tag: "TypedStream",
     stream: options.stream,
@@ -129,6 +184,7 @@ export const makeEgressChannel = <S extends Schema.Schema.Any, Receipt = void>(
   options: {
     readonly target: ChannelTarget | string
     readonly schema: S
+    readonly completion?: ChannelRouteCompletion
     readonly append: (
       payload: Schema.Schema.Type<S>,
     ) => Effect.Effect<Receipt, unknown, never>
@@ -139,6 +195,9 @@ export const makeEgressChannel = <S extends Schema.Schema.Any, Receipt = void>(
     : options.target,
   direction: "egress",
   schema: options.schema,
+  ...(options.completion === undefined
+    ? {}
+    : { completion: options.completion }),
   binding: {
     _tag: "AppendTarget",
     append: options.append,
@@ -150,6 +209,7 @@ export const makeBidirectionalChannel = <S extends Schema.Schema.Any>(
     readonly target: ChannelTarget | string
     readonly schema: S
     readonly sourceClasses: ReadonlyArray<ChannelSourceClass>
+    readonly completion?: ChannelRouteCompletion
     readonly stream: Stream.Stream<Schema.Schema.Type<S>, unknown, never>
     readonly append: (
       payload: Schema.Schema.Type<S>,
@@ -163,6 +223,9 @@ export const makeBidirectionalChannel = <S extends Schema.Schema.Any>(
   directions: ["ingress", "egress"],
   schema: options.schema,
   sourceClasses: options.sourceClasses,
+  ...(options.completion === undefined
+    ? {}
+    : { completion: options.completion }),
   binding: {
     _tag: "Bidirectional",
     stream: options.stream,
@@ -178,6 +241,7 @@ export const makeCallableChannel = <
     readonly target: ChannelTarget | string
     readonly requestSchema: Request
     readonly responseSchema: Response
+    readonly completion?: ChannelRouteCompletion
     readonly call: (
       request: Schema.Schema.Type<Request>,
     ) => Effect.Effect<Schema.Schema.Type<Response>, unknown, never>
@@ -189,6 +253,9 @@ export const makeCallableChannel = <
   direction: "call",
   requestSchema: options.requestSchema,
   responseSchema: options.responseSchema,
+  ...(options.completion === undefined
+    ? {}
+    : { completion: options.completion }),
   binding: {
     _tag: "CallTarget",
     call: options.call,
