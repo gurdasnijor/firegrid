@@ -205,16 +205,21 @@ const appendEgressPayload = <S extends Schema.Schema.Any>(
   payload: Schema.Schema.Type<S>,
 ) => channel.binding.append(payload)
 
-const waitForIngressRow = <S extends Schema.Schema.Any>(
-  channel: IngressChannel<S> | BidirectionalChannel<S>,
-): Effect.Effect<Schema.Schema.Type<S>, unknown, never> =>
-  channel.binding.stream.pipe(
+const runHeadOrNever = <A>(
+  stream: Stream.Stream<A, unknown, never>,
+): Effect.Effect<A, unknown, never> =>
+  stream.pipe(
     Stream.runHead,
     Effect.flatMap(Option.match({
       onNone: () => Effect.never,
       onSome: row => Effect.succeed(row),
     })),
   )
+
+const waitForIngressRow = <S extends Schema.Schema.Any>(
+  channel: IngressChannel<S> | BidirectionalChannel<S>,
+): Effect.Effect<Schema.Schema.Type<S>, unknown, never> =>
+  runHeadOrNever(channel.binding.stream)
 
 export const runtimeRouteFromChannel = (
   channel: ChannelRegistration,
@@ -279,6 +284,58 @@ export const runtimeRouteFromFactoryChannel = <
     return options.channel(request[options.field]).binding.append(
       options.payload(request),
     )
+  },
+})
+
+/**
+ * Ingress analogue of {@link runtimeRouteFromFactoryChannel}: a factory-keyed
+ * READ route. The route input carries the key field (e.g. `sessionId`) plus a
+ * cursor; `channel(key)` resolves the per-key ingress channel and the optional
+ * `seek` predicate seeds the stream past the cursor before taking the next row.
+ *
+ * Used to express per-session observation (e.g. delegated child-output) over an
+ * existing per-session `IngressChannel` instead of a parallel read protocol.
+ * Parent→child authority belongs at this route boundary: the `channel` resolver
+ * is where an authorization check (e.g. a durable parent-child link) is applied
+ * before a key is observable.
+ */
+export const runtimeRouteFromFactoryIngressChannel = <
+  Field extends string,
+  FactoryInput extends Record<Field, unknown>,
+  S extends Schema.Schema.Any,
+>(options: {
+  readonly target: ChannelTarget
+  readonly field: Field
+  readonly inputSchema: Schema.Schema<FactoryInput, FactoryInput, never>
+  readonly channel: (value: FactoryInput[Field]) => IngressChannel<S>
+  readonly seek?: (
+    input: FactoryInput,
+  ) => (row: Schema.Schema.Type<S>) => boolean
+}): RuntimeChannelRoute<Schema.Schema.Type<S>, unknown> => ({
+  descriptor: {
+    target: options.target,
+    direction: "ingress",
+    verbs: ["wait_for"],
+    inputSchema: options.inputSchema,
+    metadata: {
+      target: options.target,
+      direction: "ingress",
+      verbs: ["wait_for"],
+      schema: {
+        direction: "ingress",
+        schema: options.inputSchema,
+      },
+      completion: acknowledgementCompletion,
+    },
+  },
+  invoke: input => {
+    const request = input as FactoryInput
+    const channel = options.channel(request[options.field])
+    const predicate = options.seek?.(request)
+    const source = predicate === undefined
+      ? channel.binding.stream
+      : channel.binding.stream.pipe(Stream.filter(predicate))
+    return runHeadOrNever(source)
   },
 })
 
