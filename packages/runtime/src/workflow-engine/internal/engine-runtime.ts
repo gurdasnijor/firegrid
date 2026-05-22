@@ -85,6 +85,12 @@ export const makeWorkflowEngine = (
             "firegrid.workflow.activity.name": row.activityName,
             "firegrid.workflow.activity.attempt": row.attempt,
             "firegrid.workflow.worker_id": workerId,
+            // Seam contract (runtime-shrink contract-coverage, tf-mmh2): worker
+            // exclusivity — exactly one durable claim per execution/activity/attempt
+            // so the body runs once for the claimed attempt
+            // (workflow-engine-durable-state.VALIDATION.6, RUNTIME_BOUNDARY.5-6).
+            "firegrid.seam.kind": "concurrency",
+            "firegrid.contract.id": "features/firegrid/workflow-engine-durable-state.feature.yaml",
           },
         }),
         annotateWorkflowExecutionSpans(row.executionId),
@@ -409,6 +415,12 @@ export const makeWorkflowEngine = (
             attributes: {
               "firegrid.workflow.activity.name": activity.name,
               "firegrid.workflow.activity.attempt": attempt,
+              // Seam contract (runtime-shrink contract-coverage, tf-mmh2):
+              // durable at-most-once execution — a completed activity is
+              // short-circuited from durable state instead of re-running the body
+              // (workflow-engine-durable-state.VALIDATION.1, ENGINE.1).
+              "firegrid.seam.kind": "durability",
+              "firegrid.contract.id": "features/firegrid/workflow-engine-durable-state.feature.yaml",
             },
           }),
         ),
@@ -425,6 +437,15 @@ export const makeWorkflowEngine = (
             kind: "internal",
             attributes: {
               "firegrid.workflow.deferred.name": deferred.name,
+              // Seam contract (runtime-shrink contract-coverage, tf-mmh2):
+              // foundational DurableDeferred resolution read — returns the
+              // committed encoded exit (or undefined) so a suspended workflow
+              // resumes deterministically across replay
+              // (workflow-engine-durable-state.ENGINE.1-2, VALIDATION.2).
+              // NOT the tf-jpcg "external await into the workflow" bridge_debt;
+              // this is the engine's own durable-deferred primitive.
+              "firegrid.seam.kind": "durability",
+              "firegrid.contract.id": "features/firegrid/workflow-engine-durable-state.feature.yaml",
             },
           }),
         ),
