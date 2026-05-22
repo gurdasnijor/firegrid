@@ -6,7 +6,8 @@ import {
   WorkflowEngine,
 } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
+import { DurableTable } from "effect-durable-operators"
+import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   DurableStreamsWorkflowEngine,
@@ -922,6 +923,95 @@ describe("durable workflow engine", () => {
       expect(JSON.stringify(result)).toContain("activity-denied")
     }
   })
+
+  it("tf-e5rf resumes a suspended workflow from a workflow-owned table write via engine.resume, without a deferred mailbox", async () => {
+    // F3 wakeup proof: a workflow can wait on a TABLE ROW (not a DurableDeferred)
+    // by point-reading its owned table and voluntarily suspending via
+    // Workflow.suspend(instance) when the row is absent. A later table write +
+    // engine.resume(executionId) re-runs the body, which finds the row and
+    // completes. No deferred row is created (no mailbox bridge) and there is no
+    // polling — the resume is a single explicit signal.
+    if (!baseUrl) throw new Error("server not started")
+    const engineStreamUrl = `${baseUrl}/v1/stream/tf-e5rf-engine-${crypto.randomUUID()}`
+    const inputStreamUrl = `${baseUrl}/v1/stream/tf-e5rf-input-${crypto.randomUUID()}`
+
+    const InputRowSchema = Schema.Struct({
+      key: Schema.String.pipe(DurableTable.primaryKey),
+      value: Schema.String,
+    })
+    class WakeInputTable extends DurableTable("tf-e5rf.input", {
+      inputs: InputRowSchema,
+    }) {}
+    const inputTableLayer = WakeInputTable.layer({
+      streamOptions: { url: inputStreamUrl, contentType: "application/json" },
+      txTimeoutMs: 2_000,
+    })
+
+    const WakeWorkflow = Workflow.make({
+      name: "tf-e5rf-wake-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.String,
+      idempotencyKey: payload => payload.id,
+    })
+    // Body suspends on table-row-absent; resumes from the live table read.
+    const workflowLayer = WakeWorkflow.toLayer(payload =>
+      Effect.gen(function* () {
+        const instance = yield* WorkflowEngine.WorkflowInstance
+        const table = yield* WakeInputTable
+        // A store read failure is a defect, not an expected workflow error
+        // (WakeWorkflow declares no error schema); the body's error stays never.
+        const row = yield* table.inputs.get(payload.id).pipe(Effect.orDie)
+        if (Option.isNone(row)) {
+          return yield* Workflow.suspend(instance)
+        }
+        return row.value.value
+      })).pipe(Layer.provide(inputTableLayer))
+
+    const engineLayer = DurableStreamsWorkflowEngine.layer({
+      streamUrl: engineStreamUrl,
+    }) as Layer.Layer<never, unknown, unknown>
+    const executionId = await Effect.runPromise(WakeWorkflow.executionId({ id: "wake-1" }))
+
+    // Phase 1: start the workflow with no input row -> it suspends.
+    await runWithLayer(
+      engineLayer,
+      workflowLayer,
+      WakeWorkflow.execute({ id: "wake-1" }, { discard: true }),
+    )
+
+    const suspendedRow = await inspectTable(engineStreamUrl, table =>
+      table.executions.get(executionId))
+    expect(suspendedRow._tag).toBe("Some")
+    if (suspendedRow._tag === "Some") {
+      expect(suspendedRow.value.suspended).toBe(true)
+      expect(suspendedRow.value.finalResult).toBeUndefined()
+    }
+    // No deferred mailbox: the suspension created no deferred row.
+    const deferredsWhileSuspended = await inspectTable(engineStreamUrl, table =>
+      table.deferreds.query(coll =>
+        coll.toArray.filter(row => row.executionId === executionId)))
+    expect(deferredsWhileSuspended).toHaveLength(0)
+
+    // Phase 2: write the workflow-owned input row, then signal via
+    // engine.resume. The resumed body reads the row and completes.
+    const completed = await runWithLayer(
+      engineLayer,
+      workflowLayer,
+      Effect.gen(function* () {
+        const table = yield* WakeInputTable
+        yield* table.inputs.insert({ key: "wake-1", value: "delivered-by-table-write" })
+        yield* WakeWorkflow.resume(executionId)
+        return yield* WakeWorkflow.execute({ id: "wake-1" })
+      }).pipe(Effect.provide(inputTableLayer)),
+    )
+
+    expect(completed).toBe("delivered-by-table-write")
+    // Still no deferred row was ever created for this execution.
+    const deferredsAfterResume = await inspectTable(engineStreamUrl, table =>
+      table.deferreds.query(coll =>
+        coll.toArray.filter(row => row.executionId === executionId)))
+    expect(deferredsAfterResume).toHaveLength(0)
+  }, 20_000)
 
   it("workflow-engine-durable-state.VALIDATION.9 persists SuspendOnFailure causes across engine reconstruction", async () => {
     if (!baseUrl) throw new Error("server not started")
