@@ -15,6 +15,7 @@ import {
   Context,
   Cause,
   Effect,
+  HashMap,
   Layer,
   Option,
   Predicate,
@@ -271,14 +272,55 @@ const runtimeOutputAfterSource = (
   afterSequence,
 } as const)
 
+// tf-7kq8 hotfix: replay-safe memo for the "next output after N" observation.
+//
+// `events.initial(afterSequence)` is a full output-table scan executed inside
+// the @effect/workflow body. The body re-executes on every workflow replay and
+// `runMergedEventLoop`'s cursor lives in a non-durable `Ref` that resets to
+// sequence -1 each replay, so the body re-walks the entire output history and
+// re-scans the table for every sequence on every resume — O(resumes × history
+// × rows). A live agent turn (many output chunks → many resumes) collapses into
+// the `agent_output.initial` storm and the turn never delivers TurnComplete
+// inside the edge's turn timeout (root cause line-pinned in
+// docs/investigations/2026-05-21-live-acp-tool-call-triage.md).
+//
+// The result of `initial(afterSequence)` is IMMUTABLE: the minimal output with
+// sequence > afterSequence does not change once it exists (outputs are appended
+// in monotonic sequence order). So a `Some` result can be memoized and reused on
+// every subsequent replay, turning the re-walk into O(1) cache hits and bounding
+// real table reads to O(distinct outputs). A `None` (caught-up frontier) is
+// never cached, so it always re-polls live and still observes new outputs.
+//
+// The memo `Ref` is created once at workflow registration (process scope) and
+// threaded down, so it survives the in-process replays the engine drives. This
+// is a deliberately narrow bridge; the durable replay-safe streaming consumer is
+// the lane-2 target (tf-ly2g).
+type RuntimeOutputObservationMemo = Ref.Ref<
+  HashMap.HashMap<string, RuntimeAgentOutputObservation>
+>
+
+const runtimeOutputMemoKey = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  afterSequence: number,
+): string => `${context.contextId}:${activityAttempt}:${afterSequence}`
+
 const completedRuntimeOutput = (
   context: RuntimeContext,
   activityAttempt: number,
   afterSequence: number,
+  memo: RuntimeOutputObservationMemo,
 ) =>
   Effect.gen(function*() {
+    const memoKey = runtimeOutputMemoKey(context, activityAttempt, afterSequence)
+    const cached = HashMap.get(yield* Ref.get(memo), memoKey)
+    if (Option.isSome(cached)) {
+      // Replay-safe hit: skip the table scan AND the span, so the
+      // `agent_output.initial`/`output.completed` span count stays O(outputs).
+      return cached
+    }
     const events = yield* RuntimeAgentOutputAfterEvents
-    return yield* events.initial(runtimeOutputAfterSource(context, activityAttempt, afterSequence)).pipe(
+    const result = yield* events.initial(runtimeOutputAfterSource(context, activityAttempt, afterSequence)).pipe(
       Effect.mapError(cause =>
         asRuntimeContextError(
           "runtime-context.output.initial",
@@ -295,6 +337,10 @@ const completedRuntimeOutput = (
         },
       }),
     )
+    if (Option.isSome(result)) {
+      yield* Ref.update(memo, HashMap.set(memoKey, result.value))
+    }
+    return result
   })
 
 type RuntimeContextMergedEvent =
@@ -750,6 +796,7 @@ const completedRuntimeContextEvent = (
   context: RuntimeContext,
   activityAttempt: number,
   state: RuntimeContextEventState,
+  memo: RuntimeOutputObservationMemo,
 ) =>
   Effect.gen(function*() {
     const input = yield* completedRuntimeInput(
@@ -763,6 +810,7 @@ const completedRuntimeContextEvent = (
       context,
       activityAttempt,
       state.lastProcessedOutputSequence,
+      memo,
     )
     return Option.map(output, (event): RuntimeContextMergedEvent => ({ _tag: "Output", event }))
   })
@@ -815,13 +863,14 @@ const handleRuntimeContextEvent = (
 const runMergedEventLoop = (
   context: RuntimeContext,
   activityAttempt: number,
+  memo: RuntimeOutputObservationMemo,
 ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> =>
   Effect.gen(function*() {
     const stateRef = yield* Ref.make(initialRuntimeContextEventState)
     let shouldContinue = true
     while (shouldContinue) {
       const state = yield* Ref.get(stateRef)
-      const completed = yield* completedRuntimeContextEvent(context, activityAttempt, state)
+      const completed = yield* completedRuntimeContextEvent(context, activityAttempt, state, memo)
       const event = Option.isSome(completed)
         ? completed.value
         : yield* awaitNextRuntimeContextEvent(context, state)
@@ -846,6 +895,7 @@ const runMergedEventLoop = (
 
 const runWorkflowNativeRuntimeContext = (
   contextId: string,
+  memo: RuntimeOutputObservationMemo,
 ): Effect.Effect<StartRuntimeResult, RuntimeContextError, unknown> =>
   Effect.gen(function*() {
     const context = yield* readRuntimeContext(contextId)
@@ -857,7 +907,7 @@ const runWorkflowNativeRuntimeContext = (
       if (start._tag === "Failed") {
         return yield* writeRunFailedResult(context, activityAttempt, start.error)
       }
-      return yield* runMergedEventLoop(context, activityAttempt)
+      return yield* runMergedEventLoop(context, activityAttempt, memo)
     }).pipe(
       Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),
     )
@@ -892,8 +942,14 @@ export const RuntimeContextWorkflowNativeLayer = Layer.scopedDiscard(
     // gen, so it must re-provide the captured substrate. `never` was
     // only sound while `DurableTable.layer` leaked `any`.
     const captured = yield* Effect.context<RuntimeContextWorkflowExecutionEnv>()
+    // tf-7kq8: process-scoped memo for immutable "next output after N"
+    // observations, created once at registration so it survives the in-process
+    // workflow replays the engine drives. See `completedRuntimeOutput`.
+    const outputMemo: RuntimeOutputObservationMemo = yield* Ref.make(
+      HashMap.empty<string, RuntimeAgentOutputObservation>(),
+    )
     yield* engine.register(RuntimeContextWorkflowNative, ({ contextId }) =>
-      runWorkflowNativeRuntimeContext(contextId).pipe(
+      runWorkflowNativeRuntimeContext(contextId, outputMemo).pipe(
         Effect.provide(captured),
       ))
   }).pipe(
