@@ -3,6 +3,11 @@ export {
   type SessionAgentOutputChannelOptions,
 } from "./session-agent-output.ts"
 export {
+  SessionAgentOutputRouteInputSchema,
+  sessionAgentOutputObservationRoute,
+  type SessionAgentOutputRouteInput,
+} from "./session-agent-output-route.ts"
+export {
   submitSessionPermissionResponse,
 } from "./session-permission.ts"
 export {
