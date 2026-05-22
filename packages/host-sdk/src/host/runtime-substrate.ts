@@ -13,10 +13,14 @@ import {
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import {
+  type RuntimeContextStateStore,
+} from "@firegrid/runtime/kernel"
+import {
   RuntimeObservationStreamsLive,
 } from "@firegrid/runtime/streams"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
+  RuntimeContextStateStoreLive,
 } from "./per-context-runtime-output.ts"
 import {
   SessionAgentOutputChannelLive,
@@ -36,6 +40,7 @@ export type HostRuntimeContextExecutionEnv =
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
   | RuntimeAgentOutputAfterEvents
+  | RuntimeContextStateStore
   | CurrentHostSession
   | RuntimeHostConfig
 
@@ -46,6 +51,7 @@ export type HostRuntimeContextExecutionEnv =
 // Runtime-owned workflows consume typed observation tags directly; host-sdk
 // installs the host-backed providers at the composition boundary.
 export const HostRuntimeObservationSubstrateLive = PerContextRuntimeAgentOutputAfterEventsLive.pipe(
+  Layer.provideMerge(RuntimeContextStateStoreLive),
   Layer.provideMerge(SessionAgentOutputChannelLive),
   Layer.provideMerge(RuntimeAgentOutputEventsLayer),
   Layer.provideMerge(RuntimeControlPlaneRecorderLive),

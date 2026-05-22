@@ -6,6 +6,10 @@ import {
   type PerContextRuntimeOutputWriterService,
 } from "@firegrid/runtime/per-context-output"
 import { RuntimeAgentOutputAfterEvents } from "@firegrid/runtime/runtime-output"
+import {
+  makePerContextRuntimeContextStateStore,
+  RuntimeContextStateStore,
+} from "@firegrid/runtime/kernel"
 import { RuntimeHostConfig } from "./config.ts"
 
 // tf-bffo: the durable per-context RuntimeOutputTable wiring now lives in
@@ -40,6 +44,25 @@ export const PerContextRuntimeAgentOutputAfterEventsLive = Layer.effect(
         },
         hostSession.streamPrefix,
       ),
+    )
+  }),
+)
+
+// tf-aseo: workflow-owned durable loop state for the runtime-context body.
+// Same per-context stream + host topology resolution as the output wiring
+// above; the body loads/advances its cursors + pending-permission sets here
+// instead of through a host-owned output scan.
+export const RuntimeContextStateStoreLive = Layer.scoped(
+  RuntimeContextStateStore,
+  Effect.gen(function*() {
+    const hostConfig = yield* RuntimeHostConfig
+    const hostSession = yield* CurrentHostSession
+    return yield* makePerContextRuntimeContextStateStore(
+      {
+        durableStreamsBaseUrl: hostConfig.durableStreamsBaseUrl,
+        ...(hostConfig.headers === undefined ? {} : { headers: hostConfig.headers }),
+      },
+      hostSession.streamPrefix,
     )
   }),
 )
