@@ -1,83 +1,137 @@
-# Kernel-owned write+arm
+# Kernel-Owned Write+Arm
 
-Status: canonical architecture direction (validated by tiny-firegrid reference)
+Doc-Class: dispatchable
+Status: active
 Date: 2026-05-22
-Beads: tf-c9r9 (this), supersedes the tf-12q9 engine-sweep approach
-Reference sim: `packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/`
+Owner: Firegrid Architecture
 
-## §0 — The load-bearing decision
+## Purpose
 
-**Restart recovery of a workflow that is parked waiting for input is owned by a
-single serialized host-kernel/controller that replays its OWN durable write+arm
-facts — NOT by a generic engine sweep that resumes every suspended execution.**
+This note records the current canonical architecture for waking a workflow after
+a durable row write. It supersedes the "generic restart recovery sweep" option
+from the S1 planning discussion and clarifies a naming trap:
 
-The kernel writes the workflow-owned input row and arms (resumes) the owning
-execution as one durable control step, recording that pair as a fact it owns. On
-restart it replays only its own pending facts and re-drives exactly those
-executions. This is sound; a generic engine-level "resume all suspended" sweep is
-not.
+> There is no concrete `HostKernelWorkflow` implementation in the codebase
+> today.
 
-## Why the generic engine sweep is unsound (tf-12q9 evidence)
+`HostKernelWorkflow` names a target ownership role: a host-side serialized
+controller for lifecycle and workflow-owned resource commands. Engineers should
+not spend time searching for a class, workflow, or module with that name. Until
+the implementation exists, use the concrete phrase **host kernel/controller** in
+plans and name the actual file or module being changed.
 
-A workflow parked on a `DurableDeferred.await` and a workflow parked on a
-table-wait `Workflow.suspend` are **indistinguishable at the engine-row level**:
-vendored `repos/effect/packages/workflow/src/DurableDeferred.ts:116-119` shows
-`DurableDeferred.await` *is* `Workflow.suspend(instance)` when the deferred is
-unresolved, and the `WorkflowExecutionRow` records only `suspended` /
-`interrupted` / `cause` — nothing about *what* a suspension waits on.
+## Evidence
 
-So an engine sweep that "resumes all suspended executions" necessarily also
-resumes deferred-awaits, injecting a concurrent body fiber that races the
-engine's own `deferredDone → resume` and `interrupt` paths for the same
-execution. tf-12q9 demonstrated this empirically: the sweep made the S1 probes
-green but regressed `tf-gyxc` (interrupt terminality) and
-`deferred-done-idempotency` (first-writer-wins). It also has a registration
-timing hazard: a construction-time sweep runs before workflows register, so
-`resume` (which needs the execute fn) no-ops.
+The current conclusion is empirical, not aesthetic.
 
-## The sound shape
+1. **S1 proved the durability gap.** A workflow body parked on a
+   workflow-owned table row can miss durable work. If the row write survives but
+   the following `engine.resume` is lost, reconstruction alone does not re-arm
+   the table wait. Durable clock waits do recover on reconstruction, via the
+   clock wakeup recovery path.
 
-Three properties, all validated green in the reference sim:
+2. **The engine-level recovery sweep was falsified.** A prototype blanket sweep
+   made the S1 happy path green, but regressed interrupt terminality and
+   `deferredDone` idempotency. The reason is structural: the engine persisted
+   row records only an undifferentiated suspended execution. It does not know
+   whether that execution is parked on a table row, a durable deferred, an
+   interrupt, or another suspension reason.
 
-1. **Bounded ownership.** The kernel owns a private control table of write+arm
-   facts (`{commandKey, executionId, inputKey, inputValue, status}`). Recovery
-   iterates THAT table, never `engine.executions`. Executions the kernel owns no
-   fact for (deferred-awaits, foreign table-waits) are never touched. The
-   reference sim's Probe C asserts a parked `DurableDeferred.await` execution is
-   left untouched by the replay and recovers only via its own `deferredDone`.
+3. **Therefore the engine cannot safely infer the wake.** A generic
+   "resume every suspended workflow on restart" operation is unsound while
+   suspension kinds are not explicit engine state. It can start a second body
+   fiber racing a real deferred completion or interrupt and corrupt the terminal
+   result.
 
-2. **One durable control step.** The write+arm fact is written first (the durable
-   record of intent). Writing the workflow-owned input row and arming
-   (`resume`) are the idempotent effects the kernel (re-)performs to satisfy the
-   fact: input via `insertOrGet`; resume short-circuits on `finalResult`. A crash
-   at any point leaves the fact pending; restart replays it to completion.
+## Decision
 
-3. **Deterministic register → replay ordering, single serialized owner.** The
-   kernel registers its workflows, then runs the replay — so `resume` always has
-   the execute fn (the tf-12q9 timing hazard is gone). The kernel is the sole
-   driver of write+arm for its executions, so it never forks a competing body
-   fiber into an execution another path is concurrently driving.
+The sound shape is a **host-kernel/controller-owned write+arm command**:
 
-## Non-goals / invariants
+```text
+edge / channel route
+  -> host kernel/controller command
+  -> write the workflow-owned row
+  -> arm or resume the owning workflow execution
+  -> persist enough command state for restart recovery
+```
 
-- **No input deferred mailbox.** The body parks on a workflow-owned table input
-  (`Workflow.suspend`), not a `DurableDeferred` per-input mailbox. The production
-  `DurableDeferred` input mailbox is a transitional bridge this direction
-  retires (see the migration SDD).
-- **No generic resume-all sweep.** Recovery is keyed off owned facts only.
-- **No ordering authority.** Write+arm facts are independent, keyed per
-  `(executionId, inputKey)`. The kernel imposes no cross-input ordering; it is
-  not a sequencer.
+The owner is the component that knows why the write implies a wake. It created
+the command, knows the target context/execution identity, knows the table row or
+tool-use identity being satisfied, and can serialize the wake with lifecycle
+operations such as close, cancel, interrupt, and reconstruction.
 
-## Authority position (today vs target)
+This is not an input ordering authority. Cross-author arrival order remains a
+non-requirement for the runtime-context body. The controller owns durability and
+wake coupling, not semantic ordering.
 
-There is **no `HostKernelWorkflow` symbol today.** The current authority position
-is the `RuntimeContextWorkflowRuntimeLive` layer
-(`packages/runtime/src/kernel/runtime-context-workflow-runtime.ts`), which owns
-the host-scoped engine, the active-execution map, and the input dispatcher — it
-holds the engine reference and the execution identity (`runtime-context:{id}`)
-needed to drive write+arm. That is the *old-shape* position, not the target
-implementation: today the write (edge `inputIntents.insertOrGet`) and the arm
-(kernel dispatcher `deferredDone`) are split across owners and mediated by the
-deferred mailbox. The target collapses write+arm into one kernel-owned durable
-step over a table input. The migration SDD enumerates the cutover surface.
+Today's production runtime-context input path still uses a DurableDeferred
+mailbox (`appendRuntimeInputDeferred` + dispatcher re-subscription). That is a
+working bridge, not a target invariant. The migration from that bridge to this
+target is specified in
+`../sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md`.
+
+## Guardrails
+
+- Do not implement a generic engine sweep that resumes arbitrary suspended
+  executions on reconstruction.
+- Do not add an input deferred mailbox, input intent dispatcher, or ordering
+  serializer to close this gap.
+- Do not write workflow-owned input/tool rows from an arbitrary channel binding
+  and then hope the engine catches up.
+- Do not cite `HostKernelWorkflow` as an existing implementation. It is a
+  target role until a PR introduces the concrete module.
+- Do not make the workflow engine learn semantic channel targets. The engine
+  remains the mechanism for suspend, resume, deferred completion, clock wakeups,
+  and replay.
+
+The only engine-side escape hatch that would reopen the sweep option is an
+explicit engine feature for typed suspension kinds. That is a separate engine
+primitive, not the current architecture.
+
+## Scope
+
+The write+arm owner applies to commands that both mutate workflow-owned durable
+state and imply that a parked owner workflow should run:
+
+- runtime-context input rows (`tf-vrz6` direction);
+- tool request/result rows keyed by `toolUseId` (`tf-jpcg` direction);
+- future host lifecycle commands that write owner state and wake the owner.
+
+It does not replace:
+
+- durable clock recovery;
+- ordinary `DurableDeferred.await` / `deferredDone` mechanics;
+- generic workflow reconstruction;
+- output observation cursors (`tf-aseo`), which are a separate replay-cost
+  problem.
+
+## Acceptance Gate
+
+Any implementation of this direction must pass the positive and negative gates:
+
+- S1 Probe A and Probe B auto-recover through the kernel/controller path without
+  an explicit test redrive.
+- S1 Probe C clock recovery remains green.
+- Interrupt terminality remains green.
+- `deferredDone` idempotency remains green.
+- The full relevant test suite is green, not only the S1 simulation.
+- Trace output shows the row write and wake owned by the same host
+  kernel/controller command, not by a generic suspended-workflow sweep.
+
+If an implementation cannot find enough authority or identity to own both the
+write and the wake, it must stop and report the missing primitive. It should not
+fall back to a generic engine sweep or rebuild the old deferred mailbox.
+
+## Work Mapping
+
+- `tf-c9r9` owns the next implementation slice: introduce the smallest concrete
+  host-kernel/controller path for runtime-context table input write+arm in the
+  reference path, then report the concrete production cutover surface.
+- `tf-12q9` is the negative evidence: the engine restart sweep shape is unsafe
+  under the current undifferentiated suspension model.
+- `tf-vrz6` should consume the resulting write+arm primitive for table-backed
+  input delivery.
+- `tf-jpcg` should use the same primitive class for tool request/result wakeup;
+  it should not invent a separate wake mechanism.
+- `tf-vfq9` can delete `ToolCallWorkflow` only after the `tf-jpcg` seam exists.
+- `tf-aseo` is independent and can proceed in parallel.
