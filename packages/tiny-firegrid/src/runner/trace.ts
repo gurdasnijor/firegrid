@@ -23,6 +23,11 @@ class TraceFileMissing extends Data.TaggedClass("TraceFileMissing")<{
 }> {}
 
 export interface SpanRecord {
+  // tf-9ia9: the observability file exporter can emit phase:start records for
+  // in-flight spans (opt-in via FIREGRID_OTEL_FILE_PHASES=start-end). Trace
+  // readers here consume completed spans only, so start records are filtered
+  // out in readTraceSpans. Absent on legacy/end-only traces.
+  readonly phase?: "start" | "end"
   readonly name: string
   readonly traceId: string
   readonly spanId: string
@@ -120,6 +125,10 @@ export const readTraceSpans = (runDir: string) =>
       .split("\n")
       .filter(line => line.length > 0)
       .map(line => JSON.parse(line) as SpanRecord)
+      // tf-9ia9: drop in-flight span-START records; readers here report on
+      // completed spans (durations, self-time). End-only/legacy traces have no
+      // `phase` field and are kept.
+      .filter(span => span.phase !== "start")
   })
 
 export const hasTraceJsonl = (dir: string): Promise<boolean> =>
