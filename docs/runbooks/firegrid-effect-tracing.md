@@ -238,6 +238,68 @@ abrupt editor disconnect no longer discards a pending batch. Set
 batching for high-span-rate non-interactive hosts that prefer throughput over
 per-span latency; the default is `immediate`.
 
+### Span phases — observing in-flight spans (tf-9ia9)
+
+By default the file destination writes one record per span **end**. A span that
+wraps in-flight work — an open ACP session, a prompt turn that is hanging — is
+invisible until it closes, which is exactly the case you need to see when
+debugging a live hang ("did `new_session` start and stall in `waitForContext`,
+or was `codec.newSession` never issued?").
+
+Set `FIREGRID_OTEL_FILE_PHASES=start-end` to also record a **start** line when
+each span opens:
+
+```bash
+FIREGRID_OTEL_FILE_PHASES=start-end \
+firegrid acp --agent claude-acp --agent-protocol acp \
+  --otel-file .firegrid/acp-trace.jsonl --cwd "$PWD" \
+  -- npx -y @agentclientprotocol/claude-agent-acp@0.36.1
+```
+
+Every record carries a `phase` field:
+
+- `phase:"start"` — emitted when the span opens. Carries `name`, ids, `kind`,
+  `startTime`, `attributes`, `links`, `resource`. It omits `endTime`/`duration`/
+  `status` (the span is still running). The `attributes` are the span's
+  creation-time attributes (e.g. `codec.sdk.call`'s injected MCP
+  `mcp_server_count`), so you can read the call's metadata even though the span
+  never ends.
+- `phase:"end"` — the existing completed-span record, now tagged. It keeps every
+  field it had before, so end-only consumers are unaffected.
+
+The default is `end` (end-only), so existing readers and saved trace files are
+unchanged unless you opt in. Records are keyed by `spanId` + `phase`, not line
+order — a span that opens and closes within one tick may write its `end` line
+before its `start` line.
+
+Read just the in-flight spans (started, not yet ended) like this:
+
+```bash
+F=.firegrid/acp-trace.jsonl
+node -e '
+const fs=require("fs");
+const ended=new Set(), started=new Map();
+for (const l of fs.readFileSync(process.argv[1],"utf8").split("\n")) {
+  if(!l.trim())continue; const s=JSON.parse(l);
+  if(s.phase==="end")ended.add(s.spanId); else if(s.phase==="start")started.set(s.spanId,s.name);
+}
+for(const [id,name] of started) if(!ended.has(id)) console.log("IN-FLIGHT",name,id);
+' "$F"
+
+# Span-name histogram over COMPLETED spans only (ignore start lines):
+node -e '
+const fs=require("fs");const c={};
+for(const l of fs.readFileSync(process.argv[1],"utf8").split("\n")){if(!l.trim())continue;const s=JSON.parse(l);if(s.phase==="start")continue;c[s.name]=(c[s.name]||0)+1}
+for(const k of Object.keys(c).sort())console.log(String(c[k]).padStart(5),k)
+' "$F"
+```
+
+Existing histogram one-liners that count every line will double-count when
+phases are enabled; filter `s.phase!=="start"` (above) to count completed spans.
+The tiny-firegrid trace reader (`simulate:show` / `simulate:perf`) already drops
+`phase:"start"` records, so enabling phases during a simulation does not skew
+those views.
+
 ## Full e2e traces through real agent runtimes
 
 There are three different meanings of "end-to-end" for real ACP, Claude, and

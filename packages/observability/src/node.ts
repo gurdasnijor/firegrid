@@ -145,24 +145,49 @@ export const resolveFiregridOtelActiveExporter = (
   return options.destination
 }
 
-export const spanToJsonLine = (span: ReadableSpan): string => {
+// tf-9ia9: every JSONL record carries a `phase` so a reader can tell an
+// in-flight span START from a completed span END. The format stays mechanically
+// parseable (one JSON object per line, self-describing via `phase`), and END
+// records keep every field they had before — `phase` is purely additive, so
+// existing end-span consumers that ignore unknown fields are unaffected.
+export type FiregridOtelSpanPhase = "start" | "end"
+
+const baseSpanFields = (span: ReadableSpan) => {
   const context = span.spanContext()
-  return JSON.stringify({
+  return {
     name: span.name,
     traceId: context.traceId,
     spanId: context.spanId,
     parentSpanId: span.parentSpanContext?.spanId,
     kind: span.kind,
     startTime: span.startTime,
+    attributes: span.attributes,
+    links: span.links,
+    resource: span.resource.attributes,
+  }
+}
+
+export const spanToJsonLine = (span: ReadableSpan): string =>
+  JSON.stringify({
+    phase: "end" satisfies FiregridOtelSpanPhase,
+    ...baseSpanFields(span),
     endTime: span.endTime,
     duration: span.duration,
     status: span.status,
-    attributes: span.attributes,
     events: span.events,
-    links: span.links,
-    resource: span.resource.attributes,
   }) + "\n"
-}
+
+// tf-9ia9: a span-START record. endTime/duration/status are intentionally
+// omitted — they are unset while the span is in flight, which is exactly the
+// state this record exists to surface (e.g. an ACP `new_session` that started
+// but has not ended). `attributes` carries the creation-time attributes the
+// span was opened with (e.g. codec.sdk.call mcp_server_count); see
+// JsonlFileStartSpanProcessor for why the write is deferred one microtask.
+export const spanStartToJsonLine = (span: ReadableSpan): string =>
+  JSON.stringify({
+    phase: "start" satisfies FiregridOtelSpanPhase,
+    ...baseSpanFields(span),
+  }) + "\n"
 
 export class JsonlFileSpanExporter implements SpanExporter {
   private readonly stream: WriteStream
@@ -187,6 +212,19 @@ export class JsonlFileSpanExporter implements SpanExporter {
       resultCallback({ code: 0 })
     } catch (cause) {
       resultCallback({ code: 1, error: cause as Error })
+    }
+  }
+
+  // tf-9ia9: write a span-START record to the same file stream as the END
+  // records (export()). Sharing one stream keeps the two phases interleaved in a
+  // single mechanically-parseable artifact and avoids two writers racing on the
+  // same path. Best-effort: a failed start write must never break tracing.
+  writeStartRecord(span: ReadableSpan): void {
+    if (this.closed) return
+    try {
+      this.stream.write(spanStartToJsonLine(span))
+    } catch {
+      // best-effort: start records are a debugging aid, not a correctness path.
     }
   }
 
@@ -216,26 +254,83 @@ const FlushModeConfig: Config.Config<FiregridOtelFlushMode> = Config.literal(
   "batched",
 )("FIREGRID_OTEL_FILE_FLUSH").pipe(Config.withDefault("immediate"))
 
-const fileSpanProcessor = (
+// tf-9ia9: which phases the file destination records.
+//   "end"       — one record per ended span (the prior behavior, exactly).
+//   "start-end" — additionally record a span-START line on span start, so
+//                 in-flight work (an open ACP session/turn) is visible before
+//                 it completes.
+// Default "end" preserves existing end-span consumers (line-for-line, plus the
+// additive `phase` field). Live-hang debugging opts into "start-end".
+export type FiregridOtelFilePhases = "end" | "start-end"
+
+const FilePhasesConfig: Config.Config<FiregridOtelFilePhases> = Config.literal(
+  "end",
+  "start-end",
+)("FIREGRID_OTEL_FILE_PHASES").pipe(Config.withDefault("end"))
+
+// tf-9ia9: emits a span-START record on span start through the shared file
+// exporter. END records keep flowing through the (Simple|Batch) processor that
+// wraps the SAME exporter, so there is one stream and one shutdown owner; this
+// processor's lifecycle hooks are no-ops.
+//
+// The write is deferred one microtask because @effect/opentelemetry applies
+// `Effect.withSpan({ attributes })` via setAttribute AFTER tracer.startSpan
+// (which is what fires onStart) returns — so synchronously here the span has no
+// attributes yet. A microtask runs after that synchronous attribute
+// application but before the span body advances, capturing the creation-time
+// attributes (e.g. codec.sdk.call mcp_server_count) without picking up later
+// annotateCurrentSpan calls. Ordering vs the END record is therefore not
+// guaranteed for spans that open and close within one tick; readers key on
+// spanId + phase, not line order.
+export class JsonlFileStartSpanProcessor implements SpanProcessor {
+  constructor(private readonly exporter: JsonlFileSpanExporter) {}
+
+  onStart(span: ReadableSpan): void {
+    queueMicrotask(() => this.exporter.writeStartRecord(span))
+  }
+
+  onEnd(): void {}
+
+  forceFlush(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  shutdown(): Promise<void> {
+    return Promise.resolve()
+  }
+}
+
+const fileSpanProcessors = (
   filePath: string,
   flushMode: FiregridOtelFlushMode,
-): SpanProcessor => {
+  phases: FiregridOtelFilePhases,
+): ReadonlyArray<SpanProcessor> => {
   const exporter = new JsonlFileSpanExporter(filePath)
-  return flushMode === "batched"
+  const endProcessor = flushMode === "batched"
     ? new BatchSpanProcessor(exporter)
     : new SimpleSpanProcessor(exporter)
+  // The start processor shares `exporter` (one stream); the end processor owns
+  // its shutdown.
+  return phases === "start-end"
+    ? [new JsonlFileStartSpanProcessor(exporter), endProcessor]
+    : [endProcessor]
 }
 
 const fileTelemetryLive = (
   options: FiregridOtelLayerOptions & {
     readonly destination: { readonly _tag: "file"; readonly filePath: string }
     readonly flushMode: FiregridOtelFlushMode
+    readonly phases: FiregridOtelFilePhases
   },
 ) =>
   NodeSdk.layer(() => ({
     resource: options.resource,
     spanProcessor: [
-      fileSpanProcessor(options.destination.filePath, options.flushMode),
+      ...fileSpanProcessors(
+        options.destination.filePath,
+        options.flushMode,
+        options.phases,
+      ),
       ...(options.spanProcessors ?? []),
     ],
   }))
@@ -279,10 +374,12 @@ export const FiregridOtelLive = (
           })
         case "file": {
           const flushMode = yield* FlushModeConfig
+          const phases = yield* FilePhasesConfig
           return fileTelemetryLive({
             ...options,
             destination: options.destination,
             flushMode,
+            phases,
           })
         }
       }
