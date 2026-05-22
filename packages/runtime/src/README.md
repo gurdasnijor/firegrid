@@ -66,6 +66,14 @@ These are intentionally not agent event-pipeline stages:
   observation stream capability tags. Consumers such as wait routers and
   future channel registries use this folder for typed stream selection without
   depending on workflow ownership.
+- `runtime-keyed-subscriber/`: the Shape C subscriber-runtime dispatch
+  primitive. A generic per-key event router: tails a keyed-event source,
+  serializes same-key handlers via a per-key mutex, runs different keys
+  concurrently (optionally bounded). Imposes no `WorkflowEngine` requirement
+  on the subscriber's `R`. Production manifestation of the tf-4fy3 Outcome B
+  evidence; downstream Shape C handler lanes (RuntimeContext, tool-result
+  routing) compose this primitive with their typed event sources and keyed
+  handlers.
 - `channels/`: public runtime channel router capabilities. The implementation
   lives in runtime authority/provider modules; this folder is the stable import
   surface for route metadata and dispatch composition.
