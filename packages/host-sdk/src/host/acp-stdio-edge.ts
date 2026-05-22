@@ -3,6 +3,7 @@ import {
   HostContextsChannel,
   HostPermissionRespondChannelTarget,
   HostSessionsCreateOrLoadChannelTarget,
+  HostSessionsCreateOrLoadResponseSchema,
   HostSessionsStartChannelTarget,
   SessionAgentOutputChannel,
   SessionPromptChannelTarget,
@@ -11,7 +12,7 @@ import type { PublicLaunchRuntimeIntent } from "@firegrid/protocol/launch"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 import { HostPlaneChannelRouter } from "@firegrid/runtime/channels"
-import { Clock, Context, Duration, Effect, Layer, Option, Runtime, Stream } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Runtime, Schema, Stream } from "effect"
 
 type RunEffect = <A, E>(effect: Effect.Effect<A, E, never>) => Promise<A>
 
@@ -255,7 +256,12 @@ class FiregridAcpStdioAgent implements acp.Agent {
     return this.run(
       Effect.gen(function*() {
         // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.2
-        const created = yield* (router.dispatch({
+        // tf-r6br: decode the immediate call receipt against the route's
+        // protocol-owned response schema (the `acknowledgement` completion
+        // contract) instead of an unchecked `as` cast. Terminal prompt
+        // completion is NOT modeled here — see the prompt() path / tf-r6br
+        // STOP report (gated on the durable output cursor, tf-aseo).
+        const createdRaw = yield* router.dispatch({
           target: HostSessionsCreateOrLoadChannelTarget,
           verb: "call",
           payload: {
@@ -266,7 +272,10 @@ class FiregridAcpStdioAgent implements acp.Agent {
             runtime,
             createdBy: options.createdBy ?? defaultCreatedBy,
           },
-        }) as Effect.Effect<{ readonly contextId: string; readonly sessionId: string }, unknown>)
+        })
+        const created = yield* Schema.decodeUnknown(
+          HostSessionsCreateOrLoadResponseSchema,
+        )(createdRaw)
         yield* Effect.annotateCurrentSpan({
           "firegrid.context.id": created.contextId,
           "firegrid.session.id": created.sessionId,

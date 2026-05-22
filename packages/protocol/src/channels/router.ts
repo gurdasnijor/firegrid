@@ -1,7 +1,9 @@
 import { Option, Schema } from "effect"
+import { acknowledgementCompletion } from "./core.ts"
 import type {
   ChannelDirection,
   ChannelRegistration,
+  ChannelRouteCompletion,
   ChannelSourceClass,
   ChannelTarget,
 } from "./core.ts"
@@ -29,6 +31,7 @@ export const channelRouteVerbsForDirection = (
       return ["send", "wait_for"]
   }
 }
+
 
 /**
  * Wire-safe projection of registration schema metadata. It carries the schema
@@ -61,6 +64,7 @@ export interface ChannelRouteMetadata {
   readonly direction: ChannelDirection
   readonly verbs: ReadonlyArray<ChannelRouteVerb>
   readonly schema: ChannelRouteSchemaMetadata
+  readonly completion: ChannelRouteCompletion
   readonly description?: string
   readonly title?: string
 }
@@ -147,6 +151,11 @@ export const channelRouteMetadata = (
   direction: registration.direction,
   verbs: channelRouteVerbsForDirection(registration.direction),
   schema: channelRouteSchemaMetadata(registration),
+  // Completion defaults to `acknowledgement`: a route's dispatch result is an
+  // append/identity receipt unless it declares terminal completion evidence.
+  // Terminal opt-in (e.g. ACP prompt completion) binds with the workflow-owned
+  // durable output/result row — see tf-r6br STOP/report (gated on tf-aseo).
+  completion: registration.completion ?? acknowledgementCompletion,
 })
 
 export const channelRouteDescriptor = (

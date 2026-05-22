@@ -5,6 +5,7 @@ import {
 } from "@firegrid/protocol/channels/router"
 import {
   makeChannelTarget,
+  terminalCompletion,
   type ChannelDirection,
   type ChannelTarget,
 } from "@firegrid/protocol/channels"
@@ -166,8 +167,11 @@ export const completionAnnotation = (
   return isCompletionContract(value) ? value : undefined
 }
 
+// The probe's richer, transport-projecting contract is carried under
+// `completionContract`, distinct from the protocol-owned `completion`
+// (`ChannelRouteCompletion`) that `ChannelRouteMetadata` now requires (tf-r6br).
 interface CompletionRouteMetadata extends ChannelRouteMetadata {
-  readonly completion: ChannelCompletionContract
+  readonly completionContract: ChannelCompletionContract
 }
 
 interface CompletionRouteDescriptor extends ChannelRouteDescriptor {
@@ -194,7 +198,8 @@ export const completionProbeRouteDescriptor: CompletionRouteDescriptor = {
       requestSchema: CompletionProbeRequestSchema,
       responseSchema: CompletionProbeReceiptSchema,
     },
-    completion: promptCompletionContract,
+    completion: terminalCompletion(CompletionProbeReceiptSchema),
+    completionContract: promptCompletionContract,
   },
 }
 
@@ -218,10 +223,10 @@ export const routeCompletionContract = (
   descriptor: ChannelRouteDescriptor,
 ): ChannelCompletionContract | undefined => {
   const metadata = descriptor.metadata as ChannelRouteMetadata & {
-    readonly completion?: unknown
+    readonly completionContract?: unknown
   }
-  return isCompletionContract(metadata.completion)
-    ? metadata.completion
+  return isCompletionContract(metadata.completionContract)
+    ? metadata.completionContract
     : undefined
 }
 

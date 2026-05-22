@@ -11,6 +11,7 @@ import {
   type ChannelRouteVerb,
   type ChannelRouterDescriptor,
 } from "@firegrid/protocol/channels/router"
+import { acknowledgementCompletion } from "@firegrid/protocol/channels"
 import type {
   BidirectionalChannel,
   CallableChannel,
@@ -270,6 +271,7 @@ export const runtimeRouteFromFactoryChannel = <
         direction: "egress",
         schema: options.inputSchema,
       },
+      completion: acknowledgementCompletion,
     },
   },
   invoke: input => {
