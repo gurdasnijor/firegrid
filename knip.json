@@ -57,7 +57,8 @@
         "src/**/*.ts"
       ],
       "ignoreFiles": [
-        "src/simulations/to-be-migrated/**/*.ts"
+        "src/simulations/to-be-migrated/**/*.ts",
+        "src/prototypes/target-topology/**/*.ts"
       ],
       "ignoreDependencies": [
         "@firegrid/runtime",
