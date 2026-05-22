@@ -139,7 +139,7 @@ const liveSessionStream = (
   )
 }
 
-export interface ChildOutputProof {
+interface ChildOutputProof {
   /**
    * The runtime channel router with the REAL `sessionAgentOutputObservationRoute`
    * mounted on `session.agent_output`. Parents observe children only through
