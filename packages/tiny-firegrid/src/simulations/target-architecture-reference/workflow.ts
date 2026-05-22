@@ -230,11 +230,6 @@ const appendOutputIfAbsent = (
     ),
   )
 
-const countOutputs = (
-  table: TargetArchitectureReferenceTable["Type"],
-) =>
-  table.outputs.query(coll => coll.toArray.length)
-
 const markInputProcessed = (
   table: TargetArchitectureReferenceTable["Type"],
   input: WorkflowInputRow,
@@ -255,7 +250,15 @@ const processInput = (
       discard: true,
     })
     yield* markInputProcessed(table, input)
-    const outputCount = yield* countOutputs(table)
+    // tf-buek: accumulate the output total from durable cursor state plus the
+    // deterministic per-input append set, instead of scanning the output log
+    // (`outputs.query(coll => coll.toArray.length)`) on the transition path.
+    // Each input is cursor-gated to process exactly once and
+    // `outputRowsForInput` is deterministic, so this is exact and replay-safe:
+    // re-running a not-yet-committed input recomputes the same total (the
+    // append is idempotent via insertOrGet, and the cursor advance carrying
+    // both lastInputSequence and outputCount commits atomically below).
+    const outputCount = cursor.outputCount + outputs.length
     const nextStatus = input.kind === "tool_result" ? "complete" : "waiting_for_tool"
     yield* table.sessions.upsert({
       sessionId: input.sessionId,
