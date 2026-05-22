@@ -486,6 +486,183 @@ Stop and update the SDD before coding if the cutover requires:
 - non-atomic sequence allocation such as `insertOrGet(inputId)` followed by
   `max(existing inputs for context) + 1`.
 
+## Amendment 1 — Workflow Assigns Input Order On Consume (tf-87vj, 2026-05-22)
+
+**Status:** decided amendment. **Bead:** `tf-87vj`. **Supersedes:** the
+server/producer-allocated dense-sequence assumption in *Sequencing and
+Idempotency*, *Stage A Prerequisites*, and the `nextInputSequenceToAssign`
+column in *Table Shape*.
+**Origin:** surfaced by the `tf-eta6` → `tf-i05u` substrate dead-end. `tf-i05u`
+proved (source-grounded against `effect-durable-streams` + `effect-durable-operators`)
+that the substrate offers exactly one atomic conditional write — per-primary-key
+insert-if-absent — and that a coherent compare-and-set or multi-row transaction
+**cannot be built without a lower-level state-protocol change against the
+external durable-streams server** (the idempotent-producer protocol silently
+drops a losing concurrent writer's payload as a `204 Duplicate`, treats
+`SequenceGap` as terminal, and uses epoch to *fence out* concurrency). That dead-end
+forced the question this amendment answers.
+
+### A0 — The load-bearing decision (read first)
+
+> **Input sequence is assigned by the single per-context `RuntimeContextWorkflow`
+> on consume, not by producers or the server on write. Producers write input
+> rows idempotently keyed by `inputId` (`insertOrGet`); the workflow walks
+> arrival order through a workflow-owned durable input cursor — the input-arm
+> sibling of `DurableOutputCursor` (tf-qk6h) — assigning a dense processing
+> ordinal and advancing the cursor in the same durable step that consumes the
+> input.**
+
+This is decisive, not a preference. The atomic-reservation requirement that
+broke `tf-eta6`/`tf-i05u` exists **only because the original spec assigns the
+dense sequence at write time**, where multiple authors
+(`client | workflow | tool | system`, per `RuntimeIngressAuthor`) contend and
+therefore need a CAS or a serializing allocator. Moving the assignment to
+**consume time** removes the contention at its root: the per-context workflow is
+already a single-writer state machine, so it allocates ordinals with no race,
+no CAS, no transaction — using only the insert-if-absent primitive that already
+exists. This is exactly what `SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE`
+prescribes — *"the driver supplies sequence per session. The reference does not
+allocate sequences server-side; that would reintroduce coordination the table
+seam is trying to eliminate"* — generalized to the production multi-author case
+by making the **workflow** (not each producer) the single sequencing authority.
+
+### A1 — The three options compared
+
+| | P1 — DurableTable CAS | P2 — single-writer allocator | **P3 — workflow assigns on consume** |
+|---|---|---|---|
+| Where sequence is assigned | write time, by any producer via compare-and-set on the cursor row | write time, by one serializing fiber producers funnel through | **consume time, by the per-context workflow** |
+| Substrate requirement | a new conditional-update/CAS primitive → **needs external-server state-protocol SDD** (`tf-i05u` STOP) | a host-scoped serializer = today's `RuntimeInputIntentDispatcherLive`; reintroduces the dispatch/intent shape the cutover deletes | **none new** — `insertOrGet(inputId)` (exists) + the already-planned durable consume cursor (`tf-qk6h`) |
+| Idempotency | CAS loser retries; concurrent same-`inputId` still races two ordinals → phantom unless a 3-row txn binds it | serializer dedups by `inputId` | **insert-if-absent on `inputId` dedups at write; ordinal assigned once by the single consumer → no race, no phantom** |
+| Multi-row atomicity | still needed (inputId-check + cursor-advance + insert) | folded into the serializer fiber | **not needed** — write (idempotent row) and ordering (workflow cursor) are decoupled |
+| Replay | reconstruct from CAS'd cursor + point reads | reconstruct from serializer state (host-scoped, not workflow-owned) | **reconstruct from workflow-owned cursor + immutable ordinal rows (point `get`, no scan)** — mirrors `DurableOutputCursor` INV-1..3 |
+| Target-reference fit | violates "do not allocate sequences server-side" | violates it (server-side serializer) + keeps a dispatcher | **matches it** (consumer owns the cursor; no write-time allocation) |
+| Verdict | rejected — heavy, external, off-target | rejected — re-grows the deleted dispatcher | **adopted** |
+
+### A2 — P3 design
+
+**Ordering model.** Input *delivery order* is the order in which the workflow
+**consumes** rows, derived from their **arrival order** in the workflow-owned
+inputs collection. Producers do not choose a sequence; they only write an
+idempotent row. The workflow assigns a dense per-context processing ordinal as
+it consumes, and that ordinal — not any producer/server value — is the durable
+cursor's address space. This preserves today's effective semantics (the current
+single dispatcher already processes intents in arrival order); it does not give
+callers a client-controlled global order, and any cross-author preference
+(e.g. permission-response or tool-result vs prompt ordering) must be tested
+explicitly, as *Replay and Output Coordination* already requires.
+
+**Row-shape implications (revises *Table Shape*).**
+- `contexts`: **drop `nextInputSequenceToAssign`** (the write-time producer
+  allocation cursor — the source of the contention). Keep `nextInputSequence`
+  as the workflow's durable **consume** cursor (the processing ordinal frontier).
+- `inputs`: primary key becomes **`inputId`** (point-addressable for idempotency
+  convergence), not `${contextId}/${sequence}`. The row no longer carries a
+  producer-assigned `sequence`; `status` collapses to `accepted` (write) and the
+  ordinal lives in the ordering rows below. `inputId` is derived exactly as
+  `inputIdForRuntimeIngressRequest` does today, so idempotency identity is
+  unchanged.
+- New ordered binding (workflow-private, single-writer): an
+  `assignedInputs` row keyed by `${contextId}/${ordinal}` → `inputId`, written by
+  the workflow in the same step it consumes the input. This is the dense,
+  point-addressable address the cursor reads — the structural analogue of the
+  output event's composite PK. It is **not** a request/claim/completion family:
+  one row per consumed input, written once by the single consumer, never by a
+  producer.
+- The separate `inputIds` idempotency index from the original spec is **no
+  longer needed** — `inputs` is already keyed by `inputId`.
+
+**Idempotency.** A duplicate producer (sequential *or* concurrent) calls
+`inputs.insertOrGet(inputId)`; the second gets `Found`, appends no second row,
+and the single consumer therefore assigns exactly one ordinal for that `inputId`.
+Idempotency holds with **no CAS and no race**, because dense ordinal allocation
+is removed from the contended write path.
+
+**Replay / cursor semantics (mirror `DurableOutputCursor`).**
+- Position is the durable `contexts.nextInputSequence` (workflow-owned column),
+  reconstructed by one `get` on replay — never an in-memory `Ref` reset to `-1`
+  (the input arm thereby gets the same INV-1 the output arm gets in tf-qk6h).
+- A consumed input is read by **point `get`** on `assignedInputs[${contextId}/${cursor}]`
+  then `inputs.get(inputId)` — O(1), never `inputs.query(...)`. Ordinals
+  `0..cursor` are never re-read on resume (INV-2/INV-3 analogues).
+- The **wait / discovery of a not-yet-assigned arrival** is the one new design
+  point. Two admissible shapes, both strictly smaller than P1/P2 and both
+  consume-side only:
+  - **P3-A (no substrate change, preferred):** the workflow tails
+    `inputs.rows()` (arrival-ordered projection) filtered to rows it has not yet
+    bound in `assignedInputs`, entered **only on a point-read miss** — the exact
+    tail-wait shape `DurableOutputCursor` Q1 uses. It then writes the next
+    `assignedInputs` row and advances the cursor.
+  - **P3-B (tiny additive substrate surface):** surface the durable-stream
+    append **offset** that `insertOrGet` already computes
+    (`appendInsertWithPrimaryKeyFence` returns `Appended{offset}`) as a
+    per-context arrival sequence, letting the cursor point-read arrival order
+    directly without the projection tail. This is additive read-surfacing, not a
+    CAS/transaction.
+  Pick P3-A first; promote to P3-B only if the projection tail proves costly
+  under load. Either way the cursor `next()` API hides `query`/`rows` from the
+  body, exactly as `DurableOutputCursor.next` does.
+
+The input and output arms of the merged loop now have the **same** shape — a
+durable per-context consume cursor over an append-only, idempotently-written log.
+They should converge on **one** durable-cursor primitive (tf-qk6h generalized to
+both arms), not two.
+
+### A3 — Bead impact (acceptance: superseded vs still-required)
+
+- **`tf-i05u` (DurableTable CAS): SUPERSEDED — close as not-required.** P3 needs
+  no compare-and-set. (Its STOP finding stands as the evidence that motivated
+  this amendment.)
+- **`tf-eta6` (atomic append + point-addressing): SUPERSEDED as written.** The
+  *atomic append* half is dropped (no write-time reservation). The
+  *point-addressing* half survives in changed form — point reads are over
+  workflow-assigned `assignedInputs` ordinals, satisfied by the existing
+  composite-PK `get`, needing no new primitive — and folds into the durable
+  input-cursor work below.
+- **`tf-vrz6` (Stage A cutover): STILL REQUIRED, re-scoped.** Adopt this
+  amendment's row shape: `inputs` keyed by `inputId`, drop
+  `nextInputSequenceToAssign` and `inputIds`, add `assignedInputs` + the durable
+  input cursor. The channel binding write becomes a plain
+  `inputs.insertOrGet(inputId)`; no atomic-append primitive precondition remains.
+- **F3 wakeup (`engine.signal` / table-write-driven resume): STILL REQUIRED, not
+  superseded.** A suspended workflow waiting on the arrival tail still needs to
+  resume when a new input row is written — identical to `DurableOutputCursor`'s
+  "wait … engine optional resume-on-write". P3 changes *how input is addressed*,
+  not *how a suspended body is woken*.
+- **New requirement: a workflow-owned durable INPUT cursor**, the input-arm
+  sibling of `DurableOutputCursor`. Recommend folding it into `tf-qk6h` (one
+  merged-loop cursor primitive serving both arms) rather than filing a parallel
+  primitive.
+- **`tf-9rpy` (engine ⇄ runtime-context SCC gone): unchanged goal.** P3 is the
+  path: once the body reads input through the workflow-owned cursor instead of
+  `engine.deferredResult` / `DurableDeferred.await` on the numbered mailbox, the
+  body→engine reciprocal input edge is removed and the SCC can be broken (still
+  gated on F3 for wakeup and on the legacy-mailbox deletion beads).
+
+### A4 — Forbidden surfaces / stop-and-re-evaluate (additive to the section above)
+
+- No write-time dense sequence allocation by producers or server (the thing this
+  amendment removes); `nextInputSequenceToAssign` must not reappear.
+- No reintroduced host-scoped input serializer/dispatcher to assign order (that
+  is P2, rejected — it re-grows `RuntimeInputIntentDispatcherLive`).
+- No `inputs.query(...)` on the workflow replay path; discovery of new arrivals
+  is the bounded projection tail entered only on a point-read miss (P3-A) or the
+  offset point-read (P3-B).
+- Stop and re-evaluate if P3 appears to need a CAS, a multi-row transaction, or a
+  second cursor source-of-truth — the consume-time single-writer model is
+  precisely what makes all three unnecessary.
+
+### A5 — Validation deltas (additive to *Validation*)
+
+- duplicate `inputId` (sequential and **concurrent**) yields exactly one `inputs`
+  row and exactly one assigned ordinal — proven without any CAS/transaction;
+- distinct concurrent inputs each get a distinct ordinal **assigned by the
+  workflow on consume**, in arrival order, with no producer-side coordination;
+- workflow replay reconstructs `nextInputSequence` from `contexts` and reads the
+  consumed input by point `get` on `assignedInputs` / `inputs`, never by
+  `inputs.query(...)`;
+- the input arm holds the same `DurableOutputCursor` trace gate (no replay-path
+  scan span; reads ≤ 2 × distinct inputs; ordinals `0..cursor` not re-read).
+
 ## Source Notes
 
 Primary sources read for this spec:
@@ -500,3 +677,17 @@ Primary sources read for this spec:
 - `packages/runtime/src/channels/session-permission.ts`
 - `packages/client-sdk/src/firegrid.ts`
 - `packages/host-sdk/src/host/commands.ts`
+
+Amendment 1 (tf-87vj) additionally read:
+
+- `docs/sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` (tf-qk6h — the sibling
+  durable consume-cursor the input arm mirrors)
+- `packages/runtime/src/agent-event-pipeline/authorities/per-context-output.ts`
+  (output `sequence` is single-producer caller-supplied — the asymmetry that
+  makes consume-time assignment necessary for multi-author input)
+- `packages/effect-durable-operators/src/DurableTable.ts` (insert-if-absent fence
+  + `appendInsertWithPrimaryKeyFence` returning `Appended{offset}`)
+- `packages/effect-durable-streams/src/protocol/Producer.ts`,
+  `packages/effect-durable-streams/src/Writer.ts` (idempotent-producer protocol —
+  why CAS is not buildable; tf-i05u STOP evidence)
+- tf-i05u / tf-eta6 STOP findings
