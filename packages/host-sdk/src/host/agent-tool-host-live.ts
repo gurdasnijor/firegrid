@@ -236,10 +236,21 @@ const runtimeHostAgentToolHostService = (captured: {
         idempotencyKey: inputId,
       })
       yield* requireLocalContextWithHostCapabilities(captured, childContextId)
+      // tf-kllj: startChildContextWorkflow is fire-and-forget (discard:true), so
+      // at this point the child context is created and its workflow has been
+      // *started* but the child process spawn is NOT yet confirmed. Reporting
+      // "running" here was a lie: a child whose executable does not exist
+      // (spawn ENOENT) still produced session.status="running". Return the
+      // honest pre-confirmation state ("created"); the actual run outcome
+      // (running vs failed) is recorded as durable run/lifecycle evidence by the
+      // child workflow. See the STOP-boundary note in the PR: turning this into
+      // a confirmed "running"/"failed" requires awaiting that run-start
+      // lifecycle evidence (RuntimeContext lifecycle authority), beyond this
+      // narrow startup-state patch.
       yield* startChildContextWorkflow(captured, childContextId)
       return {
         childContextId,
-        status: "running" as const,
+        status: "created" as const,
       }
     }).pipe(
       // TFIND-031: discharge the host runtime context the deferred
