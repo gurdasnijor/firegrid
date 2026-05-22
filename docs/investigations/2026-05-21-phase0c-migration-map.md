@@ -2,7 +2,7 @@
 
 **Bead:** `tf-b1jm` (P0). **Status:** source-grounded migration/deletion map. **This is not a production patch** — no production code is changed here; this names the cutover order and the missing primitives.
 
-**Audience:** the convergence lanes. Lane 1 owns the `tf-7kq8` production output-observation patch; lane 2 owns route/output-result metadata (`tf-ly2g`); lane 3 owns docs taxonomy. This doc maps the whole surface so each cutover lands as a declared transactional cutover (owner + deletion bead + blocking dep), per the transactional-cutover rule.
+**Audience:** the convergence lanes. This doc maps the whole surface so each cutover lands as a declared transactional cutover (owner + deletion bead + blocking dep), per the transactional-cutover rule. It does not edit the `tf-7kq8` output-observation patch surface or the `tf-ly2g` output-result surface — those are tracked separately; this map only classifies them.
 
 ## What "the target" is (one line)
 
@@ -32,7 +32,7 @@ Phase 0C is the map from today's production surfaces to those two seams plus the
 | --- | --- | --- | --- | --- |
 | S1 | `RuntimeContextWorkflowNative` (the workflow identity) | `workflows/runtime-context.ts:876` | **KEEP** | — (it IS the owned durable resource) |
 | S2 | Merged-event-loop input cursor (`Ref` `lastProcessedInputSequence`) | `runtime-context.ts:347-349,820` | **COLLAPSE** | workflow-owned `inputs` table + cursor-in-table-state |
-| S3 | Output observation (`completedRuntimeOutput`→`events.initial`) | `runtime-context.ts:274-298,762`; `agent-event-pipeline/.../per-context-output.ts:110-140` | **COLLAPSE** | Phase 0B `DurableOutputCursor` (lane 1/lane 2) |
+| S3 | Output observation (`completedRuntimeOutput`→`events.initial`) | `runtime-context.ts:274-298,762`; `agent-event-pipeline/.../per-context-output.ts:110-140` | **COLLAPSE** | Phase 0B `DurableOutputCursor` |
 | S4 | `appendRuntimeInputDeferred` | `workflow-engine/runtime-input-deferred.ts:94-171` | **DELETE-AFTER** | channel binding → `inputs.insertOrGet` |
 | S5 | `WorkflowEngineTable.deferreds` **as input mailbox** (the `runtime-context/<id>/input/N` scan) | `runtime-input-deferred.ts:75-92` | **DELETE-AFTER** | workflow-owned `inputs` collection |
 | S5b | `WorkflowEngineTable.deferreds` **as genuine durable-wait store** (DurableClock / suspended waits) | engine-internal | **KEEP** | — (engine-private wait primitive) |
@@ -54,8 +54,8 @@ The runtime-context workflow is the canonical **owned durable resource** (one ex
 ### S2 — input cursor — COLLAPSE
 `runMergedEventLoop` seeds an in-memory `Ref` (`runtime-context.ts:820`) at `lastProcessedInputSequence: -1` / `lastProcessedOutputSequence: -1` (`:347-349`) and re-derives position on every replay. The Phase 0A reference puts the cursor in **table state** (`sessions.nextInputSequence`, SDD §"Target State Model"). Collapse target: a workflow-owned `inputs` collection where the workflow reads `sequence === nextInputSequence` (SDD `nextInputForSession`) and advances the cursor via `sessions.upsert`. This deletes the volatile-cursor half of the `tf-7kq8` failure class (oracle doc, guarantee 1).
 
-### S3 — output observation — COLLAPSE (Phase 0B; lanes 1/2 in flight)
-`completedRuntimeOutput` (`runtime-context.ts:274-298`) calls `RuntimeAgentOutputAfterEvents.initial(...)` — a **live, non-memoized full-table scan** (`per-context-output.ts:110-140`) on the workflow replay path, the only loop op not wrapped as an `Activity`. This is the source-verified `tf-7kq8` root (triage doc §"SOURCE-VERIFIED", live: 1987 `agent_output.initial` spans for ~107 outputs). Collapse target: the Phase 0B **`DurableOutputCursor`** — durable position + journaled `next()` indexed at `position+1`, wait keyed by `position+1` (oracle doc §"The primitive"). **Boundary: lane 1 owns the `tf-7kq8` production patch and lane 2 owns `tf-ly2g`/output-result metadata — do not edit those write surfaces.** This map only records the classification.
+### S3 — output observation — COLLAPSE (Phase 0B)
+`completedRuntimeOutput` (`runtime-context.ts:274-298`) calls `RuntimeAgentOutputAfterEvents.initial(...)` — a **live, non-memoized full-table scan** (`per-context-output.ts:110-140`) on the workflow replay path, the only loop op not wrapped as an `Activity`. This is the source-verified `tf-7kq8` root (triage doc §"SOURCE-VERIFIED", live: 1987 `agent_output.initial` spans for ~107 outputs). Collapse target: the Phase 0B **`DurableOutputCursor`** — durable position + journaled `next()` indexed at `position+1`, wait keyed by `position+1` (oracle doc §"The primitive"). **Boundary: this map does not edit the `tf-7kq8` output-observation patch surface or the `tf-ly2g` output-result surface — it only records the classification.**
 
 ### S4 — `appendRuntimeInputDeferred` — DELETE-AFTER
 The SDD names this explicitly: *"`appendRuntimeInputDeferred` is treated as the production bridge this reference is trying to make unnecessary."* It mints a `sequenced` row and completes a numbered deferred (`runtime-input-deferred.ts:131-148`). It is a **forbidden symbol** in the target (feature `PHASE_0_TARGET_REFERENCE.6`; SDD §"Forbidden symbol references"). Replacement: the channel binding writes `inputs.insertOrGet({ inputKey, sessionId, sequence, … })` (SDD §"Channel Binding Sketch"). Delete only after the binding+table seam (Stage 2) is live and the workflow body reads from the table (S2).
@@ -93,7 +93,7 @@ SDD §"Production Migration Signal" calls this out by name: *"the active-executi
 ## Findings — missing primitives (name, don't code around)
 
 - **F1 — Workflow-owned runtime input table is absent in production.** `RuntimeContextWorkflowNative` has no `inputs`/`events` DurableTable of its own; input arrives via the deferred-name mailbox (S4/S5/S6). Phase 0A proved the shape in `tiny-firegrid` (`SessionTable.inputs` + `sessions.nextInputSequence`); production needs the equivalent owned table before S2/S4/S6 can cut over. Naming it (e.g. a runtime-context-owned session table with `inputs` + cursor columns) is the Phase 0C design step, not something to bridge around with another deferred family.
-- **F2 — `DurableOutputCursor` is specified, not yet a production primitive.** Named in the Phase 0B oracle (durable position + journaled `next()`); lane 2 (`tf-ly2g`) is building it on the #607/#610 baseline. S3 depends on it.
+- **F2 — `DurableOutputCursor` is specified, not yet a production primitive.** Named in the Phase 0B oracle (durable position + journaled `next()`); it is the `tf-ly2g` target on the #607/#610 baseline. S3 depends on it.
 - **F3 (load-bearing) — no `engine.signal` / table-write wakeup primitive.** `BOUNDARIES.7-1` is explicit: *"Until an engine.signal primitive exists, the host-scoped RuntimeContext engine may deliver input intents by completing context-scoped workflow deferreds in the shared engine table."* The deferred mailbox (S4/S5/S6) **cannot be fully deleted** until either (a) the workflow body reads its own `inputs` table with a table-write-driven resume, or (b) `engine.signal` exists. This primitive gates Stage 3. Do not delete the deferred path before one of these lands; record it as the blocking dep on the S4/S6 deletion beads.
 - **F4 — HostKernelWorkflow control plane not present.** The control-request workflows (S11) and the in-memory active-execution fence (S7) want the HostKernelWorkflow direction; that is a separate SDD (control-plane memory). Out of Phase 0C scope.
 - **F5 — ACP edge consumes output by per-iteration re-subscription.** `acp-stdio-edge.ts:300-309` re-creates the stream + `Stream.runHead` each loop; should consume the Phase 0B incremental after-stream/cursor (S12). Finding, not a Phase 0C change.
@@ -102,7 +102,7 @@ SDD §"Production Migration Signal" calls this out by name: *"the active-executi
 
 Each DELETE-AFTER is a **transactional cutover**: it lands only as a direct cutover with an owner + a deletion bead + a blocking dep on its replacement (transactional-cutover rule). A broad surface (e.g. "delete the deferred mailbox") must not close as "superseded" by a narrow slice without the remainder filed as a new BLOCKING bead first.
 
-1. **Stage 0B — output observation (in flight; lanes 1/2).** Land `DurableOutputCursor` (F2) and the workflow-owned output append log. Fixes `tf-7kq8`; collapses S3. *Blocking dep for the `VALIDATION.10-1` O(outputs) gate.* — **do not touch lane 1/2 write surfaces.**
+1. **Stage 0B — output observation (Phase 0B).** Land `DurableOutputCursor` (F2) and the workflow-owned output append log. Fixes `tf-7kq8`; collapses S3. *Blocking dep for the `VALIDATION.10-1` O(outputs) gate.* This map does not edit those surfaces (`tf-7kq8` / `tf-ly2g`).
 2. **Stage A — workflow-owned input table (F1).** Introduce the runtime-context-owned `inputs` collection + cursor-in-table-state; have `RuntimeContextWorkflowNative` read inputs by `nextInputSequence` (collapses S2). Channel binding writes via `insertOrGet` (additive — both paths coexist).
 3. **Stage B — wakeup primitive (F3).** Land `engine.signal` or table-write-driven resume so the workflow wakes on `inputs` writes without a deferred. **Gates Stage C.**
 4. **Stage C — delete the input mailbox bridge.** Remove `appendRuntimeInputDeferred` (S4), the `deferreds` input scan (S5), `RuntimeInputIntentDispatcherLive` + `RuntimeContextInput.dispatchIntent` + `RuntimeControlPlaneTable.inputIntents` (S6), and the reconcile pass (S7-reconcile). Each blocked-on Stage A+B. Verifies forbidden-symbol checks (`PHASE_0_TARGET_REFERENCE.6`).
@@ -113,7 +113,5 @@ Edge consumption (S12/F5) folds in opportunistically after Stage 0B; the channel
 
 ## Sources
 
-Source-verified against this branch (fresh off `origin/main`, HEAD `bfc52f35d`):
+Source-verified against `origin/main` at `bfc52f35d` (the base this branch forked from):
 `packages/runtime/src/workflow-engine/workflows/runtime-context.ts`, `.../tool-call.ts`, `.../wait-for.ts`, `.../runtime-control-request.ts`, `packages/runtime/src/workflow-engine/runtime-input-deferred.ts`, `packages/runtime/src/kernel/runtime-context-workflow-runtime.ts`, `packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts`, `packages/host-sdk/src/host/acp-stdio-edge.ts`, `packages/host-sdk/src/host/channel.ts`; `docs/sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md`; `docs/investigations/2026-05-21-phase0b-output-replay-oracle.md`; `docs/investigations/2026-05-21-live-acp-tool-call-triage.md`; `features/firegrid/firegrid-workflow-driven-runtime.feature.yaml` (`PHASE_0_TARGET_REFERENCE`, `PHASE_0B_OUTPUT_RESULT_RETURN`, `PHASE_6_AGENT_TOOLS`, `BOUNDARIES`, `WORKFLOW_ADMISSION`).
-</content>
-</invoke>
