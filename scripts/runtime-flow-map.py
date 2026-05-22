@@ -493,6 +493,84 @@ def report_skeleton(G, top):
 
 
 # ===========================================================================
+# baseline gate (deterministic enforcement): N must not rise (beyond credited
+# SCC breaks), C must not fall, every contract.id must resolve.
+# ===========================================================================
+
+_ACID = re.compile(r'\b([a-z][a-z0-9]*(?:-[a-z0-9]+)+\.[A-Z][A-Z0-9_]+\.[0-9]+(?:-[0-9]+)?)\b')
+
+
+def _contract_index(repo):
+    """Deterministic set of valid contract ids: ACID tokens declared in any
+    *.feature.yaml / .semgrep.yml. (contract.id also resolves if it is an
+    existing repo path — checked separately.)"""
+    ids = set()
+    for dp, dirs, fs in os.walk(repo):
+        if "node_modules" in dp or "/.git" in dp or "/.turbo" in dp:
+            dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", ".turbo")]
+            continue
+        for fn in fs:
+            if fn.endswith(".feature.yaml") or fn == ".semgrep.yml":
+                try:
+                    ids.update(_ACID.findall(open(os.path.join(dp, fn), errors="ignore").read()))
+                except OSError:
+                    pass
+    return ids
+
+
+def _resolve_contract(repo, idx, cid):
+    if not cid or cid.strip().lower() in ("", "todo", "tbd", "fixme", "xxx"):
+        return False
+    return cid in idx or os.path.exists(os.path.join(repo, cid))
+
+
+def compute_metrics(spans, attr, G, repo):
+    DG = _digraph(G)
+    N = nx.condensation(DG).number_of_nodes()
+    sccs = sorted((sorted(c) for c in nx.strongly_connected_components(DG) if len(c) > 1),
+                  key=lambda c: (-len(c), c))
+    idx = _contract_index(repo)
+    seam_set, contract_ok, unresolved = defaultdict(bool), defaultdict(bool), set()
+    for s in spans:
+        k = _norm_op(s["name"])
+        if s["seam"]:
+            seam_set[k] = True
+        if s["contract"]:
+            if _resolve_contract(repo, idx, s["contract"]):
+                contract_ok[k] = True
+            else:
+                unresolved.add((k, s["contract"]))
+    # C = seams the author has CLASSIFIED: seam.kind set AND a resolving contract.id
+    C = sum(1 for k in contract_ok if contract_ok[k] and seam_set.get(k))
+    return {"N": N, "C": C, "sccs": sccs, "unresolved": sorted(unresolved)}
+
+
+def check_baseline(spans, attr, G, repo, path):
+    m = compute_metrics(spans, attr, G, repo)
+    b = json.load(open(path))
+    fails = []
+    # 1. N rose — unless explained by sanctioned clean SCC-breaks
+    if m["N"] > b.get("N", 1 << 30):
+        cur = [frozenset(c) for c in m["sccs"]]
+        allowed = 0
+        for bs in b.get("broken_sccs", []):
+            bset = frozenset(bs)
+            if not any(bset <= cs for cs in cur):     # sanctioned SCC is gone -> credit the split
+                allowed += len(bs) - 1
+        if m["N"] - b["N"] > allowed:
+            fails.append(f"N rose {b['N']} -> {m['N']} (credited clean-break budget {allowed}); "
+                         f"new coupling added a condensation node")
+    # 2. C fell — an annotation was removed/invalidated
+    if m["C"] < b.get("C", 0):
+        fails.append(f"C fell {b['C']} -> {m['C']} (a validated contract was removed/invalidated)")
+    # 3. unresolved contract.id (rejects TODO and ids that don't resolve to an ACID/SDD/path)
+    for k, cid in m["unresolved"]:
+        fails.append(f"unresolved contract.id {cid!r} on seam {k} "
+                     f"(must resolve to an ACID or repo path)")
+    return m, fails
+
+
+# ===========================================================================
 # DOT + timeline (DOT from graph; timeline is inherently span/time-based)
 # ===========================================================================
 
@@ -633,6 +711,27 @@ def main(argv):
 
     print(f"# emission sites {len(emap)}  spans {len(spans)} from {len(args)} trace(s)  "
           f"nodes {G.number_of_nodes()}  bad {bad}", file=sys.stderr)
+
+    # deterministic gate / baseline ops short-circuit the human reports
+    if flags.get("write-baseline"):
+        m = compute_metrics(spans, attr, G, repo)
+        json.dump({"N": m["N"], "C": m["C"], "broken_sccs": []},
+                  open(flags["write-baseline"], "w"), indent=2)
+        open(flags["write-baseline"], "a").write("\n")
+        print(f"wrote {flags['write-baseline']}: N={m['N']} C={m['C']} "
+              f"(multi-node SCCs: {len(m['sccs'])})")
+        return 0
+    if flags.get("check-baseline"):
+        m, fails = check_baseline(spans, attr, G, repo, flags["check-baseline"])
+        print(f"N={m['N']} C={m['C']} multi-node-SCCs={len(m['sccs'])} "
+              f"unresolved-contracts={len(m['unresolved'])}")
+        if fails:
+            print("GATE FAIL:")
+            for f in fails:
+                print(f"  - {f}")
+            return 1
+        print("GATE PASS")
+        return 0
 
     print(report_flow(G, top, focus))
     if static:

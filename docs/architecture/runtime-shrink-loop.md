@@ -8,7 +8,7 @@
 
 ## The two numbers you are driving
 
-| Metric | Meaning | Today | Target | Gate |
+| Metric | Meaning | Today | Target | Checkpoint rule |
 |---|---|---|---|---|
 | **`N` = condensation node count** | irreducible logical units (the "manageable size" number). Graph-exact: SCCs are unambiguous, "did N change" is decidable. | **38** | team-set, e.g. **≤ 20** | must not rise |
 | **`C` = validated contract count** | number of seams the **author has classified** — `firegrid.seam.kind` set **and** `firegrid.contract.id` that resolves to a real ACID/SDD/decision-doc path | **0** | every hot seam classified | must not fall (ratchets up) |
@@ -28,11 +28,26 @@ The loop is open until these exist. Commission them as beads before iterating:
 
 1. **`corpus`** — a committed, versioned scenario set so `N`/`C` are comparable across PRs. Start from the 3 traces in the map; add **control-plane lifecycle** (cancel/close/resume) and **multi-context** (parent+child) — the §8 coverage gaps. Live-LLM scenarios are env-gated/manual; structural metrics (`N`, SCCs) are stable regardless of leaf timing.
 2. **`baseline`** — `runtime-shape-baseline.json` = `{N, C, broken_sccs[]}` (no hot-seam list, no traffic threshold — see Gate contract). Same ratchet pattern as `semgrep-error-baseline.json`.
-3. **`gate`** — `runtime-flow-map.py --check-baseline` exits non-zero if `N` rose or a new hot seam has no `contract.id`. Wire into CI. (This flag is **not built yet** — first lane builds it; spec in §"Gate contract" below.)
+3. **`checkpoint`** — ✅ **BUILT**: `runtime-flow-map.py --check-baseline=<file>` / `--write-baseline=<file>` (see Gate contract below; tested deterministic). **Not wired to CI** — Gary runs it by hand at the checkpoints in the next section. One small prep bead:
+   - **`corpus`** (above): keep a *fixed* set of small representative traces you re-use across checkpoints, so `N`/`C` are comparable run-to-run. **Do not use the raw live traces** — the elicitation trace is ~146MB. Topology (`N`, SCCs) is volume-independent, so a short capture that exercises the same paths gives the same `N`; stash a stable corpus (e.g. under `docs/architecture/corpus/` or a known `.simulate/runs/` set you don't delete).
 
-Until Phase 0 lands, run the loop manually (you read `N`/`C` off the report); after, CI enforces the ratchet.
+Keep `runtime-shape-baseline.json` next to it as the comparison anchor; re-ratchet it with `--write-baseline` only after an accepted change (§6).
 
 ---
+
+## Checkpoints — when Gary runs the check (manual, not CI)
+
+Run `--check-baseline` against the **fixed corpus** at these moments. It's a decision aid, not an auto-gate — you read the verdict and decide.
+
+| Checkpoint | Command | What you're confirming |
+|---|---|---|
+| **Loop start** | `--write-baseline` | snapshot the anchor (`N=38, C=0` today) |
+| **Structural bead reports back** (§5 VERIFY) | `--check-baseline` | the target SCC is gone (merged/broken) **and** `N` didn't rise except by a sanctioned break **and** tests green → accept |
+| **Annotation batch lands** | `--check-baseline` | `C` rose, **0 unresolved `contract.id`** (no `"TODO"`) |
+| **Before closing tf-vfq9 / deleting `ToolCallWorkflow`** | `--check-baseline` + overlay | the tf-jpcg seam is **no longer invisible coupling** — i.e. it was reshaped, not bridged (the test case, see guardrails) |
+| **Periodic heartbeat** (e.g. weekly) | `--check-baseline` | catch drift — `N` creeping up or a new unresolved contract from other lanes' work |
+
+After an **accepted** change, run `--write-baseline` to re-ratchet the anchor, then continue.
 
 ## Two tracks (do NOT serialize them)
 
@@ -105,9 +120,18 @@ Update `runtime-shape-baseline.json` with the new `N`/`C`. CI now rejects any PR
 
 ---
 
-## Gate contract (spec for the Phase-0 `--check-baseline` lane)
+## Gate contract (BUILT — `scripts/runtime-flow-map.py`)
 
-`runtime-flow-map.py --check-baseline=runtime-shape-baseline.json <corpus traces> --depcruise=dc.json`
+```bash
+# generate/refresh the baseline (after an accepted ratchet):
+uv run --with networkx --with scipy python3 scripts/runtime-flow-map.py \
+  <committed corpus traces> --depcruise=dc.json --write-baseline=runtime-shape-baseline.json
+# run at a checkpoint (exit 0 = pass, 1 = fail with offending items listed):
+uv run --with networkx --with scipy python3 scripts/runtime-flow-map.py \
+  <fixed corpus traces> --depcruise=dc.json --check-baseline=runtime-shape-baseline.json
+```
+
+Not wired to CI — Gary runs it at the checkpoints above and reads the verdict. **Determinism:** run against the **same fixed corpus** each time (not fresh live captures) + current source — same inputs ⇒ same `N`/`C`. `N` is graph-exact (condensation node count); contract resolution is a deterministic ACID/path lookup.
 
 Baseline file: `{ "N": 38, "C": 0, "broken_sccs": [] }` (no hot-seam list, no traffic threshold — those were the soft edges).
 
