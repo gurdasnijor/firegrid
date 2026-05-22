@@ -16,6 +16,7 @@ import {
 import {
   RuntimeAgentToolExecutionLive,
   RuntimeToolCallWorkflowLayer,
+  ScheduledPromptWorkflowLayer,
 } from "@firegrid/runtime/tool-executor"
 import {
   RuntimeToolUseExecutorLive,
@@ -74,7 +75,11 @@ export const runtimeContextWorkflowSupportLayer = (
 export const toolCallWorkflowSupportLayer = (
   agentToolHost: AgentToolHostService,
 ) =>
-  RuntimeToolCallWorkflowLayer.pipe(
+  // tf-5ose: register the durable ScheduledPromptWorkflow alongside the tool-call
+  // workflow on the host-engine scope. schedule_me starts it `discard:true`, so it
+  // outlives the tool call and the engine must own its handler to resume it after
+  // the DurableClock delay fires.
+  Layer.merge(RuntimeToolCallWorkflowLayer, ScheduledPromptWorkflowLayer).pipe(
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
     Layer.provideMerge(HostRuntimeObservationStreamsLive),
     Layer.provideMerge(runtimeToolUseExecutorLayer),

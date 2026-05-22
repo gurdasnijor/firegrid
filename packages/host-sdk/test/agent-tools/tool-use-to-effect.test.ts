@@ -800,30 +800,21 @@ describe("toolUseToEffect — spawn_all arm", () => {
 })
 
 describe("toolUseToEffect — schedule_me arm", () => {
-  it("returns scheduled:true and appends through the canonical host prompt seam", async () => {
+  // tf-5ose: schedule_me is non-blocking. It starts the durable
+  // ScheduledPromptWorkflow fire-and-forget (discard) and returns
+  // {scheduled:true} immediately; the self-prompt append fires later inside that
+  // workflow (no inline host.appendSessionPrompt, no inline DurableClock.sleep).
+  it("returns scheduled:true immediately without an inline host prompt append", async () => {
     const streams = makeStreams("schedule-me")
-    let observed:
-      | { readonly sessionId: string; readonly inputId: string; readonly text: string }
-      | undefined
+    let appendObserved = false
     const host = fakeHost({
-      appendSessionPrompt: ({ sessionId, inputId, prompt }) =>
-        Effect.sync(() => {
-          const firstPart = prompt.content[0]
-          observed = {
-            sessionId,
-            inputId,
-            text: firstPart?.type === "text" ? firstPart.text : "",
-          }
-        }),
+      appendSessionPrompt: () => Effect.sync(() => { appendObserved = true }),
     })
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
-      Effect.gen(function* () {
-        const out = yield* RunToolWorkflow.execute({
-          contextId: "ctx-schedule",
-          event: toolUse("tool-schedule", "schedule_me", { when: 0, prompt: "follow-up" }),
-        })
-        return out
+      RunToolWorkflow.execute({
+        contextId: "ctx-schedule",
+        event: toolUse("tool-schedule", "schedule_me", { when: 0, prompt: "follow-up" }),
       }),
     )
     expect(resultIsError(result)).toBe(false)
@@ -833,11 +824,34 @@ describe("toolUseToEffect — schedule_me arm", () => {
     }
     expect(scheduledContent.scheduled).toBe(true)
     expect(scheduledContent.scheduleId).toContain("schedule-me:ctx-schedule")
-    expect(observed).toEqual({
-      sessionId: "ctx-schedule",
-      inputId: scheduledContent.scheduleId,
-      text: "follow-up",
-    })
+    // The tool no longer drives the host prompt-append seam synchronously; the
+    // durable workflow owns delivery.
+    expect(appendObserved).toBe(false)
+  })
+
+  // tf-5ose regression: a `when` far beyond the ACP turn timeout must NOT block
+  // the tool. Pre-fix this awaited DurableClock.sleep(delayMs) inline and the
+  // edge timed out (~32s). Post-fix it returns immediately; this test completing
+  // well under the old delay is the proof.
+  it("returns scheduled:true immediately for a far-future when (does not block the turn)", async () => {
+    const streams = makeStreams("schedule-me-future")
+    const farFuture = Date.now() + 10 * 60 * 1000 // 10 minutes out
+    const startedAt = Date.now()
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost())),
+      RunToolWorkflow.execute({
+        contextId: "ctx-schedule-future",
+        event: toolUse("tool-schedule-future", "schedule_me", {
+          when: farFuture,
+          prompt: "later",
+        }),
+      }),
+    )
+    const elapsedMs = Date.now() - startedAt
+    expect(resultIsError(result)).toBe(false)
+    expect((resultContent(result) as { readonly scheduled: true }).scheduled).toBe(true)
+    // Returned immediately, not after the 10-minute delay.
+    expect(elapsedMs).toBeLessThan(15_000)
   })
 })
 

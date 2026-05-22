@@ -74,7 +74,6 @@ import {
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
 import {
-  Clock,
   Effect,
   Option,
   ParseResult,
@@ -732,23 +731,18 @@ const runScheduleMeTool = (
   AgentToolHost | RuntimeAgentToolExecution
 > => {
   const scheduleId = scheduleIdFor(ctx.contextId, toolUseId)
-  const prompt = promptFromText(input.prompt)
   return Effect.gen(function*() {
-    const host = yield* AgentToolHost
     const execution = yield* RuntimeAgentToolExecution
-    const now = yield* Clock.currentTimeMillis
+    // tf-5ose: schedule_me is now non-blocking. The runtime starts the durable
+    // ScheduledPromptWorkflow fire-and-forget and returns {scheduled:true}
+    // immediately; that workflow owns the DurableClock + the idempotent prompt
+    // append (no host-side append closure, no inline DurableClock.sleep that
+    // would block the agent's turn until `when`).
     return yield* execution.schedule({
       contextId: ctx.contextId,
       toolUseId,
       input,
       scheduleId,
-      delayMs: Math.max(0, input.when - now),
-      append: host.appendSessionPrompt({
-        toolUseId,
-        sessionId: ctx.contextId,
-        prompt,
-        inputId: scheduleId,
-      }),
     }).pipe(
       Effect.mapError(error =>
         runtimeAgentToolExecutionErrorToToolError(

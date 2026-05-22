@@ -21,3 +21,6 @@ export {
   RuntimeToolCallWorkflowLayer,
   ToolCallWorkflow,
 } from "./runtime-tool-call-workflow.ts"
+export {
+  ScheduledPromptWorkflowLayer,
+} from "../../workflow-engine/workflows/scheduled-prompt.ts"

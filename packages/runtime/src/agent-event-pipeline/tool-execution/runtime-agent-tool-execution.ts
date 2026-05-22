@@ -29,6 +29,9 @@ import {
   WaitForWorkflowLayer,
   type WaitForWorkflowOutcome,
 } from "../../workflow-engine/workflows/wait-for.ts"
+import {
+  ScheduledPromptWorkflow,
+} from "../../workflow-engine/workflows/scheduled-prompt.ts"
 
 export interface RuntimeToolExecutionContext {
   readonly contextId: string
@@ -75,8 +78,6 @@ export interface RuntimeScheduleToolExecutionParams
 {
   readonly input: ScheduleMeToolInput
   readonly scheduleId: string
-  readonly delayMs: number
-  readonly append: Effect.Effect<void, unknown, never>
 }
 
 export type RuntimeAgentToolExecutionError =
@@ -216,13 +217,19 @@ export const makeRuntimeAgentToolExecutionService =
       call.pipe(
         Effect.mapError(toolExecutionFailed),
       ),
-    schedule: ({ scheduleId, delayMs, append }) =>
-      DurableClock.sleep({
-        name: scheduleId,
-        duration: Duration.millis(delayMs),
-        inMemoryThreshold: Duration.zero,
-      }).pipe(
-        Effect.zipRight(append),
+    // tf-5ose: start the durable, replay-safe ScheduledPromptWorkflow
+    // fire-and-forget (`discard: true` returns the executionId without awaiting
+    // the timer) and return {scheduled:true} immediately, so the agent's turn
+    // completes now and the self-prompt fires later. idempotencyKey = scheduleId
+    // makes a replay re-start a no-op; the workflow handler is registered on the
+    // host-engine scope (toolCallWorkflowSupportLayer) so the engine resumes it
+    // after the delay. (NOT awaited inline like the prior DurableClock.sleep,
+    // which blocked the turn until `when` and timed the edge out.)
+    schedule: ({ contextId, scheduleId, input }) =>
+      ScheduledPromptWorkflow.execute(
+        { contextId, scheduleId, when: input.when, prompt: input.prompt },
+        { discard: true },
+      ).pipe(
         Effect.as<ScheduleMeToolOutput>({ scheduled: true, scheduleId }),
         Effect.mapError(toolExecutionFailed),
         hideExecutionRequirements,
