@@ -376,6 +376,89 @@ const turnTimeoutReason = (
   spans.find(span => span.name === "firegrid.acp_stdio_edge.turn_output")
     ?.attributes["firegrid.acp.turn.timeout_reason"]
 
+// tf-l5px: drive one permission turn end-to-end through the real edge with a
+// caller-supplied ACP client (Zed side) + policy, returning the host-plane
+// dispatches so a test can assert the decision the edge mapped back.
+const runPermissionScenario = (input: {
+  readonly client: acp.Client
+  readonly permissionPolicy?: "forward" | "allow"
+  readonly output?: (contextId: string) => RuntimeAgentOutputObservation
+}) =>
+  Effect.scoped(Effect.gen(function*() {
+    const harness = makeInMemoryAcpHarness()
+    const contextId = `ctx-${crypto.randomUUID()}`
+    const dispatched: Array<{ readonly target: string; readonly verb: string; readonly payload: unknown }> = []
+    const permissionOutput = (input.output ?? permissionRequestOutput)(contextId)
+    const layer = AcpStdioEdgeLive({
+      input: harness.edgeInput,
+      output: harness.edgeOutput,
+      turnTimeoutMs: 1_000,
+      ...(input.permissionPolicy === undefined ? {} : { permissionPolicy: input.permissionPolicy }),
+      runtime: local.jsonl({
+        argv: [globalThis.process.execPath, "-e", backingAgentProgram],
+        agent: "host-sdk-acp-edge-test-agent",
+        agentProtocol: "stdio-jsonl",
+        cwd: globalThis.process.cwd(),
+      }),
+    }).pipe(
+      Layer.provideMerge(Layer.succeed(HostPlaneChannelRouter, {
+        descriptor: { routes: [], metadata: [] },
+        metadata: [],
+        route: target => Effect.fail(new UnknownChannelTarget({ target: String(target) })),
+        dispatch: request =>
+          Effect.sync(() => {
+            dispatched.push({ target: String(request.target), verb: request.verb, payload: request.payload })
+            switch (String(request.target)) {
+              case String(HostSessionsCreateOrLoadChannelTarget):
+                return { contextId, sessionId: contextId }
+              case String(SessionPromptChannelTarget):
+                return { accepted: true }
+              case String(HostSessionsStartChannelTarget):
+                return { accepted: true }
+              case String(HostPermissionRespondChannelTarget):
+                return { accepted: true }
+              default:
+                throw new Error(`unexpected dispatch target ${String(request.target)}`)
+            }
+          }),
+      } satisfies HostPlaneChannelRouter["Type"])),
+      Layer.provideMerge(Layer.succeed(HostContextsChannel, makeIngressChannel({
+        target: HostContextsChannelTarget,
+        schema: RuntimeContextSchema,
+        stream: Stream.make(fakeRuntimeContext(contextId)),
+      }))),
+      Layer.provideMerge(Layer.succeed(SessionAgentOutputChannel, {
+        forContext: () =>
+          makeIngressChannel({
+            target: SessionAgentOutputChannelTarget,
+            schema: RuntimeAgentOutputObservationSchema,
+            stream: Stream.make(permissionOutput, turnCompleteOutput(contextId)),
+          }),
+      } satisfies SessionAgentOutputChannel["Type"])),
+    )
+    yield* Layer.build(layer)
+    const stream = acp.ndJsonStream(harness.clientOutput, harness.clientInput)
+    const connection = new acp.ClientSideConnection(() => input.client, stream)
+    yield* Effect.promise(() =>
+      connection.initialize({ protocolVersion: acp.PROTOCOL_VERSION, clientCapabilities: {} }))
+    const session = yield* Effect.promise(() =>
+      connection.newSession({ cwd: globalThis.process.cwd(), mcpServers: [] }))
+    const prompt = yield* Effect.promise(() =>
+      connection.prompt({
+        sessionId: session.sessionId,
+        messageId: "host-sdk-acp-edge-permission",
+        prompt: [{ type: "text", text: "run a tool" }],
+      }))
+    return { dispatched, contextId, stopReason: prompt.stopReason }
+  }))
+
+const permissionDecision = (
+  dispatched: ReadonlyArray<{ readonly target: string; readonly payload: unknown }>,
+): unknown => {
+  const payload = dispatched.find(d => d.target === String(HostPermissionRespondChannelTarget))?.payload
+  return (payload as { readonly decision?: unknown } | undefined)?.decision
+}
+
 describe("ACP stdio edge", () => {
   it("tf-lgb1 classifies an idle turn timeout from the last output observation", () => {
     expect(classifyTurnIdleTimeoutReason(undefined)).toBe("agent_silent")
@@ -443,6 +526,10 @@ describe("ACP stdio edge", () => {
       input: harness.edgeInput,
       output: harness.edgeOutput,
       turnTimeoutMs: 1_000,
+      // tf-l5px: the auto-allow stopgap is retained only behind explicit policy.
+      // The {_tag:"Allow"} assertion below (no optionId) proves auto-grant, not
+      // the forward path (which would carry the selected optionId).
+      permissionPolicy: "allow",
       runtime: local.jsonl({
         argv: [globalThis.process.execPath, "-e", backingAgentProgram],
         agent: "host-sdk-acp-edge-test-agent",
@@ -547,6 +634,83 @@ describe("ACP stdio edge", () => {
         }),
       ]),
     )
+  })
+
+  it("tf-l5px forwards PermissionRequest to the ACP client and maps a selected allow option back through host.permissions.respond", async () => {
+    const requested: Array<acp.RequestPermissionRequest> = []
+    const client: acp.Client = {
+      sessionUpdate: async () => {},
+      requestPermission: async params => {
+        requested.push(params)
+        return { outcome: { outcome: "selected", optionId: params.options[0]!.optionId } }
+      },
+    }
+    const result = await Effect.runPromise(runPermissionScenario({ client }))
+
+    expect(result.stopReason).toBe("end_turn")
+    // forwarded to the client with the tool + options (Zed's native UI)
+    expect(requested).toHaveLength(1)
+    expect(requested[0]?.toolCall.toolCallId).toBe("tool-test")
+    expect(requested[0]?.options.map(option => option.optionId)).toEqual(["allow-once"])
+    // human "allow" mapped back through host.permissions.respond
+    expect(permissionDecision(result.dispatched)).toEqual({ _tag: "Allow", optionId: "allow-once" })
+  })
+
+  it("tf-l5px maps a selected reject option to a Deny decision", async () => {
+    const rejectOutput = (contextId: string): RuntimeAgentOutputObservation =>
+      Schema.decodeUnknownSync(RuntimeAgentOutputObservationSchema)({
+        _tag: "PermissionRequest",
+        source: FiregridRuntimeObservationSourceNames.agentOutputEvents,
+        sessionId: contextId,
+        contextId,
+        activityAttempt: 1,
+        sequence: 0,
+        permissionRequestId: "permission-test",
+        toolUseId: "tool-test",
+        options: [
+          { optionId: "allow-once", kind: "allow_once", name: "Allow once" },
+          { optionId: "reject-once", kind: "reject_once", name: "Reject" },
+        ],
+        event: {
+          _tag: "PermissionRequest",
+          permissionRequestId: "permission-test",
+          toolUseId: "tool-test",
+          options: [
+            { optionId: "allow-once", kind: "allow_once", name: "Allow once" },
+            { optionId: "reject-once", kind: "reject_once", name: "Reject" },
+          ],
+        },
+      })
+    const client: acp.Client = {
+      sessionUpdate: async () => {},
+      requestPermission: async () => ({ outcome: { outcome: "selected", optionId: "reject-once" } }),
+    }
+    const result = await Effect.runPromise(runPermissionScenario({ client, output: rejectOutput }))
+
+    expect(permissionDecision(result.dispatched)).toEqual({ _tag: "Deny" })
+  })
+
+  it("tf-l5px maps a cancelled outcome to a Cancelled decision (ACP still owed a response)", async () => {
+    const client: acp.Client = {
+      sessionUpdate: async () => {},
+      requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+    }
+    const result = await Effect.runPromise(runPermissionScenario({ client }))
+
+    expect(result.stopReason).toBe("end_turn")
+    expect(permissionDecision(result.dispatched)).toEqual({ _tag: "Cancelled" })
+  })
+
+  it("tf-l5px defaults to Cancelled when the client cannot answer, so ACP is never left hanging", async () => {
+    const client: acp.Client = {
+      sessionUpdate: async () => {},
+      requestPermission: async () => {
+        throw new Error("client has no permission surface")
+      },
+    }
+    const result = await Effect.runPromise(runPermissionScenario({ client }))
+
+    expect(permissionDecision(result.dispatched)).toEqual({ _tag: "Cancelled" })
   })
 
   it("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7 routes turns and traces ACP edge requests", async () => {
