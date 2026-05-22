@@ -72,6 +72,7 @@ import {
 } from "@firegrid/host-sdk"
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk/firegrid"
 import {
+  checkFiregridOtelFileWritable,
   FiregridOtelLive,
   resolveFiregridOtelActiveExporter,
   resolveFiregridOtelFileDestination,
@@ -845,6 +846,14 @@ const acpCommand = Command.make(
         env: globalThis.process.env,
       })
       if (activeOtelExporter._tag === "file") {
+        // tf-3718: fail loud at startup if the trace file destination is not
+        // writable, instead of an opaque defect when the OTel layer is built.
+        const writability = checkFiregridOtelFileWritable(activeOtelExporter.filePath)
+        if (writability._tag === "unwritable") {
+          return yield* usageError(
+            `firegrid acp: cannot write OTEL trace file ${activeOtelExporter.filePath}: ${writability.reason}`,
+          )
+        }
         yield* Console.error(
           `firegrid acp: writing OTEL spans to ${activeOtelExporter.filePath}`,
         )
