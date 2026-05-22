@@ -678,3 +678,21 @@ export type {
   StaticSubscriberOptions,
   StaticSubscriberStreamOptions,
 }
+
+// tf-e49h: firegrid-no-replay-path-output-scan — replay-path live table scans.
+// These shapes are forbidden inside a workflow body because the body re-runs on
+// every @effect/workflow replay (tf-7kq8). Read through the durable output
+// cursor or a memoized Activity instead.
+function* tfE49hReplayPathOutputScanFixtures(): Generator<unknown, void, unknown> {
+  // ruleid: firegrid-no-replay-path-output-scan
+  const events = yield* RuntimeAgentOutputAfterEvents
+  // ruleid: firegrid-no-replay-path-output-scan
+  const materialized = someCollection.toArray
+  // ruleid: firegrid-no-replay-path-output-scan
+  const next = someTable.events.query((coll) => coll)
+  // ok: firegrid-no-replay-path-output-scan
+  const cursor = yield* DurableOutputCursor
+  // ok: firegrid-no-replay-path-output-scan
+  const memoized = yield* someMemoizedActivity
+  return void [events, materialized, next, cursor, memoized]
+}

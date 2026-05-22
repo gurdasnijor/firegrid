@@ -319,6 +319,7 @@ const completedRuntimeOutput = (
       // `agent_output.initial`/`output.completed` span count stays O(outputs).
       return cached
     }
+    // nosemgrep: firegrid-no-replay-path-output-scan -- tf-7kq8 memoized bridge: this live read runs only on a cache miss (immutable Some results cached above), so it is O(distinct outputs), not O(replays*history). To be replaced by DurableOutputCursor (tf-qk6h / SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE).
     const events = yield* RuntimeAgentOutputAfterEvents
     const result = yield* events.initial(runtimeOutputAfterSource(context, activityAttempt, afterSequence)).pipe(
       Effect.mapError(cause =>

@@ -473,6 +473,48 @@ rules:
       default abstraction.
     pattern: Workflow.make(...)
 
+  - id: firegrid-no-replay-path-output-scan
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION.1
+      category: workflow-architecture
+      rationale: |
+        tf-7kq8: a workflow body runs top-to-bottom on every @effect/workflow
+        replay. A live, unbounded table read on that path
+        (RuntimeAgentOutputAfterEvents.initial/.after, a DurableTable `.query`,
+        or a `coll.toArray`/reduce-over-rows full materialization) is re-executed
+        on every resume while the in-memory cursor resets, so cost scales with
+        replays * history instead of distinct outputs — the agent_output.initial
+        re-read storm that hung live ACP turns. Output observation inside the
+        replay boundary must use the workflow-owned durable cursor
+        (SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE, INV-2 "no replay re-walk"), not a
+        host-owned scan.
+      fix-hint: |
+        Do not scan tables from a workflow body. Read the next output through
+        the durable cursor primitive (cursor.next(), reconstructed by one point
+        lookup on replay), or move the read into a named, memoized Activity.
+        If a use is genuinely replay-safe, add it to semgrep-error-baseline.json
+        with an explicit justification rather than widening this rule.
+    paths:
+      include:
+        - "/packages/*/src/workflow-engine/workflows/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Live table scan on the workflow replay path. A workflow body re-runs on
+      every replay; a full table read here (output-after read, DurableTable
+      query, or coll.toArray/reduce over rows) re-scans history per resume
+      (tf-7kq8 storm). Use the durable output cursor or a memoized Activity.
+    pattern-either:
+      - pattern: yield* RuntimeAgentOutputAfterEvents
+      - pattern: $COLL.toArray
+      - pattern: $TABLE.query(...)
+
   - id: firegrid-runtime-owned-table-writes-use-authorities
     languages: [typescript]
     severity: ERROR
