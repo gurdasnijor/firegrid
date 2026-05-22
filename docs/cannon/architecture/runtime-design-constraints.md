@@ -466,23 +466,37 @@ a bridge exception meeting the gate above.
 
 ## Executable Contract Follow-Ups
 
-This document is review-enforced today. It must become test-enforced. Tracking
-bead: `tf-zchu`.
+C2, C4, C6, and C7 are now test-enforced (`tf-zchu`) by Semgrep rules in
+`.semgrep.yml`, gated in CI through `scripts/semgrep-check-baseline.mjs`
+(`pnpm run lint:semgrep`) with rule-unit coverage in `semgrep-tests/`
+(`pnpm run lint:semgrep:test`). `semgrep-error-baseline.json` is the admissible
+bridge-exception ledger: an existing in-scope finding may be baselined with a
+justification note; any new finding fails CI. The remaining constraints (C1, C3,
+C5) stay review-enforced.
 
-Until `tf-zchu` lands, the constraints below are review-enforced. Review-only
-enforcement expires on 2026-06-05; after that date, new work in the covered
-surfaces must either land the guard first or carry an explicit coordinator
-exception.
-
-- C2 guard: fail CI on new production `Workflow.make` bodies that create
-  operation-shaped long-lived loops or park on multiple semantic wait kinds.
-- C4 guard: fail CI on new `DurableDeferred` use in runtime input, tool,
-  permission, or child-session paths unless the SDD declares an admissible
-  bridge exception.
-- C6 guard: fail CI on new agent-tool protocol schemas that add source-specific
-  cursor/event-tag taxonomies instead of projecting a router-backed channel.
-- C7 guard: fail CI on edge-local terminal completion synthesis where the
-  terminal fact is not backed by durable runtime state.
+- C2 guard — `firegrid-no-unclassified-workflow-make`: fails CI on every new
+  production `Workflow.make` definition. This is strictly stronger than C2's
+  "operation-shaped long-lived loops or park on multiple semantic wait kinds"
+  sub-case, since a new context-lifetime loop or cross-event parked body cannot
+  appear without a new `Workflow.make`. Existing owner workflows are baselined.
+- C4 guard — `firegrid-c4-no-new-durable-deferred-runtime-wait`: fails CI on new
+  `DurableDeferred` use under the RuntimeContext input/tool/permission/
+  child-session surfaces (`workflow-engine/workflows`, `agent-event-pipeline`,
+  `control-plane`, `channels`). The existing per-sequence input mailbox
+  (`runtime-context.ts`) is baselined as the `tf-5cn1` bridge with deletion
+  targets `tf-vrz6`/`tf-w6qj`; a new use needs an admissible bridge exception per
+  the SDD Gate. The engine clock `DurableDeferred` in
+  `workflow-engine/internal` is intentionally out of scope (engine primitive,
+  not a RuntimeContext wait kind).
+- C6 guard — `firegrid-c6-no-source-specific-cursor-event-taxonomy-in-agent-tools`:
+  fails CI on new agent-tool protocol schemas (`packages/protocol/src/agent-tools`)
+  that add `cursor:`/`eventTag:` taxonomies or a `session_read`/`ChildOutput*`
+  stack instead of reusing the router-backed `SessionAgentOutputChannel` schema.
+- C7 guard — `firegrid-c7-no-edge-local-terminal-synthesis`: fails CI on
+  edge-local construction of a terminal `{ _tag: "Done" }` in the transport edge
+  (`packages/host-sdk/src/host/*edge*.ts`) where the terminal fact is not backed
+  by durable runtime state. Observing a `TurnComplete` output is compliant;
+  synthesizing the terminal completion locally is not.
 
 First live-bridge application bead: `tf-c22a`. It applies this gate to existing
 bridge SDDs and PRs, including `SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE`,
