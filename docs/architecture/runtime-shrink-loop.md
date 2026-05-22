@@ -142,6 +142,8 @@ Gate fails (exit non-zero) on exactly three conditions, all hard:
 
 It does **not** fail on the proxy worklist. NEEDS-CONTRACT/COLLAPSE counts print as **informational** (the worklist for the annotation track); they never gate. `--write-baseline` regenerates the file after an accepted ratchet.
 
+**`contract.id` resolution (tf-fp3a).** A `contract.id` resolves if it is (a) a section ACID `feature-name.SECTION.N` / `.N-M` derived from a `features/**/*.feature.yaml`'s structure (`components`/`constraints` → `SECTION` → `requirements` → numeric key), (b) any contiguous ACID token literally present in a `*.feature.yaml` / `.semgrep.yml`, or (c) an existing repo path (a decision-doc / SDD / feature-file path). Typo'd section/number combinations and `TODO`-shaped ids still fail. Authors may now cite a section id directly (e.g. `firegrid-zed-acp-stdio-external-agent.PROTOCOL_DISCIPLINE.3`) instead of a whole feature-file path. Validate the resolver with `uv run --with networkx --with scipy python3 scripts/runtime-flow-map.py --self-check`.
+
 ---
 
 ## Termination
