@@ -3,6 +3,7 @@ import type { Scope } from "effect"
 import { Cause, Clock, Duration, Effect, Exit, Fiber, Match, Option } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import { stampRowOtel, withRowOtelParent } from "@firegrid/protocol/otel"
+import { annotateActivityContractSpan } from "./contract-activity.ts"
 import {
   decodeWorkflowResult,
   encodeWorkflowResult,
@@ -348,7 +349,12 @@ export const makeWorkflowEngine = (
         ),
       resume: (_workflow, executionId) => resume(executionId),
       activityExecute: (activity, attempt) =>
-        Effect.gen(function*() {
+        // Annotate the vendored `activity.name` span (created by makeExecute,
+        // our caller) with its seam contract BEFORE opening the engine's own
+        // span below. See contract-activity.ts for why this is the local hook.
+        Effect.zipRight(
+          annotateActivityContractSpan(activity),
+          Effect.gen(function*() {
           const instance = yield* currentWorkflowInstanceWithSpanAnnotations
           const activityKey = `${instance.executionId}/${activity.name}/${attempt}`
           const row = yield* orDieTable(table.activities.get(activityKey).pipe(
@@ -423,7 +429,7 @@ export const makeWorkflowEngine = (
               "firegrid.contract.id": "features/firegrid/workflow-engine-durable-state.feature.yaml",
             },
           }),
-        ),
+        )),
       deferredResult: deferred =>
         Effect.gen(function*() {
           const instance = yield* currentWorkflowInstanceWithSpanAnnotations
