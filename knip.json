@@ -89,5 +89,8 @@
   "ignoreBinaries": [
     "ruby",
     "semgrep"
+  ],
+  "ignoreWorkspaces": [
+    "tools/durable-streams-ui"
   ]
 }

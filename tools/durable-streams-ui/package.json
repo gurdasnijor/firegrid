@@ -1,0 +1,32 @@
+{
+  "name": "@firegrid/durable-streams-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Vendored copy of durable-streams examples/test-ui — a stream inspector pointed at http://localhost:4437, for watching a live Firegrid host's durable streams. Not Firegrid-aware; shows raw stream paths/rows.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4"
+  },
+  "dependencies": {
+    "@durable-streams/client": "^0.2.3",
+    "@durable-streams/state": "^0.2.5",
+    "@tanstack/react-db": "latest",
+    "@tanstack/react-router": "^1.139.14",
+    "@tanstack/react-virtual": "^3.13.13",
+    "@tanstack/router-devtools": "^1.139.15",
+    "@tanstack/router-plugin": "^1.139.14",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "react-json-view": "^1.21.3"
+  }
+}
