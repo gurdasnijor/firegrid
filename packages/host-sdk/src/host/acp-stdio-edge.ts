@@ -122,16 +122,6 @@ const acpStopReason = (
   }
 }
 
-const unhandledRuntimeAgentOutputObservation = (
-  output: never,
-): never => {
-  throw new Error(
-    `unhandled RuntimeAgentOutputObservation tag ${
-      String((output as { readonly _tag?: unknown })._tag)
-    }`,
-  )
-}
-
 class FiregridAcpStdioAgent implements acp.Agent {
   private readonly sessions = new Map<string, EdgeSession>()
   private readonly turnTimeoutMs: number
@@ -432,7 +422,8 @@ class FiregridAcpStdioAgent implements acp.Agent {
       case "Terminated":
         return
     }
-    unhandledRuntimeAgentOutputObservation(output)
+    const exhaustive: never = output
+    return exhaustive
   }
 }
 
