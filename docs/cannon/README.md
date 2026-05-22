@@ -65,23 +65,29 @@ Read in this order:
 3. `architecture/transactional-cutover-rule.md`
 4. `architecture/current-convergence-assessment-2026-05-20.md`
 5. `sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
-6. `sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
-7. `../sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md` — the channel router that
+6. `architecture/runtime-design-constraints.md` — the active runtime
+   stop-condition applying the Stream-First Agent Substrate RFC to the runtime
+   shrink: keyed durable state, event/state handlers, durable completions /
+   externally resolved waits, typed source observations, and strict bridge
+   exceptions. This document has priority when older workflow-engine-centered
+   cannon would otherwise justify adding replay/cursor/mailbox surface area.
+7. `sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
+8. `../sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md` — the channel router that
    shipped this session (router/ACP-edge cutover).
-8. `../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md` — the Phase 0
+9. `../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md` — the Phase 0
    target host/runtime shape the migrations converge toward.
-9. `architecture/kernel-owned-write-arm.md` — the empirically grounded
+10. `architecture/kernel-owned-write-arm.md` — the empirically grounded
    write+arm ownership rule. Important: `HostKernelWorkflow` is a target role,
    not an existing implementation symbol.
-10. `sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md` — the
+11. `sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md` — the
    migration frame: the production DurableDeferred mailbox is a transitional
    bridge, not target architecture.
-11. `../sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` — the tf-7kq8
+12. `../sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` — the tf-7kq8
    replay-amplification bridge, now superseded as target architecture by sparse
    workflow-owned output transition logs.
-12. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
-13. `research/workflow-body-single-suspension-rule.md`
-14. `vision/factory-vision.md`
+13. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+14. `research/workflow-body-single-suspension-rule.md`
+15. `vision/factory-vision.md`
 
 ## Canonical Documents
 
@@ -105,6 +111,12 @@ Read in this order:
 - `architecture/transactional-cutover-rule.md` — replacement work outside
   `packages/tiny-firegrid/` must ship transactionally; tiny-firegrid remains the
   allowed sandbox for partial spikes.
+- `architecture/runtime-design-constraints.md` — canonical Firegrid runtime
+  stop-condition: the operational application of the Stream-First Agent
+  Substrate RFC to current runtime shrink work. New runtime SDDs must include a
+  constraint check against C1-C7. This doc has priority over older
+  engine-centered cannon when the conflict is whether to add another
+  replay/cursor/mailbox/operation-wrapper primitive.
 - `architecture/kernel-owned-write-arm.md` — canonical wake/durability rule for
   workflow-owned table writes: a host kernel/controller command owns both the
   durable write and the wake. A generic restart sweep over suspended engine rows
@@ -225,6 +237,12 @@ Read in this order:
 - Product-specific webhook semantics live in route/app/adaptor layers. The
   canonical Firegrid channel for verified webhooks is the generic
   `firegrid.verifiedWebhooks` fact channel.
+- Runtime design is constrained by
+  `architecture/runtime-design-constraints.md`: keyed durable state,
+  event/state handlers, durable result identity, durable completions /
+  externally resolved waits, no permanent parked entity bodies, typed
+  source+cursored observations, and first-class schemas. Any bridge exception
+  must name its deletion path.
 - `packages/runtime/src/durable-tools/` stays deleted.
 - A production `Workflow.make` identity is only for an owned durable resource or
   long-running process state machine. One-shot commands, CRUD/lifecycle
