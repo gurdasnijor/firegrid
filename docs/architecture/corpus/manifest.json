@@ -1,0 +1,72 @@
+{
+  "$schema_note": "Fixed corpus for the runtime-shrink loop (docs/architecture/runtime-shrink-loop.md, Phase 0). 'Fixed' means a fixed SCENARIO SET + run recipe + stable artifact path — NOT frozen raw trace files. C is read from span attributes, so after source seam annotations land the corpus is REGENERATED from these same scenarios (via scripts/runtime-corpus.sh) so C rises. N (condensation node count) is volume-independent, so short re-captures of the same scenarios reproduce the same N.",
+  "baseline": {
+    "N": 31,
+    "C": 0,
+    "measured": "2026-05-22",
+    "note": "Union of the three in_gate scenarios on origin/main. Reproduce with: bash scripts/runtime-corpus.sh check"
+  },
+  "checkpoint_command": "bash scripts/runtime-corpus.sh check",
+  "regenerate_command": "bash scripts/runtime-corpus.sh regen",
+  "rewrite_baseline_command": "bash scripts/runtime-corpus.sh baseline",
+  "stable_artifact_dir": "docs/architecture/corpus/.runs",
+  "scenarios": [
+    {
+      "id": "codex-acp-tool-calls",
+      "role": "tool-call path (agent tool call -> executor -> workflow engine)",
+      "kind": "live-llm",
+      "secret_env": "OPENAI_API_KEY",
+      "in_gate": true,
+      "note": "Non-deterministic leaf timing; topology (N, SCCs) is stable. Env-gated: skipped when OPENAI_API_KEY is unset."
+    },
+    {
+      "id": "wait-pre-attach-roundtrip",
+      "role": "wait_for / pre-attach roundtrip",
+      "kind": "live-llm",
+      "secret_env": "ANTHROPIC_API_KEY",
+      "in_gate": true,
+      "note": "Env-gated: skipped when ANTHROPIC_API_KEY is unset."
+    },
+    {
+      "id": "delegation-proof-cap4",
+      "role": "multi-context parent+child (session_new -> child context -> handoff/resume) + control-plane recorder",
+      "kind": "deterministic",
+      "secret_env": null,
+      "in_gate": true,
+      "note": "Inline jsonLineProgram child agents; no API key. Always runs. Provides the multi-context coverage slot and the control-plane recorder edges."
+    }
+  ],
+  "manual_extended": [
+    {
+      "id": "acp-tool-elicitation",
+      "role": "prompt/output amplification path",
+      "kind": "live-llm",
+      "secret_env": "OPENAI_API_KEY",
+      "in_gate": false,
+      "note": "~146MB raw trace; its own host.ts declares it a manually-run probe, NOT part of the deterministic gate. Run manually for prompt/output coverage: pnpm --filter @firegrid/tiny-firegrid simulate:run acp-tool-elicitation. Do NOT add to the gate (large artifact)."
+    }
+  ],
+  "coverage_slots": [
+    {
+      "slot": "multi-context parent+child",
+      "status": "COVERED",
+      "covered_by": "delegation-proof-cap4"
+    },
+    {
+      "slot": "control-plane lifecycle: session_new + resume",
+      "status": "COVERED",
+      "covered_by": "delegation-proof-cap4"
+    },
+    {
+      "slot": "control-plane lifecycle: cancel + close",
+      "status": "OPEN",
+      "covered_by": null,
+      "todo": "Add a deterministic scenario that exercises session_cancel + session_close (and resume-after-cancel) so the control-request-dispatcher / runtime-control edges are exercised beyond ~75 spans (runtime-dynamics-map.md §8 gap). Until filled, the control-plane SCC is under-sampled."
+    }
+  ],
+  "keyless_subset": {
+    "scenarios": ["delegation-proof-cap4"],
+    "N": 23,
+    "note": "Deterministic-only subset (no API keys). Stable N for keyless CI drift detection; lower than the full gate because the live tool-call/wait paths are absent."
+  }
+}

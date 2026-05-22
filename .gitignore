@@ -19,3 +19,6 @@ tooling/analysis/mcp-tool-exposure-trace.md
 # bv (beads viewer) local config and caches
 .bv/
 scripts/__pycache__/
+
+# runtime-shrink corpus: regenerated, disposable (recipe is the source of truth)
+docs/architecture/corpus/.runs/
