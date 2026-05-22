@@ -240,28 +240,42 @@ export const FiregridMcpServerLayer = (
   const toolNames = toolProfile === "primitive"
     ? Object.keys(FiregridPrimitiveProfileToolkit.tools).sort()
     : Object.keys(FiregridAgentToolkit.tools).sort()
+  // tf-x3sv: the complete canonical toolset must be registered into
+  // `McpServer.tools` BEFORE the HTTP router can answer a `tools/list`.
+  // `McpServer.registerToolkit` pushes tools one at a time (each `addTool`
+  // also fires `notifications/tools/list_changed`), and the `tools/list`
+  // and `initialize` handlers read `server.tools` live. When this
+  // registration was a sibling of `HttpRouter.Default.serve()` inside the
+  // `mergeAll` (built concurrently), a client that listed mid-registration
+  // saw a *prefix* of the toolset — codex-acp, which snapshots `tools/list`
+  // once and has no `list_changed` handler, observed only `sleep` (the
+  // first-registered tool) and reported the rest absent. Making
+  // registration a build-time dependency of the serving layers gives a
+  // happens-before edge: registration fully completes before any request
+  // is routed, so the first `tools/list` is always complete and
+  // `list_changed` is no longer required for initial correctness.
+  const registerToolkitLayer = Layer.scopedDiscard(
+    Effect.gen(function* () {
+      if (toolProfile === "primitive") {
+        yield* McpServer.registerToolkit(FiregridPrimitiveProfileToolkit)
+      } else {
+        yield* McpServer.registerToolkit(FiregridAgentToolkit)
+      }
+      yield* enrichRuntimeContextMcpToolsListWithChannelMetadata
+    }).pipe(
+      Effect.withSpan("firegrid.mcp.register_toolkit", {
+        kind: "server",
+        attributes: {
+          "firegrid.mcp.tool_count": toolNames.length,
+          "firegrid.mcp.tool_names": toolNames.join(","),
+          "firegrid.mcp.tool_profile": toolProfile,
+        },
+      }),
+    ),
+  )
   return Layer.mergeAll(
     // firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.11
     registerExpectedOAuthDiscoveryProbeRoutes(options.path),
-    Layer.scopedDiscard(
-      Effect.gen(function* () {
-        if (toolProfile === "primitive") {
-          yield* McpServer.registerToolkit(FiregridPrimitiveProfileToolkit)
-        } else {
-          yield* McpServer.registerToolkit(FiregridAgentToolkit)
-        }
-        yield* enrichRuntimeContextMcpToolsListWithChannelMetadata
-      }).pipe(
-        Effect.withSpan("firegrid.mcp.register_toolkit", {
-          kind: "server",
-          attributes: {
-            "firegrid.mcp.tool_count": toolNames.length,
-            "firegrid.mcp.tool_names": toolNames.join(","),
-            "firegrid.mcp.tool_profile": toolProfile,
-          },
-        }),
-      ),
-    ),
     HttpRouter.Default.serve(),
     // TFIND-048: on bind, the host late-binds its OWN bound MCP listener
     // address into the single-purpose `FiregridRuntimeContextMcpBaseUrl`
@@ -274,6 +288,8 @@ export const FiregridMcpServerLayer = (
       publishRuntimeContextMcpBase(options.path),
     ),
   ).pipe(
+    // tf-x3sv: registration completes before the router serves (see above).
+    Layer.provide(registerToolkitLayer),
     Layer.provide(
       toolProfile === "primitive"
         ? FiregridPrimitiveProfileToolkitLayer

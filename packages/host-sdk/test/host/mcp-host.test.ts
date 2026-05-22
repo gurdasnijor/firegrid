@@ -1,6 +1,6 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { HttpServer } from "@effect/platform"
-import { Context, Effect, Layer, Tracer, type Exit } from "effect"
+import { Context, Effect, Layer, Schema, Tracer, type Exit } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridLocalHostLive,
@@ -8,6 +8,17 @@ import {
 import {
   FiregridMcpServerLayer,
 } from "../../src/host/mcp-host.ts"
+import {
+  FiregridAgentToolkit,
+} from "../../src/agent-tools/index.ts"
+
+// Minimal projection of the JSON-RPC `tools/list` response — only the tool
+// names matter for this assertion.
+const ToolsListResponse = Schema.Struct({
+  result: Schema.optional(Schema.Struct({
+    tools: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String }))),
+  })),
+})
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -133,6 +144,71 @@ describe("Firegrid MCP HTTP host", () => {
               }),
             { discard: true },
           )
+        }),
+      ),
+    )
+  })
+
+  // tf-x3sv: a no-refresh MCP client (e.g. codex-acp) snapshots `tools/list`
+  // once and ignores `notifications/tools/list_changed`. The first
+  // `tools/list` it receives MUST already carry the complete canonical
+  // runtime-context toolset; correctness must not depend on a later
+  // `list_changed` refresh.
+  it("tf-x3sv first tools/list returns the complete canonical toolset without any list_changed refresh", async () => {
+    const capturedSpans: Array<CapturedSpan> = []
+    const contextId = `ctx_${crypto.randomUUID()}`
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const scope = yield* Effect.scope
+          const context = yield* Layer.buildWithScope(mcpHostLayer(capturedSpans), scope)
+          const server = Context.get(context, HttpServer.HttpServer)
+          const address = HttpServer.formatAddress(server.address)
+          const url = `${address}/mcp/runtime-context/${contextId}`
+
+          // A single, unrefreshed JSON-RPC `tools/list` — exactly what a
+          // no-refresh client issues after connecting. No `list_changed`
+          // subscription, no second fetch.
+          const response = yield* Effect.promise(() =>
+            fetch(url, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json, text/event-stream",
+              },
+              body:
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}",
+            }))
+          const bodyText = yield* Effect.promise(() => response.text())
+
+          expect(response.status).toBe(200)
+          const payload = yield* Schema.decodeUnknown(Schema.parseJson(ToolsListResponse))(bodyText)
+          const listedNames = (payload.result?.tools ?? [])
+            .map(tool => tool.name)
+            .sort()
+
+          const expectedNames = Object.keys(FiregridAgentToolkit.tools).sort()
+          // The full canonical set — sleep/wait_for/send/wait_for_any/
+          // session_* and the rest — present on the very first list.
+          expect(listedNames).toEqual(expectedNames)
+          for (
+            const canonical of [
+              "sleep",
+              "wait_for",
+              "wait_for_any",
+              "send",
+              "session_new",
+              "session_prompt",
+              "session_cancel",
+              "session_close",
+              "schedule_me",
+              "execute",
+              "call",
+            ]
+          ) {
+            expect(listedNames).toContain(canonical)
+          }
         }),
       ),
     )
