@@ -122,6 +122,16 @@ const acpStopReason = (
   }
 }
 
+const unhandledRuntimeAgentOutputObservation = (
+  output: never,
+): never => {
+  throw new Error(
+    `unhandled RuntimeAgentOutputObservation tag ${
+      String((output as { readonly _tag?: unknown })._tag)
+    }`,
+  )
+}
+
 class FiregridAcpStdioAgent implements acp.Agent {
   private readonly sessions = new Map<string, EdgeSession>()
   private readonly turnTimeoutMs: number
@@ -366,7 +376,10 @@ class FiregridAcpStdioAgent implements acp.Agent {
     acpSessionId: string,
     output: RuntimeAgentOutputObservation,
   ): Promise<void> {
+    // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.8
     switch (output._tag) {
+      case "Ready":
+        return
       case "TextChunk":
         await this.connection.sessionUpdate({
           sessionId: acpSessionId,
@@ -379,7 +392,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
             },
           },
         })
-        break
+        return
       case "ToolUse":
         await this.connection.sessionUpdate({
           sessionId: acpSessionId,
@@ -392,10 +405,10 @@ class FiregridAcpStdioAgent implements acp.Agent {
             rawInput: output.event.part.params,
           },
         })
-        break
+        return
       case "Status":
         // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6
-        break
+        return
       case "PermissionRequest":
         // tf-46i4: ACP permission requests are request/response protocol
         // messages. Dropping one leaves the codec waiting on its permission
@@ -411,13 +424,15 @@ class FiregridAcpStdioAgent implements acp.Agent {
             },
           }),
         )
-        break
-      case "Ready":
+        return
       case "TurnComplete":
+        return
       case "Error":
+        return
       case "Terminated":
-        break
+        return
     }
+    unhandledRuntimeAgentOutputObservation(output)
   }
 }
 

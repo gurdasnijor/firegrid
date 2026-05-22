@@ -166,6 +166,20 @@ const turnCompleteOutput = (
     },
   })
 
+const acpEdgeOutputHandlingIntentions = {
+  Ready: "no-op",
+  TextChunk: "forward",
+  ToolUse: "forward",
+  PermissionRequest: "answer",
+  TurnComplete: "terminal",
+  Status: "no-op",
+  Error: "terminal",
+  Terminated: "terminal",
+} as const satisfies Record<
+  RuntimeAgentOutputObservation["_tag"],
+  "answer" | "forward" | "no-op" | "terminal"
+>
+
 interface CapturedSpan {
   readonly name: string
   readonly attributes: Record<string, unknown>
@@ -206,6 +220,19 @@ const capturingTracerLayer = (
 }
 
 describe("ACP stdio edge", () => {
+  it("firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.8 names every RuntimeAgentOutputObservation handling intention", () => {
+    expect(acpEdgeOutputHandlingIntentions).toEqual({
+      Ready: "no-op",
+      TextChunk: "forward",
+      ToolUse: "forward",
+      PermissionRequest: "answer",
+      TurnComplete: "terminal",
+      Status: "no-op",
+      Error: "terminal",
+      Terminated: "terminal",
+    })
+  })
+
   it("tf-46i4 answers PermissionRequest observations through host.permissions.respond so ACP tool calls cannot deadlock silently", async () => {
     const harness = makeInMemoryAcpHarness()
     const contextId = `ctx-${crypto.randomUUID()}`
