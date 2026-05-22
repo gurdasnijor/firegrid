@@ -49,18 +49,23 @@ bash scripts/runtime-corpus.sh baseline
 CORPUS_NO_REGEN=1 bash scripts/runtime-corpus.sh check
 ```
 
-## Scenario set (current baseline `N=31`, `C=0`)
+## Scenario set (current baseline `N=33`, `C=0`)
 
 | Scenario | Kind | Covers |
 |---|---|---|
 | `codex-acp-tool-calls` | live-llm (`OPENAI_API_KEY`) | tool-call path |
 | `wait-pre-attach-roundtrip` | live-llm (`ANTHROPIC_API_KEY`) | wait_for / pre-attach roundtrip |
 | `delegation-proof-cap4` | **deterministic** | multi-context parent+child, control-plane recorder, session_new/resume |
+| `control-plane-cancel-close` | **deterministic** | control-plane lifecycle cancel + resume-after-cancel + close (dispatcher / RuntimeLifecycleWorkflow / runtime-control) |
 
 - **Live scenarios are env-gated:** the recipe skips them when their key is
   unset and prints a SKIP line. With no keys, only the deterministic subset runs
-  (`delegation-proof-cap4`, stable `N=23`) — useful for keyless CI drift checks,
-  but it is **not** the full `N=31` gate.
+  (`delegation-proof-cap4` + `control-plane-cancel-close`, stable `N=25`) —
+  runnable in CI without keys; it is a subset of the full `N=33` gate.
+- **A live run that `TimedOut` still yields a topology-complete trace.** The
+  recipe tolerates a live scenario's non-zero exit and collects its trace
+  anyway (`N` is volume-independent); a missing live trace is non-fatal
+  (env-gated), a missing deterministic trace fails the recipe.
 - **`acp-tool-elicitation` is a manual probe, not in the gate** (its own
   `host.ts` says so; ~146MB raw trace). Run it by hand for prompt/output
   coverage; never add it to the gate.
@@ -69,7 +74,7 @@ CORPUS_NO_REGEN=1 bash scripts/runtime-corpus.sh check
 
 - ✅ multi-context parent+child — `delegation-proof-cap4`
 - ✅ control-plane lifecycle (session_new + resume) — `delegation-proof-cap4`
-- ⬜ **control-plane lifecycle (cancel + close)** — OPEN. No corpus scenario yet
-  exercises `session_cancel` / `session_close`; the `control-request-dispatcher`
-  edges stay under-sampled (`runtime-dynamics-map.md` §8). Fill with a
-  deterministic cancel/close/resume scenario, then re-run `baseline`.
+- ✅ control-plane lifecycle (cancel + close) — `control-plane-cancel-close`
+  (deterministic; drives cancel + resume-after-cancel + close through the
+  agent-tool surface, firing the previously under-sampled
+  `control-request-dispatcher` / `runtime-control` path, `runtime-dynamics-map.md` §8).

@@ -44,11 +44,17 @@ regen_scenario() {
     return 0
   fi
   echo "[corpus] run $id ($kind)" >&2
-  pnpm --filter @firegrid/tiny-firegrid simulate:run "$id" --timeout-ms "$TIMEOUT_MS" >&2
+  # A live-llm run can TimedOut/non-zero yet still emit a topologically complete
+  # trace (N is volume-independent). Tolerate non-zero exit and judge on whether
+  # a trace was produced, not on the run's outcome.
+  pnpm --filter @firegrid/tiny-firegrid simulate:run "$id" --timeout-ms "$TIMEOUT_MS" >&2 || \
+    echo "[corpus]   ($id exited non-zero — collecting its trace anyway)" >&2
   local latest
   latest="$(ls -dt packages/tiny-firegrid/.simulate/runs/*__"$id" 2>/dev/null | head -1)"
   if [[ -z "$latest" || ! -f "$latest/trace.jsonl" ]]; then
-    echo "[corpus] ERROR: no trace produced for $id" >&2; return 1
+    echo "[corpus] ERROR: no trace produced for $id" >&2
+    [[ "$kind" == "live-llm" ]] && return 0   # live scenarios are best-effort/env-gated
+    return 1
   fi
   cp "$latest/trace.jsonl" "$RUNS_DIR/$id.jsonl"
   echo "[corpus]   -> $RUNS_DIR/$id.jsonl ($(wc -c <"$RUNS_DIR/$id.jsonl") bytes)" >&2
