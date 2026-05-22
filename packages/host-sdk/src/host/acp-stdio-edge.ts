@@ -29,7 +29,22 @@ export interface AcpStdioEdgeOptions {
   readonly createdBy?: string
   readonly externalKeySource?: string
   readonly turnTimeoutMs?: number
+  /**
+   * How the edge answers a RuntimeAgentOutput PermissionRequest (tf-l5px):
+   * - `"forward"` (default): ask the connected ACP client (Zed's native
+   *   permission UI) via `AgentSideConnection.requestPermission` and map the
+   *   selected/rejected/cancelled outcome back through `host.permissions.respond`.
+   * - `"allow"`: auto-allow without prompting — the tf-46i4 stopgap, retained
+   *   only behind this explicit opt-in. tf-jvjm formalizes the policy surface.
+   */
+  readonly permissionPolicy?: "forward" | "allow"
 }
+
+// tf-l5px: structural shape of the decision dispatched to host.permissions.respond.
+type EdgePermissionDecision =
+  | { readonly _tag: "Allow"; readonly optionId?: string }
+  | { readonly _tag: "Deny" }
+  | { readonly _tag: "Cancelled" }
 
 export interface AcpStdioEdgeService {
   readonly closed: Effect.Effect<void, unknown>
@@ -489,20 +504,11 @@ class FiregridAcpStdioAgent implements acp.Agent {
         // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6
         return
       case "PermissionRequest":
-        // tf-46i4: ACP permission requests are request/response protocol
-        // messages. Dropping one leaves the codec waiting on its permission
-        // decision and deadlocks the live turn.
-        await this.run(
-          this.router.dispatch({
-            target: HostPermissionRespondChannelTarget,
-            verb: "call",
-            payload: {
-              contextId: output.contextId,
-              permissionRequestId: output.permissionRequestId,
-              decision: { _tag: "Allow" },
-            },
-          }),
-        )
+        // tf-46i4/tf-l5px: ACP permission requests are request/response protocol
+        // messages. Dropping one leaves the codec waiting and deadlocks the turn.
+        // Default: forward to the connected ACP client (Zed's native permission
+        // UI) and answer with the human decision; "allow" policy auto-grants.
+        await this.answerPermissionRequest(acpSessionId, output)
         return
       case "TurnComplete":
         return
@@ -513,6 +519,67 @@ class FiregridAcpStdioAgent implements acp.Agent {
     }
     const exhaustive: never = output
     return exhaustive
+  }
+
+  // tf-l5px: answer a PermissionRequest. The invariant is that ACP is always
+  // owed a response — every path resolves to a typed decision dispatched through
+  // the existing host.permissions.respond route (the edge already owns this
+  // seam; this only changes WHICH decision is sent).
+  private async answerPermissionRequest(
+    acpSessionId: string,
+    output: Extract<RuntimeAgentOutputObservation, { readonly _tag: "PermissionRequest" }>,
+  ): Promise<void> {
+    const decision: EdgePermissionDecision =
+      this.options.permissionPolicy === "allow"
+        ? { _tag: "Allow" }
+        : await this.requestPermissionFromClient(acpSessionId, output)
+    await this.run(
+      this.router.dispatch({
+        target: HostPermissionRespondChannelTarget,
+        verb: "call",
+        payload: {
+          contextId: output.contextId,
+          permissionRequestId: output.permissionRequestId,
+          decision,
+        },
+      }),
+    )
+  }
+
+  // Forward to the connected ACP client (Zed's native permission UI) and map the
+  // outcome to a Firegrid decision. selected -> Allow (with the chosen optionId)
+  // or Deny when the selected option is a reject_* kind; cancelled -> Cancelled.
+  // Any failure (client without a permission surface, connection gone) still
+  // resolves to Cancelled so the codec wait never hangs (mirrors tf-90w5).
+  private async requestPermissionFromClient(
+    acpSessionId: string,
+    output: Extract<RuntimeAgentOutputObservation, { readonly _tag: "PermissionRequest" }>,
+  ): Promise<EdgePermissionDecision> {
+    // `toolUseId`/`options` are optional on the observation type; default
+    // defensively (a non-empty toolCallId is required, empty options simply
+    // leaves the client nothing to select -> cancelled).
+    const options = output.options ?? []
+    try {
+      const response = await this.connection.requestPermission({
+        sessionId: acpSessionId,
+        toolCall: { toolCallId: output.toolUseId ?? output.permissionRequestId ?? "permission" },
+        options: options.map(option => ({
+          optionId: option.optionId,
+          kind: option.kind,
+          name: option.name,
+        })),
+      })
+      const outcome = response.outcome
+      if (outcome.outcome !== "selected") {
+        return { _tag: "Cancelled" }
+      }
+      const selected = options.find(option => option.optionId === outcome.optionId)
+      const rejected = selected !== undefined &&
+        (selected.kind === "reject_once" || selected.kind === "reject_always")
+      return rejected ? { _tag: "Deny" } : { _tag: "Allow", optionId: outcome.optionId }
+    } catch {
+      return { _tag: "Cancelled" }
+    }
   }
 }
 
