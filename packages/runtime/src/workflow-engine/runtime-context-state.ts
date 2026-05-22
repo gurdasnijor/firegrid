@@ -135,10 +135,11 @@ export interface RuntimeContextStateStoreService {
     state: RuntimeContextEventState,
   ) => Effect.Effect<void, unknown>
   /**
-   * The next agent output strictly after `afterSequence`, by O(1) point
-   * `get` at `afterSequence + 1` — never a scan. `Option.none` when the
-   * frontier has no further output yet. Output sequences are contiguous from
-   * 0 (codec `Stream.mapAccum(0, …)`), so `afterSequence + 1` is exact.
+   * The next agent-output OBSERVATION strictly after `afterSequence`, found by
+   * forward point `get`s (never a full-table scan). The output sequence counter
+   * is shared by `events` and `logs`, so non-observation sequences (log rows,
+   * undecodable event rows) are skipped forward; `Option.none` only at the true
+   * frontier (no `events` or `logs` row at the sequence yet).
    */
   readonly nextOutput: (
     context: RuntimeContext,
@@ -209,6 +210,66 @@ const outputTableLayer = (
   RuntimeOutputTable.layer({
     streamOptions: streamOptions(config, outputStreamUrl(config, streamPrefix, contextId)),
   })
+
+/**
+ * Find the next agent-output OBSERVATION strictly after `afterSequence` in a
+ * RuntimeOutputTable by forward point `get`s — never a full-table scan. The
+ * output sequence counter is SHARED by `events` and `logs`, so the `events`
+ * collection is sparse: a sequence may hold a log row, or an event row that
+ * doesn't decode to an observation. Distinguish a real frontier from such a gap
+ * by also point-`get`-ing `logs`:
+ *   - decodable event  -> deliver it (cursor advances to its sequence)
+ *   - undecodable event -> skip forward
+ *   - log row present   -> gap, skip forward
+ *   - neither present   -> frontier, stop (Option.none)
+ *
+ * Exported so the workflow body's per-context store and the test host-wide
+ * double share one gap-skip implementation over whichever RuntimeOutputTable
+ * each provides.
+ */
+export const nextOutputObservation = (
+  outputTable: RuntimeOutputTable["Type"],
+  contextId: string,
+  activityAttempt: number,
+  afterSequence: number,
+): Effect.Effect<Option.Option<RuntimeAgentOutputObservation>, unknown> =>
+  Effect.map(
+    Effect.iterate(
+      {
+        sequence: afterSequence + 1,
+        found: Option.none<RuntimeAgentOutputObservation>(),
+        done: false,
+      },
+      {
+        while: (s) => !s.done,
+        body: (s) =>
+          Effect.gen(function*() {
+            const eventRow = yield* outputTable.events.get({
+              contextId,
+              activityAttempt,
+              target: "events",
+              sequence: s.sequence,
+            })
+            if (Option.isSome(eventRow)) {
+              const observation = runtimeAgentOutputObservationFromRow(eventRow.value)
+              return Option.isSome(observation)
+                ? { sequence: s.sequence, found: observation, done: true }
+                : { sequence: s.sequence + 1, found: Option.none<RuntimeAgentOutputObservation>(), done: false }
+            }
+            const logRow = yield* outputTable.logs.get({
+              contextId,
+              activityAttempt,
+              target: "logs",
+              sequence: s.sequence,
+            })
+            return Option.isSome(logRow)
+              ? { sequence: s.sequence + 1, found: Option.none<RuntimeAgentOutputObservation>(), done: false }
+              : { sequence: s.sequence, found: Option.none<RuntimeAgentOutputObservation>(), done: true }
+          }),
+      },
+    ),
+    (result) => result.found,
+  )
 
 interface PerContextTables {
   readonly stateTable: RuntimeContextStateTable["Type"]
@@ -285,46 +346,8 @@ export const makePerContextRuntimeContextStateStore = (
           }),
         ),
       nextOutput: (context, activityAttempt, afterSequence) =>
-        Effect.gen(function*() {
-          const { outputTable } = yield* tablesFor(context.contextId)
-          // Walk forward by point `get` from `afterSequence + 1`. The output
-          // rows are a contiguous-from-0 row log, but not every row is an agent
-          // OBSERVATION: raw stdio processes interleave stdout/stderr rows that
-          // don't decode to an observation. Skip those by advancing the point
-          // read (still O(1) per row, never a full-table scan) until the next
-          // decodable observation, or stop at the frontier (first missing row).
-          // The durable cursor advances to the delivered observation's sequence,
-          // so skipped rows are never re-walked across replays.
-          const result = yield* Effect.iterate(
-            {
-              sequence: afterSequence + 1,
-              found: Option.none<RuntimeAgentOutputObservation>(),
-              done: false,
-            },
-            {
-              while: (s) => !s.done,
-              body: (s) =>
-                Effect.map(
-                  outputTable.events.get({
-                    contextId: context.contextId,
-                    activityAttempt,
-                    target: "events",
-                    sequence: s.sequence,
-                  }),
-                  (row) => {
-                    if (Option.isNone(row)) {
-                      return { sequence: s.sequence, found: Option.none<RuntimeAgentOutputObservation>(), done: true }
-                    }
-                    const observation = runtimeAgentOutputObservationFromRow(row.value)
-                    return Option.isSome(observation)
-                      ? { sequence: s.sequence, found: observation, done: true }
-                      : { sequence: s.sequence + 1, found: Option.none<RuntimeAgentOutputObservation>(), done: false }
-                  },
-                ),
-            },
-          )
-          return result.found
-        }).pipe(
+        Effect.flatMap(tablesFor(context.contextId), ({ outputTable }) =>
+          nextOutputObservation(outputTable, context.contextId, activityAttempt, afterSequence)).pipe(
           Effect.withSpan("firegrid.runtime_context.workflow.output.cursor.next", {
             kind: "internal",
             attributes: {

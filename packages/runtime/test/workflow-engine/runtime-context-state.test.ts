@@ -12,10 +12,13 @@ import { Effect, Option, type Scope } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   makeHostStreamPrefix,
+  RuntimeOutputTable,
+  runtimeContextOutputStreamUrl,
   type HostId,
   type HostStreamPrefix,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
+import { encodeRuntimeAgentOutputEnvelope } from "../../src/agent-event-pipeline/events/index.ts"
 import {
   makeRuntimeIngressInputRow,
   type RuntimeIngressInputRow,
@@ -182,6 +185,61 @@ describe("runtime-context durable loop state (tf-aseo)", () => {
       // and yields none, without scanning.
       const next = yield* store.nextOutput(context, ATTEMPT, -1)
       expect(Option.isNone(next)).toBe(true)
+    }))
+  })
+
+  it("firegrid-workflow-driven-runtime.PHASE_0B_OUTPUT_RESULT_RETURN.2 nextOutput skips a shared-sequence log gap to the next observation", async () => {
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const context = contextFor(contextId)
+    const prefix: HostStreamPrefix = makeHostStreamPrefix({
+      namespace: "tf-aseo-test",
+      hostId: "tf-aseo-test_host" as HostId,
+    })
+    const outputUrl = runtimeContextOutputStreamUrl({
+      baseUrl: baseUrl!,
+      prefix,
+      contextId,
+    })
+
+    await run(Effect.gen(function*() {
+      const store = yield* storeEffect()
+      // Shared sequence counter: seq 0 is a LOG row, seq 1 is the ToolUse EVENT.
+      // The events collection is therefore sparse at seq 0; nextOutput(-1) must
+      // skip the log gap and deliver the observation at seq 1 (not stop at 0).
+      yield* Effect.gen(function*() {
+        const table = yield* RuntimeOutputTable
+        yield* table.logs.insert({
+          logLineId: { contextId, activityAttempt: ATTEMPT, target: "logs", sequence: 0 },
+          contextId,
+          activityAttempt: ATTEMPT,
+          sequence: 0,
+          source: "stderr",
+          format: "text-lines",
+          receivedAt: "2026-05-22T00:00:00.000Z",
+          raw: "startup log",
+        })
+        yield* table.events.insert({
+          eventId: { contextId, activityAttempt: ATTEMPT, target: "events", sequence: 1 },
+          contextId,
+          activityAttempt: ATTEMPT,
+          sequence: 1,
+          source: "stdout",
+          format: "jsonl",
+          receivedAt: "2026-05-22T00:00:00.000Z",
+          raw: encodeRuntimeAgentOutputEnvelope({ _tag: "Terminated", exitCode: 0 }),
+        })
+      }).pipe(
+        Effect.provide(RuntimeOutputTable.layer({
+          streamOptions: { url: outputUrl, contentType: "application/json" },
+        })),
+      )
+
+      const next = yield* store.nextOutput(context, ATTEMPT, -1)
+      expect(Option.isSome(next)).toBe(true)
+      if (Option.isSome(next)) {
+        expect(next.value.sequence).toBe(1)
+        expect(next.value._tag).toBe("Terminated")
+      }
     }))
   })
 })

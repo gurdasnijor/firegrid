@@ -3,6 +3,7 @@ export {
 } from "./runtime-input-deferred.ts"
 export {
   makePerContextRuntimeContextStateStore,
+  nextOutputObservation,
   type PerContextRuntimeContextStateConfig,
   RuntimeContextStateStore,
   type RuntimeContextStateStoreService,
