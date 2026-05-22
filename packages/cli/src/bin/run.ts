@@ -351,15 +351,16 @@ const durableStreamsEndpoint = Effect.acquireRelease(
     // enumerate live streams. Hooks go through the constructor because
     // `server.options` is private in @durable-streams/server@0.3.1, and
     // createRegistryHooks needs the store (only available post-construction)
-    // plus the server URL, so a lazy ref bridges the two.
-    let registry: ReturnType<typeof createRegistryHooks> | undefined
+    // plus the server URL, so a const holder bridges the two: the constructor
+    // closures read `registry.current`, which is populated right after.
+    const registry: { current?: ReturnType<typeof createRegistryHooks> } = {}
     const server = new DurableStreamTestServer({
       port: 4437,
       host: "127.0.0.1",
-      onStreamCreated: (event) => registry?.onStreamCreated(event),
-      onStreamDeleted: (event) => registry?.onStreamDeleted(event),
+      onStreamCreated: (event) => registry.current?.onStreamCreated(event),
+      onStreamDeleted: (event) => registry.current?.onStreamDeleted(event),
     })
-    registry = createRegistryHooks(server.store, "http://127.0.0.1:4437")
+    registry.current = createRegistryHooks(server.store, "http://127.0.0.1:4437")
     const baseUrl = await server.start()
     return {
       baseUrl,
