@@ -2,6 +2,16 @@
   "findings": [
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
+      "line": 83
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
+      "line": 129
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/workflow-engine/workflows/scheduled-prompt.ts",
       "line": 37
     },
