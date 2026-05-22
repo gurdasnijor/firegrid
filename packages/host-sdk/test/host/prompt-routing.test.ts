@@ -346,9 +346,12 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 runtime input intents", 
       ),
     )
 
+    // tf-kllj: startup state is honest — the child workflow is started
+    // fire-and-forget, so the spawn is not yet confirmed; report the truthful
+    // pre-confirmation state ("created"), not a premature "running".
     expect(result.session).toEqual({
       childContextId: result.session.childContextId,
-      status: "running",
+      status: "created",
     })
     expect(result.context._tag).toBe("Some")
 
@@ -366,5 +369,33 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 runtime input intents", 
       authoredBy: "workflow",
       status: "sequenced",
     }])
+  })
+
+  // tf-kllj: a child whose executable cannot spawn (ENOENT) must NOT report
+  // session.status="running". The fire-and-forget child workflow records the
+  // spawn failure as durable run evidence; session_new returns the honest
+  // pre-confirmation "created", never a false "running".
+  it("does not report running for a child whose executable cannot start", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const namespace = `session-new-enoent-${crypto.randomUUID()}`
+    const hostId = `host_A_${crypto.randomUUID()}` as HostId
+
+    const session = await Effect.runPromise(
+      runWithHost(
+        { baseUrl, namespace, hostId },
+        Effect.gen(function*() {
+          const host = yield* AgentToolHost
+          return yield* host.spawnChildContext({
+            parentContextId: "ctx-parent",
+            toolUseId: "tool-session-new-enoent",
+            agentKind: "firegrid-nonexistent-executable-xyzzy",
+            prompt: "ignored",
+          })
+        }),
+      ),
+    )
+
+    expect(session.status).not.toBe("running")
+    expect(session.status).toBe("created")
   })
 })
