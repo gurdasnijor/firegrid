@@ -41,7 +41,7 @@
 import { Args, Command, Options } from "@effect/cli"
 import { HttpServer } from "@effect/platform"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
-import { DurableStreamTestServer } from "@durable-streams/server"
+import { createRegistryHooks, DurableStreamTestServer } from "@durable-streams/server"
 import type { DurableTableHeaders } from "@firegrid/protocol"
 import {
   decodeLaunchConfig,
@@ -346,7 +346,20 @@ const durableStreamsEndpoint = Effect.acquireRelease(
         embedded: false,
       }
     }
-    const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+    // Bind the embedded durable-streams server to a fixed port and populate the
+    // __registry__ stream so the durable-streams test-ui (examples/test-ui) can
+    // enumerate live streams. Hooks go through the constructor because
+    // `server.options` is private in @durable-streams/server@0.3.1, and
+    // createRegistryHooks needs the store (only available post-construction)
+    // plus the server URL, so a lazy ref bridges the two.
+    let registry: ReturnType<typeof createRegistryHooks> | undefined
+    const server = new DurableStreamTestServer({
+      port: 4437,
+      host: "127.0.0.1",
+      onStreamCreated: (event) => registry?.onStreamCreated(event),
+      onStreamDeleted: (event) => registry?.onStreamDeleted(event),
+    })
+    registry = createRegistryHooks(server.store, "http://127.0.0.1:4437")
     const baseUrl = await server.start()
     return {
       baseUrl,
