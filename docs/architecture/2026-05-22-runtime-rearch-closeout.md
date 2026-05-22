@@ -67,8 +67,10 @@ A suspended body can miss durable work: write-row and `engine.resume` are two st
 ### Axis 3 — tool calls → in flight, shape known
 Tool-result correlation is **identity** (`toolUseId` point-get), which the table serves; `ToolCallWorkflow` is the wrong shape (over-provisioned durability — only 3/11 lowerings suspend, Q2 E6). `tf-jpcg` is building the in-body seam. **Bead move:** continue; gate `ToolCallWorkflow` deletion (`tf-vfq9`) on the seam existing.
 
-### Axis 4 — output-read replay storm → in flight, independent
-tf-7kq8: O(resumes×history) re-walk; the proximate cause of live-edge timeouts. `tf-aseo`/durable-cursor track. **Bead move:** continue; highest reliability impact, unrelated to ordering.
+### Axis 4 — output-read replay storm → bridge fixed, target re-scoped
+tf-7kq8: O(resumes×history) re-walk; the proximate cause of live-edge timeouts. `tf-aseo`/#664 fixed the immediate dense-stream replay storm with durable loop state and point reads. That remains a valid bridge.
+
+The structural target is now sharper: the runtime body should not read the dense raw output stream at all. `transitionOutputEvent` only acts on `PermissionRequest`, non-ACP `ToolUse`, and `Terminated`; `Ready`, `TextChunk`, `Status`, `Error`, and `TurnComplete` are no-op cursor advancement for the body. The target is therefore a workflow-owned sparse output transition log written by the output appender/projector and armed by the same owner/wake pattern as input/tool facts. **Bead move:** route terminal-completion work through that sparse transition/result log, not through raw-output cursoring or ACP edge-local `TurnComplete` synthesis.
 
 **`N` reduction comes from axes 3+4** (delete `ToolCallWorkflow`, fix replay) — neither blocked. Axis 1 unblocks trivially. Only axis 2 needs a call.
 
@@ -114,7 +116,7 @@ Already in the seam work: assert `toolUseId`-keyed result-return is at-most-once
 - **Unblock:** `tf-vrz6 → tf-9rpy` with the plain table-consume input shape.
 - **Close as non-required:** `tf-qtfb` / P3-B append-offset-recovery (solving an ordering need that doesn't exist).
 - **Build:** `input-suspend-crash-recovery` (S1) — the axis-2 decider; extend `target-architecture-reference` (S2) — the axis-1 confirmation.
-- **Continue:** `tf-jpcg` (axis 3), `tf-aseo`/tf-7kq8 (axis 4).
+- **Continue:** `tf-jpcg` (axis 3). Treat `tf-aseo`/tf-7kq8 as the landed bridge for axis 4; add the sparse output transition log as the structural follow-on.
 - **Retire:** the "two blocking decisions" doc — wrong-shaped, superseded by this.
 
 ## Sources
