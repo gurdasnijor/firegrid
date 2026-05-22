@@ -43,12 +43,100 @@ The local evidence that forced this constraint document:
 - The host-plane channel router SDD already makes channels the typed edge
   dispatch surface; protocol additions that bypass it add parallel surface.
 
-The constraints below make the RFC discipline operational for runtime-shrink
-review.
+The canonical runtime shape is:
 
-If a proposed primitive solves a problem created by violating one of these
-constraints, the primitive is bridge debt. The preferred fix is to restore the
-constraint, not to elaborate the bridge.
+```text
+events -> DurableTable(events) -> transforms(rows) -> keyed subscribers(rows)
+```
+
+Every runtime component must be one of these roles:
+
+- an **event producer** that writes durable event/fact rows;
+- a **transform** that is a pure function over rows or row streams;
+- a **keyed subscriber** that owns durable state for one entity key, reads rows
+  for that key, optionally writes more rows, and returns.
+
+Workflows are a kind of keyed subscriber. A workflow-shaped subscriber uses
+`@effect/workflow` execution machinery when it earns its keep: activity
+memoization, durable timers, cross-execution handoff, or restart-safe live
+side effects. That does not make workflow a fourth architectural role.
+
+The constraints below are corollaries of this shape. If a proposed component is
+none of these roles, it is the wrong primitive. If a proposed primitive solves a
+problem created by violating one of these constraints, the primitive is bridge
+debt. The preferred fix is to restore the shape, not to elaborate the bridge.
+
+`DurableTable` is the substrate of record for this model. "Reducer" or
+"handler" means transition-function-shaped business logic over durable rows; it
+does not name a new runtime framework.
+
+The companion document
+`docs/cannon/architecture/runtime-pipeline-type-boundaries.md` maps this shape
+to concrete Firegrid Effect service boundaries and shows where workflow
+machinery is, and is not, justified.
+
+## What This Shape Does Not Include
+
+- **No long-lived parked bodies.** A keyed subscriber is invoked for events for
+  its key, runs to completion, and returns. It does not park on a deferred, keep
+  a fiber alive across events, or rely on locals that persist between
+  invocations. State persists in `DurableTable`, not in fiber state.
+- **No replay-based execution.** Subscribers do not reconstruct progress by
+  re-walking history. They read durable state, read the relevant event/fact, run
+  the transition, and write durable state/actions. Restart means read persisted
+  state and continue from durable facts, not replay every event since creation.
+- **No workflow-engine ban.** `@effect/workflow` is valid execution machinery
+  for subscribers that need restart-safe live execution. The banned shape is a
+  workflow body that represents the lifetime of an entity, parks across many
+  events, stores cross-event state in locals, or scans durable history as its
+  progress model.
+- **No bridge-by-default in a greenfield codebase.** Firegrid currently has no
+  production users or user state to migrate. A "bridge from X to subscribers" or
+  "cutover layer" is overhead unless it proves a sequencing dependency that
+  cannot be removed by deleting X and building the compliant shape directly.
+
+## Greenfield Operating Mode
+
+Firegrid is currently a greenfield runtime: there are no production users or
+durable user contexts that require a compatibility bridge. That changes the
+default answer for every runtime-shrink decision.
+
+The default path is:
+
+```text
+prove the target in packages/tiny-firegrid
+  -> build the compliant production shape
+  -> delete the wrong shape
+```
+
+The non-default path is:
+
+```text
+make the wrong shape safer
+  -> bridge it
+  -> later migrate off it
+```
+
+The non-default path is admissible only when deleting the wrong shape directly
+would block a dispatched target-shape bead. "Preserve existing production
+behavior" is not a sufficient argument while the product has no production user
+state to preserve.
+
+`packages/tiny-firegrid` exists to make large architectural bets cheap. Any
+runtime SDD whose uncertainty is architectural rather than mechanical should
+first be expressed as a tiny-firegrid simulation. The simulation must answer a
+specific topology question, not produce another research brief. Its result is
+one of:
+
+- **GREEN:** the target edge works; dispatch production replacement.
+- **YELLOW:** the target edge works only with a named substrate/helper layer;
+  dispatch that layer and keep it within the target shape.
+- **RED:** the target edge fails; stop and revise the architecture before
+  touching production code.
+
+Do not spend production effort improving a known-wrong edge when a tiny-firegrid
+simulation can validate the shorter target edge faster. Bridge work is debt; in
+greenfield mode, debt is admitted only when it accelerates deletion.
 
 ## Review Rule
 
@@ -59,12 +147,16 @@ route, or agent-tool surface, answer these questions:
 2. Is the problem unique to Firegrid's domain, or self-inflicted by today's
    replaying workflow body, mailbox, string channel, or edge-local protocol
    shape?
-3. Does an existing primitive already own it: keyed durable state, channel
-   router, typed source observation, or a durable completion/event result row?
-4. Does the proposed change comply with all seven constraints below?
+3. Which canonical role is it: event producer, transform, or keyed subscriber?
+4. Does an existing primitive already own it: `DurableTable`, channel router,
+   typed source observation, or a durable completion/event result row?
+5. Can the target edge be validated first in `packages/tiny-firegrid`?
+6. Does the proposed change comply with all seven constraints below?
 
-If the answer to 2 is "self-inflicted" or the answer to 4 is "no", stop and
-rewrite the work around the constraint. Do not land another parallel protocol,
+If the answer to 2 is "self-inflicted" or the answer to 6 is "no", stop and
+rewrite the work around the constraint. If the answer to 5 is "yes", prove the
+target edge in tiny-firegrid before touching production runtime code. Do not
+land another parallel protocol,
 cursor, mailbox, request/claim/completion table, or operation-shaped workflow to
 make the current shape cheaper.
 
@@ -125,6 +217,9 @@ comparison point:
 RFC source: `reference/identity-model.md` §9 and
 `internals/runtime-and-operators.md` §12.1.
 
+Pipeline corollary: keyed subscribers own durable state per entity key through
+`DurableTable` rows.
+
 A runtime context is a durable entity keyed by identity. For RuntimeContext this
 key is `contextId`. The state is durable, and all mutations for the same key are
 serialized by the runtime owner. There is no higher-level object model above the
@@ -141,37 +236,50 @@ or synthetic control object to represent "what the entity is." Those are
 operation wrappers. They are migration debt unless they are the actual durable
 owner for a keyed resource.
 
-### C2. Handlers Are State/Event Reducers, Not Long-Lived Bodies
+### C2. Subscribers Are Per-Event Handlers, Not Long-Lived Bodies
 
 RFC source: `concepts/choreography-and-combinators.md` §6.3,
 `internals/runtime-and-operators.md` §13, and
 `operating/restart-semantics.md` §25.
 
-The target runtime handler is a function of:
+Pipeline corollary: the runtime transition is a keyed subscriber over durable
+event/fact rows. A workflow-shaped subscriber is still a subscriber; it handles
+one event for its key and completes.
+
+The target runtime handler materializes for one event, advances durable state,
+dispatches any required side effects through durable result identity, and
+returns. A common shape factors this as a pure transition:
 
 ```text
 (state, event) -> (newState, actions)
 ```
 
-It materializes for an event, applies the transition, emits durable actions,
-and returns. There is no long-lived body that "is" the entity between events.
-Between events, the entity is durable state.
+A workflow-shaped handler may also inline side-effecting work using
+`Activity`, `DurableDeferred`, or `DurableClock` when restart-safe live
+execution is required. The constraint is about body lifetime, not handler
+purity: the forbidden shape is a body whose lifetime spans many events for one
+entity. Between events, the entity is durable state.
 
 In this codebase, `RuntimeContextWorkflowNative`'s event loop is a long-lived
 replaying body. It exists for current engine compatibility; the structural
-target moves transition logic into handler-shaped invocations on keyed
-RuntimeContext state. Bridge mechanisms that elaborate the long-lived body are
-forbidden unless they satisfy the bridge-exception gate below.
+target moves transition logic into per-event workflow/keyed-subscriber
+invocations on keyed RuntimeContext state. `@effect/workflow` may still execute
+those invocations when restart-safe live execution is needed. Bridge mechanisms
+that elaborate the long-lived body are forbidden unless they satisfy the
+bridge-exception gate below.
 
 Anti-pattern: adding a replay cursor, replay memo table, durable deferred
 mailbox, or restart sweep to make a long-lived body cheaper. Those mechanisms
-may be necessary bridges while production still runs on the workflow engine,
-but they are not target architecture.
+are admissible only when they satisfy the bridge-exception gate below. They are
+not target architecture.
 
 ### C3. Side Effects Complete By Durable Result Identity
 
 RFC source: `internals/runtime-and-operators.md` §13.2 and
 `reference/idempotency.md` §24.
+
+Pipeline corollary: a side-effecting subscriber writes or observes a durable
+result row keyed by the operation identity.
 
 A side effect is complete when its durable result row exists under its
 idempotency key. If the result exists, the effect happened. If it does not
@@ -195,6 +303,9 @@ implementation detail; the durable result row is the system fact.
 RFC source: `internals/durable-state-awaitables-approvals-timers.md` §20 and
 `internals/projections-and-channels.md` §10.4.
 
+Pipeline corollary: an async wait is a durable event/result row that a keyed
+subscriber observes, not a mailbox or parked deferred slot.
+
 An async wait is a durable completion or externally resolved wait keyed by
 stable identity:
 
@@ -216,11 +327,13 @@ do not resolve the wait. Reconstruction after restart reads durable wait and
 completion records; it must not require an in-memory waiter to have survived.
 
 Firegrid has adjacent vocabulary that this constraint does not adopt as the
-target: `DurableDeferred` is the workflow-engine bridge primitive,
-`wait_for`/channel observation is the agent-surface observation primitive, and
-"awakeable" appears in some feature specs as a durable-wait synonym. The
-canonical runtime term for this constraint is durable completion / externally
-resolved wait.
+target. `DurableDeferred` is workflow-engine execution machinery: valid within
+one per-event subscriber's handling of one event for bounded handoff, but
+forbidden as the cross-event mailbox that lets a long-lived body wait for the
+next event for an entity. `wait_for`/channel observation is the agent-surface
+observation primitive. "Awakeable" appears in some feature specs as a
+durable-wait synonym. The canonical runtime term for this constraint is durable
+completion / externally resolved wait.
 
 Anti-pattern: creating a new mailbox, per-sequence deferred, polling workflow,
 request/claim/completion family, or bespoke result channel for each wait kind.
@@ -231,13 +344,20 @@ Those patterns reimplement durable completions with more surface area.
 RFC source: `operating/restart-semantics.md` §25.2-§25.6 and
 `internals/runtime-and-operators.md` §12.
 
-The target model has no parked entity body that needs to be armed after a write.
-Writing an event or resolving a durable completion is sufficient; the runtime
-routes it to the keyed handler.
+Pipeline corollary: a subscriber exists only while processing rows; between
+events, the entity exists as durable table state.
 
-The current production workflow engine does park bodies, so bridge work may need
-controller-owned write+arm to remain correct during migration. That bridge is
-load-bearing only because of the current engine model. It must not become a
+The target model has no parked entity body that spans the entity's event
+stream and needs to be armed after a write. Writing an event or resolving a
+durable completion is sufficient; the substrate routes it to the keyed
+subscriber. A workflow-shaped subscriber may park internally while handling one
+event when `DurableDeferred`, `DurableClock`, or activity machinery earns its
+keep, but the parked execution is scoped to that event handling, not to the
+entity lifetime across unrelated events.
+
+The current `RuntimeContextWorkflowNative` parks a context-lifetime body.
+Controller-owned write+arm is load-bearing only if a dispatched sequencing
+dependency proves that body must be preserved temporarily. It must not become a
 new permanent abstraction.
 
 Anti-pattern: making the generic workflow engine infer semantic wait kinds, or
@@ -249,6 +369,9 @@ recover it. In the target model, the parked-body problem disappears.
 
 RFC source: `internals/projections-and-channels.md` §10.4 and
 `internals/durable-log.md` §7.1.
+
+Pipeline corollary: observation is a typed read/subscription over durable source
+rows, not a source-specific protocol family.
 
 Every external observation has this shape:
 
@@ -286,6 +409,9 @@ enums, or protocol additions that bypass the channel router.
 RFC source: `reference/record-model.md`, `internals/projections-and-channels.md`
 §10.3, and `reference/idempotency.md` §24.1.
 
+Pipeline corollary: event rows, state rows, transform outputs, subscriber
+inputs, and result rows are all explicit schema contracts.
+
 State schemas, event schemas, identity schemas, and result schemas are explicit,
 versioned contracts. Replay or recovery means "read durable state and process
 the next event," not "re-run a body and trust memoized side effects."
@@ -305,27 +431,17 @@ runtime state.
 
 ### Dense Output Cursor
 
-Bridge: the dense raw-output cursor prevents O(resumes x history) failure while
-production still has a replaying body consuming raw agent output.
+The dense raw-output scan is a symptom of the parked-body shape in
+`RuntimeContextWorkflowNative`: a long-lived body reads dense agent output to
+discover sparse state-relevant facts. The originally proposed
+`SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE` makes that scan cheaper, but preserves the
+shape that produces it.
 
-Gate result: `SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE` as originally written fails
-the bridge-exception gate because it introduces new primitive surface
-(module/schema/API) rather than only modifying existing violating code. The
-live P0 hotfix path was the existing-code patch (`tf-7kq8`), and the structural
-target is the sparse transition/result log (`tf-w6qj`). The SDD must be treated
-as bridge reference or rewritten under `tf-c22a`; it must not ship as target
-architecture.
-
-RFC-conforming target: a sparse, workflow-owned transition/result log or event
-route that invokes the handler only for state-relevant facts. The body should
-not read hundreds of `TextChunk` rows to discover a small number of transition
-events. This follows typed durable channel observation
-(`internals/projections-and-channels.md` §10.4/§10.6) and durable completion
-semantics (`internals/durable-state-awaitables-approvals-timers.md` §20).
-
-The existing `SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE` is therefore a bridge
-reference, not target architecture. Structural output work must move to the
-sparse transition/result log path.
+Under the greenfield frame, the live-P0 framing in that SDD does not apply:
+there are no users hitting this scan. The structural fix is to make
+RuntimeContext handling per-event (`tf-tvg1`) so the dense scan never happens,
+not to introduce a new cursor primitive. The cursor SDD must be retired or
+rewritten as bridge-only reference under `tf-c22a`.
 
 Constraint source: C2, C5, C7.
 
@@ -336,12 +452,12 @@ allocator are bridge debt. Input arrival is an event or durable completion keyed
 by input identity and routed to the session handler. The kernel/controller must
 not allocate arrival-order sequences as durable authority.
 
-Gate result: controller-owned write+arm can be an admissible bridge when it
-modifies the existing parked-body input/output path, names the structural
-deletion target, and exists only to retire the mailbox/dispatcher/replay-body
-shape. `tf-5cn1` is the bridge implementation bead; `tf-vrz6` and `tf-w6qj` are
-the structural deletion targets it unblocks. A write+arm design that becomes a
-new permanent primitive fails C5.
+Gate result: in a greenfield codebase, production controller-owned write+arm is
+not the expected next step. It evolves the known-wrong parked-body edge. The
+active validation path is `tf-tvg1`: prove the shorter per-event
+workflow/keyed-subscriber RuntimeContext shape in tiny-firegrid, then rewrite
+the production RuntimeContext surface against that target. The former production
+write+arm bridge bead `tf-5cn1` is superseded by `tf-tvg1`.
 
 RFC-conforming target: durable identity plus externally resolved completion or
 event delivery keyed by domain input identity, not a sequence-scanning deferred
@@ -352,10 +468,15 @@ Constraint source: C1, C2, C4.
 
 ### Controller-Owned Write+Arm
 
-Controller-owned write+arm is a migration safety primitive for the current
-parked-body engine. It is not the target abstraction. It remains necessary only
-where production still needs to atomically persist a fact and wake an existing
-workflow execution. Do not generalize it into a new runtime philosophy.
+Controller-owned write+arm is a migration safety primitive for a parked-body
+engine. It is not the target abstraction. Because Firegrid has no production
+users or user state to preserve, do not build production write+arm merely to
+make the current parked-body edge safer. Prefer deleting the edge by validating
+and implementing per-event workflow/keyed subscribers.
+
+Write+arm remains valid as negative evidence and as a reference for why generic
+engine sweeps are unsafe. It is not a license to introduce a permanent
+controller layer around `@effect/workflow`.
 
 RFC-conforming target: no parked entity body between events. Runtime recovery
 replays durable facts, reconstructs pending waits, and makes durable recovery
@@ -420,6 +541,7 @@ Constraint source: C7.
 Every new runtime SDD must include a short "Constraint Check" section:
 
 ```text
+Canonical role (producer / transform / keyed subscriber):
 C1 keyed durable state:
 C2 handler, not long-lived body:
 C3 durable result identity:
@@ -429,8 +551,16 @@ C6 typed source observation:
 C7 first-class schemas:
 ```
 
+If the subscriber is workflow-shaped, the SDD must name which workflow
+capability is load-bearing and why a plain handler over `DurableTable` rows is
+insufficient. "Restart safety" alone is insufficient; `DurableTable` already
+provides restart-safe state. Workflow machinery is justified when the handler
+does external side effects requiring at-most-once memoization, blocks on
+cross-execution handoff longer than one event, or needs durable wall-clock
+timers.
+
 Each line must say either "complies", "not applicable", or "bridge exception".
-A bridge exception is admissible only if all three are true:
+A bridge exception is admissible only if all four are true:
 
 1. The change modifies existing code that already violates the constraint,
    rather than introducing a new primitive, schema, module, operation, or
@@ -438,51 +568,94 @@ A bridge exception is admissible only if all three are true:
 2. The RFC-conforming target is dispatched as a bead, not merely referenced.
 3. The bridge code carries a sunset commitment naming the wave, date, or
    dependent bead by which it is deleted.
+4. Deleting the violating code directly would block a dispatched bead that has a
+   real sequencing dependency on the bridge. Bridges to preserve
+   currently-running behavior do not qualify in the greenfield codebase.
 
 A bridge exception that fails any of these is not dispatchable. Rewrite the SDD
 to comply with the constraint directly, or open a separate SDD for the
 RFC-conforming target and gate the bridge work on it.
 
-## Priority Over The Workflow-Engine-Era Cannon
+## Runtime Shrink Falsification Test
 
-Pre-shrink cannon described the workflow engine, deferred input mailbox, and
-engine-level restart recovery as the runtime substrate. Those descriptions are
-historical and remain useful for understanding bridge code, but they are not
-target architecture. The Stream-First Agent Substrate RFC and this constraint
-document define the target. Where they conflict with older cannon, the RFC and
-this document have priority.
+The re-architecture is succeeding only if the graph and code surface shrink as
+the target shape lands. For each RuntimeContext rewrite PR after `tf-tvg1`,
+report the before/after line and module count for the touched runtime surface:
+
+- RuntimeContext state/input/output handling;
+- tool dispatch and tool result handling;
+- output observation and transition handling;
+- wait routing / observation matching.
+
+Establish the baseline before `tf-tvg1`'s production rewrite begins: total line
+count and module count for the four surfaces above, as of `main` at `tf-tvg1`
+dispatch. Record that baseline in the bead. Each subsequent rewrite PR reports
+delta against the baseline. The re-architecture is succeeding if the cumulative
+delta is negative and decreasing across the wave. If a single PR adds net lines,
+it must explicitly justify which constraint capability was added that was not
+present before.
+
+If subscriber implementations consistently make those surfaces larger than the
+workflow bodies, mailboxes, cursors, and operation wrappers they replace, the
+new shape is hiding complexity rather than removing it. That is a falsifying
+signal for the current re-architecture direction and should stop the wave for
+architecture review.
+
+## Priority Over The Workflow-Engine-Era Canon
+
+Pre-shrink canon described the context-lifetime workflow body, deferred input
+mailbox, and engine-level restart recovery as the RuntimeContext substrate.
+Those descriptions are historical and remain useful for understanding bridge
+code, but they are not target architecture. The Stream-First Agent Substrate RFC
+and this constraint document define the target. Where they conflict with older
+canon, the RFC and this document have priority.
 
 Until they satisfy C2 and C5, the following are bridge machinery, not target:
 
-- the `@effect/workflow` engine as the RuntimeContext progress model;
+- `RuntimeContextWorkflowNative` as one long-lived parked body that owns the
+  context event loop;
 - per-sequence `DurableDeferred` input mailboxes;
 - the `RuntimeInputIntentDispatcher` and any equivalent dispatcher fork;
 - generic suspended-workflow recovery sweeps at the engine layer;
-- `Workflow.make` identities that represent an operation, request, claim, wait,
-  or one-shot tool call rather than a keyed durable resource.
+- workflow bodies that use replay/scans/locals as the cross-event RuntimeContext
+  state model.
 
 New work in any of these surfaces requires either RFC-conforming replacement or
 a bridge exception meeting the gate above.
 
 ## Executable Contract Follow-Ups
 
-This document is review-enforced today. It must become test-enforced. Tracking
-bead: `tf-zchu`.
+C2, C4, C6, and C7 are now test-enforced (`tf-zchu`) by Semgrep rules in
+`.semgrep.yml`, gated in CI through `scripts/semgrep-check-baseline.mjs`
+(`pnpm run lint:semgrep`) with rule-unit coverage in `semgrep-tests/`
+(`pnpm run lint:semgrep:test`). `semgrep-error-baseline.json` is the admissible
+bridge-exception ledger: an existing in-scope finding may be baselined with a
+justification note; any new finding fails CI. The remaining constraints (C1, C3,
+C5) stay review-enforced.
 
-Until `tf-zchu` lands, the constraints below are review-enforced. Review-only
-enforcement expires on 2026-06-05; after that date, new work in the covered
-surfaces must either land the guard first or carry an explicit coordinator
-exception.
-
-- C2 guard: fail CI on new production `Workflow.make` bodies that create
-  operation-shaped long-lived loops or park on multiple semantic wait kinds.
-- C4 guard: fail CI on new `DurableDeferred` use in runtime input, tool,
-  permission, or child-session paths unless the SDD declares an admissible
-  bridge exception.
-- C6 guard: fail CI on new agent-tool protocol schemas that add source-specific
-  cursor/event-tag taxonomies instead of projecting a router-backed channel.
-- C7 guard: fail CI on edge-local terminal completion synthesis where the
-  terminal fact is not backed by durable runtime state.
+- C2 guard — `firegrid-no-unclassified-workflow-make`: fails CI on every new
+  production `Workflow.make` definition. This is strictly stronger than C2's
+  "operation-shaped long-lived loops or park on multiple semantic wait kinds"
+  sub-case, since a new context-lifetime loop or cross-event parked body cannot
+  appear without a new `Workflow.make`. Existing owner workflows are baselined.
+- C4 guard — `firegrid-c4-no-new-durable-deferred-runtime-wait`: fails CI on new
+  `DurableDeferred` use under the RuntimeContext input/tool/permission/
+  child-session surfaces (`workflow-engine/workflows`, `agent-event-pipeline`,
+  `control-plane`, `channels`). The existing per-sequence input mailbox
+  (`runtime-context.ts`) is baselined as the `tf-5cn1` bridge with deletion
+  targets `tf-vrz6`/`tf-w6qj`; a new use needs an admissible bridge exception per
+  the SDD Gate. The engine clock `DurableDeferred` in
+  `workflow-engine/internal` is intentionally out of scope (engine primitive,
+  not a RuntimeContext wait kind).
+- C6 guard — `firegrid-c6-no-source-specific-cursor-event-taxonomy-in-agent-tools`:
+  fails CI on new agent-tool protocol schemas (`packages/protocol/src/agent-tools`)
+  that add `cursor:`/`eventTag:` taxonomies or a `session_read`/`ChildOutput*`
+  stack instead of reusing the router-backed `SessionAgentOutputChannel` schema.
+- C7 guard — `firegrid-c7-no-edge-local-terminal-synthesis`: fails CI on
+  edge-local construction of a terminal `{ _tag: "Done" }` in the transport edge
+  (`packages/host-sdk/src/host/*edge*.ts`) where the terminal fact is not backed
+  by durable runtime state. Observing a `TurnComplete` output is compliant;
+  synthesizing the terminal completion locally is not.
 
 First live-bridge application bead: `tf-c22a`. It applies this gate to existing
 bridge SDDs and PRs, including `SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE`,

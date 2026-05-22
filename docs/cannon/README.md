@@ -71,23 +71,27 @@ Read in this order:
    externally resolved waits, typed source observations, and strict bridge
    exceptions. This document has priority when older workflow-engine-centered
    cannon would otherwise justify adding replay/cursor/mailbox surface area.
-7. `sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
-8. `../sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md` — the channel router that
+7. `architecture/runtime-pipeline-type-boundaries.md` — the Effect type-boundary
+   companion to the runtime constraints: codec-only sessions, typed durable
+   output observation, stateful RuntimeContext subscribers, and
+   workflow-shaped tool subscribers.
+8. `sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
+9. `../sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md` — the channel router that
    shipped this session (router/ACP-edge cutover).
-9. `../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md` — the Phase 0
+10. `../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md` — the Phase 0
    target host/runtime shape the migrations converge toward.
-10. `architecture/kernel-owned-write-arm.md` — the empirically grounded
+11. `architecture/kernel-owned-write-arm.md` — the empirically grounded
    write+arm ownership rule. Important: `HostKernelWorkflow` is a target role,
    not an existing implementation symbol.
-11. `sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md` — the
+12. `sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md` — the
    migration frame: the production DurableDeferred mailbox is a transitional
    bridge, not target architecture.
-12. `../sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` — the tf-7kq8
+13. `../sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` — the tf-7kq8
    replay-amplification bridge, now superseded as target architecture by sparse
    workflow-owned output transition logs.
-13. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
-14. `research/workflow-body-single-suspension-rule.md`
-15. `vision/factory-vision.md`
+14. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+15. `research/workflow-body-single-suspension-rule.md`
+16. `vision/factory-vision.md`
 
 ## Canonical Documents
 
@@ -117,6 +121,11 @@ Read in this order:
   constraint check against C1-C7. This doc has priority over older
   engine-centered cannon when the conflict is whether to add another
   replay/cursor/mailbox/operation-wrapper primitive.
+- `architecture/runtime-pipeline-type-boundaries.md` — companion to
+  `runtime-design-constraints.md`: maps the canonical pipeline to concrete
+  Effect type boundaries (`AgentByteStream`, `AgentSession`, typed output
+  observation, `RuntimeContextStateStore`, and `ToolCallWorkflow`) so reviewers
+  can distinguish plain keyed subscribers from workflow-shaped subscribers.
 - `architecture/kernel-owned-write-arm.md` — canonical wake/durability rule for
   workflow-owned table writes: a host kernel/controller command owns both the
   durable write and the wake. A generic restart sweep over suspended engine rows
