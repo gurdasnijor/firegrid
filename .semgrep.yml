@@ -446,6 +446,16 @@ rules:
     metadata:
       acid: firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION.1
       quality-acid: firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION.2
+      # tf-zchu: this rule is the executable C2 guard for
+      # docs/cannon/architecture/runtime-design-constraints.md ("Handlers Are
+      # State/Event Reducers, Not Long-Lived Bodies"). Failing CI on ALL new
+      # production Workflow.make definitions is strictly stronger than C2's
+      # "operation-shaped long-lived loops or multi-wait parking" sub-case: a new
+      # context-lifetime loop or cross-event parked body cannot appear without a
+      # new Workflow.make. Existing owner workflows are baselined in
+      # semgrep-error-baseline.json.
+      cannon: docs/cannon/architecture/runtime-design-constraints.md
+      constraint: C2
       category: workflow-architecture
       rationale: |
         Production workflow identities are reserved for owned durable resources
@@ -1271,3 +1281,142 @@ rules:
       - metavariable-regex:
           metavariable: $MAP
           regex: '^[a-z][A-Za-z0-9_]*(\.[a-z][A-Za-z0-9_]*)?$'
+
+  # ===========================================================================
+  # tf-zchu: executable drift guards for the runtime design constraints cannon
+  # (docs/cannon/architecture/runtime-design-constraints.md). These make C2/C4/
+  # C6/C7 test-enforced rather than review-only. C2 is enforced by the existing
+  # `firegrid-no-unclassified-workflow-make` rule above (annotated there). The
+  # three rules below add C4, C6, and C7. The semgrep-error-baseline.json gate
+  # (scripts/semgrep-check-baseline.mjs) is the "admissible bridge exception"
+  # ledger: an existing in-scope finding may be baselined with a justification;
+  # any NEW finding fails CI.
+  # ===========================================================================
+
+  - id: firegrid-c4-no-new-durable-deferred-runtime-wait
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      cannon: docs/cannon/architecture/runtime-design-constraints.md
+      constraint: C4
+      category: runtime-architecture
+      rationale: |
+        C4 (Async Waits Are Durable Completions): a RuntimeContext input, tool,
+        permission, or child-session wait must be a durable completion /
+        externally resolved wait keyed by stable domain identity, reconstructed
+        from durable wait+completion records after restart. A per-sequence
+        DurableDeferred mailbox is the workflow-engine bridge primitive, not the
+        target shape; a new DurableDeferred use on these paths reimplements
+        durable completions with more surface area (constraint "Runtime Input
+        Mailbox" / SDD Gate).
+      fix-hint: |
+        Model the wait as a durable completion keyed by domain identity
+        (tool:<contextId>:<toolUseId>, permission:<permissionRequestId>, input
+        identity, child contextId), resolved first-valid-terminal-wins. The
+        existing input-mailbox bridge is baselined under tf-5cn1 with deletion
+        targets tf-vrz6/tf-w6qj; a NEW use needs an admissible bridge exception
+        (modifies existing violating code, dispatches the RFC-conforming target
+        as a bead, carries a sunset commitment) recorded in
+        semgrep-error-baseline.json.
+    paths:
+      # RuntimeContext input/tool/permission/child-session durable-progress
+      # surfaces. workflow-engine/workflows holds the input-wait body and child
+      # spawn; agent-event-pipeline/control-plane/channels hold tool, permission,
+      # and routed waits. workflow-engine/internal is intentionally OUT of scope:
+      # its DurableDeferred clock-wakeup is an engine primitive, not a
+      # RuntimeContext wait kind C4 governs.
+      include:
+        - "/packages/runtime/src/workflow-engine/workflows/**/*.ts"
+        - "/packages/runtime/src/agent-event-pipeline/**/*.ts"
+        - "/packages/runtime/src/control-plane/**/*.ts"
+        - "/packages/runtime/src/channels/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      New DurableDeferred use on a RuntimeContext input/tool/permission/
+      child-session path (C4). Async waits are durable completions keyed by
+      domain identity, not per-sequence deferred mailboxes. The existing input
+      bridge is baselined (tf-5cn1); a new use needs an admissible bridge
+      exception (SDD Gate) recorded in semgrep-error-baseline.json.
+    pattern-regex: '\bDurableDeferred\.[A-Za-z]+\s*\('
+
+  - id: firegrid-c6-no-source-specific-cursor-event-taxonomy-in-agent-tools
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      cannon: docs/cannon/architecture/runtime-design-constraints.md
+      constraint: C6
+      category: runtime-architecture
+      rationale: |
+        C6 (Observations Are Typed Source, Cursor, Match): agent-tool protocol
+        schemas must not invent source-specific cursor or event-tag taxonomies,
+        or a standalone session_read / ChildOutput* protocol stack, when an
+        existing channel schema already owns the event type. Delegated child
+        output already has a typed primitive (SessionAgentOutputChannel) routed
+        through the channel router; a tool/MCP adapter may wrap that route but
+        must reuse the channel schema, not bypass it (constraint "Delegated
+        Child Output").
+      fix-hint: |
+        Project the router-backed SessionAgentOutputChannel into a thin
+        request/response adapter that reuses the channel schema. Do not add
+        `cursor:`/`eventTag:` schema fields or ChildOutput*/session_read protocol
+        schemas under packages/protocol/src/agent-tools. Cursors are source
+        coordinates owned by the source, not agent-tool protocol identifiers.
+    paths:
+      include:
+        - "/packages/protocol/src/agent-tools/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      Agent-tool protocol schema adds a source-specific cursor/event-tag
+      taxonomy or a session_read/ChildOutput* stack (C6). Reuse the router-backed
+      SessionAgentOutputChannel schema instead of inventing a parallel
+      observation protocol.
+    pattern-either:
+      - pattern-regex: '\bChildOutput[A-Za-z0-9_]*\b'
+      - pattern-regex: '\bsession_read\b'
+      - pattern-regex: '\bsessionRead[A-Za-z0-9_]*\b'
+      - pattern-regex: '\b(cursor|eventTag|event_tag)\s*:\s*Schema\.'
+
+  - id: firegrid-c7-no-edge-local-terminal-synthesis
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      cannon: docs/cannon/architecture/runtime-design-constraints.md
+      constraint: C7
+      category: runtime-architecture
+      rationale: |
+        C7 (First-Class Schemas) / "Route Completion": terminal prompt
+        completion is durable runtime result state, not edge-local synthesis. A
+        transport edge must bind terminal completion to the durable state/result
+        fact the keyed handler owns (first-valid-terminal-wins), not synthesize a
+        terminal Done from raw TurnComplete observation. The ACP edge today
+        derives terminal-ness only by OBSERVING a TurnComplete output, which is
+        compliant; constructing the terminal completion locally is not.
+      fix-hint: |
+        Decode a runtime-produced RouteCompletionReceipt against the route's
+        response schema (tf-r6br), or observe the durable terminal fact. Do not
+        construct a terminal `{ _tag: "Done" }` completion at the edge.
+    paths:
+      include:
+        - "/packages/host-sdk/src/host/acp-stdio-edge.ts"
+        - "/packages/host-sdk/src/host/*edge*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      Edge-local terminal completion synthesis (C7). A transport edge must not
+      construct a terminal `{ _tag: "Done" }` from raw TurnComplete; bind
+      terminal completion to durable runtime result state (decode a
+      runtime-produced RouteCompletionReceipt or observe the durable terminal
+      fact).
+    pattern-regex: '_tag:\s*["'']Done["'']'
