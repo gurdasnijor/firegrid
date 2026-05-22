@@ -59,6 +59,9 @@ import {
   appendRuntimeIngress,
   AcpStdioEdge,
   AcpStdioEdgeLive,
+  acpPermissionPolicies,
+  type AcpPermissionPolicy,
+  defaultAcpPermissionPolicy,
   ensurePathInput,
   FiregridLocalHostLive,
   FiregridMcpServerLayer,
@@ -116,7 +119,33 @@ interface AcpConfig {
   readonly namespace: string
   readonly runConfig: LaunchConfig
   readonly otelDestination?: FiregridOtelDestination
+  readonly permissionPolicy: AcpPermissionPolicy
 }
+
+const ACP_PERMISSION_POLICY_ENV = "FIREGRID_ACP_PERMISSION_POLICY"
+
+// tf-jvjm: resolve the explicit ACP permission policy: CLI flag wins, else the
+// FIREGRID_ACP_PERMISSION_POLICY env var, else the safe default ("forward").
+// An invalid env value fails loud rather than silently falling back.
+const resolveAcpPermissionPolicy = (
+  cli: Option.Option<AcpPermissionPolicy>,
+): Effect.Effect<AcpPermissionPolicy, FiregridCliUsageError> =>
+  Option.match(cli, {
+    onSome: (policy) => Effect.succeed(policy),
+    onNone: () => {
+      const env = globalThis.process.env[ACP_PERMISSION_POLICY_ENV]
+      if (env === undefined || env.length === 0) {
+        return Effect.succeed(defaultAcpPermissionPolicy)
+      }
+      if ((acpPermissionPolicies as ReadonlyArray<string>).includes(env)) {
+        return Effect.succeed(env as AcpPermissionPolicy)
+      }
+      return Effect.fail(usageError(
+        `firegrid acp: invalid ${ACP_PERMISSION_POLICY_ENV} ${JSON.stringify(env)} `
+          + `(expected one of ${acpPermissionPolicies.join(", ")})`,
+      ))
+    },
+  })
 
 interface ReadyRecord {
   readonly type: "firegrid.start.ready"
@@ -571,6 +600,7 @@ const hostAcpLayer = (
     input: processInputStream(),
     output: processOutputStream(),
     runtime: request => acpRuntimeIntent(config.runConfig, request),
+    permissionPolicy: config.permissionPolicy,
   })
   // firegrid-zed-acp-stdio-external-agent.CLI_HELPER.3
   // firegrid-zed-acp-stdio-external-agent.MCP_BOUNDARY.4
@@ -713,6 +743,19 @@ const acpOtelFileOption = Options.text("otel-file").pipe(
   ),
   Options.optional,
 )
+const acpPermissionPolicyOption = Options.choice(
+  "permission-policy",
+  acpPermissionPolicies,
+).pipe(
+  Options.withDescription(
+    "How the ACP edge answers tool permission requests: "
+      + "forward (default; prompt the ACP client's native UI), "
+      + "deny (reject without prompting), or "
+      + "allow (auto-allow without prompting — intentional operator choice only). "
+      + `Equivalent env: ${ACP_PERMISSION_POLICY_ENV}.`,
+  ),
+  Options.optional,
+)
 
 const runCommand = Command.make(
   "run",
@@ -819,9 +862,10 @@ const acpCommand = Command.make(
     cwd: cwdOption,
     secretEnv: secretEnvOption,
     otelFile: acpOtelFileOption,
+    permissionPolicy: acpPermissionPolicyOption,
     agentArgv: runArgv,
   },
-  ({ agent, agentArgv, agentProtocol, cwd, namespace, otelFile, secretEnv }) =>
+  ({ agent, agentArgv, agentProtocol, cwd, namespace, otelFile, permissionPolicy, secretEnv }) =>
     Effect.gen(function*() {
       const raw = yield* rawRunConfigFromCli({
         agentArgv,
@@ -833,6 +877,7 @@ const acpCommand = Command.make(
         allowEmptyAgentArgv: false,
       })
       const runConfig = yield* decodeCliRunConfig(raw, "firegrid acp")
+      const resolvedPermissionPolicy = yield* resolveAcpPermissionPolicy(permissionPolicy)
       const durableStreams = yield* durableStreamsEndpoint
       const namespaceFromEnv = globalThis.process.env["FIREGRID_RUNTIME_NAMESPACE"]
       const cliFilePath = Option.getOrUndefined(otelFile)
@@ -885,6 +930,7 @@ const acpCommand = Command.make(
             ? defaultNamespace
             : namespaceFromEnv),
         runConfig,
+        permissionPolicy: resolvedPermissionPolicy,
         ...(otelDestination === undefined ? {} : { otelDestination }),
       }
       yield* runAcpStdio(durableStreams, config)

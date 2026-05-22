@@ -11,6 +11,9 @@ export {
   type AcpStdioEdgeOptions,
   type AcpStdioEdgeService,
   type AcpStdioSessionRuntimeRequest,
+  acpPermissionPolicies,
+  type AcpPermissionPolicy,
+  defaultAcpPermissionPolicy,
 } from "./acp-stdio-edge.ts"
 export {
   UnknownChannelTarget,

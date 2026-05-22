@@ -381,7 +381,7 @@ const turnTimeoutReason = (
 // dispatches so a test can assert the decision the edge mapped back.
 const runPermissionScenario = (input: {
   readonly client: acp.Client
-  readonly permissionPolicy?: "forward" | "allow"
+  readonly permissionPolicy?: "forward" | "deny" | "allow"
   readonly output?: (contextId: string) => RuntimeAgentOutputObservation
 }) =>
   Effect.scoped(Effect.gen(function*() {
@@ -711,6 +711,24 @@ describe("ACP stdio edge", () => {
     const result = await Effect.runPromise(runPermissionScenario({ client }))
 
     expect(permissionDecision(result.dispatched)).toEqual({ _tag: "Cancelled" })
+  })
+
+  it("tf-jvjm permissionPolicy:'deny' rejects without prompting the ACP client", async () => {
+    let requested = 0
+    const client: acp.Client = {
+      sessionUpdate: async () => {},
+      requestPermission: async () => {
+        requested += 1
+        return { outcome: { outcome: "selected", optionId: "allow-once" } }
+      },
+    }
+    const result = await Effect.runPromise(
+      runPermissionScenario({ client, permissionPolicy: "deny" }),
+    )
+
+    // "deny" answers without forwarding to the client's native UI.
+    expect(requested).toBe(0)
+    expect(permissionDecision(result.dispatched)).toEqual({ _tag: "Deny" })
   })
 
   it("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7 routes turns and traces ACP edge requests", async () => {
