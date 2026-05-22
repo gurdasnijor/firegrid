@@ -340,7 +340,7 @@ describe("DurableTable", () => {
 
           const result = yield* table.executions.insertOrGet(row)
 
-          expect(result).toEqual({ _tag: "Inserted" })
+          expect(result).toMatchObject({ _tag: "Inserted" })
         })
 
         yield* program.pipe(
@@ -376,7 +376,7 @@ describe("DurableTable", () => {
           yield* table.executions.insertOrGet(first)
           const result = yield* table.executions.insertOrGet(candidate)
 
-          expect(result).toEqual({ _tag: "Found", row: first })
+          expect(result).toMatchObject({ _tag: "Found", row: first })
           const current = yield* table.executions.get(first.executionId)
           expect(Option.isSome(current)).toBe(true)
           if (Option.isSome(current)) {
@@ -434,6 +434,113 @@ describe("DurableTable", () => {
     )
   })
 
+  it("effect-durable-operators.TABLE.26-11 distinct concurrent insertOrGet on one stream get distinct monotonic arrival offsets", async () => {
+    const url = server.url("table-insert-or-get-arrival-offset")
+    const count = 12
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const rows: ReadonlyArray<WorkflowExecution> = Array.from(
+            { length: count },
+            (_, i) => ({
+              executionId: `exec-arrival-${i}`,
+              workflowName: "demo",
+              payload: { i },
+              status: "started" as const,
+            }),
+          )
+
+          // Fire all inserts concurrently against the SAME stream. The
+          // reference server serializes appends, so each distinct key wins its
+          // own insert fence and is assigned a distinct append offset.
+          const results = yield* Effect.all(
+            rows.map(row => table.executions.insertOrGet(row)),
+            { concurrency: "unbounded" },
+          )
+
+          // All distinct keys win their insert.
+          expect(results.map(r => r._tag)).toEqual(
+            Array.from({ length: count }, () => "Inserted"),
+          )
+
+          const offsets = results.map(r => {
+            if (r._tag !== "Inserted") {
+              throw new Error(`expected Inserted, got ${r._tag}`)
+            }
+            return r.offset
+          })
+          // Offsets are distinct (no two concurrent inserts share a position).
+          expect(new Set(offsets).size).toBe(count)
+          // Offsets are non-empty strings carrying a real arrival position.
+          for (const offset of offsets) {
+            expect(typeof offset).toBe("string")
+            expect(offset.length).toBeGreaterThan(0)
+          }
+          // Lexicographic order == append (arrival) order: the durable-stream
+          // offset is zero-padded, so string compare is the arrival comparator.
+          // Sorting yields a strictly increasing, gap-free total order.
+          const sorted = [...offsets].sort()
+          for (let i = 1; i < sorted.length; i++) {
+            expect(sorted[i]! > sorted[i - 1]!).toBe(true)
+          }
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-11 Inserted carries an append offset; Found carries none", async () => {
+    const url = server.url("table-insert-or-get-found-offset")
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const row: WorkflowExecution = {
+            executionId: "exec-arrival-dup",
+            workflowName: "demo",
+            payload: { version: 1 },
+            status: "started",
+          }
+
+          const inserted = yield* table.executions.insertOrGet(row)
+          const duplicate = yield* table.executions.insertOrGet({
+            ...row,
+            payload: { version: 2 },
+          })
+
+          // Inserted exposes the real arrival position.
+          expect(inserted._tag).toBe("Inserted")
+          if (inserted._tag === "Inserted") {
+            expect(typeof inserted.offset).toBe("string")
+            expect(inserted.offset.length).toBeGreaterThan(0)
+          }
+          // Found is the unchanged {_tag, row} shape — it wrote no event and
+          // therefore reports no append position (no `offset` field).
+          expect(duplicate._tag).toBe("Found")
+          expect("offset" in duplicate).toBe(false)
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
   it("effect-durable-operators.TABLE.26-4 effect-durable-operators.TABLE.26-5 B proposes B but Found row is A", async () => {
     const url = server.url("table-insert-or-get-b-finds-a")
 
@@ -465,8 +572,8 @@ describe("DurableTable", () => {
         const inserted = yield* insertInLayer(winner)
         const found = yield* insertInLayer(loser)
 
-        expect(inserted).toEqual({ _tag: "Inserted" })
-        expect(found).toEqual({ _tag: "Found", row: winner })
+        expect(inserted).toMatchObject({ _tag: "Inserted" })
+        expect(found).toMatchObject({ _tag: "Found", row: winner })
       }),
     )
   })
@@ -512,7 +619,7 @@ describe("DurableTable", () => {
         const seedResult = yield* seed
         const contendResult = yield* contend
         expect(seedResult._tag).toBe("Inserted")
-        expect(contendResult).toEqual({ _tag: "Found", row: first })
+        expect(contendResult).toMatchObject({ _tag: "Found", row: first })
 
         const read = yield* Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -550,7 +657,7 @@ describe("DurableTable", () => {
           const result = yield* table.executions.insertOrGet(row)
           const read = yield* table.executions.get(row.executionId)
 
-          expect(result).toEqual({ _tag: "Inserted" })
+          expect(result).toMatchObject({ _tag: "Inserted" })
           expect(Option.isSome(read)).toBe(true)
           if (Option.isSome(read)) {
             expect(read.value).toEqual(row)
@@ -715,8 +822,8 @@ describe("DurableTable", () => {
           const inserted = yield* table.requests.insertOrGet(winner)
           const found = yield* table.requests.insertOrGet(candidate)
 
-          expect(inserted).toEqual({ _tag: "Inserted" })
-          expect(found).toEqual({ _tag: "Found", row: winner })
+          expect(inserted).toMatchObject({ _tag: "Inserted" })
+          expect(found).toMatchObject({ _tag: "Found", row: winner })
         })
 
         yield* program.pipe(
