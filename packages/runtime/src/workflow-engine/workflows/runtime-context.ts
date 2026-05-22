@@ -11,6 +11,7 @@ import {
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { withRowOtelParent } from "@firegrid/protocol/otel"
+import { withActivityContract } from "../internal/contract-activity.ts"
 import {
   Context,
   Cause,
@@ -756,35 +757,41 @@ const transitionRuntimeContextEventActivity = (
   state: RuntimeContextEventState,
   event: RuntimeContextMergedEvent,
 ) =>
-  Activity.make({
-    name: transitionActivityName(context.contextId, activityAttempt, state, event),
-    success: RuntimeContextTransitionResultSchema,
-    error: RuntimeContextError,
-    execute: Effect.gen(function*() {
-      if (event._tag === "Input") {
-        const decoded = yield* decodeRuntimeInputEvent(context, event.event)
-        return transitionInputEvent(state, event.event, decoded)
-      }
-      return transitionOutputEvent(context, state, event.event)
-    }).pipe(
-      Effect.withSpan("firegrid.runtime_context.workflow.state.transition", {
-        kind: "internal",
-        attributes: {
-          ...runtimeContextEventSpanAttributes(context, activityAttempt, event),
-          // Seam contract (runtime-shrink contract-coverage, tf-mmh2):
-          // deterministic state-machine reduction (event, state) -> (nextState,
-          // action) — a pure transform. It is the durably-memoized body of the
-          // transition Activity; the durable at-most-once boundary itself is the
-          // engine `workflow_engine.activity.execute` span, and the Activity-name
-          // span (`firegrid.runtime-context.state.*.after.*`) is emitted by
-          // vendored @effect/workflow Activity.make and cannot carry attributes
-          // here. (firegrid-workflow-driven-runtime).
-          "firegrid.seam.kind": "transform",
-          "firegrid.contract.id": "features/firegrid/firegrid-workflow-driven-runtime.feature.yaml",
-        },
-      }),
-    ),
-  })
+  // Two seams on one durable transition step:
+  //  - the Activity-name span (`firegrid.runtime-context.state.*.after.*`) is the
+  //    durable at-most-once transition memoization keyed on cursor state =
+  //    DURABILITY. It is created by vendored Activity.make, so the engine
+  //    annotates it via withActivityContract (tf-vw29; see contract-activity.ts).
+  //  - the inner `state.transition` span is the deterministic state-machine
+  //    reduction (event, state) -> (nextState, action) = a pure TRANSFORM (tf-mmh2).
+  // (both: firegrid-workflow-driven-runtime).
+  withActivityContract(
+    Activity.make({
+      name: transitionActivityName(context.contextId, activityAttempt, state, event),
+      success: RuntimeContextTransitionResultSchema,
+      error: RuntimeContextError,
+      execute: Effect.gen(function*() {
+        if (event._tag === "Input") {
+          const decoded = yield* decodeRuntimeInputEvent(context, event.event)
+          return transitionInputEvent(state, event.event, decoded)
+        }
+        return transitionOutputEvent(context, state, event.event)
+      }).pipe(
+        Effect.withSpan("firegrid.runtime_context.workflow.state.transition", {
+          kind: "internal",
+          attributes: {
+            ...runtimeContextEventSpanAttributes(context, activityAttempt, event),
+            "firegrid.seam.kind": "transform",
+            "firegrid.contract.id": "features/firegrid/firegrid-workflow-driven-runtime.feature.yaml",
+          },
+        }),
+      ),
+    }),
+    {
+      seamKind: "durability",
+      contractId: "features/firegrid/firegrid-workflow-driven-runtime.feature.yaml",
+    },
+  )
 
 const applyRuntimeContextTransitionAction = (
   context: RuntimeContext,
