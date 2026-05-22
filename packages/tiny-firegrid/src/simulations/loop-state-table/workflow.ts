@@ -16,7 +16,7 @@ import {
   type LoopStateRow,
 } from "./resources.ts"
 
-export interface LoopStateRuntime {
+interface LoopStateRuntime {
   // Agent emits an output row (text / permission_request / turn_complete), then
   // the workflow drains.
   readonly emitOutput: (

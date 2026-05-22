@@ -98,7 +98,6 @@ const SentActionRowSchema = Schema.Struct({
   identifier: "firegrid.tinyLoopState.sentActionRow",
   title: "Permission response sent action",
 })
-export type SentActionRow = Schema.Schema.Type<typeof SentActionRowSchema>
 
 export class LoopStateTable extends DurableTable(
   "tinyLoopStateTable",
