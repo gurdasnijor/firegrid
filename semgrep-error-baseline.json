@@ -33,7 +33,7 @@
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/workflow-engine/workflows/wait-for.ts",
-      "line": 46
+      "line": 63
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",

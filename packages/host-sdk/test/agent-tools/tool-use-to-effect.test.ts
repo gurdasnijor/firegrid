@@ -212,8 +212,19 @@ const TestRuntimeObservationStreamsLive = Layer.effect(
       initialAgentOutputAfter: () => Effect.succeed(Option.none()),
       agentOutputForContext: () => Stream.empty,
       runtimeRun: Stream.empty,
+      // tf-0xe4: wait_for_any now races CallerFact{stream: <channel target>}
+      // sources inside the durable WaitForWorkflow (was an in-memory raceAll
+      // over the channels' own streams). Resolve the wait_for_any race targets
+      // here so the durable race finds the winner: event.plan.ready matches,
+      // state.rows never does.
       callerFact: (stream: string) =>
-        stream === TEST_EVENTS_CHANNEL ? table.rows.rows() : Stream.empty,
+        stream === TEST_EVENTS_CHANNEL
+          ? table.rows.rows()
+          : stream === "event.plan.ready"
+          ? Stream.make({ id: "row-fast", status: "ready" })
+          : stream === "state.rows"
+          ? Stream.never
+          : Stream.empty,
     }
   }),
 )

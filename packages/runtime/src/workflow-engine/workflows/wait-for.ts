@@ -6,7 +6,6 @@ import { Duration, Effect, Option, Schema, Stream } from "effect"
 import {
   evaluateFieldEquals,
   FieldEqualsTriggerSchema,
-  type FieldEqualsTrigger,
 } from "./field-equals.ts"
 import {
   RuntimeObservationSourceSchema,
@@ -14,15 +13,33 @@ import {
   type RuntimeObservationSource,
 } from "../../streams/index.ts"
 
+// tf-0xe4: one (source, trigger) pair the workflow races. wait_for is one pair;
+// wait_for_any is the primary `source`/`trigger` plus `additionalSources`.
+const WaitForWorkflowSourceSchema = Schema.Struct({
+  source: RuntimeObservationSourceSchema,
+  trigger: FieldEqualsTriggerSchema,
+})
+
+type WaitForWorkflowSource = Schema.Schema.Type<
+  typeof WaitForWorkflowSourceSchema
+>
+
 export const WaitForWorkflowPayloadSchema = Schema.Struct({
   executionKey: Schema.String,
   source: RuntimeObservationSourceSchema,
   trigger: FieldEqualsTriggerSchema,
+  // tf-0xe4: extra sources for a durable wait_for_any race. The workflow races
+  // the primary source plus these inside one journaled Activity, so the race
+  // survives host restart instead of being lost with an in-memory raceAll.
+  additionalSources: Schema.optional(Schema.Array(WaitForWorkflowSourceSchema)),
   timeoutMs: Schema.optional(Schema.Number),
 })
 
 export const WaitForWorkflowMatchOutcomeSchema = Schema.TaggedStruct("Match", {
   raw: Schema.Unknown,
+  // tf-0xe4: index of the winning source in [source, ...additionalSources].
+  // 0 for single wait_for; the racing position for wait_for_any.
+  winnerIndex: Schema.optional(Schema.Number),
 })
 
 export const WaitForWorkflowTimeoutOutcomeSchema = Schema.TaggedStruct("Timeout", {})
@@ -72,8 +89,7 @@ const matchActivityName = (executionKey: string): string =>
 
 const matchOrTimeoutActivity = (
   executionKey: string,
-  source: RuntimeObservationSource,
-  trigger: FieldEqualsTrigger,
+  sources: ReadonlyArray<WaitForWorkflowSource>,
   timeoutMs: number | undefined,
 ) =>
   Activity.make({
@@ -81,17 +97,29 @@ const matchOrTimeoutActivity = (
     success: WaitForWorkflowOutcomeSchema,
     execute: Effect.gen(function*() {
       const streams = yield* RuntimeObservationStreams
-      const match = Stream.runHead(
-        streamForSource(streams, source).pipe(
-          Stream.filter(row => evaluateFieldEquals(trigger, row)),
-        ),
-      ).pipe(
-        Effect.flatMap(Option.match({
-          onNone: () => Effect.never,
-          onSome: (raw): Effect.Effect<WaitForWorkflowOutcome> =>
-            Effect.succeed({ _tag: "Match", raw }),
-        })),
-      )
+      // tf-0xe4: race all sources inside the Activity. Because each source is a
+      // durable, replay-safe RuntimeObservationStream, re-running this Activity
+      // on workflow resume re-subscribes and re-finds the winner — so the race
+      // survives host restart (the in-memory raceAll did not).
+      const matches = sources.map((entry, winnerIndex) =>
+        Stream.runHead(
+          streamForSource(streams, entry.source).pipe(
+            Stream.filter(row => evaluateFieldEquals(entry.trigger, row)),
+          ),
+        ).pipe(
+          Effect.flatMap(Option.match({
+            onNone: () => Effect.never,
+            // Single-source wait_for omits winnerIndex (outcome unchanged); only
+            // a multi-source wait_for_any race reports the winning index.
+            onSome: (raw): Effect.Effect<WaitForWorkflowOutcome> =>
+              Effect.succeed(
+                sources.length > 1
+                  ? { _tag: "Match", raw, winnerIndex }
+                  : { _tag: "Match", raw },
+              ),
+          })),
+        ))
+      const match = Effect.raceAll(matches)
 
       if (timeoutMs === undefined) return yield* match
 
@@ -107,7 +135,8 @@ const matchOrTimeoutActivity = (
         kind: "internal",
         attributes: {
           "firegrid.agent_tools.wait_for.execution_key": executionKey,
-          "firegrid.wait.source": source._tag,
+          "firegrid.wait.source": sources[0]!.source._tag,
+          "firegrid.wait.source_count": sources.length,
           "firegrid.wait.has_timeout": timeoutMs !== undefined,
         },
       }),
@@ -118,14 +147,14 @@ export const WaitForWorkflowLayer = WaitForWorkflow.toLayer(({
   executionKey,
   source,
   trigger,
+  additionalSources,
   timeoutMs,
 }) => {
-  const activity = matchOrTimeoutActivity(
-    executionKey,
-    source,
-    trigger,
-    timeoutMs,
-  )
+  const sources: ReadonlyArray<WaitForWorkflowSource> = [
+    { source, trigger },
+    ...(additionalSources ?? []),
+  ]
+  const activity = matchOrTimeoutActivity(executionKey, sources, timeoutMs)
 
   return activity.pipe(
     Effect.withSpan("firegrid.agent_tools.wait_for.workflow.body", {
@@ -133,6 +162,7 @@ export const WaitForWorkflowLayer = WaitForWorkflow.toLayer(({
       attributes: {
         "firegrid.agent_tools.wait_for.execution_key": executionKey,
         "firegrid.wait.source": source._tag,
+        "firegrid.wait.source_count": sources.length,
         "firegrid.wait.has_timeout": timeoutMs !== undefined,
         ...(timeoutMs === undefined ? {} : { "firegrid.wait.timeout_ms": timeoutMs }),
       },

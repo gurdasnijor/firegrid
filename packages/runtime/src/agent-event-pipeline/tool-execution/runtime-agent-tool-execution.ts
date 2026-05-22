@@ -47,9 +47,12 @@ export interface RuntimeWaitForToolExecutionParams
 }
 
 export interface RuntimeWaitForAnyDescriptorExecution {
-  readonly winnerIndex: number
   readonly channel: string
-  readonly wait: Effect.Effect<unknown, unknown, never>
+  // tf-0xe4: serializable observation source + trigger (was an in-memory
+  // `wait` Effect). wait_for_any now races these inside the durable
+  // WaitForWorkflow Activity instead of an in-memory Effect.raceAll.
+  readonly source: RuntimeObservationSource
+  readonly trigger: FieldEqualsTrigger
 }
 
 export interface RuntimeWaitForAnyToolExecutionParams
@@ -149,31 +152,43 @@ const toolExecutionFailed = (
   cause,
 })
 
-const waitForAnyDescriptorOutput = (
-  descriptor: RuntimeWaitForAnyDescriptorExecution,
-): Effect.Effect<WaitForAnyToolOutput, RuntimeAgentToolExecutionError> =>
-  descriptor.wait.pipe(
-    Effect.map(result => ({
-      winnerIndex: descriptor.winnerIndex,
-      channel: descriptor.channel,
-      result,
-    })),
-    Effect.mapError(toolExecutionFailed),
-  )
-
+// tf-0xe4: wait_for_any over the durable WaitForWorkflow. The N descriptor
+// sources are raced inside one journaled workflow Activity (primary +
+// additionalSources), so an in-flight wait_for_any survives host restart. The
+// workflow returns the winning source's index; map it back to the channel.
 const waitForAny = (
   params: RuntimeWaitForAnyToolExecutionParams,
 ): Effect.Effect<WaitForAnyToolOutput, RuntimeAgentToolExecutionError> => {
-  const raced = Effect.raceAll(
-    params.waits.map(waitForAnyDescriptorOutput),
-  )
-  if (params.input.timeoutMs === undefined) return raced
-  return raced.pipe(
-    Effect.timeoutTo({
-      duration: Duration.millis(params.input.timeoutMs),
-      onSuccess: output => output,
-      onTimeout: (): WaitForAnyToolOutput => ({ timedOut: true }),
+  const { contextId, toolUseId, input, waits } = params
+  const [primary, ...rest] = waits
+  if (primary === undefined) {
+    return Effect.fail<RuntimeAgentToolExecutionError>({
+      _tag: "InvalidToolInput",
+      reason: "wait_for_any requires at least one channel",
+    })
+  }
+  return WaitForWorkflow.execute({
+    executionKey: `wait-any:${contextId}:${toolUseId}`,
+    source: primary.source,
+    trigger: primary.trigger,
+    additionalSources: rest.map(descriptor => ({
+      source: descriptor.source,
+      trigger: descriptor.trigger,
+    })),
+    ...waitForTimeoutPayload(input.timeoutMs),
+  }).pipe(
+    Effect.provide(WaitForWorkflowLayer),
+    Effect.map((outcome): WaitForAnyToolOutput => {
+      if (outcome._tag === "Timeout") return { timedOut: true }
+      const winnerIndex = outcome.winnerIndex ?? 0
+      return {
+        winnerIndex,
+        channel: waits[winnerIndex]?.channel ?? primary.channel,
+        result: outcome.raw,
+      }
     }),
+    Effect.mapError(toolExecutionFailed),
+    hideExecutionRequirements,
   )
 }
 
