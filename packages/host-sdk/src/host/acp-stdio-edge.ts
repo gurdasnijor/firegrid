@@ -39,10 +39,55 @@ interface AcpStdioEdgeContextTimeout {
   readonly contextId: string
 }
 
+// tf-lgb1: a single `reason: "timeout"` used to collapse agent silence, an
+// unanswered permission request, a hung tool call, a closed output stream, and
+// process termination into one opaque 30s failure. The typed reason tells a
+// live Zed failure which subsystem is stuck without DuckDB archaeology.
+type AcpStdioEdgeTurnTimeoutReason =
+  // the idle timeout fired and the last output the edge saw was...
+  | "agent_silent" // ...nothing, or text/status — the agent just went quiet
+  | "permission_unanswered" // ...a PermissionRequest — the turn never resumed
+  | "tool_call_in_flight" // ...a ToolUse — the tool call never produced output
+  // terminal observations (not idle timeouts)
+  | "process_terminated" // a Terminated observation arrived before TurnComplete
+  | "stream_ended" // the output stream closed before TurnComplete
+
 interface AcpStdioEdgeTurnOutputError {
   readonly _tag: "AcpStdioEdgeTurnOutputError"
-  readonly reason: "timeout" | "terminated"
+  readonly reason: AcpStdioEdgeTurnTimeoutReason
   readonly message: string
+}
+
+// Classify an idle-timeout (no output within turnTimeoutMs) from the last
+// output observation the edge saw this turn. Pure so it is unit-testable for
+// every category, including ones the stdio-jsonl test harness cannot emit
+// (e.g. PermissionRequest).
+export const classifyTurnIdleTimeoutReason = (
+  lastOutputTag: RuntimeAgentOutputObservation["_tag"] | undefined,
+): AcpStdioEdgeTurnTimeoutReason => {
+  switch (lastOutputTag) {
+    case "PermissionRequest":
+      return "permission_unanswered"
+    case "ToolUse":
+      return "tool_call_in_flight"
+    default:
+      return "agent_silent"
+  }
+}
+
+const turnTimeoutMessage = (reason: AcpStdioEdgeTurnTimeoutReason): string => {
+  switch (reason) {
+    case "agent_silent":
+      return "timed out waiting for Firegrid agent output (agent produced no further output)"
+    case "permission_unanswered":
+      return "timed out after a permission request; the turn did not resume after the permission decision"
+    case "tool_call_in_flight":
+      return "timed out with a tool call in flight; the agent produced no output after the tool call"
+    case "process_terminated":
+      return "Firegrid session terminated before ACP TurnComplete"
+    case "stream_ended":
+      return "Firegrid agent output stream ended before ACP TurnComplete"
+  }
 }
 
 const acpStdioEdgeContextTimeout = (
@@ -53,13 +98,28 @@ const acpStdioEdgeContextTimeout = (
 })
 
 const acpStdioEdgeTurnOutputError = (
-  reason: AcpStdioEdgeTurnOutputError["reason"],
-  message: string,
+  reason: AcpStdioEdgeTurnTimeoutReason,
 ): AcpStdioEdgeTurnOutputError => ({
   _tag: "AcpStdioEdgeTurnOutputError",
   reason,
-  message,
+  message: turnTimeoutMessage(reason),
 })
+
+const isTurnOutputError = (
+  error: unknown,
+): error is AcpStdioEdgeTurnOutputError =>
+  typeof error === "object" &&
+  error !== null &&
+  "_tag" in error &&
+  (error as { readonly _tag: unknown })._tag === "AcpStdioEdgeTurnOutputError"
+
+// Turn-local state used to classify a turn timeout. Mutated by the single
+// output-consuming fiber as observations arrive; read lazily when the idle
+// timeout fires or the span outcome is annotated.
+interface TurnOutputState {
+  outputCount: number
+  lastOutputTag?: RuntimeAgentOutputObservation["_tag"]
+}
 
 export class AcpStdioEdge extends Context.Tag(
   "firegrid/host-sdk/AcpStdioEdge",
@@ -315,6 +375,16 @@ class FiregridAcpStdioAgent implements acp.Agent {
       this.forwardOutput(session.acpSessionId, output)
     const startSequence = session.lastSequence
     const channel = this.sessionAgentOutput.forContext(session.contextId)
+    // tf-lgb1: track what the turn last saw so a timeout can name which
+    // subsystem is stuck. The stream is consumed by one fiber, so a plain
+    // mutable record is enough; the timeoutFail thunk reads it lazily.
+    const turn: TurnOutputState = { outputCount: 0 }
+    const annotateTurn = (extra: Record<string, string | number>) =>
+      Effect.annotateCurrentSpan({
+        "firegrid.acp.turn.output_count": turn.outputCount,
+        "firegrid.acp.turn.last_output_tag": turn.lastOutputTag ?? "none",
+        ...extra,
+      })
     return channel.binding.stream.pipe(
       Stream.filter(observation =>
         observation.contextId === session.contextId &&
@@ -322,16 +392,18 @@ class FiregridAcpStdioAgent implements acp.Agent {
       ),
       // Idle timeout: fail the turn if the next output does not arrive in time
       // (preserves the prior per-output Clock.sleep(turnTimeoutMs) semantics).
+      // The reason is classified from the last output seen so far.
       Stream.timeoutFail(
         () =>
           acpStdioEdgeTurnOutputError(
-            "timeout",
-            "timed out waiting for Firegrid agent output",
+            classifyTurnIdleTimeoutReason(turn.lastOutputTag),
           ),
         Duration.millis(this.turnTimeoutMs),
       ),
       Stream.mapEffect(output =>
         Effect.gen(function*() {
+          turn.outputCount += 1
+          turn.lastOutputTag = output._tag
           session.lastSequence = output.sequence
           yield* Effect.tryPromise(() => forwardOutput(output))
           return output
@@ -342,23 +414,29 @@ class FiregridAcpStdioAgent implements acp.Agent {
       ),
       Stream.runLast,
       Effect.flatMap(Option.match({
-        onNone: () =>
-          Effect.fail(
-            acpStdioEdgeTurnOutputError(
-              "timeout",
-              "Firegrid agent output stream ended before ACP TurnComplete",
-            ),
-          ),
+        onNone: () => Effect.fail(acpStdioEdgeTurnOutputError("stream_ended")),
         onSome: output =>
           output._tag === "TurnComplete"
             ? Effect.succeed(output)
-            : Effect.fail(
-              acpStdioEdgeTurnOutputError(
-                "terminated",
-                "Firegrid session terminated before ACP TurnComplete",
-              ),
-            ),
+            : Effect.fail(acpStdioEdgeTurnOutputError("process_terminated")),
       })),
+      // tf-lgb1: annotate the turn span with the outcome + the classified
+      // timeout reason so a live Zed failure is triageable from the trace.
+      Effect.tap(() => annotateTurn({ "firegrid.acp.turn.outcome": "completed" })),
+      Effect.tapError(error =>
+        annotateTurn({
+          "firegrid.acp.turn.outcome": "failed",
+          ...(isTurnOutputError(error)
+            ? { "firegrid.acp.turn.timeout_reason": error.reason }
+            : {}),
+        })),
+      Effect.withSpan("firegrid.acp_stdio_edge.turn_output", {
+        kind: "internal",
+        attributes: {
+          "firegrid.acid": "firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7",
+          "firegrid.context.id": session.contextId,
+        },
+      }),
     )
   }
 
