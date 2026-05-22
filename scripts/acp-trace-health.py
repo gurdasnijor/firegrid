@@ -35,6 +35,7 @@ per-context breakdowns make the mixing visible rather than hiding it.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections import Counter, defaultdict
 
@@ -175,8 +176,34 @@ def axis1_bugs(spans, top):
         "tool_use.execute": by_name.get(TOOL_EXECUTE, 0),
         "acp.tool_result": by_name.get(TOOL_RESULT, 0),
     }
-    # Unanswered tool calls: more handler entries than results returned.
-    open_tool_calls = max(0, tools["tools/call"] - tools["acp.tool_result"])
+    # Open vs completed tool calls (tf-65lj).
+    #
+    # The completion signal is the `McpServer.tools/call` span CLOSING, not the
+    # presence of an `acp.tool_result` span. The MCP server only ends that span
+    # when its handler returns — for a success, a fast invalid-input rejection,
+    # or an error alike. `acp.tool_result` is NOT a reliable denominator: on the
+    # ACP codec path the provider already executed the tool and the host is
+    # observation-only (runtime-context TFIND-041), so the result returns as the
+    # MCP `tools/call` response and NO host-fed `acp.tool_result` span exists.
+    # The old `tools/call - acp.tool_result` metric therefore reported every
+    # completed codec tool call as open (result=0 -> open=5).
+    #
+    # Count a call open only when no record for its span id ever closed; this
+    # also folds tf-9ia9 span-start records (a start-only record for a call that
+    # later closed must not count as open).
+    call_spans = [s for s in spans if s.name == TOOL_CALL]
+    call_ids = {s.span_id for s in call_spans}
+    closed_ids = {s.span_id for s in call_spans if not s.in_flight}
+    errored_ids = {s.span_id for s in call_spans
+                   if not s.in_flight and s.status_code == 2}
+    open_ids = call_ids - closed_ids
+    tool_calls = {
+        "total": len(call_ids),
+        "completed": len(closed_ids),
+        "errored": len(errored_ids),
+        "open": len(open_ids),
+    }
+    open_tool_calls = tool_calls["open"]
 
     return {
         "errors": [
@@ -196,6 +223,7 @@ def axis1_bugs(spans, top):
         "permission": perm,
         "permission_balanced": perm_balanced,
         "tools": tools,
+        "tool_calls": tool_calls,
         "open_tool_calls": open_tool_calls,
     }
 
@@ -383,11 +411,14 @@ def render(report):
       f"response={perm['response']} wf.send={perm['wf_send']}  "
       f"(want request==response)")
     t = a1["tools"]
+    tc = a1["tool_calls"]
     p(f"  {_flag(a1['open_tool_calls'] == 0)}tool-call balance:      "
       f"tools/call={t['tools/call']} handle={t['Toolkit.handle']} "
       f"resolve={t['runtime_context.resolve']} execute={t['tool_use.execute']} "
       f"result={t['acp.tool_result']}")
-    p(f"        open (call - result) = {a1['open_tool_calls']}")
+    p(f"        tools/call lifecycle: completed={tc['completed']} "
+      f"(errored={tc['errored']}) open={tc['open']} of {tc['total']}")
+    p(f"        open (tools/call spans never closed) = {a1['open_tool_calls']}")
 
     # ---- Axis 2 ----
     p("")
@@ -443,7 +474,49 @@ def render(report):
     return "\n".join(L)
 
 
+# ---------------------------------------------------------------------------
+# self-test (tf-65lj regression): completed ACP codec tool calls must not be
+# reported as open, error-completions count as completed, and genuinely
+# in-flight calls still report as open. Pure stdlib; no pytest dependency.
+# ---------------------------------------------------------------------------
+
+SELF_TEST_FIXTURE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "fixtures", "acp-trace-health", "codec-tool-completion.jsonl",
+)
+
+
+def self_test():
+    spans, bad = load(SELF_TEST_FIXTURE)
+    a1 = axis1_bugs(spans, 8)
+    tc = a1["tool_calls"]
+    checks = [
+        ("fixture parsed cleanly", bad == 0),
+        # 5 distinct tools/call ids: 2 ok, 1 errored, 1 open, 1 start+close.
+        ("tools/call total == 5", tc["total"] == 5),
+        # completed regardless of an acp.tool_result span existing...
+        ("completed == 4", tc["completed"] == 4),
+        # ...and the codec path emits no acp.tool_result, yet calls completed.
+        ("acp.tool_result == 0", a1["tools"]["acp.tool_result"] == 0),
+        ("errored == 1 (counts as completed, not open)", tc["errored"] == 1),
+        # only the genuinely in-flight call is open (start-then-close is closed).
+        ("open == 1", tc["open"] == 1),
+        ("open_tool_calls == 1", a1["open_tool_calls"] == 1),
+    ]
+    failures = [name for name, ok in checks if not ok]
+    for name, ok in checks:
+        print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+    if failures:
+        print(f"self-test FAILED ({len(failures)}): tool_calls={tc} "
+              f"acp.tool_result={a1['tools']['acp.tool_result']}", file=sys.stderr)
+        return 1
+    print("self-test PASSED (tf-65lj codec tool-call completion)")
+    return 0
+
+
 def main(argv):
+    if "--self-test" in argv[1:]:
+        return self_test()
     args = [a for a in argv[1:] if not a.startswith("--")]
     flags = {a for a in argv[1:] if a.startswith("--")}
     path = args[0] if args else ".firegrid/acp-trace.jsonl"
