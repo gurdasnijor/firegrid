@@ -75,10 +75,8 @@ import {
 } from "@firegrid/protocol/agent-tools"
 import {
   Effect,
-  Option,
   ParseResult,
   Schema,
-  Stream,
 } from "effect"
 import {
   type AgentInputEvent,
@@ -86,14 +84,12 @@ import {
 } from "@firegrid/runtime/events"
 import {
   RuntimeAgentToolExecution,
-  evaluateFieldEquals,
   type FieldEqualsTrigger,
   type RuntimeAgentToolExecutionError,
 } from "@firegrid/runtime/tool-executor"
 import type { RuntimeObservationSource } from "@firegrid/runtime/streams"
 import type {
   RuntimeChannelRoute,
-  RuntimeStreamBackedChannelRoute,
 } from "@firegrid/runtime/channels"
 import type {
   ChannelDirection,
@@ -196,17 +192,6 @@ const unknownChannelInvalid = (
   toolUseId,
   name,
   reason: `Unknown channel '${channel}': ${String(cause)}`,
-})
-
-const missingStreamInvalid = (
-  toolUseId: string,
-  name: string,
-  channel: string,
-): ToolError => ({
-  _tag: "ToolInvalidInput",
-  toolUseId,
-  name,
-  reason: `channel '${channel}' is declared as ingress-capable but has no stream binding.`,
 })
 
 const requireChannelDirection = <Direction extends ChannelDirection>(
@@ -378,21 +363,6 @@ const runWaitForTool = (
   return waitForChannel
 }
 
-const waitForIngressRoute = (
-  route: RuntimeStreamBackedChannelRoute,
-  trigger: FieldEqualsTrigger,
-): Effect.Effect<unknown, unknown, never> =>
-  route.stream.pipe(
-    Stream.filter((row) =>
-      trigger.length === 0 ? true : evaluateFieldEquals(trigger, row),
-    ),
-    Stream.runHead,
-    Effect.flatMap(Option.match({
-      onNone: () => Effect.never,
-      onSome: row => Effect.succeed(row),
-    })),
-  )
-
 const runSendTool = (
   ctx: ToolLoweringContext,
   toolUseId: string,
@@ -459,15 +429,18 @@ const runRegisteredCallChannel = (
     )
   })
 
+// tf-0xe4: resolve each wait_for_any descriptor to a SERIALIZABLE
+// (channel, source, trigger) — a `CallerFact` source over the channel target,
+// exactly as single wait_for does — so the runtime can race them inside the
+// durable WaitForWorkflow Activity instead of an in-memory host-side wait.
 const waitForAnyDescriptorToEffect = (
   toolUseId: string,
   descriptor: WaitForAnyDescriptor,
-  winnerIndex: number,
 ): Effect.Effect<
   {
-    readonly winnerIndex: number
     readonly channel: string
-    readonly wait: Effect.Effect<unknown, unknown, never>
+    readonly source: RuntimeObservationSource
+    readonly trigger: FieldEqualsTrigger
   },
   ToolError,
   RuntimeChannelRouter
@@ -487,24 +460,12 @@ const waitForAnyDescriptorToEffect = (
       registration.direction === "bidirectional"
     if (!supported) {
       return yield* Effect.fail(directionInvalid(
-      toolUseId,
-      "wait_for_any",
-      descriptor.channel,
-      "ingress",
-        registration.direction,
-      ))
-    }
-    const stream = route.stream
-    if (stream === undefined) {
-      return yield* Effect.fail(missingStreamInvalid(
         toolUseId,
         "wait_for_any",
         descriptor.channel,
+        "ingress",
+        registration.direction,
       ))
-    }
-    const streamBackedRoute: RuntimeStreamBackedChannelRoute = {
-      ...route,
-      stream,
     }
     const adapted = waitQueryToTrigger(descriptor.match)
     if (adapted._tag === "NonScalar") {
@@ -517,12 +478,12 @@ const waitForAnyDescriptorToEffect = (
       })
     }
     return {
-      winnerIndex,
       channel: descriptor.channel,
-      wait: waitForIngressRoute(
-        streamBackedRoute,
-        adapted.trigger,
-      ),
+      source: {
+        _tag: "CallerFact",
+        stream: String(registration.target),
+      },
+      trigger: adapted.trigger,
     }
   })
 
@@ -539,8 +500,8 @@ const runWaitForAnyTool = (
   // firegrid-agent-body-plan.SLICE_BOUNDARY.4
   Effect.gen(function*() {
     const waits = yield* Effect.all(
-      input.channels.map((descriptor, index) =>
-        waitForAnyDescriptorToEffect(toolUseId, descriptor, index),
+      input.channels.map(descriptor =>
+        waitForAnyDescriptorToEffect(toolUseId, descriptor),
       ),
     )
     const execution = yield* RuntimeAgentToolExecution
