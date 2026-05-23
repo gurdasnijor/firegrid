@@ -13,6 +13,14 @@
 //     CC1 Wave C target code uses tree-aligned typed channels instead)
 //   - `RuntimeObservationStreams` / `RuntimeObservationSource` symbols
 //     (the pre-target observation API the runtime/streams subpath exports)
+//   - `@firegrid/runtime/subscribers/runtime-context` (the runtime-owned
+//     Shape C handler subpath) and the `handleRuntimeContextEvent` symbol.
+//     The architecture owner re-pinned the tiny-firegrid contract: Shape
+//     C handler shape/signature questions must be answered in
+//     `packages/tiny-firegrid/` before production accumulates speculative
+//     driver/runner artifacts in host-sdk. host-sdk installs the runtime
+//     root composed in `composition/host-live.ts`; it does not directly
+//     wire the per-event handler into a runtime-context-driver loop.
 //   - Legacy RuntimeContext body-driver symbols:
 //     `RuntimeContextWorkflowNative`, `RuntimeContextWorkflowNativeLayer`,
 //     `executeRuntimeContextWorkflow`, `RuntimeContextWorkflowRuntime`
@@ -55,6 +63,20 @@ const RULES = [
     id: "host-sdk-no-runtime-streams-import",
     label: "@firegrid/runtime/streams import",
     regex: /from\s+["']@firegrid\/runtime\/streams(?:["'/])/,
+  },
+  {
+    id: "host-sdk-no-subscribers-runtime-context-import",
+    label: "@firegrid/runtime/subscribers/runtime-context import",
+    // Matches the subscribers/runtime-context handler subpath, NOT
+    // subscribers/runtime-context-session (the durable-plane session sink
+    // host-sdk legitimately implements against). The `(?!-session)` lookahead
+    // pins the boundary precisely.
+    regex: /from\s+["']@firegrid\/runtime\/subscribers\/runtime-context(?!-session)(?:["'/])/,
+  },
+  {
+    id: "host-sdk-no-handle-runtime-context-event-symbol",
+    label: "handleRuntimeContextEvent symbol",
+    regex: /\bhandleRuntimeContextEvent\b/,
   },
   {
     id: "host-sdk-no-runtime-observation-streams-symbol",
