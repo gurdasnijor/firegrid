@@ -12,7 +12,6 @@ import {
   type HostPermissionRespondChannel,
   type HostPromptChannel,
   type HostSessionsStartChannel,
-  type SessionAgentOutputChannel,
   type SessionLifecycleChannel,
   type SessionPromptChannel,
 } from "@firegrid/protocol/channels"
@@ -31,19 +30,24 @@ import { SessionAgentOutputChannelLive } from "../session-agent-output/index.ts"
 
 // Host-control write/read route bindings live in @firegrid/runtime/channels.
 // Host-sdk keeps the snapshot bindings (need RuntimeHostConfig to open
-// per-context output streams) and provides the SessionAgentOutputChannel
-// Live binding (host-sdk owns the Layer because it needs RuntimeHostConfig +
-// CurrentHostSession to bind the durable stream prefix per context).
+// per-context output streams) here.
 //
 // Wave C (#702 mapping): `session.wait.forAgentOutput → session.agent_output /
 // wait_for` registered the corresponding route on
 // `RuntimeHostControlChannelsLive` in
 // `packages/runtime/src/channels/host-control-routes.ts`. That route declares
-// `SessionAgentOutputChannel` as a service requirement on the runtime Layer;
-// host-sdk fills it here via `SessionAgentOutputChannelLive`. The output of
-// `HostControlChannelsLive` includes `SessionAgentOutputChannel` because the
-// provided Layer exposes it; the requirement set honestly carries
-// `CurrentHostSession` since `SessionAgentOutputChannelLive` needs it.
+// `SessionAgentOutputChannel` as a service requirement on the runtime Layer.
+// Host-sdk satisfies that requirement INTERNALLY here by `Layer.provide`-ing
+// `SessionAgentOutputChannelLive` into `RuntimeHostControlChannelsLive` — the
+// outer composition consumes the live binding to wire the route. Consumers
+// of `HostControlChannelsLive` therefore do NOT see `SessionAgentOutputChannel`
+// as an output of this Layer (`Layer.provide` does not republish the provided
+// service); resolving the agent-output channel as a public service goes
+// through `SessionAgentOutputChannelLive` directly.
+//
+// `SessionAgentOutputChannelLive` requires `RuntimeHostConfig + CurrentHostSession`
+// to bind the durable stream prefix per context, so the wrapper's requirement
+// set honestly carries `CurrentHostSession`.
 
 type HostControlChannels =
   | HostContextsCreateChannel
@@ -55,7 +59,6 @@ type HostControlChannels =
   | HostContextsChannel
   | SessionLifecycleChannel
   | HostPermissionRespondChannel
-  | SessionAgentOutputChannel
   | HostPlaneChannelRouter
 
 export const HostControlChannelsLive =
