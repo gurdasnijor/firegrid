@@ -1,5 +1,4 @@
 import { IdGenerator } from "@effect/ai"
-import { WorkflowEngine } from "@effect/workflow"
 import {
   firegridRuntimeContextMcpDeclaration,
   type McpServerDeclaration,
@@ -39,11 +38,7 @@ import {
   Stream,
 } from "effect"
 import {
-  RuntimeContextWorkflowNative,
   type RuntimeContextWorkflowSessionService,
-} from "@firegrid/runtime/kernel"
-import {
-  runtimeContextWorkflowExecutionId,
 } from "@firegrid/runtime/kernel"
 import * as SessionCommon from "./common.ts"
 import { runtimeContextMcpPath } from "../mcp-host.ts"
@@ -275,19 +270,9 @@ export const makeCodecRuntimeContextWorkflowSessionService:
           const effectiveMcpServers = yield* resolveEffectiveMcpServers(context).pipe(
             Effect.provide(deps.captured),
           )
-          const workflowEngine = yield* Effect.serviceOption(WorkflowEngine.WorkflowEngine)
-          const workflowInstance = yield* Effect.serviceOption(WorkflowEngine.WorkflowInstance)
-          const instance = Option.getOrElse(workflowInstance, () =>
-            WorkflowEngine.WorkflowInstance.initial(
-              RuntimeContextWorkflowNative,
-              runtimeContextWorkflowExecutionId(context.contextId),
-            ))
-          const codecLayer = codecLayerForProtocol(bytes, context, protocol, effectiveMcpServers).pipe(
-            layer => Option.isSome(workflowEngine)
-              ? layer.pipe(Layer.provide(Layer.succeed(WorkflowEngine.WorkflowEngine, workflowEngine.value)))
-              : layer,
-            layer => layer.pipe(Layer.provide(Layer.succeed(WorkflowEngine.WorkflowInstance, instance))),
-          )
+          // Wave D-B: deleted the vestigial workflow-instance fallback
+          // (audited: neither codec Live declares the workflow Tags in R).
+          const codecLayer = codecLayerForProtocol(bytes, context, protocol, effectiveMcpServers)
           const sessionContext = yield* Layer.buildWithScope(
             codecLayer,
             deps.scope,

@@ -33,7 +33,8 @@ import {
   PerContextRuntimeOutputWriterLive,
   RuntimeContextStateStoreLive,
 } from "./per-context-runtime-output.ts"
-import { runtimeToolUseExecutorLayer } from "./runtime-context-workflow-support.ts"
+import { runtimeToolUseExecutorLayer } from "../agent-tools/execution/runtime-tool-use-executor-live.ts"
+import { ToolDispatchLive } from "@firegrid/runtime/subscribers/tool-dispatch"
 import {
   LocalProcessSandboxProvider,
   localProcessSpawnEnvFromHostEnv,
@@ -52,17 +53,11 @@ import {
 import {
   makeRawRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/raw-adapter.ts"
-// D-B PARK: `RuntimeContextWorkflowRuntimeLive` import is the
-// pre-existing D-B tool bridge residue. The only remaining production
-// consumer of `RuntimeContextWorkflowRuntime` Tag is the host's
-// per-context tool-host bridge — `RuntimeHostAgentToolHostLive` at
-// `host-sdk/src/host/agent-tool-host-live.ts` + the toolkit layer at
-// `host-sdk/src/agent-tools/execution/toolkit-layer.ts:30,48,91`.
-// Both delete with the D-B production slice (CC2 D-B inventory).
-// Do not add new uses; the dispatcher path retires in D-A (here);
-// the tool-bridge path retires in D-B.
-// Grep blocker:
-//   grep -rn "RuntimeContextWorkflowRuntime" packages/host-sdk/src
+// Wave D-B kept: kernel layer composed for the two sibling outputs still
+// consumed downstream (workflow-engine pair for the tool-dispatch facade
+// above; checkpoint-source for the session-self channel). Removal is a
+// separate slice — see PR body "Remaining residue" section for the exact
+// consumer lines + D-E blocker rationale.
 import {
   RuntimeContextWorkflowRuntimeLive,
 } from "@firegrid/runtime/kernel"
@@ -390,6 +385,15 @@ export const FiregridRuntimeHostLive = (
     // The bundle is provideMerge'd FIRST so subsequent providers (which
     // surface `RuntimeChannelRouter`, `AgentToolHost`, etc.) feed its RIn.
     Layer.provideMerge(runtimeContextSubscriberHostBundle),
+    // Wave D-B: runtime-owned tool-dispatch facade. Registers Shape D
+    // handlers (`ToolCallWorkflow`, `ScheduledPromptWorkflow`) once on
+    // the host-scoped `WorkflowEngine` surfaced by the kernel layer
+    // (downstream in this pipe) and exposes the `ToolDispatch` Tag the
+    // host-sdk toolkit handler consumes. The legacy per-call
+    // workflow-runtime bridge in `agent-tools/execution/toolkit-layer.ts`
+    // was deleted with this PR; tool dispatch now goes through
+    // `ToolDispatch.call(...)`.
+    Layer.provideMerge(ToolDispatchLive),
     Layer.provideMerge(hostPublic),
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),

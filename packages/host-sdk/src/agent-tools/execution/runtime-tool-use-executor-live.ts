@@ -1,10 +1,15 @@
 import {
   RuntimeAgentToolExecution,
+  RuntimeAgentToolExecutionLive,
   RuntimeToolUseExecutor,
 } from "@firegrid/runtime/tool-executor"
 import { RuntimeObservationStreams } from "@firegrid/runtime/streams"
 import { Context, Effect, Layer } from "effect"
 import { RuntimeChannelRouter } from "../../host/channel.ts"
+import {
+  HostRuntimeObservationStreamsLive,
+  HostRuntimeObservationSubstrateLive,
+} from "../../host/runtime-substrate.ts"
 import {
   toolErrorResult,
   toolExecutionFailed,
@@ -62,4 +67,20 @@ export const RuntimeToolUseExecutorLive = Layer.effect(
   Layer.withSpan("firegrid.host.agent_tools.tool_use_executor.layer", {
     kind: "internal",
   }),
+)
+
+// Wave D-A (PR #714) / Wave D-B (this PR): host-scope composition of the
+// executor with its observation substrate + agent-tool-execution providers.
+// Consumers (the Shape C subscriber bundle in `host/layers.ts`, the
+// runtime-owned `ToolDispatchLive` facade installed alongside it) compose
+// this Layer via `Layer.provideMerge`. Surfacing it here keeps the
+// host-scope tool-executor wiring in the same file as the executor Live
+// itself; the legacy `host/runtime-context-workflow-support.ts` file
+// (which used to hold this factory alongside the now-deleted per-call
+// `toolCallWorkflowSupportLayer` and per-context
+// `runtimeContextWorkflowSupportLayer`) is deleted in this PR.
+export const runtimeToolUseExecutorLayer = RuntimeToolUseExecutorLive.pipe(
+  Layer.provide(HostRuntimeObservationSubstrateLive),
+  Layer.provideMerge(HostRuntimeObservationStreamsLive),
+  Layer.provideMerge(RuntimeAgentToolExecutionLive),
 )
