@@ -509,7 +509,14 @@ import { RuntimeContextError as ImportedRuntimeContextError } from "./runtime-er
 // ruleid: firegrid-runtime-no-runtime-errors-imports-outside-runtime
 export { RuntimeIngressError as ExportedRuntimeIngressError } from "@firegrid/runtime/internal/runtime-errors"
 
-// ok: firegrid-runtime-no-runtime-errors-imports-outside-runtime
+// Wave C cross-fire: explicit-file `semgrep --test` mode ignores `paths.include`,
+// so the Wave C host-sdk root-barrel rule evaluates this fixture even though
+// its production scope is `/packages/host-sdk/src/**/*.ts`. The public-runtime
+// -root import here is exactly what that rule bans, so the fixture doubles as
+// the rule's cross-fire positive — and the runtime-errors rule must stay OK
+// because importing RuntimeContextError from the public root is the SANCTIONED
+// path that rule was protecting in the first place.
+// ruleid: firegrid-host-sdk-no-runtime-root-barrel-import
 import { RuntimeContextError as PublicRuntimeContextError } from "@firegrid/runtime"
 
 const tableServiceBypass = Effect.gen(function* () {

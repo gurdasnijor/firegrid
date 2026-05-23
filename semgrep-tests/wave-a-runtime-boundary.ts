@@ -150,8 +150,10 @@ function* tfWaveARS1bFixtures(): Generator<unknown, void, unknown> {
   return void [activityMake, engineTag, instanceTag, ddMake, ddAwait, dcSleep]
 }
 
-// Cross-fire: @effect/workflow is also banned by R-T1.
-// ruleid: firegrid-shape-c-runtime-context-no-workflow-machinery, firegrid-transforms-purity-import-boundary
+// Cross-fire: @effect/workflow is also banned by R-T1, and the Wave C
+// host-sdk rule HC1 evaluates this fixture too because explicit-file
+// `semgrep --test` mode ignores `paths.include`.
+// ruleid: firegrid-shape-c-runtime-context-no-workflow-machinery, firegrid-transforms-purity-import-boundary, firegrid-host-sdk-no-effect-workflow-import
 import { someAppendDef as fakeWfImportRS1b } from "@effect/workflow"
 
 // #691 Shape C session-seam compatibility: R-S1b does NOT ban Context.Tag

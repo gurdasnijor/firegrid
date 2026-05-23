@@ -21,6 +21,7 @@ const gates = [
   ["lint:ast-grep", "ast-grep style guardrails"],
   ["lint:semgrep:test", "Semgrep rule fixtures"],
   ["lint:semgrep", "Semgrep ERROR baseline gate"],
+  ["lint:host-sdk-imports", "host-sdk runtime-import quarantine (Wave C)"],
   ["effect:diagnostics", "Effect language service diagnostics"],
   ["test", "Workspace test suite"],
 ]
