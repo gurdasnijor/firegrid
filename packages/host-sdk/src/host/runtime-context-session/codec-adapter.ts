@@ -270,8 +270,11 @@ export const makeCodecRuntimeContextWorkflowSessionService:
           const effectiveMcpServers = yield* resolveEffectiveMcpServers(context).pipe(
             Effect.provide(deps.captured),
           )
-          // Wave D-B: deleted the vestigial workflow-instance fallback
-          // (audited: neither codec Live declares the workflow Tags in R).
+          // Body+kernel deletion wave (cumulative D-B/D-E): the synthetic
+          // WorkflowInstance fallback that previously supplied a stub
+          // `WorkflowInstance.initial(<body workflow>, …)` is gone with
+          // the body. Audit: neither codec Live (`AcpSessionLive` /
+          // `StdioJsonlSessionLive`) declares the workflow Tags in R.
           const codecLayer = codecLayerForProtocol(bytes, context, protocol, effectiveMcpServers)
           const sessionContext = yield* Layer.buildWithScope(
             codecLayer,

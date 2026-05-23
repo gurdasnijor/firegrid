@@ -109,6 +109,10 @@
       "types": "./src/composition/host-live.ts",
       "default": "./src/composition/host-live.ts"
     },
+    "./composition/host-workflow-engine": {
+      "types": "./src/composition/host-workflow-engine.ts",
+      "default": "./src/composition/host-workflow-engine.ts"
+    },
     "./transforms": {
       "types": "./src/transforms/index.ts",
       "default": "./src/transforms/index.ts"

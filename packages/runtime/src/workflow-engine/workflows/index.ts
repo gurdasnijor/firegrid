@@ -34,17 +34,14 @@ export {
   type WaitForWorkflowOutcome,
   type WaitForWorkflowPayload,
 } from "./wait-for.ts"
-export {
-  RuntimeContextWorkflowNative,
-  RuntimeContextWorkflowNativeLayer,
-  runtimeInputDeferredFor,
-  runtimeInputDeferredName,
-  type RuntimeContextWorkflowExecutionEnv,
-} from "./runtime-context.ts"
+// Body driver retired in the body+kernel deletion wave (stacked on D-B).
+// The workflow body Layer + payload, the per-sequence DurableDeferred
+// mailbox helpers, and the body's execution-env type alias no longer
+// exist; the Shape C per-event handler under `subscribers/runtime-context/`
+// owns the runtime loop without a workflow body or per-sequence mailbox.
 // Wave 2 (Shape C): the codec-session command sink contract is owned by the
-// subscriber target folder, not the workflow body. Barrels that historically
-// re-exported these names from `./runtime-context.ts` now forward through the
-// public subscriber subpath.
+// subscriber target folder. Barrels re-export the session-command names
+// from the public subscriber subpath.
 export {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,

@@ -135,6 +135,7 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
   })
 
   it("firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5 firegrid-host-sdk.PACKAGE_BOUNDARIES.9 firegrid-agent-body-plan.SESSION_LOG.5 keeps runtime workflow and session-log implementation out of host-sdk", async () => {
+    // Removed: never re-introduce these files under host-sdk.
     const removedHostRuntimeFiles = [
       "../../src/host/runtime-context-workflow-core.ts",
       "../../src/host/runtime-context-workflow-runtime.ts",
@@ -142,15 +143,24 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
       "../../src/host/internal/runtime-context-helpers.ts",
       "../../src/host/session-log-channel.ts",
     ]
+    // Body+kernel deletion wave: the kernel-resident
+    // `runtime-context-workflow-runtime.ts` (and `internal/`-housed
+    // `run-context-workflow.ts`) are gone from runtime/ too. The narrow
+    // host-scoped WorkflowEngine successor lives in
+    // `composition/host-workflow-engine.ts` (canonical target).
+    const removedRuntimeKernelFiles = [
+      "../../../runtime/src/kernel/runtime-context-workflow-runtime.ts",
+      "../../../runtime/src/kernel/internal/run-context-workflow.ts",
+    ]
 
     await Promise.all(
-      removedHostRuntimeFiles.map(file =>
+      [...removedHostRuntimeFiles, ...removedRuntimeKernelFiles].map(file =>
         expect(access(new URL(file, import.meta.url))).rejects.toThrow(),
       ),
     )
 
     await expect(
-      access(new URL("../../../runtime/src/kernel/runtime-context-workflow-runtime.ts", import.meta.url)),
+      access(new URL("../../../runtime/src/composition/host-workflow-engine.ts", import.meta.url)),
     ).resolves.toBeUndefined()
     await expect(
       access(new URL("../../../runtime/src/channels/session-log.ts", import.meta.url)),

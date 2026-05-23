@@ -5,10 +5,11 @@ SHAPE: C
 Codec-session command sink. Owns the runtime-side
 `RuntimeContextWorkflowSession` capability tag and command/evidence types.
 Host packages implement the live codec adapter against this contract; they
-do NOT import `RuntimeContextWorkflowNative`, the workflow Layer, the
-workflow payload schema, or `executeRuntimeContextWorkflow` from the kernel
-barrel. Those symbols are runtime-internal substrate and barred across the
-host-sdk boundary by the import gate.
+do NOT import the retired workflow body, the retired workflow Layer, the
+retired workflow payload schema, or the retired engine-execute helper
+from the kernel barrel. Those symbols are deleted (see the body+kernel
+deletion wave PR). The host-sdk boundary import gate continues to bar any
+re-introduction.
 
 Public subpath: `@firegrid/runtime/subscribers/runtime-context-session`.
 

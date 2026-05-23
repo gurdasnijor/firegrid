@@ -20,15 +20,9 @@
  *   - The handler is registered ONCE per host on the host-scoped
  *     `WorkflowEngine` via `ToolDispatchLive` (no per-call support layer).
  *
- * Replaces the legacy bridge:
- *
- *   `RuntimeContextWorkflowRuntime.run({ context, workflowName,
- *     supportLayer: toolCallWorkflowSupportLayer(agentToolHost),
- *     effect: ToolCallWorkflow.execute(...).pipe(provideRuntimeContext(...))
- *   })`
- *
- * which threaded host-sdk through a per-call workflow runtime + per-call
- * handler-install support layer + a vestigial `provideRuntimeContext`
+ * Replaces the retired per-call kernel-runtime bridge that previously
+ * threaded host-sdk through a per-call workflow runtime + per-call
+ * handler-install support layer + a vestigial provideRuntimeContext
  * (no consumer in the workflow handler or the executor — verified by
  * trace from `runtime-tool-call-workflow.ts` through
  * `runtime-tool-use-executor.ts`).

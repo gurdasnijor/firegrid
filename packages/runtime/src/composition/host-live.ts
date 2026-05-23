@@ -42,18 +42,6 @@
 //     PR #714 + proven by the tiny-firegrid
 //     `wave-d-a-shape-b-input-identity-dedup` simulation).
 //
-// Wave D-A note (PR #714):
-// Shape D workflow Layers (`RuntimeToolCallWorkflowLayer`,
-// `WaitForWorkflowLayer`, `ScheduledPromptWorkflowLayer`) are wired
-// **per-context** via `runtime-context-workflow-support.ts` /
-// `toolCallWorkflowSupportLayer` (inside `runtime.run(...supportLayer)`)
-// because they require per-context `WorkflowEngine` instances. Including
-// them at the host scope here would surface their `WorkflowEngine`
-// requirement at a level that has no per-context engine to satisfy it.
-// The Wave B composition included them speculatively; D-A's production
-// wire-in surfaces the scope mismatch, so the host-level composition root
-// now carries only the Shape C subscriber + its typed input source.
-//
 // What this root requires (filled by host-sdk at composition time)
 // ---------------------------------------------------------------
 // The root Layer intentionally leaves the following as `R`-channel
@@ -66,10 +54,13 @@
 //     (the runtime-owned inversion seam for the durable plane; the contract
 //     lives at `subscribers/runtime-context-session/`);
 //   - `RuntimeToolUseExecutor` — host-sdk wires per agent;
-//   - `WorkflowEngine` (from `@effect/workflow`) — host-sdk provides via
-//     `DurableStreamsWorkflowEngine` for the justified Shape D layers. The
-//     workflow substrate appears here only as an unsatisfied requirement; the
-//     Shape C subscriber-runtime composition does not depend on it.
+//   - `WorkflowEngine.WorkflowEngine` + `WorkflowEngineTable` — host-sdk
+//     installs the runtime-owned `HostWorkflowEngineLive`
+//     (`@firegrid/runtime/composition/host-workflow-engine`, canonical
+//     composition sibling) DEEPER than any Shape D consumer
+//     (`ToolDispatchLive`, etc.). The body+kernel deletion wave retired
+//     the kernel's per-context engine wrapper; the canonical replacement
+//     lives next to this file.
 //
 // `AgentSession` is intentionally NOT ambient: it is a live codec-scoped
 // capability built by `AcpSessionLive` / `StdioJsonlSessionLive` from
@@ -100,11 +91,10 @@ import { RuntimeContextSubscriberLive } from "../subscribers/runtime-context/ind
 /**
  * Canonical runtime root Layer for the Shape C target tree.
  *
- * Provided services come from `tables/` and the Shape D workflow seams
- * (with justified workflow machinery). Requirements that remain in the `R`
- * channel (durable substrate, `RuntimeContextWorkflowSession`,
- * `RuntimeToolUseExecutor`, `WorkflowEngine`) are filled by host-sdk at
- * composition time.
+ * Provided services come from `tables/` and the Shape C subscriber.
+ * Requirements that remain in the `R` channel (durable substrate,
+ * `RuntimeContextWorkflowSession`, `RuntimeToolUseExecutor`,
+ * `WorkflowEngine`) are filled by host-sdk at composition time.
  *
  * Use this Layer to install runtime services. Do not call this file's
  * exports directly; reach them through the Layer.

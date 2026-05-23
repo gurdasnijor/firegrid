@@ -1,24 +1,9 @@
 {
   "findings": [
     {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
-      "path": "packages/host-sdk/src/host/runtime-substrate.ts",
-      "line": 71
-    },
-    {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
       "line": 28
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 65
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 404
     },
     {
       "ruleId": "host-sdk-no-runtime-observation-source-symbol",

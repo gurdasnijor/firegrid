@@ -1,4 +1,3 @@
-import { Prompt } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   RuntimeControlPlaneTable,
@@ -13,7 +12,7 @@ import {
   RuntimeIngressInputRowSchema,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Cause, Clock, Duration, Effect, Either, Exit, Match, Schema } from "effect"
+import { Cause, Clock, Effect, Either, Exit, Match, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   WorkflowEngineTable,
@@ -23,10 +22,6 @@ import {
   FiregridRuntimeHostWithWorkflowLive,
   appendRuntimeIngress,
 } from "../../src/host/index.ts"
-import {
-  RuntimeContextInput,
-  RuntimeContextWorkflowRuntime,
-} from "@firegrid/runtime/kernel"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -140,23 +135,6 @@ const readContextDeferredInputs = (input: {
     ),
   )
 
-const waitForContextDeferredInputs = async (
-  input: {
-    readonly namespace: string
-    readonly baseUrl: string
-    readonly hostId: HostId
-    readonly contextId: string
-  },
-  count: number,
-): Promise<ReadonlyArray<RuntimeIngressInputRow>> => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const rows = await readContextDeferredInputs(input)
-    if (rows.length >= count) return rows
-    await Effect.runPromise(Effect.sleep(Duration.millis(10)))
-  }
-  return readContextDeferredInputs(input)
-}
-
 const intentIds = (input: {
   readonly namespace: string
   readonly baseUrl: string
@@ -225,121 +203,6 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 runtime input intents", 
     expect(await readContextDeferredInputs({ baseUrl, namespace, hostId: hostA, contextId })).toEqual([])
   })
 
-  it("reconciles durable intents when the owning host-scoped engine starts", async () => {
-    if (!baseUrl) throw new Error("server not started")
-    const namespace = `prompt-routing-reconcile-${crypto.randomUUID()}`
-    const hostA = `host_A_${crypto.randomUUID()}` as HostId
-    const contextId = `ctx_${crypto.randomUUID()}`
-
-    await Effect.runPromise(
-      seedContext({ namespace, hostId: hostA, contextId }).pipe(
-        Effect.provide(controlPlaneLayer({ baseUrl, namespace })),
-        Effect.scoped,
-      ),
-    )
-    await Effect.runPromise(
-      runWithHost({ baseUrl, namespace, hostId: hostA }, appendRuntimeIngress({
-        contextId,
-        inputId: "input-reconcile",
-        kind: "message",
-        authoredBy: "client",
-        payload: "hello before engine",
-        idempotencyKey: "reconcile",
-      })),
-    )
-
-    await Effect.runPromise(
-      runWithHost(
-        { baseUrl, namespace, hostId: hostA },
-        Effect.gen(function*() {
-          const table = yield* RuntimeControlPlaneTable
-          const context = yield* table.contexts.get(contextId)
-          if (context._tag === "None") return yield* Effect.fail(new Error("missing context"))
-          const runtime = yield* RuntimeContextWorkflowRuntime
-          const input = yield* RuntimeContextInput
-          yield* runtime.ensureActive(context.value)
-          yield* input.reconcile(context.value)
-        }),
-      ),
-    )
-
-    expect((await readContextDeferredInputs({ baseUrl, namespace, hostId: hostA, contextId })).map(row => ({
-      inputId: row.inputId,
-      sequence: row.sequence,
-      status: row.status,
-    }))).toEqual([{
-      inputId: "input-reconcile",
-      sequence: 0,
-      status: "sequenced",
-    }])
-  })
-
-  // Wave D-A (PR #714) PARK — STALE LEGACY MECHANISM: asserts the
-  // WORKFLOW BODY's session_prompt activity produces a
-  // `status: "sequenced"` ingress row (kernel sequence allocator output).
-  // Shape C has no sequence allocator (intent rows stay
-  // `status: "pending"`, identity = inputId); the session_prompt dispatch
-  // path still works but writes a different artifact set.
-  //
-  // Replacement proof in #714: the Shape C session-command dispatch is
-  // proven by `packages/runtime/test/subscribers/runtime-context/
-  // handler.test.ts` — "dispatches a prompt input through the
-  // session-command seam and advances the durable cursor" asserts
-  // input → transitionInputEvent → SendRuntimeInput → sendSessionCommand
-  // → RuntimeContextWorkflowSession.send. End-to-end public turn green
-  // via test/host/start-runtime.test.ts (4/4).
-  //
-  // D-E body retirement deletes this test outright when the sequenced
-  // ingress row is removed from the row schema. Grep blocker:
-  //   grep -rn "status: \"sequenced\"" packages/runtime
-  it.skip("dispatches session_prompt through the active local host-scoped engine", async () => {
-    if (!baseUrl) throw new Error("server not started")
-    const namespace = `prompt-routing-session-${crypto.randomUUID()}`
-    const hostA = `host_A_${crypto.randomUUID()}` as HostId
-    const contextId = `ctx_${crypto.randomUUID()}`
-    const inputId = "session-prompt:test"
-
-    await Effect.runPromise(
-      seedContext({ namespace, hostId: hostA, contextId }).pipe(
-        Effect.provide(controlPlaneLayer({ baseUrl, namespace })),
-        Effect.scoped,
-      ),
-    )
-
-    await Effect.runPromise(
-      runWithHost(
-        { baseUrl, namespace, hostId: hostA },
-        Effect.gen(function*() {
-          const table = yield* RuntimeControlPlaneTable
-          const context = yield* table.contexts.get(contextId)
-          if (context._tag === "None") return yield* Effect.fail(new Error("missing context"))
-          const runtime = yield* RuntimeContextWorkflowRuntime
-          yield* runtime.ensureActive(context.value)
-          const host = yield* AgentToolHost
-          yield* host.appendSessionPrompt({
-            toolUseId: "tool-session-prompt",
-            sessionId: contextId,
-            inputId,
-            prompt: Prompt.userMessage({
-              content: [Prompt.textPart({ text: "session follow-up" })],
-            }),
-          })
-        }),
-      ),
-    )
-
-    expect((await waitForContextDeferredInputs({ baseUrl, namespace, hostId: hostA, contextId }, 1)).map(row => ({
-      inputId: row.inputId,
-      authoredBy: row.authoredBy,
-      sequence: row.sequence,
-      status: row.status,
-    }))).toEqual([{
-      inputId,
-      authoredBy: "workflow",
-      sequence: 0,
-      status: "sequenced",
-    }])
-  })
 
   it("starts a live session_new child and reconciles its initial prompt on the child engine", async () => {
     if (!baseUrl) throw new Error("server not started")
