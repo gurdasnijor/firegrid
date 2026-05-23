@@ -1550,6 +1550,93 @@ rules:
       code never imports it. Zero-baseline.
     pattern-regex: 'from\s+"@firegrid/runtime/_archive'
 
+  - id: firegrid-host-sdk-no-runtime-workflow-engine-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.workflow-engine
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+      rationale: |
+        The `@firegrid/runtime/workflow-engine` subpath is a Wave D legacy
+        root (`packages/runtime/src/workflow-engine/`) that holds the
+        long-lived parked-body RuntimeContext workflow and per-sequence
+        input mailbox machinery. It is bridge-only — Shape D consumers
+        will move under `subscribers/{tool-dispatch,wait-router,
+        scheduled-prompt,runtime-control}/`. Existing host-sdk imports are
+        baselined as Wave D deletion targets; this rule blocks new ones so
+        preservation is visible in CI per
+        `docs/architecture/2026-05-22-shape-c-cutover-roadmap.md` §"Wave
+        D"/§"Wave E".
+      fix-hint: |
+        Replace the workflow-engine import with the target-tree Shape D
+        subscriber subpath that owns the symbol once it lands
+        (`@firegrid/runtime/subscribers/...`), or model the wait as a
+        durable completion keyed by domain identity per
+        `docs/cannon/architecture/runtime-design-constraints.md` §C4. Do
+        not deepen the legacy-root surface to keep a cutover moving.
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+        - "/semgrep-tests/wave-a-runtime-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import `@firegrid/runtime/workflow-engine` (incl.
+      any subpath). The workflow-engine legacy root is a Wave D bridge
+      surface scheduled for deletion under
+      `docs/architecture/2026-05-22-shape-c-cutover-roadmap.md` §"Wave
+      D"/§"Wave E"; Shape D consumers move under
+      `@firegrid/runtime/subscribers/...`. Existing sites are baselined as
+      Wave D deletion targets; do not add new ones.
+    pattern-regex: 'from\s+"@firegrid/runtime/workflow-engine[/"]'
+
+  - id: firegrid-host-sdk-no-runtime-streams-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.streams
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+      rationale: |
+        The `@firegrid/runtime/streams` subpath is a Wave D-D legacy root
+        (`packages/runtime/src/streams/`) holding
+        `RuntimeObservationStreams`, `CallerOwnedFactStreams`, and the
+        `RuntimeObservationSource` schema family. Wave D-D's route-based
+        observation proof (PR #716) shows the channel router +
+        `SessionAgentOutputChannel`/`SessionLifecycleChannel` routes
+        replace these sources for wait/child-output observation. Existing
+        host-sdk imports are baselined as D-D deletion targets; this rule
+        blocks new ones so preservation is visible in CI.
+      fix-hint: |
+        Replace the streams import with route-based observation through
+        the channel router (`RuntimeChannelRouter` + the relevant target
+        from `packages/runtime/src/channels/routes/`) per
+        `docs/cannon/architecture/runtime-design-constraints.md` §C6 and
+        the Wave D-D migration plan in PR #716's FINDING.md. Do not add
+        a new source-specific stream primitive to keep a cutover moving.
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+        - "/semgrep-tests/wave-a-runtime-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import `@firegrid/runtime/streams` (incl. any
+      subpath). The streams legacy root is a Wave D-D bridge surface
+      scheduled for deletion under
+      `docs/architecture/2026-05-22-shape-c-cutover-roadmap.md` §"Wave
+      D"/§"Wave E"; observation moves to route-based dispatch through the
+      channel router. Existing sites are baselined as D-D deletion
+      targets; do not add new ones.
+    pattern-regex: 'from\s+"@firegrid/runtime/streams[/"]'
+
   - id: firegrid-no-numbered-runtime-subpath
     languages: [typescript]
     severity: ERROR

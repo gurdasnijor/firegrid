@@ -20,7 +20,6 @@ const runtimeObservationStreams = RuntimeObservationStreams.of({
   agentOutputAfter: () => Stream.empty,
   initialAgentOutputAfter: () => Effect.succeed(Option.none()),
   agentOutputForContext: () => Stream.empty,
-  runtimeRun: Stream.empty,
   callerFact: stream =>
     stream === "facts"
       ? Stream.fromIterable([
@@ -146,7 +145,6 @@ describe("WaitForWorkflow durable wait_for_any restart", () => {
     agentOutputAfter: () => Stream.empty,
     initialAgentOutputAfter: () => Effect.succeed(Option.none()),
     agentOutputForContext: () => Stream.empty,
-    runtimeRun: Stream.empty,
     callerFact: () => Stream.empty,
   }
 

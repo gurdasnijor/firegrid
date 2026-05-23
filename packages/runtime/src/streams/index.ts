@@ -4,7 +4,6 @@ export {
   CallerFactObservationSourceSchema,
   RuntimeObservationSourceSchema,
   type RuntimeObservationSource,
-  RuntimeRunObservationSourceSchema,
 } from "./sources.ts"
 export {
   CallerOwnedFactStreams,

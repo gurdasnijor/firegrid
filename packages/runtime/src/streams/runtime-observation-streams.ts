@@ -1,4 +1,3 @@
-import { type RuntimeRunEventRow } from "@firegrid/protocol/launch"
 import type { DurableTableError } from "effect-durable-operators"
 import { Context, Effect, Layer, Option, Stream } from "effect"
 import {
@@ -6,7 +5,6 @@ import {
   RuntimeAgentOutputEvents,
   type RuntimeAgentOutputObservation,
 } from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
-import { RuntimeRuns } from "../authorities/runtime-control-plane-recorder.ts"
 import type { RuntimeObservationSource } from "./sources.ts"
 
 export interface RuntimeObservationStreamsService {
@@ -23,7 +21,6 @@ export interface RuntimeObservationStreamsService {
   readonly agentOutputForContext: (
     contextId: string,
   ) => Stream.Stream<RuntimeAgentOutputObservation, unknown>
-  readonly runtimeRun: Stream.Stream<RuntimeRunEventRow, unknown>
   readonly callerFact: (
     stream: string,
   ) => Stream.Stream<unknown, unknown>
@@ -66,7 +63,6 @@ export const RuntimeObservationStreamsLive = Layer.effect(
   Effect.gen(function*() {
     const agentOutput = yield* RuntimeAgentOutputEvents
     const agentOutputAfter = yield* Effect.serviceOption(RuntimeAgentOutputAfterEvents)
-    const runtimeRun = yield* RuntimeRuns
     const callerOwnedFactStreams = yield* Effect.serviceOption(CallerOwnedFactStreams)
 
     return {
@@ -126,7 +122,6 @@ export const RuntimeObservationStreamsLive = Layer.effect(
             },
           }),
         ),
-      runtimeRun,
       callerFact: stream =>
         Option.match(callerOwnedFactStreams, {
           onNone: () => Stream.empty,

@@ -172,7 +172,6 @@ const VerifiedWebhookRuntimeObservationStreamsLive = Layer.effect(
       agentOutputAfter: () => Stream.empty,
       initialAgentOutputAfter: () => Effect.succeed(Option.none()),
       agentOutputForContext: () => Stream.empty,
-      runtimeRun: Stream.empty,
       callerFact: callerOwnedFactStreams.streamFor,
     }
   }),

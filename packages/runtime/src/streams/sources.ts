@@ -21,10 +21,6 @@ export const AgentOutputAfterObservationSourceSchema = Schema.Struct({
   afterSequence: Schema.Number,
 })
 
-export const RuntimeRunObservationSourceSchema = Schema.Struct({
-  _tag: Schema.Literal("RuntimeRun"),
-})
-
 /**
  * firegrid-typed-wait-source-redesign.CONTEXT.3
  *
@@ -38,10 +34,12 @@ export const CallerFactObservationSourceSchema = Schema.Struct({
   stream: Schema.String,
 })
 
+// `_tag: "RuntimeRun"` variant removed in the Wave-D-D cleanup wave; the
+// channel-router `session.lifecycle` route is the production observation
+// path for `RuntimeControlPlaneTable.runs.rows()`.
 export const RuntimeObservationSourceSchema = Schema.Union(
   AgentOutputObservationSourceSchema,
   AgentOutputAfterObservationSourceSchema,
-  RuntimeRunObservationSourceSchema,
   CallerFactObservationSourceSchema,
 )
 export type RuntimeObservationSource = Schema.Schema.Type<
