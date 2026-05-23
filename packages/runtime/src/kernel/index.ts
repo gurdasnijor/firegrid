@@ -15,17 +15,20 @@ export {
 // tf-aseo: the workflow-owned durable loop-state store is host-composed
 // per-context wiring. Surface its host-facing pieces (capability tag + the
 // per-context Layer factory) through the sanctioned `@firegrid/runtime/kernel`
-// subpath so host-sdk composition imports them here rather than from the
-// workflow-engine substrate subpath (forbidden across the host-sdk boundary).
-// The implementation lives beside the workflow body that consumes the tag
-// directly (workflow-engine/runtime-context-state.ts).
+// subpath so host-sdk composition imports them here rather than from a
+// substrate-internal subpath (forbidden across the host-sdk boundary).
+// The implementation now lives under `tables/runtime-context-state.ts` per
+// the Shape C runtime physical target tree (Wave 1 cutover); host-sdk
+// callers should migrate to `@firegrid/runtime/tables/runtime-context-state`
+// — this kernel re-export is the existing legacy entry kept until those
+// callers retarget.
 export {
   makePerContextRuntimeContextStateStore,
   nextOutputObservation,
   type PerContextRuntimeContextStateConfig,
   RuntimeContextStateStore,
   type RuntimeContextStateStoreService,
-} from "../workflow-engine/runtime-context-state.ts"
+} from "../tables/runtime-context-state.ts"
 export {
   executeRuntimeContextWorkflow,
 } from "./internal/run-context-workflow.ts"

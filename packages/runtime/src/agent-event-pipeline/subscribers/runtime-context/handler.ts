@@ -57,7 +57,7 @@ import {
 import {
   RuntimeContextStateStore,
   type RuntimeContextEventState,
-} from "../../../workflow-engine/runtime-context-state.ts"
+} from "../../../tables/runtime-context-state.ts"
 import {
   RuntimeToolUseExecutor,
 } from "../../../workflow-engine/tool-execution/runtime-tool-use-executor.ts"

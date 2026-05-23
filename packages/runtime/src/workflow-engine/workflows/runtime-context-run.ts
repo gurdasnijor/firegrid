@@ -9,6 +9,12 @@ import {
   mapRuntimeContextError,
   RuntimeContextError,
 } from "../../runtime-errors.ts"
+// `RuntimeExitEvidence` is owned by `tables/runtime-context-state.ts` (its
+// durable storage). Imported here for in-file annotations; re-exported below
+// so existing `@firegrid/runtime/workflows` callers keep their import path.
+// The single owner avoids the `tables -> workflow-engine -> tables` folder
+// cycle that depcruise enforces.
+import { RuntimeExitEvidence } from "../../tables/runtime-context-state.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.2
 // RuntimeContextWorkflow owns workflow/activity/run lifecycle wiring only.
@@ -42,10 +48,9 @@ export const readRuntimeContext = (
     })
   })
 
-export const RuntimeExitEvidence = Schema.Struct({
-  exitCode: Schema.Number,
-  signal: Schema.optional(Schema.String),
-})
+// Re-export `RuntimeExitEvidence` from its new owner (`tables/`) so existing
+// `@firegrid/runtime/workflows` callers keep working.
+export { RuntimeExitEvidence }
 
 export const StartRuntimeResultSchema = Schema.Struct({
   contextId: Schema.String,
@@ -55,7 +60,6 @@ export const StartRuntimeResultSchema = Schema.Struct({
   failure: Schema.optional(RuntimeContextError),
 })
 
-export type RuntimeExitEvidence = Schema.Schema.Type<typeof RuntimeExitEvidence>
 export type StartRuntimeResult = Schema.Schema.Type<typeof StartRuntimeResultSchema>
 
 export const allocateRuntimeActivityAttempt = (

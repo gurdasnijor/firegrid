@@ -31,7 +31,7 @@ import {
   isStateRelevantOutputObservation,
   makePerContextRuntimeContextStateStore,
   type RuntimeContextStateStoreService,
-} from "../../src/workflow-engine/runtime-context-state.ts"
+} from "../../src/tables/runtime-context-state.ts"
 import { transitionOutputEvent } from "../../src/workflow-engine/workflows/runtime-context.ts"
 import type {
   AgentOutputEvent,
