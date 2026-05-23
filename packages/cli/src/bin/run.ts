@@ -39,7 +39,7 @@
  */
 
 import { Args, Command, Options } from "@effect/cli"
-import { HttpServer } from "@effect/platform"
+import { HttpServer, type HttpRouter } from "@effect/platform"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { createRegistryHooks, DurableStreamTestServer } from "@durable-streams/server"
 import type { DurableTableHeaders } from "@firegrid/protocol"
@@ -59,20 +59,29 @@ import {
   appendRuntimeIngress,
   AcpStdioEdge,
   AcpStdioEdgeLive,
-  acpPermissionPolicies,
-  type AcpPermissionPolicy,
-  defaultAcpPermissionPolicy,
-  ensurePathInput,
   FiregridLocalHostLive,
   FiregridMcpServerLayer,
   firegridRunCreatedBy,
   localProcessSpawnEnvFromHostEnv,
   RuntimeEnvResolverPolicy,
   runConfigToIngressRequest,
-  runtimeContextMcpPath,
   startRuntime,
   type AcpStdioSessionRuntimeRequest,
 } from "@firegrid/host-sdk"
+// CC4-unblock (protocol homes): the pure ACP policy alphabet + default,
+// and the pure MCP path-template helpers, live under `@firegrid/protocol`
+// so the CLI can consume them without crossing the host-sdk boundary
+// for vocabulary alone. host-sdk continues to own the ACP edge that
+// enforces the policy and the MCP listener that mounts the route.
+import {
+  acpPermissionPolicies,
+  type AcpPermissionPolicy,
+  defaultAcpPermissionPolicy,
+} from "@firegrid/protocol/acp"
+import {
+  ensurePathInput,
+  runtimeContextMcpPath,
+} from "@firegrid/protocol/mcp"
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk/firegrid"
 import {
   checkFiregridOtelFileWritable,
@@ -512,7 +521,7 @@ const hostMcpLayer = (
     const layer = FiregridMcpServerLayer({
       host: config.mcpHost,
       port: config.mcpPort,
-      path: ensurePathInput(config.mcpPath),
+      path: ensurePathInput(config.mcpPath) as HttpRouter.PathInput,
     }).pipe(
       Layer.provideMerge(FiregridLive.pipe(Layer.provide(clientConfigLayer))),
       Layer.provideMerge(firegridLocalHostLayer(
@@ -608,7 +617,7 @@ const hostAcpLayer = (
     FiregridMcpServerLayer({
       host: defaultMcpHost,
       port: defaultMcpPort,
-      path: ensurePathInput(defaultMcpPath),
+      path: ensurePathInput(defaultMcpPath) as HttpRouter.PathInput,
     }),
   )
   const base = Layer.mergeAll(acpEdge, mcpServer).pipe(Layer.provideMerge(host))
