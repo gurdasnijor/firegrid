@@ -5,14 +5,14 @@ import {
   makeRawRuntimeContextByteSession,
   prepareRawRuntimeContextInput,
   type RuntimeRawByteSession,
-} from "@firegrid/runtime/producers/codecs/session-byte-stream-adapter"
+} from "../../producers/codecs/session-byte-stream-adapter.ts"
 import {
   Effect,
   Scope,
 } from "effect"
 import {
   type RuntimeContextWorkflowSessionService,
-} from "@firegrid/runtime/subscribers/runtime-context-session"
+} from "./handler.ts"
 import {
   makeRuntimeContextSessionAdapterService,
   makeRuntimeContextSessionCommandSender,
@@ -21,7 +21,7 @@ import {
   runtimeContextSessionOwnerSessionId,
   scopedRuntimeContextWorkflowSessionLayer,
   type RuntimeContextSessionAdapterRequirements,
-} from "./common.ts"
+} from "./adapter-common.ts"
 
 const ownerSessionIdFor = (
   context: RuntimeContext,

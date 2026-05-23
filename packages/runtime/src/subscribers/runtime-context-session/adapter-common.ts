@@ -3,30 +3,28 @@ import {
   asRuntimeContextError,
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "@firegrid/runtime/errors"
+} from "../../runtime-errors.ts"
 import type {
   AgentByteStream,
   RuntimeEnvResolverPolicy,
   SandboxProvider,
   SandboxProviderError,
-} from "@firegrid/runtime/producers/sandbox"
+} from "../../producers/sandbox/index.ts"
 import {
   commandForContext,
   SandboxProvider as SandboxProviderTag,
   SandboxStdinEmissionClaim,
-} from "@firegrid/runtime/producers/sandbox"
+} from "../../producers/sandbox/index.ts"
 import { Effect, Layer, Ref, type Context, type Scope } from "effect"
-import { PerContextRuntimeOutputWriter } from "../per-context-runtime-output.ts"
-import type { FiregridRuntimeContextMcpBaseUrl } from "../runtime-context-mcp-base-url.ts"
-import type {
-  RuntimeContextSessionCommand,
-  RuntimeContextSessionCommandAccepted,
-  RuntimeContextSessionStartedEvidence,
-  RuntimeContextWorkflowSessionService,
-} from "@firegrid/runtime/subscribers/runtime-context-session"
+import { PerContextRuntimeOutputWriter } from "../../producers/ingress-writers/per-context-output.ts"
+import type { FiregridRuntimeContextMcpBaseUrl } from "./host-mcp-base-url.ts"
 import {
   RuntimeContextWorkflowSession,
-} from "@firegrid/runtime/subscribers/runtime-context-session"
+  type RuntimeContextSessionCommand,
+  type RuntimeContextSessionCommandAccepted,
+  type RuntimeContextSessionStartedEvidence,
+  type RuntimeContextWorkflowSessionService,
+} from "./handler.ts"
 
 type RuntimeContextSessionOwnerKind = "raw" | "codec"
 
