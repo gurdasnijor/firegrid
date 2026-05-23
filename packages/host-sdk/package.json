@@ -8,22 +8,6 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    },
-    "./agent-tools": {
-      "types": "./src/agent-tools/index.ts",
-      "default": "./src/agent-tools/index.ts"
-    },
-    "./agent-tools/bindings": {
-      "types": "./src/agent-tools/bindings/index.ts",
-      "default": "./src/agent-tools/bindings/index.ts"
-    },
-    "./agent-tools/execution": {
-      "types": "./src/agent-tools/execution/index.ts",
-      "default": "./src/agent-tools/execution/index.ts"
-    },
-    "./host": {
-      "types": "./src/host/index.ts",
-      "default": "./src/host/index.ts"
     }
   },
   "files": [
@@ -40,18 +24,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "0.21.0",
-    "@effect/ai": "^0.35.0",
-    "@effect/experimental": "0.60.0",
-    "@effect/platform": "^0.96.1",
-    "@effect/platform-node": "^0.106.0",
-    "@effect/rpc": "0.75.1",
-    "@effect/workflow": "0.18.1",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "effect": "^3.21.2",
-    "effect-durable-operators": "workspace:*"
+    "effect": "^3.21.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
