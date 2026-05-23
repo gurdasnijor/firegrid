@@ -41,6 +41,7 @@ import {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
 } from "../../../src/subscribers/runtime-context-session/index.ts"
+import { RuntimeRunAppendAndGet } from "../../../src/authorities/runtime-control-plane-recorder.ts"
 import { RuntimeToolUseExecutor } from "../../../src/workflow-engine/tool-execution/runtime-tool-use-executor.ts"
 import {
   handleRuntimeContextEvent,
@@ -152,6 +153,50 @@ const makeRecordingExecutor = (): Effect.Effect<RecordingExecutor> =>
     return { calls, layer }
   })
 
+// `RuntimeRunAppendAndGet` test double: the handler reaches it ONLY on the
+// edge-triggered Terminated transition (Wave D-A Shape (b) terminal-row
+// write). For tests that exercise non-terminal events, every method is a
+// no-op stub; tests that need to assert recordExited calls construct their
+// own recording variant.
+interface RecordingRuns {
+  readonly exited: Ref.Ref<ReadonlyArray<{
+    readonly contextId: string
+    readonly activityAttempt: number
+    readonly exit: { readonly exitCode: number; readonly signal?: string }
+  }>>
+  readonly layer: Layer.Layer<RuntimeRunAppendAndGet>
+}
+
+const makeRecordingRuns = (): Effect.Effect<RecordingRuns> =>
+  Effect.gen(function*() {
+    const exited = yield* Ref.make<ReadonlyArray<{
+      readonly contextId: string
+      readonly activityAttempt: number
+      readonly exit: { readonly exitCode: number; readonly signal?: string }
+    }>>([])
+    const layer = Layer.succeed(
+      RuntimeRunAppendAndGet,
+      RuntimeRunAppendAndGet.of({
+        allocateActivityAttempt: () => Effect.succeed(0),
+        recordStarted: () => Effect.void,
+        recordExited: (context, activityAttempt, exit) =>
+          Ref.update(exited, (current) => [
+            ...current,
+            {
+              contextId: context.contextId,
+              activityAttempt,
+              exit: {
+                exitCode: exit.exitCode,
+                ...(exit.signal === undefined ? {} : { signal: exit.signal }),
+              },
+            },
+          ]),
+        recordFailed: () => Effect.void,
+      }),
+    )
+    return { exited, layer }
+  })
+
 const stateStoreLayer = (): Layer.Layer<RuntimeContextStateStore, never, Scope.Scope> => {
   if (baseUrl === undefined) throw new Error("server not started")
   const prefix: HostStreamPrefix = makeHostStreamPrefix({
@@ -214,10 +259,12 @@ describe("Shape C handleRuntimeContextEvent", () => {
       const context = contextFor("ctx-input")
       const session = yield* makeRecordingSession()
       const executor = yield* makeRecordingExecutor()
+      const runs = yield* makeRecordingRuns()
       const baseLayer = Layer.mergeAll(
         stateStoreLayer(),
         session.layer,
         executor.layer,
+        runs.layer,
       )
 
       const row = promptRowForInput("ctx-input", "hello", 0)
@@ -248,10 +295,12 @@ describe("Shape C handleRuntimeContextEvent", () => {
       const context = contextFor("ctx-idem")
       const session = yield* makeRecordingSession()
       const executor = yield* makeRecordingExecutor()
+      const runs = yield* makeRecordingRuns()
       const baseLayer = Layer.mergeAll(
         stateStoreLayer(),
         session.layer,
         executor.layer,
+        runs.layer,
       )
 
       const row = promptRowForInput("ctx-idem", "once", 0)
@@ -283,10 +332,12 @@ describe("Shape C handleRuntimeContextEvent", () => {
       const context = contextFor("ctx-tool", "stdio-jsonl")
       const session = yield* makeRecordingSession()
       const executor = yield* makeRecordingExecutor()
+      const runs = yield* makeRecordingRuns()
       const baseLayer = Layer.mergeAll(
         stateStoreLayer(),
         session.layer,
         executor.layer,
+        runs.layer,
       )
 
       const observation = toolUseOutputObservation("ctx-tool", 1, "tu-1", "echo")

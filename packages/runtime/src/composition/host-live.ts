@@ -83,6 +83,7 @@
 
 import { Layer } from "effect"
 import { RuntimeContextInputFactsLive } from "../tables/runtime-context-input-facts.ts"
+import { RuntimeContextSubscriberLive } from "../subscribers/runtime-context/index.ts"
 import { ScheduledPromptWorkflowLayer } from "../subscribers/scheduled-prompt/index.ts"
 import { RuntimeToolCallWorkflowLayer } from "../subscribers/tool-dispatch/index.ts"
 import { WaitForWorkflowLayer } from "../subscribers/wait-router/index.ts"
@@ -101,6 +102,12 @@ import { WaitForWorkflowLayer } from "../subscribers/wait-router/index.ts"
  */
 export const RuntimeHostLive = Layer.mergeAll(
   RuntimeContextInputFactsLive,
+  // Wave D-A Shape (b) (PR #714): RuntimeContextSubscriberLive is the
+  // Shape C loop body that replaces the parked
+  // `RuntimeContextWorkflowNativeLayer` Workflow.make body. Forks
+  // `runKeyedDispatch({source: merge(inputs, outputs), handle:
+  // handleRuntimeContextEvent})` onto host scope at acquisition.
+  RuntimeContextSubscriberLive,
   RuntimeToolCallWorkflowLayer,
   WaitForWorkflowLayer,
   ScheduledPromptWorkflowLayer,
