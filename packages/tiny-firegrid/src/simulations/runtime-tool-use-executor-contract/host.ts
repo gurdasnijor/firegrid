@@ -1,9 +1,11 @@
 import { Activity, Workflow } from "@effect/workflow"
 import { Prompt } from "@effect/ai"
 import {
-  durableStreamUrl,
   type FiregridHost,
 } from "@firegrid/host-sdk"
+import {
+  durableStreamUrl,
+} from "@firegrid/protocol/launch"
 import { toolResult } from "@firegrid/host-sdk/agent-tools/bindings"
 import {
   RuntimeToolUseExecutor,

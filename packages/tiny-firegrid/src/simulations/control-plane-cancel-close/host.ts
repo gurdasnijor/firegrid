@@ -1,7 +1,9 @@
 import {
   FiregridLocalHostLive,
-  FiregridLocalProcessFromEnv,
   type FiregridHost,
+} from "@firegrid/host-sdk"
+import {
+  FiregridLocalProcessFromEnv,
 } from "@firegrid/host-sdk"
 import { Layer } from "effect"
 import type { TinyFiregridHostEnv } from "../../types.ts"

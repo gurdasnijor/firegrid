@@ -1,8 +1,12 @@
 import {
   FiregridLocalHostLive,
-  FiregridLocalProcessFromEnv,
-  durableStreamUrl,
   type FiregridHost,
+} from "@firegrid/host-sdk"
+import {
+  durableStreamUrl,
+} from "@firegrid/protocol/launch"
+import {
+  FiregridLocalProcessFromEnv,
 } from "@firegrid/host-sdk"
 import {
   makeBidirectionalChannel,

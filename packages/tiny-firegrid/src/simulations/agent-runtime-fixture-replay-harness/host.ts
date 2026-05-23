@@ -1,6 +1,8 @@
 import {
-  FiregridEnvBindingsFromEnv,
   FiregridLocalHostLive,
+} from "@firegrid/host-sdk"
+import {
+  FiregridEnvBindingsFromEnv,
   FiregridLocalProcessFromEnv,
 } from "@firegrid/host-sdk"
 import { Layer } from "effect"

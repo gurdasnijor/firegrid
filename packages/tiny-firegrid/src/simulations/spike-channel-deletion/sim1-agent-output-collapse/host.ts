@@ -4,6 +4,8 @@ import {
 } from "@firegrid/protocol/session-facade"
 import {
   FiregridLocalHostLive,
+} from "@firegrid/host-sdk"
+import {
   FiregridLocalProcessFromEnv,
 } from "@firegrid/host-sdk"
 import { Chunk, Effect, Layer, Stream } from "effect"

@@ -6,10 +6,14 @@ import {
   FiregridMcpServerLayer,
   RuntimeContextChannelRouterLive,
   VerifiedWebhookFactCallerOwnedFactStreamsLive,
-  durableStreamUrl,
-  makeIngressChannel,
   type FiregridHost,
 } from "@firegrid/host-sdk"
+import {
+  makeIngressChannel,
+} from "@firegrid/protocol/channels"
+import {
+  durableStreamUrl,
+} from "@firegrid/protocol/launch"
 import {
   VerifiedWebhookFactChannel,
   VerifiedWebhookFactChannelTarget,

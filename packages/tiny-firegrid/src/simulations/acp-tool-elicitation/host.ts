@@ -1,11 +1,13 @@
 import {
   AcpStdioEdgeLive,
   ensurePathInput,
-  FiregridEnvBindingsFromEnv,
   FiregridLocalHostLive,
-  FiregridLocalProcessFromEnv,
   FiregridMcpServerLayer,
   type FiregridHost,
+} from "@firegrid/host-sdk"
+import {
+  FiregridEnvBindingsFromEnv,
+  FiregridLocalProcessFromEnv,
 } from "@firegrid/host-sdk"
 import { local } from "@firegrid/protocol/launch"
 import { Layer } from "effect"

@@ -10,11 +10,13 @@ import {
   ensurePathInput,
   FiregridMcpServerLayer,
   FiregridRuntimeHostLive,
+  notificationChannel,
+  type FiregridHost,
+} from "@firegrid/host-sdk"
+import {
   makeBidirectionalChannel,
   makeCallableChannel,
   makeIngressChannel,
-  notificationChannel,
-  type FiregridHost,
   type BidirectionalChannel,
   type CallableChannel,
   type ChannelRegistration,
@@ -22,9 +24,13 @@ import {
   type HumanMessageSchema,
   type HumanMessage,
   type IngressChannel,
-  RuntimeEnvResolverPolicy,
+} from "@firegrid/protocol/channels"
+import {
   durableStreamUrl,
-} from "@firegrid/host-sdk"
+} from "@firegrid/protocol/launch"
+import {
+  RuntimeEnvResolverPolicy,
+} from "@firegrid/runtime/producers/sandbox"
 import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import { Context, Effect, Layer, Schema, Stream } from "effect"
 import {

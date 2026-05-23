@@ -38,7 +38,7 @@ import { NodeHttpServer } from "@effect/platform-node"
 import { WorkflowEngine } from "@effect/workflow"
 import {
   durableStreamUrl,
-} from "@firegrid/host-sdk"
+} from "@firegrid/protocol/launch"
 import type { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import { Effect, Layer, Logger, Schema } from "effect"
