@@ -6,12 +6,18 @@ export {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,
   RuntimeContextWorkflowPayload,
+} from "../workflow-engine/workflows/index.ts"
+// Wave 2 (Shape C): the codec-session command sink contract is owned by the
+// subscriber target folder. The kernel barrel re-exports it from the
+// sanctioned subscriber subpath so host-sdk callers do not have to reach into
+// the workflow-engine substrate path.
+export {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
   type RuntimeContextSessionCommandAccepted,
   type RuntimeContextSessionStartedEvidence,
   type RuntimeContextWorkflowSessionService,
-} from "../workflow-engine/workflows/index.ts"
+} from "../subscribers/runtime-context-session/index.ts"
 // tf-aseo: the workflow-owned durable loop-state store is host-composed
 // per-context wiring. Surface its host-facing pieces (capability tag + the
 // per-context Layer factory) through the sanctioned `@firegrid/runtime/kernel`

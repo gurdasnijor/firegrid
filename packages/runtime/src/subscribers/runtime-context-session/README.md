@@ -11,7 +11,16 @@ barrel. Those symbols are runtime-internal substrate and barred across the
 host-sdk boundary by the import gate.
 
 Public subpath: `@firegrid/runtime/subscribers/runtime-context-session`.
-`index.ts` is the Wave 1 forward-target re-export of the runtime-owned
-command-sink tag and types from their current physical location in
-`workflow-engine/workflows/runtime-context.ts`. Wave 2 moves the
-implementation into this folder; the subpath stays stable.
+
+The implementation now lives in `handler.ts` next to this README, and
+`index.ts` re-exports the runtime-owned command-sink contract from it. The
+file holds only the seam shape — types, evidence schemas, and the
+`Context.Tag`. It does not import `@effect/workflow`, the workflow body, or
+any composition Layer, and the workflow body now imports the seam from this
+folder rather than the other way around.
+
+`handler.ts` is the file the topology check looks for; it carries no
+`Activity.make`, `WorkflowEngine`, `WorkflowInstance`, `DurableDeferred`, or
+`DurableClock` references, in line with the Shape C constraints in
+[`docs/cannon/architecture/runtime-pipeline-type-boundaries.md`](../../../../../docs/cannon/architecture/runtime-pipeline-type-boundaries.md)
+§"Shape C".

@@ -13,7 +13,6 @@ import {
 import { withRowOtelParent } from "@firegrid/protocol/otel"
 import { withActivityContract } from "../internal/contract-activity.ts"
 import {
-  Context,
   Cause,
   Effect,
   Layer,
@@ -62,67 +61,15 @@ import {
   writeRunFailedResult,
   writeRunStarted,
 } from "./runtime-context-run.ts"
-
-const RuntimeContextSessionStartedEvidenceSchema = Schema.Struct({
-  contextId: Schema.String,
-  activityAttempt: Schema.Number,
-  ownerKind: Schema.Literal("raw", "codec"),
-  ownerSessionId: Schema.String,
-  startCommandId: Schema.String,
-})
-export type RuntimeContextSessionStartedEvidence = Schema.Schema.Type<
-  typeof RuntimeContextSessionStartedEvidenceSchema
->
-
-const RuntimeContextSessionStartOutcomeSchema = Schema.Union(
-  Schema.TaggedStruct("Started", {
-    evidence: RuntimeContextSessionStartedEvidenceSchema,
-  }),
-  Schema.TaggedStruct("Failed", {
-    error: RuntimeContextError,
-  }),
-)
-
-export interface RuntimeContextSessionCommand {
-  readonly _tag: "AgentInput"
-  readonly commandId: string
-  readonly event: AgentInputEvent
-}
-
-const RuntimeContextSessionCommandAcceptedSchema = Schema.Struct({
-  contextId: Schema.String,
-  activityAttempt: Schema.Number,
-  commandId: Schema.String,
-  ownerSessionId: Schema.String,
-})
-export type RuntimeContextSessionCommandAccepted = Schema.Schema.Type<
-  typeof RuntimeContextSessionCommandAcceptedSchema
->
-
-export interface RuntimeContextWorkflowSessionService {
-  readonly startOrAttach: (
-    context: RuntimeContext,
-    activityAttempt: number,
-  ) => Effect.Effect<RuntimeContextSessionStartedEvidence, RuntimeContextError>
-  readonly send: (
-    context: RuntimeContext,
-    activityAttempt: number,
-    command: RuntimeContextSessionCommand,
-  ) => Effect.Effect<RuntimeContextSessionCommandAccepted, RuntimeContextError>
-}
-
-/**
- * Runtime-owned inversion seam for starting and feeding the concrete agent
- * session. See docs/architecture/host-sdk-runtime-boundary.md: the runtime
- * owns workflow definitions; host-sdk provides the live session Layer.
- */
-export class RuntimeContextWorkflowSession extends Context.Tag(
-  "@firegrid/runtime/RuntimeContextWorkflowSession",
-)<RuntimeContextWorkflowSession, RuntimeContextWorkflowSessionService>() {
-  static layer = (
-    service: RuntimeContextWorkflowSessionService,
-  ): Layer.Layer<RuntimeContextWorkflowSession> => Layer.succeed(this, service)
-}
+// Wave 2 (Shape C): the codec-session command sink contract lives in the
+// `subscribers/runtime-context-session/` target folder. The parked workflow
+// body imports the seam from there; the seam does not import the body.
+import {
+  RuntimeContextSessionCommandAcceptedSchema,
+  RuntimeContextSessionStartOutcomeSchema,
+  RuntimeContextWorkflowSession,
+  type RuntimeContextSessionCommand,
+} from "../../subscribers/runtime-context-session/handler.ts"
 
 export type RuntimeContextWorkflowExecutionEnv =
   | RuntimeContextRead

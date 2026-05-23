@@ -50,10 +50,12 @@ import {
 import {
   transitionInputEvent,
   transitionOutputEvent,
-  RuntimeContextWorkflowSession,
-  type RuntimeContextSessionCommand,
   type RuntimeContextTransitionAction,
 } from "../../../workflow-engine/workflows/runtime-context.ts"
+import {
+  RuntimeContextWorkflowSession,
+  type RuntimeContextSessionCommand,
+} from "../../../subscribers/runtime-context-session/index.ts"
 import {
   RuntimeContextStateStore,
   type RuntimeContextEventState,
