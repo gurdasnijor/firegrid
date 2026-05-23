@@ -68,12 +68,12 @@
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
-      "line": 48
+      "line": 57
     },
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
-      "line": 91
+      "line": 100
     },
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",

@@ -84,9 +84,18 @@ export const toolCallWorkflowSupportLayer = (
   // workflow on the host-engine scope. schedule_me starts it `discard:true`, so it
   // outlives the tool call and the engine must own its handler to resume it after
   // the DurableClock delay fires.
+  //
+  // Wave D-B note: this per-call support layer is the legacy bridge —
+  // `toolkit-layer.handleTool` no longer builds it; the same handlers
+  // are installed once at host scope via `hostScopedToolWorkflowLayer`
+  // below. Remaining consumer:
+  // `agent-tool-host-live.ts:startChildContextWorkflow`, the body-driver
+  // path that retires under D-E. Delete this export when that path is
+  // retired.
   Layer.merge(RuntimeToolCallWorkflowLayer, ScheduledPromptWorkflowLayer).pipe(
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
     Layer.provideMerge(HostRuntimeObservationStreamsLive),
     Layer.provideMerge(runtimeToolUseExecutorLayer),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
   )
+

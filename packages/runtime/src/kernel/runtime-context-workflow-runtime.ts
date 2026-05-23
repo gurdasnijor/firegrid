@@ -393,6 +393,21 @@ export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
       run,
       deregister: contextId => deregisterActiveExecution(executions, contextId),
     }).pipe(
+      // Wave D-B prerequisite: expose the host-scoped workflow engine as
+      // a sibling service so future callers can resolve
+      // `WorkflowEngine.WorkflowEngine` directly without going through
+      // the per-call `workflowRuntime.run({..., supportLayer, effect})`
+      // wrapper. The engine itself is host-scoped
+      // (`DurableStreamsWorkflowEngine.layer({streamUrl: hostOwnedStreamUrl
+      // (...)})` above); per-context execution bookkeeping (`executions`
+      // map, `reconcile`) is still done by `.run(...)` for the
+      // body-driver path (retires under D-E). For Shape D tool dispatch,
+      // the `idempotencyKey: toolUseId` memo is the C3 at-most-once
+      // boundary — no per-context handle is required (proven by #713).
+      // The production toolkit-layer cutover that consumes this surface
+      // is parked on a host-composition layer-ordering constraint; see
+      // packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts.
+      Context.add(WorkflowEngine.WorkflowEngine, hostEngine),
       Context.add(RuntimeContextInput, {
         reconcile,
         dispatchIntent,

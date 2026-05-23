@@ -40,10 +40,19 @@ const TOOL_USE_ID_PREFIX = "mcp"
 export { ToolCallWorkflow } from "@firegrid/runtime/tool-executor"
 export { RuntimeToolCallWorkflowLayer as ToolCallWorkflowLayer } from "@firegrid/runtime/tool-executor"
 
-// TFIND-031: includes the host runtime context that deferred tool
-// handlers genuinely require. The execution-scoped observation substrate
-// is provided inside the tool-call workflow support layer instead of
-// leaking onto every MCP tool handler.
+// Wave D-B PARK (see this PR's body for the full finding): this file
+// still routes tool dispatch through the legacy workflow-runtime wrapper.
+// The #713 tiny-firegrid sim proved option (A) — direct
+// `ToolCallWorkflow.execute(...)` resolving a host-scoped engine — is
+// the right shape. This PR landed the prerequisite: the kernel layer
+// now surfaces the host-scoped engine as a sibling service. Production
+// cutover blocked on a host-composition layer-ordering constraint
+// (executor layer captures channel router + observation streams at
+// layer-build time; those are supplied earlier in the host pipe than
+// where a host-scoped handler-install Layer can consume them).
+// Restructuring the host pipe is a separate slice; D-E body retirement
+// also removes the per-context substrate constraints behind the
+// current ordering.
 type ToolCallHostEnvironment =
   | RuntimeContextWorkflowRuntime
   | AgentToolHost
