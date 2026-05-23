@@ -29,7 +29,7 @@ import {
 import {
   transitionInputEvent,
   transitionOutputEvent,
-} from "../../src/workflow-engine/workflows/runtime-context.ts"
+} from "../../src/transforms/runtime-context-transition.ts"
 import type {
   AgentInputEvent,
   RuntimeAgentOutputObservation,

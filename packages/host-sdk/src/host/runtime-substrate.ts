@@ -67,12 +67,7 @@ export const HostRuntimeObservationStreamsLive = RuntimeObservationStreamsLive.p
   }),
 )
 
-// TFIND-031 (Option Y, execution-scoped): the workflow-body capture
-// seam (`RuntimeContextWorkflowNativeLayer`) is built *inside*
-// `runtimeContextWorkflowSupportLayer`, where
-// `HostRuntimeObservationSubstrateLive` self-contains the observation
-// substrate. Host-level seams (commands / agent-tool-host) capture only
-// the public host runtime context; wait-store services are not ambient on
-// `FiregridRuntimeHostWithWorkflowLive`.
-export type RuntimeContextWorkflowExecutionEnv =
-  HostRuntimeContextExecutionEnv
+// Body+kernel deletion wave: the legacy
+// `RuntimeContextWorkflowExecutionEnv` alias (= `HostRuntimeContextExecutionEnv`)
+// is gone with the workflow body capture seam. Callers that previously
+// used it should declare `HostRuntimeContextExecutionEnv` directly.
