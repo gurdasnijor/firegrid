@@ -70,8 +70,8 @@
       "default": "./src/producers/codecs/session-byte-stream-adapter.ts"
     },
     "./agent-adapters": {
-      "types": "./src/agent-adapters/index.ts",
-      "default": "./src/agent-adapters/index.ts"
+      "types": "./src/producers/codecs/agent-adapters/index.ts",
+      "default": "./src/producers/codecs/agent-adapters/index.ts"
     },
     "./sources/sandbox": {
       "types": "./src/producers/sandbox/index.ts",

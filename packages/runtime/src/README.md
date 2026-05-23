@@ -137,8 +137,9 @@ These are intentionally not agent event-pipeline stages:
   internals.
 - `agent-tools/`: tool schemas, lowering, MCP exposure, and host-coupled live
   services.
-- `agent-adapters/`: projections over codec sessions
-  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
+- `producers/codecs/agent-adapters/`: projections over codec sessions
+  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`). Public
+  subpath: `@firegrid/runtime/agent-adapters` (preserved across the move).
 - `verified-webhook-ingest/`: external ingress/source adapter
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
 - `authorities/`: runtime control-plane lifecycle capabilities
