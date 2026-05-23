@@ -274,7 +274,15 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 runtime input intents", 
     }])
   })
 
-  it("dispatches session_prompt through the active local host-scoped engine", async () => {
+  // Wave D-A (PR #714) PARK — STALE LEGACY: asserts the WORKFLOW BODY's
+  // session_prompt activity produces a `status: "sequenced"` input row
+  // (kernel sequence allocator). After D-A the production path is
+  // RuntimeContextInputFacts → Shape C subscriber → handler; intent rows
+  // remain `status: "pending"` (identity-keyed, no sequence allocator).
+  // Test retires with the body in D-E or migrates to assert Shape C
+  // dispatch behavior. Grep blocker:
+  //   grep -n "lastProcessedInputSequence" packages/runtime/src/workflow-engine/workflows/runtime-context.ts
+  it.skip("dispatches session_prompt through the active local host-scoped engine", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-session-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId

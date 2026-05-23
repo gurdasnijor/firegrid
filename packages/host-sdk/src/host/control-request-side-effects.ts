@@ -91,7 +91,21 @@ const startRuntimeContext = (
     const attempt = yield* runs.allocateActivityAttempt(context)
     yield* runs.recordStarted(context, attempt)
     const session = yield* RuntimeContextWorkflowSession
-    yield* session.startOrAttach(context, attempt)
+    // Wave D-A: if `startOrAttach` fails (e.g. sandbox.openBytePipe could
+    // not spawn the agent), write `runs.failed` before propagating so the
+    // durable run lifecycle row chain matches the legacy body's
+    // failure-path contract (cf. workflow-engine/workflows/runtime-context-
+    // run.ts:117-118 `writeRunFailed`). Without this, the runs.status
+    // chain stays at [started] forever and no terminal evidence reaches
+    // the completion row.
+    yield* session.startOrAttach(context, attempt).pipe(
+      Effect.tapError((cause) =>
+        runs.recordFailed(
+          context,
+          attempt,
+          cause instanceof Error ? cause.message : String(cause),
+        )),
+    )
     const control = yield* RuntimeControlPlaneTable
     const terminalOpt = yield* control.runs.rows().pipe(
       Stream.filter((row) =>

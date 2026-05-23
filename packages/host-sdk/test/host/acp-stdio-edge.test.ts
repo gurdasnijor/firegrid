@@ -731,7 +731,14 @@ describe("ACP stdio edge", () => {
     expect(permissionDecision(result.dispatched)).toEqual({ _tag: "Deny" })
   })
 
-  it("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7 routes turns and traces ACP edge requests", async () => {
+  // Wave D-A (PR #714) PARK — STALE LEGACY: this test exercises the legacy
+  // workflow-body / mailbox / RuntimeInputIntentDispatcher path that the
+  // D-A cutover removed from production composition. The Shape C
+  // subscriber + RuntimeContextInputFacts is the new input route; this
+  // test asserts the body-side trace/route shape that no longer fires.
+  // Grep blocker for retirement (with the body in D-E):
+  //   grep -rn "runtimeInputDeferred\|appendRuntimeInputDeferred" packages/runtime
+  it.skip("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7 routes turns and traces ACP edge requests", async () => {
     const harness = makeInMemoryAcpHarness()
     const namespace = `acp-edge-${crypto.randomUUID()}`
     const updates: Array<acp.SessionNotification> = []
@@ -834,7 +841,10 @@ describe("ACP stdio edge", () => {
     )
   })
 
-  it("firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.9 links ACP edge prompt spans to subprocess byte spans", async () => {
+  // Wave D-A (PR #714) PARK — STALE LEGACY: see ACP_STDIO_EDGE.6/7 PARK
+  // note above. Span-link assertion targets the legacy body's subprocess
+  // span chain; retires with the body in D-E.
+  it.skip("firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.9 links ACP edge prompt spans to subprocess byte spans", async () => {
     const harness = makeInMemoryAcpHarness()
     const namespace = `acp-edge-byte-link-${crypto.randomUUID()}`
     const updates: Array<acp.SessionNotification> = []

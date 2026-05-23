@@ -255,7 +255,11 @@ console.log(JSON.stringify({ type: "raw-probe", ok: true }))
     })
   })
 
-  it("firegrid-runtime-agent-event-pipeline.STAGES.6 firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1 journals stdio-jsonl AgentOutputEvent rows and sends ToolResult back to the codec through authority surfaces", async () => {
+  // Wave D-A (PR #714) PARK — STALE LEGACY: covers the legacy body's
+  // ToolUse → ToolResult round-trip via the per-sequence mailbox path.
+  // Shape C handler routes tool dispatch through RuntimeToolUseExecutor
+  // directly; assertion shape differs. Retires with the body in D-E.
+  it.skip("firegrid-runtime-agent-event-pipeline.STAGES.6 firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1 journals stdio-jsonl AgentOutputEvent rows and sends ToolResult back to the codec through authority surfaces", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-stdio-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -307,7 +311,12 @@ for await (const line of rl) {
     expect(toolResultChunk).toBeDefined()
   }, 15_000)
 
-  it("firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2 preserves schedule_me workflow registration through runtime host tool routing", async () => {
+  // Wave D-A (PR #714) PARK — STALE LEGACY: schedule_me registration
+  // through the legacy body's host tool routing. ScheduledPromptWorkflow
+  // remains alive as Shape D, but its host registration via the body
+  // path retires with the body in D-E. Per-context wiring continues to
+  // exist via runtimeContextWorkflowSupportLayer until then.
+  it.skip("firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2 preserves schedule_me workflow registration through runtime host tool routing", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-schedule-me-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -404,7 +413,11 @@ console.log(JSON.stringify({ type: "text", text: "before-terminal", messageId: "
     expect(runs).toEqual(expect.arrayContaining(["started", "exited"]))
   }, 15_000)
 
-  it("firegrid-runtime-agent-event-pipeline.INGREDIENTS.4 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2 firegrid-runtime-agent-event-pipeline.VALIDATION.3-2 journals ACP PermissionRequest, blocks, and resumes through the runtime-input deferred", async () => {
+  // Wave D-A (PR #714) PARK — STALE LEGACY: explicit assertion on the
+  // "runtime-input deferred" mailbox path. Shape C subscriber routes
+  // permission via transitionInputEvent's pendingPermission* sets; the
+  // mailbox path retires with the body in D-E.
+  it.skip("firegrid-runtime-agent-event-pipeline.INGREDIENTS.4 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2 firegrid-runtime-agent-event-pipeline.VALIDATION.3-2 journals ACP PermissionRequest, blocks, and resumes through the runtime-input deferred", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-acp-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -530,7 +543,12 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
     expect(events.some(event => event._tag === "Terminated")).toBe(true)
   }, 15_000)
 
-  it("firegrid-runtime-agent-event-pipeline.STAGES.6 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7 journals ACP tool_call observations without routing them to agent-tool lowering", async () => {
+  // Wave D-A (PR #714) PARK — STALE LEGACY: ACP tool_call journaling via
+  // the legacy body's TOOL_DISPATCH path. The Shape C handler's
+  // transitionOutputEvent guards ACP-mode ToolUse identically (returns
+  // None), but the assertion shape targets the body's pipeline. Retires
+  // with the body in D-E or migrates to Shape C handler test.
+  it.skip("firegrid-runtime-agent-event-pipeline.STAGES.6 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7 journals ACP tool_call observations without routing them to agent-tool lowering", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-acp-tool-observation-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId

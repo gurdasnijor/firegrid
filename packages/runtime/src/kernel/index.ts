@@ -49,13 +49,5 @@ export {
   RuntimeContextInput,
   RuntimeContextWorkflowRuntime,
   RuntimeContextWorkflowRuntimeLive,
-  // Wave D-A (PR #714): `RuntimeInputIntentDispatcherLive` re-export
-  // dropped. The host-scoped dispatcher fiber that delivered durable
-  // input intents into the legacy body's per-sequence mailbox has no
-  // production reader after the Shape C subscriber cutover. The Live
-  // symbol still exists in `runtime-context-workflow-runtime.ts` (PARK)
-  // because the workflow body's `runtime-input-deferred.ts` mailbox is
-  // still exercised by tests + tiny-firegrid sims that cover the legacy
-  // body path; both die with D-E body retirement.
   type RuntimeContextWorkflowCheckpointHandle,
 } from "./runtime-context-workflow-runtime.ts"

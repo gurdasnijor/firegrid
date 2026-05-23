@@ -27,9 +27,7 @@ import {
 import {
   FiregridRuntimeContextMcpBaseUrlLive,
 } from "./runtime-context-mcp-base-url.ts"
-import {
-  RuntimeContextWorkflowSession,
-} from "@firegrid/runtime/kernel"
+import { RuntimeContextWorkflowSession } from "@firegrid/runtime/subscribers/runtime-context-session"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
   PerContextRuntimeOutputWriterLive,
@@ -348,16 +346,15 @@ export const FiregridRuntimeHostLive = (
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
   //
   // Wave D-A (PR #714): `RuntimeInputIntentDispatcherLive` provide-merge
-  // dropped. The host-scoped dispatcher fiber existed to deliver durable
-  // input intents into the legacy workflow body's per-sequence
-  // `DurableDeferred` mailbox; the Shape C subscriber composed in
-  // `@firegrid/runtime/composition/host-live` consumes
-  // `RuntimeContextInputFacts.forContext` directly, so the mailbox path
-  // has no production reader anymore. The dispatcher Live symbol +
-  // `runtime-input-deferred.ts` mailbox stay PARKed under
-  // `@firegrid/runtime/kernel` / `@firegrid/runtime/workflows` until D-E
-  // retires the workflow body and the test/sim consumers that still
-  // exercise the body path.
+  // dropped (definitively, per #712 Shape (b) selection). The host-scoped
+  // dispatcher fiber existed to deliver durable input intents into the
+  // legacy workflow body's per-sequence `DurableDeferred` mailbox; the
+  // Shape C subscriber installed via `runtimeContextSubscriberHostBundle`
+  // consumes `RuntimeContextInputFacts.forContext` directly, so the
+  // production input/output path is input-facts → Shape C subscriber →
+  // handler → `RuntimeRunEvent` terminal row. Any test/sim still
+  // exercising the body/mailbox path is stale-legacy under D-A; classify
+  // and migrate or skip, not preserve via host composition.
   const hostPublic = RuntimeStartCapabilityLive.pipe(
     Layer.provideMerge(hostChannels),
     Layer.provideMerge(HostControlChannelsLive),

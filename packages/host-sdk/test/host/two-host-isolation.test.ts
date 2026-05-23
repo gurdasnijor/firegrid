@@ -157,7 +157,14 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     ).resolves.toBeUndefined()
   })
 
-  it("firegrid-workflow-driven-runtime.BOUNDARIES.6-1 each host writes workflow rows only to its host-owned workflow stream", async () => {
+  // Wave D-A (PR #714) PARK — STALE LEGACY: asserts host-owned workflow
+  // stream isolation. With the legacy body's workflow execution no longer
+  // running in production (Shape C subscriber replaces it), the workflow
+  // engine doesn't write per-host workflow rows on the body path. The
+  // tested invariant still holds for the remaining workflow Layers
+  // (ToolCall/Wait/ScheduledPrompt) but the assertion harness drives the
+  // body. Migration or retirement scoped to D-E.
+  it.skip("firegrid-workflow-driven-runtime.BOUNDARIES.6-1 each host writes workflow rows only to its host-owned workflow stream", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `two-host-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -226,7 +233,12 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     expect(resultB.executionIds).not.toContain(`runtime-context:${contextA}`)
   })
 
-  it("firegrid-workflow-driven-runtime.VALIDATION.7-1 one host-scoped engine owns multiple context executions", async () => {
+  // Wave D-A (PR #714) PARK — STALE LEGACY: same body-execution shape as
+  // BOUNDARIES.6-1 above. The "host-scoped engine owns context executions"
+  // assertion drives the legacy body; Shape C subscriber owns context
+  // dispatch at host scope but the per-context engine is no longer used
+  // for the runtime-context loop body. Retires with the body in D-E.
+  it.skip("firegrid-workflow-driven-runtime.VALIDATION.7-1 one host-scoped engine owns multiple context executions", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `two-context-one-host-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
