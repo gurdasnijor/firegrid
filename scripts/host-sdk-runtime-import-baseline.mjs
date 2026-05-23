@@ -25,7 +25,10 @@
 //     `RuntimeContextWorkflowNative`, `RuntimeContextWorkflowNativeLayer`,
 //     `executeRuntimeContextWorkflow`, `RuntimeContextWorkflowRuntime`
 //   - Legacy input-mailbox symbols: `appendRuntimeInputDeferred`,
-//     `runtimeInputDeferredFor`, `runtimeInputDeferredName`
+//     `runtimeInputDeferredFor`, `runtimeInputDeferredName`,
+//     `RuntimeInputIntentDispatcher(Live)?` (the dispatcher fork named in
+//     runtime-design-constraints.md "Runtime Input Mailbox" alongside the
+//     three above; deletion target tf-tvg1)
 //
 // Baseline shape mirrors `semgrep-error-baseline.json`: an array of
 // `{ ruleId, path, line, note? }` triplets. CI fails on any occurrence
@@ -123,6 +126,18 @@ const RULES = [
     id: "host-sdk-no-runtime-input-deferred-name-symbol",
     label: "runtimeInputDeferredName symbol",
     regex: /\bruntimeInputDeferredName\b/,
+  },
+  {
+    // The 4th input-mailbox symbol named alongside `appendRuntimeInputDeferred`
+    // in runtime-design-constraints.md "Runtime Input Mailbox" (the dispatcher
+    // fork the section calls "RuntimeInputIntentDispatcher and any equivalent
+    // dispatcher fork"). Bridge debt; RFC-conforming target deletes via
+    // tf-tvg1. Matches `RuntimeInputIntentDispatcher` and the `…Live` Layer
+    // form, same shape as the `RuntimeContextWorkflowRuntime(?:Live)?` rule
+    // above.
+    id: "host-sdk-no-runtime-input-intent-dispatcher-symbol",
+    label: "RuntimeInputIntentDispatcher symbol",
+    regex: /\bRuntimeInputIntentDispatcher(?:Live)?\b/,
   },
 ]
 
