@@ -93,6 +93,22 @@
       "types": "./src/subscribers/runtime-context-session/index.ts",
       "default": "./src/subscribers/runtime-context-session/index.ts"
     },
+    "./subscribers/tool-dispatch": {
+      "types": "./src/subscribers/tool-dispatch/index.ts",
+      "default": "./src/subscribers/tool-dispatch/index.ts"
+    },
+    "./subscribers/wait-router": {
+      "types": "./src/subscribers/wait-router/index.ts",
+      "default": "./src/subscribers/wait-router/index.ts"
+    },
+    "./subscribers/scheduled-prompt": {
+      "types": "./src/subscribers/scheduled-prompt/index.ts",
+      "default": "./src/subscribers/scheduled-prompt/index.ts"
+    },
+    "./composition/host-live": {
+      "types": "./src/composition/host-live.ts",
+      "default": "./src/composition/host-live.ts"
+    },
     "./transforms": {
       "types": "./src/transforms/index.ts",
       "default": "./src/transforms/index.ts"

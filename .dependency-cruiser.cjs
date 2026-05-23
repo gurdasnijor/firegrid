@@ -228,7 +228,7 @@ module.exports = {
       name: "runtime-subscribers-no-legacy-tree-import",
       severity: "error",
       comment:
-        "Target-tree subscribers/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. PR #694 (handler move) declared one named temporary outlier — RuntimeToolUseExecutor's target subpath in the new tree is not yet decided, so the per-event handler imports it from workflow-engine/tool-execution/runtime-tool-use-executor.ts. That single file is carved out below; when a follow-up PR lands the executor's Shape-C-friendly subpath, the carveout shrinks to a deletion. All other workflow-engine/ + agent-event-pipeline/ subpaths remain banned.",
+        "Target-tree subscribers/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. PR #694 (handler move) declared one named temporary outlier — RuntimeToolUseExecutor's target subpath in the new tree is not yet decided, so the per-event handler imports it from workflow-engine/tool-execution/runtime-tool-use-executor.ts. Wave B (composition/host-live.ts) requires three additional time-boxed carve-outs: the Shape D forward-target shims at subscribers/{tool-dispatch,wait-router,scheduled-prompt}/index.ts re-export their justified Shape D Layers from the legacy substrate homes (the workflow body files have not yet been physically moved). The four carved-out files are named below; each carve-out shrinks to a deletion when the corresponding Wave 2 lane physically moves the file under its target subscriber folder. All other workflow-engine/ + agent-event-pipeline/ subpaths remain banned.",
       from: { path: "^packages/runtime/src/subscribers/" },
       to: {
         path: [
@@ -237,6 +237,9 @@ module.exports = {
         ],
         pathNot: [
           "^packages/runtime/src/workflow-engine/tool-execution/runtime-tool-use-executor\\.ts$",
+          "^packages/runtime/src/workflow-engine/workflows/wait-for\\.ts$",
+          "^packages/runtime/src/workflow-engine/workflows/scheduled-prompt\\.ts$",
+          "^packages/runtime/src/agent-event-pipeline/tool-execution/runtime-tool-call-workflow\\.ts$",
         ],
       },
     },
