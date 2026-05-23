@@ -143,6 +143,26 @@ completion work.
   branch verification loop, and maintain the line-count report.
 - Greenfield deletion is allowed and expected. If deleting a wrong-shape module
   exposes a missing target capability, build the target capability directly.
+- **Tiny-firegrid is the workbench; production is where validated shapes get
+  built.** A production lane that depends on an unresolved
+  shape/signature/composition/substrate question dispatches only after a
+  tiny-firegrid simulation answers that question GREEN. Production code is
+  written *fresh* against the validated shape — tiny-firegrid modules do not
+  graduate by copy/move into `packages/runtime/`, `packages/host-sdk/`, or
+  `packages/protocol/`. The simulation result is the contract; production is
+  written against the contract using the production substrate, types, and
+  Layer graph. The full dispatch gate (including the per-wave preconditions
+  and the decision form) lives in
+  [`2026-05-22-shape-c-cutover-roadmap.md`](./2026-05-22-shape-c-cutover-roadmap.md)
+  §"Tiny-Firegrid-First Dispatch Gate".
+- **Speculative production artifacts are deleted, not parked or reshaped.** A
+  production PR authored against an assumed but unlanded upstream signature is
+  speculative. When the real upstream lands, the speculative artifact is
+  closed/deleted and the lane is rewritten fresh against the landed shape.
+  This applies to Wave N+1 production work that predates Wave N's exit on
+  `rearch/shape-c-cutover`: the rebase-and-reshape path is the failure mode
+  the gate prevents. "Compiles against a mocked upstream" is not preservation
+  evidence; it is the symptom of working against a guess.
 
 ## Test Triage During Wave 1
 
