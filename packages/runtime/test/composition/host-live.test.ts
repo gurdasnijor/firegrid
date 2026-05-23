@@ -50,6 +50,20 @@ describe("composition/host-live", () => {
     // `firegrid-composition-no-legacy-imports` Semgrep rule; if either of
     // those rules is ever relaxed for a real reason, this test ensures the
     // composition file does not silently regress.
+    //
+    // Substrate residue carve-outs (per OLA reviewer #726 clarification on
+    // blocker 3, option b): the engine substrate
+    // (`DurableStreamsWorkflowEngine.ts`) and the host-config Tag
+    // (`runtime-host-config.ts`) physically remain under non-canonical
+    // legacy roots (`workflow-engine/`, `kernel/`) because relocating
+    // them now would introduce undocumented target-tree structure.
+    // Composition reaches each by *exact file*; broader imports from
+    // those roots remain banned. The carve-outs shrink to deletions when
+    // a target-tree design amendment picks the canonical homes.
+    const allowedNarrowFileImports = new Set([
+      "../workflow-engine/DurableStreamsWorkflowEngine.ts",
+      "../kernel/runtime-host-config.ts",
+    ])
     const forbiddenSubstrings = [
       "../workflow-engine/",
       "../agent-event-pipeline/",
@@ -61,8 +75,18 @@ describe("composition/host-live", () => {
       "@firegrid/runtime/_archive",
       "@firegrid/host-sdk",
     ]
+    // Strip the narrow carve-out lines before scanning so a regression
+    // (e.g. importing the retired body driver file or the retired kernel
+    // runtime wrapper file) is still caught.
+    const scanSection = (() => {
+      let s = hostLiveImportSection
+      for (const allowed of allowedNarrowFileImports) {
+        s = s.replaceAll(`"${allowed}"`, "")
+      }
+      return s
+    })()
     for (const banned of forbiddenSubstrings) {
-      expect(hostLiveImportSection).not.toContain(banned)
+      expect(scanSection).not.toContain(banned)
     }
   })
 

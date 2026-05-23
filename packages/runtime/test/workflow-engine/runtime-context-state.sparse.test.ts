@@ -32,7 +32,7 @@ import {
   makePerContextRuntimeContextStateStore,
   type RuntimeContextStateStoreService,
 } from "../../src/tables/runtime-context-state.ts"
-import { transitionOutputEvent } from "../../src/workflow-engine/workflows/runtime-context.ts"
+import { transitionOutputEvent } from "../../src/transforms/runtime-context-transition.ts"
 import type {
   AgentOutputEvent,
   RuntimeAgentOutputObservation,

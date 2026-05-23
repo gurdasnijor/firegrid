@@ -24,8 +24,8 @@ import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 //                `recordExited` on Terminated transition or
 //                `recordFailed` on startOrAttach failure (handled below).
 //   deregister — `RuntimeContextWorkflowSession.deregister(contextId)` via
-//                the seam extension that replaces the retired
-//                `RuntimeContextWorkflowRuntime.deregister`. No
+//                the seam extension that replaces the retired kernel
+//                runtime wrapper's deregister method. No
 //                `@firegrid/runtime/kernel` import remains on this file.
 //
 // All errors are typed `RuntimeContextError` (via `asRuntimeContextError`)

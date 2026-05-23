@@ -9,11 +9,13 @@
 //   - the service shape.
 //
 // Host packages implement the live codec sink against this contract. They
-// MUST NOT import the workflow body, the workflow Layer, the workflow payload
-// schema, `executeRuntimeContextWorkflow`, or the workflow-runtime tag —
-// those are runtime-internal substrate and are forbidden across the host-sdk
-// boundary by `docs/architecture/2026-05-22-runtime-physical-target-tree.md`
-// and the host-sdk import gate. This subpath does not re-export those symbols.
+// MUST NOT import the retired workflow body, the retired workflow Layer,
+// the retired workflow payload schema, the retired engine-execute helper,
+// or the retired workflow-runtime tag — those symbols are deleted (see
+// the body+kernel deletion wave PR) and were forbidden across the
+// host-sdk boundary anyway by
+// `docs/architecture/2026-05-22-runtime-physical-target-tree.md` and the
+// host-sdk import gate. This subpath does not re-export those symbols.
 
 export {
   RuntimeContextWorkflowSession,

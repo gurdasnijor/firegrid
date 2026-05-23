@@ -53,17 +53,15 @@ import {
 import {
   makeRawRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/raw-adapter.ts"
-// Wave D-B / D-E post-cutover: kernel layer composed for the host-scoped
-// `WorkflowEngine` + `WorkflowEngineTable` outputs the tool-dispatch facade
-// above consumes, plus its `RuntimeContextInput` output. Wave D-E retired
-// the per-context workflow-engine row-projection Tag together with the
-// session-self ingress that was its only reader (engine-internal row shapes
-// leaked to the agent surface, no production source populator post-D-A/D-B,
-// zero successful router dispatches across six recent ACP traces). The Tag
-// stays public until any remaining test consumers migrate.
-import {
-  RuntimeContextWorkflowRuntimeLive,
-} from "@firegrid/runtime/kernel"
+// Body+kernel deletion wave (stacked on D-B+D-E): the kernel-resident
+// per-context engine wrapper + input-intent dispatcher Tags are gone.
+// The canonical replacement `HostWorkflowEngineLive` lives in
+// `composition/host-workflow-engine.ts` and provides only the substrate
+// Tags (`WorkflowEngine.WorkflowEngine` + `WorkflowEngineTable`) — no
+// per-context dispatcher, no checkpoint source. Provide-merged DOWNSTREAM
+// of `ToolDispatchLive` so the engine outputs satisfy Shape D consumer
+// requirements.
+import { HostWorkflowEngineLive } from "@firegrid/runtime/composition/host-workflow-engine"
 import {
   type RuntimeChannelRouter,
 } from "./channel.ts"
@@ -401,7 +399,13 @@ export const FiregridRuntimeHostLive = (
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),
-    Layer.provideMerge(RuntimeContextWorkflowRuntimeLive),
+    // Body+kernel deletion wave: canonical replacement for the deleted
+    // kernel engine binding. Lives in
+    // `composition/host-workflow-engine.ts`. Must be DOWNSTREAM (= later
+    // in this pipe, = deeper provider) of `ToolDispatchLive` and any
+    // other Shape D consumer so its `WorkflowEngine.WorkflowEngine` +
+    // `WorkflowEngineTable` outputs satisfy their R-channels.
+    Layer.provideMerge(HostWorkflowEngineLive),
     Layer.provideMerge(namespaceScoped),
     Layer.provideMerge(session),
     Layer.provideMerge(runtimeEnvResolverPolicyLayer(envPolicy)),

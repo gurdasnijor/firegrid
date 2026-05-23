@@ -50,15 +50,10 @@ const parkAllowlist = {
     owner: "rearch-shape-c",
     wave: "D",
   },
-  "packages/runtime/src/kernel/internal/run-context-workflow.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
+  // Body+kernel deletion wave: `kernel/internal/run-context-workflow.ts`
+  // and `kernel/runtime-context-workflow-runtime.ts` deleted with the
+  // workflow body retirement; entries removed.
   "packages/runtime/src/kernel/runtime-context-helpers.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  "packages/runtime/src/kernel/runtime-context-workflow-runtime.ts": {
     owner: "rearch-shape-c",
     wave: "D",
   },
@@ -98,10 +93,8 @@ const parkAllowlist = {
     owner: "rearch-shape-c",
     wave: "D",
   },
-  "packages/runtime/src/workflow-engine/runtime-input-deferred.ts": {
-    owner: "rearch-shape-c",
-    wave: "D-input",
-  },
+  // Body+kernel deletion wave: per-sequence DurableDeferred input mailbox
+  // (`runtime-input-deferred.ts`) deleted; entry removed.
   "packages/runtime/src/workflow-engine/tool-execution/runtime-tool-use-executor.ts":
     {
       owner: "rearch-shape-c",
@@ -115,10 +108,8 @@ const parkAllowlist = {
     owner: "rearch-shape-c",
     wave: "D-input",
   },
-  "packages/runtime/src/workflow-engine/workflows/runtime-context.ts": {
-    owner: "rearch-shape-c",
-    wave: "D-input",
-  },
+  // Body+kernel deletion wave: workflow body
+  // (`workflows/runtime-context.ts`) deleted; entry removed.
   "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts":
     {
       owner: "rearch-shape-c",

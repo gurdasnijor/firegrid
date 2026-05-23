@@ -23,9 +23,9 @@
 // `insertOrGet`. The Shape C handler subscribes to this typed source per
 // `contextId` and receives `RuntimeIngressInputRow` events directly — no
 // sequence allocation, no kernel-allocated ordinal authority, no cross-event
-// mailbox. Public host flows that still route through the OLD
-// `RuntimeContextWorkflowNative` body switch to the new path when CC2 is
-// wired in by the host-composition swap slice that supersedes #682.
+// mailbox. The retired workflow body's input path no longer exists; this
+// is the sole production input source (Shape C cutover, post body+kernel
+// deletion wave).
 //
 // `runtime-pipeline-type-boundaries.md` Shape C contract:
 //   transitionInputEvent(state, row: RuntimeIngressInputRow, event) -> result

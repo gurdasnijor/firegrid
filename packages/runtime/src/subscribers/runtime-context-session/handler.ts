@@ -11,10 +11,11 @@
 //
 // The contract is intentionally substrate-free. This module MUST NOT import
 // `@effect/workflow` (no `WorkflowEngine`, no `Activity.make`, no
-// `DurableDeferred`, no `DurableClock`), must not import the parked workflow
-// body (`RuntimeContextWorkflowNative`), and must not import producers,
-// composition, or the workflow-runtime barrels. The host-sdk import gate
-// blocks consumers from reaching the workflow body through this seam.
+// `DurableDeferred`, no `DurableClock`), must not import the retired
+// workflow body (deleted in the body+kernel deletion wave), and must not
+// import producers, composition, or the workflow-runtime barrels. The
+// host-sdk import gate blocks consumers from reaching the retired body
+// through this seam.
 //
 // Per `docs/architecture/2026-05-22-runtime-physical-target-tree.md`, the
 // public subpath is `@firegrid/runtime/subscribers/runtime-context-session`;
@@ -24,30 +25,25 @@
 // them without duplicating the wire shape.
 
 import type { RuntimeContext } from "@firegrid/protocol/launch"
-import { Context, Layer, Schema } from "effect"
+import { Context, Layer } from "effect"
 import type { Effect } from "effect"
-import { RuntimeContextError } from "../../runtime-errors.ts"
+import type { RuntimeContextError } from "../../runtime-errors.ts"
 import type { AgentInputEvent } from "../../events/agent-input.ts"
 
-const RuntimeContextSessionStartedEvidenceSchema = Schema.Struct({
-  contextId: Schema.String,
-  activityAttempt: Schema.Number,
-  ownerKind: Schema.Literal("raw", "codec"),
-  ownerSessionId: Schema.String,
-  startCommandId: Schema.String,
-})
-export type RuntimeContextSessionStartedEvidence = Schema.Schema.Type<
-  typeof RuntimeContextSessionStartedEvidenceSchema
->
+export interface RuntimeContextSessionStartedEvidence {
+  readonly contextId: string
+  readonly activityAttempt: number
+  readonly ownerKind: "raw" | "codec"
+  readonly ownerSessionId: string
+  readonly startCommandId: string
+}
 
-export const RuntimeContextSessionStartOutcomeSchema = Schema.Union(
-  Schema.TaggedStruct("Started", {
-    evidence: RuntimeContextSessionStartedEvidenceSchema,
-  }),
-  Schema.TaggedStruct("Failed", {
-    error: RuntimeContextError,
-  }),
-)
+// Body+kernel deletion wave: `RuntimeContextSessionStartOutcomeSchema` and
+// `RuntimeContextSessionCommandAcceptedSchema` retired with the workflow
+// body's `startSessionActivity` / `sendSessionActivity` Activity wrappers
+// that consumed them. Shape C dispatches session commands directly via the
+// `RuntimeContextWorkflowSession.send` / `.startOrAttach` Tag methods (no
+// Activity-result envelope schemas required).
 
 export interface RuntimeContextSessionCommand {
   readonly _tag: "AgentInput"
@@ -55,15 +51,12 @@ export interface RuntimeContextSessionCommand {
   readonly event: AgentInputEvent
 }
 
-export const RuntimeContextSessionCommandAcceptedSchema = Schema.Struct({
-  contextId: Schema.String,
-  activityAttempt: Schema.Number,
-  commandId: Schema.String,
-  ownerSessionId: Schema.String,
-})
-export type RuntimeContextSessionCommandAccepted = Schema.Schema.Type<
-  typeof RuntimeContextSessionCommandAcceptedSchema
->
+export interface RuntimeContextSessionCommandAccepted {
+  readonly contextId: string
+  readonly activityAttempt: number
+  readonly commandId: string
+  readonly ownerSessionId: string
+}
 
 export interface RuntimeContextWorkflowSessionService {
   readonly startOrAttach: (
@@ -77,7 +70,7 @@ export interface RuntimeContextWorkflowSessionService {
   ) => Effect.Effect<RuntimeContextSessionCommandAccepted, RuntimeContextError>
   /**
    * Wave D-A Shape (b): per-context session teardown. Semantic equivalent
-   * of the retired `RuntimeContextWorkflowRuntime.deregister(contextId)` —
+   * of the retired kernel runtime wrapper's per-context deregister —
    * tears down per-context session resources (per-attempt session records
    * for this contextId). The session-command seam owns this lifecycle
    * directly now that the workflow body no longer holds the per-context
