@@ -157,13 +157,14 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     ).resolves.toBeUndefined()
   })
 
-  // Wave D-A (PR #714) PARK — STALE LEGACY: asserts host-owned workflow
-  // stream isolation. With the legacy body's workflow execution no longer
-  // running in production (Shape C subscriber replaces it), the workflow
-  // engine doesn't write per-host workflow rows on the body path. The
-  // tested invariant still holds for the remaining workflow Layers
-  // (ToolCall/Wait/ScheduledPrompt) but the assertion harness drives the
-  // body. Migration or retirement scoped to D-E.
+  // Wave D-A (PR #714) PARK — D-E BODY RETIREMENT: asserts the legacy
+  // body workflow engine writes per-host workflow rows. With Shape C
+  // subscriber owning the runtime-context loop, the body no longer
+  // executes in production; the workflow engine still runs for D-B
+  // ToolCall + D-D WaitFor + D-Es ScheduledPrompt (per-context layers),
+  // and those layers' workflow rows still respect host isolation, but
+  // the assertion harness drives the body workflow. Body retirement
+  // (D-E) deletes this test.
   it.skip("firegrid-workflow-driven-runtime.BOUNDARIES.6-1 each host writes workflow rows only to its host-owned workflow stream", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `two-host-${crypto.randomUUID()}`
@@ -233,11 +234,11 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     expect(resultB.executionIds).not.toContain(`runtime-context:${contextA}`)
   })
 
-  // Wave D-A (PR #714) PARK — STALE LEGACY: same body-execution shape as
-  // BOUNDARIES.6-1 above. The "host-scoped engine owns context executions"
-  // assertion drives the legacy body; Shape C subscriber owns context
-  // dispatch at host scope but the per-context engine is no longer used
-  // for the runtime-context loop body. Retires with the body in D-E.
+  // Wave D-A (PR #714) PARK — D-E BODY RETIREMENT: same body-execution
+  // mechanism as BOUNDARIES.6-1 above. The host-scoped engine no longer
+  // owns runtime-context loop executions — Shape C subscriber owns
+  // context dispatch at host scope, not via per-context workflow engine
+  // for the loop body. D-E body retirement deletes this test.
   it.skip("firegrid-workflow-driven-runtime.VALIDATION.7-1 one host-scoped engine owns multiple context executions", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `two-context-one-host-${crypto.randomUUID()}`

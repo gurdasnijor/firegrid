@@ -255,10 +255,16 @@ console.log(JSON.stringify({ type: "raw-probe", ok: true }))
     })
   })
 
-  // Wave D-A (PR #714) PARK — STALE LEGACY: covers the legacy body's
-  // ToolUse → ToolResult round-trip via the per-sequence mailbox path.
-  // Shape C handler routes tool dispatch through RuntimeToolUseExecutor
-  // directly; assertion shape differs. Retires with the body in D-E.
+  // Wave D-A (PR #714) PARK — D-B TOOL LANE: ToolUse → ToolResult
+  // round-trip through the legacy body's mailbox + per-context tool
+  // executor binding. Shape C's RuntimeToolUseExecutor seam still
+  // exists (handler.ts:dispatchAction RunToolUse branch); D-B's proof
+  // lane will add the Shape C tool-result-via-session-seam assertion.
+  // Replacement proof for the dispatch shape is in
+  // `packages/runtime/test/subscribers/runtime-context/handler.test.ts`
+  // ("runs a tool and forwards the result through the session-command
+  // seam on a ToolUse output"). The journaled-row assertion here is
+  // body-specific and retires when D-B migrates agent-tool-host-live.ts.
   it.skip("firegrid-runtime-agent-event-pipeline.STAGES.6 firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1 journals stdio-jsonl AgentOutputEvent rows and sends ToolResult back to the codec through authority surfaces", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-stdio-${crypto.randomUUID()}`
@@ -311,11 +317,14 @@ for await (const line of rl) {
     expect(toolResultChunk).toBeDefined()
   }, 15_000)
 
-  // Wave D-A (PR #714) PARK — STALE LEGACY: schedule_me registration
-  // through the legacy body's host tool routing. ScheduledPromptWorkflow
-  // remains alive as Shape D, but its host registration via the body
-  // path retires with the body in D-E. Per-context wiring continues to
-  // exist via runtimeContextWorkflowSupportLayer until then.
+  // Wave D-A (PR #714) PARK — D-B TOOL LANE: schedule_me registration
+  // path through the legacy body's host tool routing.
+  // ScheduledPromptWorkflow remains alive as justified Shape D (per CC2
+  // KEEP inventory), but its tool-host registration goes through
+  // agent-tool-host-live.ts which D-B retires. Until then, the
+  // per-context wiring via runtimeContextWorkflowSupportLayer still
+  // installs the workflow Layer, but the registration shape this test
+  // asserts is body-driven.
   it.skip("firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2 preserves schedule_me workflow registration through runtime host tool routing", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-schedule-me-${crypto.randomUUID()}`
@@ -413,10 +422,16 @@ console.log(JSON.stringify({ type: "text", text: "before-terminal", messageId: "
     expect(runs).toEqual(expect.arrayContaining(["started", "exited"]))
   }, 15_000)
 
-  // Wave D-A (PR #714) PARK — STALE LEGACY: explicit assertion on the
-  // "runtime-input deferred" mailbox path. Shape C subscriber routes
-  // permission via transitionInputEvent's pendingPermission* sets; the
-  // mailbox path retires with the body in D-E.
+  // Wave D-A (PR #714) PARK — D-C PERMISSION LANE: asserts ACP
+  // PermissionRequest blocks/resumes through the "runtime-input deferred"
+  // mailbox specifically. Shape C handles permission via
+  // transformsruntime-context-transition.ts withPermissionRequest /
+  // withPermissionResponse on RuntimeContextEventState's pending* sets
+  // (per CC2 D-C inventory: Shape C contract is already in place; no
+  // additional deletion in D-C). D-C's proof lane will add the Shape C
+  // permission-rendezvous assertion. Until then the mailbox-specific
+  // assertion stays parked. Grep blocker:
+  //   grep -rn "runtime-input deferred" packages/runtime
   it.skip("firegrid-runtime-agent-event-pipeline.INGREDIENTS.4 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2 firegrid-runtime-agent-event-pipeline.VALIDATION.3-2 journals ACP PermissionRequest, blocks, and resumes through the runtime-input deferred", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-acp-${crypto.randomUUID()}`
@@ -543,11 +558,13 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
     expect(events.some(event => event._tag === "Terminated")).toBe(true)
   }, 15_000)
 
-  // Wave D-A (PR #714) PARK — STALE LEGACY: ACP tool_call journaling via
-  // the legacy body's TOOL_DISPATCH path. The Shape C handler's
-  // transitionOutputEvent guards ACP-mode ToolUse identically (returns
-  // None), but the assertion shape targets the body's pipeline. Retires
-  // with the body in D-E or migrates to Shape C handler test.
+  // Wave D-A (PR #714) PARK — D-B TOOL LANE: ACP-mode `ToolUse`
+  // observation journaling via the legacy body's TOOL_DISPATCH path.
+  // The Shape C handler guards ACP-mode `ToolUse` identically
+  // (transitionOutputEvent returns None for ACP — preserves the
+  // observation-only invariant), but the journaling assertion targets
+  // body output. D-B's proof lane adds the Shape C ACP-mode
+  // observation-only assertion.
   it.skip("firegrid-runtime-agent-event-pipeline.STAGES.6 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7 journals ACP tool_call observations without routing them to agent-tool lowering", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-acp-tool-observation-${crypto.randomUUID()}`

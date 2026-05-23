@@ -183,11 +183,13 @@ console.log(JSON.stringify({ type: "probe", cwd: process.cwd() }))
 })
 
 describe("sync-run --prompt integration", () => {
-  // Wave D-A (PR #714) PARK — STALE LEGACY: asserts a "sequenced ingress
-  // row" which is the kernel-allocator status the legacy body's input
-  // dispatcher wrote. After D-A, input intents stay `status: "pending"`
-  // (identity-keyed); the Shape C subscriber dispatches without writing
-  // a sequenced row. Retires with the body in D-E.
+  // Wave D-A (PR #714) PARK — D-E BODY RETIREMENT: asserts the
+  // sequenced-input shape — `status: "sequenced"` + kernel sequence
+  // allocator — which D-A explicitly retires (CC2: Shape C input facts
+  // have no sequence allocator). Stdin delivery is preserved through
+  // the Shape C subscriber's SendRuntimeInput action; the assertion
+  // shape is body-specific. Grep blocker:
+  //   grep -rn "status: \"sequenced\"" packages/runtime
   it.skip("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 appends a sequenced ingress row, delivers it to the child via stdin, and the child emits a digest of what it read", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `sync-run-prompt-${crypto.randomUUID()}`

@@ -274,14 +274,24 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 runtime input intents", 
     }])
   })
 
-  // Wave D-A (PR #714) PARK — STALE LEGACY: asserts the WORKFLOW BODY's
-  // session_prompt activity produces a `status: "sequenced"` input row
-  // (kernel sequence allocator). After D-A the production path is
-  // RuntimeContextInputFacts → Shape C subscriber → handler; intent rows
-  // remain `status: "pending"` (identity-keyed, no sequence allocator).
-  // Test retires with the body in D-E or migrates to assert Shape C
-  // dispatch behavior. Grep blocker:
-  //   grep -n "lastProcessedInputSequence" packages/runtime/src/workflow-engine/workflows/runtime-context.ts
+  // Wave D-A (PR #714) PARK — STALE LEGACY MECHANISM: asserts the
+  // WORKFLOW BODY's session_prompt activity produces a
+  // `status: "sequenced"` ingress row (kernel sequence allocator output).
+  // Shape C has no sequence allocator (intent rows stay
+  // `status: "pending"`, identity = inputId); the session_prompt dispatch
+  // path still works but writes a different artifact set.
+  //
+  // Replacement proof in #714: the Shape C session-command dispatch is
+  // proven by `packages/runtime/test/subscribers/runtime-context/
+  // handler.test.ts` — "dispatches a prompt input through the
+  // session-command seam and advances the durable cursor" asserts
+  // input → transitionInputEvent → SendRuntimeInput → sendSessionCommand
+  // → RuntimeContextWorkflowSession.send. End-to-end public turn green
+  // via test/host/start-runtime.test.ts (4/4).
+  //
+  // D-E body retirement deletes this test outright when the sequenced
+  // ingress row is removed from the row schema. Grep blocker:
+  //   grep -rn "status: \"sequenced\"" packages/runtime
   it.skip("dispatches session_prompt through the active local host-scoped engine", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-session-${crypto.randomUUID()}`

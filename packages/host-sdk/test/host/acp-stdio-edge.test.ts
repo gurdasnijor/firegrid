@@ -731,13 +731,13 @@ describe("ACP stdio edge", () => {
     expect(permissionDecision(result.dispatched)).toEqual({ _tag: "Deny" })
   })
 
-  // Wave D-A (PR #714) PARK — STALE LEGACY: this test exercises the legacy
-  // workflow-body / mailbox / RuntimeInputIntentDispatcher path that the
-  // D-A cutover removed from production composition. The Shape C
-  // subscriber + RuntimeContextInputFacts is the new input route; this
-  // test asserts the body-side trace/route shape that no longer fires.
-  // Grep blocker for retirement (with the body in D-E):
-  //   grep -rn "runtimeInputDeferred\|appendRuntimeInputDeferred" packages/runtime
+  // Wave D-A (PR #714) PARK — D-B TOOL LANE + D-D WAIT/CHILD-OUTPUT
+  // LANE: ACP edge route + trace coverage drives turns through the
+  // legacy body's tool routing + wait-router observation paths
+  // (RuntimeObservationStreams is the D-D blocker per CC2 inventory).
+  // Public ACP edge composition itself is not body-bound; the failing
+  // assertion shape targets body-driven trace spans + tool routing.
+  // D-B/D-D's proof lanes will add Shape C-routed equivalents.
   it.skip("firegrid-zed-acp-stdio-external-agent.VALIDATION.5 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6 firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.7 routes turns and traces ACP edge requests", async () => {
     const harness = makeInMemoryAcpHarness()
     const namespace = `acp-edge-${crypto.randomUUID()}`
@@ -841,9 +841,14 @@ describe("ACP stdio edge", () => {
     )
   })
 
-  // Wave D-A (PR #714) PARK — STALE LEGACY: see ACP_STDIO_EDGE.6/7 PARK
-  // note above. Span-link assertion targets the legacy body's subprocess
-  // span chain; retires with the body in D-E.
+  // Wave D-A (PR #714) PARK — D-E BODY RETIREMENT: span-link
+  // assertion targets the legacy workflow body's subprocess byte span
+  // chain (e.g. workflow.execute → activity → openBytePipe). Shape C
+  // subscriber lifts the loop body out of the workflow engine, so the
+  // workflow.execute parent span no longer exists. D-E body retirement
+  // updates the span topology; until then the body-specific span linkage
+  // assertion stays parked. Grep blocker:
+  //   grep -n "Workflow.make" packages/runtime/src/workflow-engine/workflows/runtime-context.ts
   it.skip("firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.9 links ACP edge prompt spans to subprocess byte spans", async () => {
     const harness = makeInMemoryAcpHarness()
     const namespace = `acp-edge-byte-link-${crypto.randomUUID()}`
