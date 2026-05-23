@@ -32,7 +32,7 @@ import {
 } from "./commands.ts"
 import {
   requireLocalRuntimeContextWithHostSession,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/subscribers/runtime-context/host-lookup"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 import {
   RuntimeAgentOutputAfterEvents,

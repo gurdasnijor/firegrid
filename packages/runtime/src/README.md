@@ -18,6 +18,7 @@ the surfaces below exists and is documented here:
 
 | Folder | Role | Logical position |
 |---|---|---|
+| [`engine/`](./engine/README.md) | durable workflow-execution substrate (`DurableStreamsWorkflowEngine` + internals); leaf-tier sibling of `events/`. Importable by Shape D `subscribers/` + `composition/` only. | 0 |
 | [`events/`](./events/README.md) | event vocabulary; pure schemas, no I/O. | 1 |
 | [`tables/`](./tables/README.md) | DurableTable-backed state of record. | 2 |
 | [`producers/`](./producers/README.md) | Shape A live-boundary appenders (`sandbox/`, `codecs/`, `ingress-writers/`). | 3 |
@@ -122,15 +123,26 @@ These are intentionally not agent event-pipeline stages:
 - `channels/`: public runtime channel router capabilities. The implementation
   lives in runtime authority/provider modules; this folder is the stable import
   surface for route metadata and dispatch composition.
-- `kernel/`: runtime-context host-kernel services that own workflow execution
-  helpers, host-scoped workflow engine lifecycle, runtime host config, and
-  input dispatch state. Host packages compose these services but do not own
-  their durable workflow/runtime implementation.
-- `workflow-engine/`: workflow substrate adapter and runtime-owned workflow
-  definitions (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
-  Host packages install live workflow Layers and provide topology; they do not
-  own workflow names, payload schemas, success/error schemas, or
-  idempotency/execution-id helpers.
+- `engine/`: durable workflow-execution substrate
+  (`DurableStreamsWorkflowEngine` + the row/table schemas, engine runtime,
+  result codec, activity-contract span helper). Leaf-tier; imported by
+  Shape D `subscribers/` and `composition/host-workflow-engine.ts` only.
+  Not a public package subpath — external consumers reach the engine
+  through `@firegrid/runtime/composition/host-workflow-engine`'s
+  `HostWorkflowEngineLive` Layer. The legacy `kernel/` folder retired in
+  the tf-z8wq Wave 2 mechanical move (`RuntimeHostConfig` →
+  `composition/runtime-host-config.ts`;
+  `requireLocalRuntimeContextWithHostSession` →
+  `subscribers/runtime-context/host-lookup.ts`).
+- `workflow-engine/`: legacy folder holding the remaining Shape D
+  workflow definitions (`tool-call.ts`, `wait-for.ts`,
+  `scheduled-prompt.ts`, `runtime-control-request.ts`,
+  `runtime-ingress-transform.ts`, `runtime-context-run.ts`) plus the
+  `tool-execution/runtime-tool-use-executor.ts` executor Tag, pending
+  the per-bead Shape D moves into respective `subscribers/` folders
+  (see `.dependency-cruiser.cjs` carve-outs `tf-up1v`, `tf-hpr0`,
+  `tf-6hqx`, `tf-vfq9`). The engine substrate moved out to `engine/`
+  in tf-z8wq Wave 2.
 - `control-plane/`: runtime-owned dispatcher/daemon mechanics that bridge
   durable control request rows into runtime workflow execution. Host packages
   provide host-bound side effects, but they do not export or own the dispatcher

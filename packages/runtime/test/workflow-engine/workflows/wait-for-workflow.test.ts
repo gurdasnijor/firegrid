@@ -8,7 +8,7 @@ import {
 } from "../../../src/streams/index.ts"
 import {
   DurableStreamsWorkflowEngine,
-} from "../../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
+} from "../../../src/engine/durable-streams-workflow-engine.ts"
 import {
   WaitForWorkflow,
   WaitForWorkflowLayer,

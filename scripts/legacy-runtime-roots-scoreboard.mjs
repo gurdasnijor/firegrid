@@ -43,55 +43,27 @@ const legacyRoots = [
 // D-tool, D-D wait/child-output, D-control are sub-lanes).
 const parkAllowlist = {
   // -- packages/runtime/src/kernel/ -----------------------------------
-  // Wave D / Wave E body: legacy RuntimeContext body driver, helpers,
-  // and barrel; deleted alongside the Shape C cutover behavior proofs
-  // (roadmap §"Wave D" input/restart, §"Wave E" public-surface shrink).
-  "packages/runtime/src/kernel/index.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  // Body+kernel deletion wave: `kernel/internal/run-context-workflow.ts`
-  // and `kernel/runtime-context-workflow-runtime.ts` deleted with the
-  // workflow body retirement; entries removed.
-  "packages/runtime/src/kernel/runtime-context-helpers.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  "packages/runtime/src/kernel/runtime-host-config.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
+  // tf-z8wq Wave 2 mechanical move (this slice): `kernel/` folder retired.
+  // `runtime-host-config.ts` moved to `composition/runtime-host-config.ts`;
+  // `runtime-context-helpers.ts` moved to
+  // `subscribers/runtime-context/host-lookup.ts`; barrel + folder deleted.
+  // Entries removed.
 
   // -- packages/runtime/src/workflow-engine/ --------------------------
-  // The legacy body, per-sequence input deferred mailbox, and engine
-  // internals all retire in Wave D-input (legacy body + mailbox) and
-  // Wave D-D (wait/child-output). Shape D workflows (tool-call, wait-
-  // for, scheduled-prompt, runtime-control-request) graduate to
-  // `subscribers/{tool-dispatch,wait-router,scheduled-prompt,runtime-
-  // control}/` per the target tree.
-  "packages/runtime/src/workflow-engine/DurableStreamsWorkflowEngine.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
+  // tf-z8wq Wave 2 mechanical move (this slice): engine substrate
+  // (`DurableStreamsWorkflowEngine.ts` + `internal/{engine-runtime,table,
+  // codec,contract-activity}.ts`) moved to `engine/`. Entries removed.
+  //
+  // Shape D workflows (tool-call, wait-for, scheduled-prompt, runtime-
+  // control-request, runtime-context-run, runtime-ingress-transform) and
+  // the tool-execution executor Tag remain under `workflow-engine/`
+  // pending the per-bead Shape D moves into `subscribers/` folders
+  // (`tf-up1v` executor; `tf-hpr0` wait-for; `tf-6hqx` scheduled-prompt;
+  // `tf-vfq9` tool-call). Wave 1 §workflow-placement bullet of the
+  // target-tree doc.
   "packages/runtime/src/workflow-engine/index.ts": {
     owner: "rearch-shape-c",
     wave: "E",
-  },
-  "packages/runtime/src/workflow-engine/internal/codec.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  "packages/runtime/src/workflow-engine/internal/contract-activity.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  "packages/runtime/src/workflow-engine/internal/engine-runtime.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  "packages/runtime/src/workflow-engine/internal/table.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
   },
   // Body+kernel deletion wave: per-sequence DurableDeferred input mailbox
   // (`runtime-input-deferred.ts`) deleted; entry removed.

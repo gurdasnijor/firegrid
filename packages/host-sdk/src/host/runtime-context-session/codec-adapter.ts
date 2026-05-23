@@ -39,7 +39,7 @@ import {
 } from "effect"
 import {
   type RuntimeContextWorkflowSessionService,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/subscribers/runtime-context-session"
 import * as SessionCommon from "./common.ts"
 import { runtimeContextMcpPath } from "../mcp-host.ts"
 import {

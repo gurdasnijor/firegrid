@@ -23,10 +23,10 @@ import type {
   RuntimeContextSessionCommandAccepted,
   RuntimeContextSessionStartedEvidence,
   RuntimeContextWorkflowSessionService,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/subscribers/runtime-context-session"
 import {
   RuntimeContextWorkflowSession,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/subscribers/runtime-context-session"
 
 type RuntimeContextSessionOwnerKind = "raw" | "codec"
 

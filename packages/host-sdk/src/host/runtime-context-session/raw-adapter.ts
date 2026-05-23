@@ -12,7 +12,7 @@ import {
 } from "effect"
 import {
   type RuntimeContextWorkflowSessionService,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/subscribers/runtime-context-session"
 import {
   makeRuntimeContextSessionAdapterService,
   makeRuntimeContextSessionCommandSender,

@@ -24,7 +24,6 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "producers/codecs/session-byte-stream-adapter\\.ts$",
   "producers/codecs/agent-adapters/index\\.ts$",
   "producers/sandbox/index\\.ts$",
-  "kernel/index\\.ts$",
   // Wave D-A (PR #714): host-sdk composes the Shape C subscriber via the
   // runtime composition root + reaches the session-command seam contract
   // directly. Both subpaths are part of the runtime/package.json exports
@@ -38,6 +37,20 @@ const sanctionedRuntimeCapabilitySubpaths = [
   // target-tree directive; surfaced as a public subpath in
   // runtime/package.json.
   "composition/host-workflow-engine\\.ts$",
+  // tf-z8wq Wave 2: `kernel/` retired in this slice; the four leaf symbols
+  // migrated to target homes. Sanctioned host-sdk consumers for those
+  // moved leaves:
+  //   - RuntimeHostConfig Tag → composition/runtime-host-config.ts
+  //   - requireLocalRuntimeContextWithHostSession →
+  //     subscribers/runtime-context/host-lookup.ts
+  //   - RuntimeContextStateStore / makePerContextRuntimeContextStateStore →
+  //     tables/runtime-context-state.ts (host-sdk callers retargeted off
+  //     the retired kernel barrel in this slice)
+  // See docs/architecture/2026-05-22-runtime-physical-target-tree.md
+  // §Kernel Retirement.
+  "composition/runtime-host-config\\.ts$",
+  "subscribers/runtime-context/host-lookup\\.ts$",
+  "tables/runtime-context-state\\.ts$",
 ].join("|")
 
 // All four prior currentHostSdkSubstrateDebt carve-outs were stale (files
@@ -285,16 +298,12 @@ module.exports = {
       name: "runtime-composition-no-legacy-tree-import",
       severity: "error",
       comment:
-        "composition/ wires the runtime layer graph from target-tree exports only (events/, tables/, transforms/, channels/, producers/, subscribers/). It must not import from the legacy workflow-engine/ or agent-event-pipeline/ subtrees — not via relative path (`../workflow-engine/...`, `../agent-event-pipeline/...`) and not via the public barrel (`@firegrid/runtime/workflow-engine/...` etc., resolved to the same tree). Shape D temporary target shims under `subscribers/<name>/` may still re-export from current legacy implementation homes; composition imports the TARGET path (`subscribers/<name>/`), not the legacy barrel. Gap finding: #696's existing `firegrid-composition-no-legacy-imports` (semgrep) caught legacy SYMBOL names + a few specific paths (retired body driver, mailbox, kernel barrel, archive); CC1's Wave B draft showed those signatures weren't enough — relative `../workflow-engine` / `../agent-event-pipeline` imports slipped through. This rule closes that. Substrate residue carve-out (per OLA #726 reviewer clarification, option b): `DurableStreamsWorkflowEngine.ts` (engine substrate, NOT body/mailbox) is reachable by exact file because relocating it now would introduce undocumented target-tree structure. Retirement bead: tf-z8wq (Target-tree amendment: canonical homes for durable workflow engine substrate and remaining kernel leaf surfaces). The carve-out shrinks to a deletion once tf-z8wq picks the canonical home and the engine substrate physically moves.",
+        "composition/ wires the runtime layer graph from target-tree exports only (events/, tables/, transforms/, channels/, producers/, subscribers/). It must not import from the legacy workflow-engine/ or agent-event-pipeline/ subtrees — not via relative path (`../workflow-engine/...`, `../agent-event-pipeline/...`) and not via the public barrel (`@firegrid/runtime/workflow-engine/...` etc., resolved to the same tree). Shape D temporary target shims under `subscribers/<name>/` may still re-export from current legacy implementation homes; composition imports the TARGET path (`subscribers/<name>/`), not the legacy barrel. Gap finding: #696's existing `firegrid-composition-no-legacy-imports` (semgrep) caught legacy SYMBOL names + a few specific paths (retired body driver, mailbox, kernel barrel, archive); CC1's Wave B draft showed those signatures weren't enough — relative `../workflow-engine` / `../agent-event-pipeline` imports slipped through. This rule closes that. The prior `DurableStreamsWorkflowEngine.ts` exact-file substrate-residue carve-out shrank to deletion in the tf-z8wq Wave 2 mechanical move: the engine substrate now lives at `packages/runtime/src/engine/` (canonical leaf-tier substrate per `docs/architecture/2026-05-22-runtime-physical-target-tree.md`); composition reaches it via `../engine/durable-streams-workflow-engine.ts`, which is forward-flow and not subject to this rule.",
       from: { path: "^packages/runtime/src/composition/" },
       to: {
         path: [
           "^packages/runtime/src/workflow-engine/",
           "^packages/runtime/src/agent-event-pipeline/",
-        ],
-        pathNot: [
-          // Substrate residue: engine substrate file, NOT body/mailbox.
-          "^packages/runtime/src/workflow-engine/DurableStreamsWorkflowEngine\\.ts$",
         ],
       },
     },
