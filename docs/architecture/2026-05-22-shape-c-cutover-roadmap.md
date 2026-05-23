@@ -58,6 +58,99 @@ Hard stops:
 - Host-sdk imports `@firegrid/runtime/kernel`, `_archive/`, numeric runtime
   paths, or runtime physical paths.
 - A PR keeps old and new active RuntimeContext implementations in parallel.
+- Production lanes dispatched against an unvalidated upstream shape, signature,
+  composition, or substrate question (see "Tiny-Firegrid-First Dispatch Gate"
+  below).
+- Speculative production artifacts that compile against an assumed but
+  unlanded upstream signature are kept around for reshape. They are deleted.
+
+## Tiny-Firegrid-First Dispatch Gate
+
+`packages/tiny-firegrid/` is the workbench. Production runtime code under
+`packages/runtime/`, `packages/host-sdk/`, and `packages/protocol/` is where
+*validated* shapes get built. The two roles do not blur:
+
+- A tiny-firegrid simulation answers a specific topology question (shape,
+  signature, composition, or substrate) with one of `GREEN | YELLOW | RED`
+  (see `docs/cannon/architecture/runtime-design-constraints.md` §"Greenfield
+  Operating Mode").
+- Production code lands the validated shape *fresh*. Tiny-firegrid modules
+  do not graduate by copy/move. The simulation result is the contract;
+  production is written against that contract using the production
+  substrate, types, and Layer graph.
+
+A production lane is dispatchable only when both are true:
+
+1. **Upstream wave exited.** The wave the lane depends on (per the wave
+   ordering below) has merged on `rearch/shape-c-cutover` and its exit
+   gate is satisfied. Lanes do not dispatch against open sidecar branches,
+   proof PRs, or "mostly merged" intermediate states.
+2. **Uncertain shape validated GREEN in tiny-firegrid.** If the lane
+   contains any unresolved shape/signature/composition/substrate question
+   that the wave it sits in has not already answered with a landed
+   artifact, the answer must come from a GREEN tiny-firegrid simulation
+   before the production lane is dispatched. A YELLOW result dispatches
+   the named substrate/helper layer first; a RED result stops the lane
+   and revises the architecture.
+
+What counts as an "uncertain shape" question (non-exhaustive):
+
+- the public/internal signature of a runtime tag a downstream lane depends on;
+- the composition Layer wiring a `composition/host-live.ts` root will
+  expose (R-channel, Layer graph, what the host-sdk installs);
+- the substrate identity and key shape of a new `DurableTable` family;
+- the shape (B / C / D) classification of a new subscriber and the
+  justification for any workflow machinery in its `R`;
+- the integration contract between two target folders that have not yet
+  exchanged a real call (for example, `subscribers/x` calling
+  `channels/router.ts` for the first time).
+
+What does **not** require a tiny-firegrid loop:
+
+- mechanical moves whose upstream signature already landed and is referenced
+  by name (Wave A artifact relocations into the semantic tree are the
+  canonical example);
+- pure transform extraction whose call-sites are already typed;
+- doc, baseline, and guard-rule patches.
+
+### Speculative Production Artifacts Are Deleted
+
+Production artifacts produced against an assumed but unlanded upstream
+signature are *speculative*. Speculative artifacts are deleted, not parked
+or reshaped. Concretely:
+
+- A Wave N+1 production lane authored while Wave N is unsettled does not
+  rebase forward when Wave N exits with a different signature. It is closed
+  or its new files are deleted; the lane is rewritten fresh against the
+  landed Wave N signature.
+- "Parked" or "shelved" production PRs that predate the wave they depend on
+  do not accumulate. They are closed once their target wave exits, with a
+  comment naming what changed and what the fresh dispatch will look like.
+- A speculative artifact is not preserved because it "compiles" or "passes
+  tests against a mocked upstream." Compiling against a guess is the
+  failure mode this rule prevents.
+
+The reason is structural: the cost of reshape-when-the-real-signature-lands
+is consistently higher than the cost of writing fresh against the validated
+shape. Tiny-firegrid is cheap; production rewrites against half-known
+upstream are not.
+
+### Dispatch Gate Decision Form
+
+For any Wave C/D production lane, the dispatch record must answer:
+
+```text
+Upstream wave:                 (Wave A / Wave B / Wave C / Wave D-input)
+Upstream wave exit status:     (exited on rearch/shape-c-cutover / not yet)
+Uncertain shape questions:     (list, or "none — mechanical")
+Tiny-firegrid simulation:      (sim name + GREEN / YELLOW / RED, or
+                                "n/a — no uncertain shape")
+Production approach:           (written fresh against landed shape /
+                                tiny-firegrid graduation [forbidden])
+```
+
+A "tiny-firegrid graduation" entry is itself a violation. The gate exists
+precisely so production is written fresh.
 
 ## Wave A: Artifact Placement
 
@@ -89,6 +182,14 @@ Wave A exit gate:
 Do not build `composition/host-live.ts` in Wave A.
 
 ## Wave B: Runtime Root Assembly
+
+Dispatch precondition: Wave A exited on `rearch/shape-c-cutover`. The
+`composition/host-live.ts` Layer graph is the canonical example of a
+composition question — if its `R` channel, the table set it requires, or
+the host-sdk-facing public subpath is not already pinned by Wave A
+artifacts, the open question is answered by a tiny-firegrid composition
+simulation GREEN before the production root is dispatched. See
+"Tiny-Firegrid-First Dispatch Gate".
 
 Goal: assemble the canonical runtime root from target folders only.
 
@@ -128,6 +229,16 @@ combined Wave B/C PR and the PR body says so explicitly. If it does not, Wave C
 is a separate PR. The turn proof is not a Wave B success criterion.
 
 ## Wave C: Host-SDK Cutover And Public Turn Proof
+
+Dispatch precondition: Wave B exited on `rearch/shape-c-cutover` with the
+runtime root assembly landed and its public subpath stable. Any open
+shape/signature/composition question on the host-sdk side of the cut —
+how host-sdk installs the root, what its public Layer surface looks
+like, what the channel-router R-channel demands — is answered by a
+tiny-firegrid simulation GREEN before the production cutover lane is
+dispatched. Speculative host-sdk lanes authored against an unlanded
+runtime root signature are deleted, not rebased. See
+"Tiny-Firegrid-First Dispatch Gate".
 
 Goal: route the public host-sdk entry through the runtime root and prove a real
 runtime turn end-to-end.
@@ -171,6 +282,17 @@ Wave C exit gate:
   assumption, or pre-existing unrelated failure.
 
 ## Wave D: Behavior Proofs With Paired Deletion
+
+Dispatch precondition: Wave C exited on `rearch/shape-c-cutover` (one real
+runtime turn through the new root). Each Wave D lane below names the
+upstream Wave D dependency it sits behind (input-delivery + restart/
+idempotency gate the rest). Any open shape question for a lane — durable
+result identity key, completion-row schema, channel observation contract,
+the at-most-once primitive the lane chooses — is answered by a
+tiny-firegrid simulation GREEN before the production lane is dispatched.
+Production PRs that predate their upstream Wave D lane's exit are
+speculative; their files are deleted and the lane is rewritten fresh
+against the landed shape. See "Tiny-Firegrid-First Dispatch Gate".
 
 Goal: prove the remaining behaviors through the new shape and delete the old
 machinery each proof makes unreachable.

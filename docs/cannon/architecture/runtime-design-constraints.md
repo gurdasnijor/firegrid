@@ -138,6 +138,25 @@ Do not spend production effort improving a known-wrong edge when a tiny-firegrid
 simulation can validate the shorter target edge faster. Bridge work is debt; in
 greenfield mode, debt is admitted only when it accelerates deletion.
 
+`packages/tiny-firegrid/` is the workbench. Production runtime code under
+`packages/runtime/`, `packages/host-sdk/`, and `packages/protocol/` is where
+validated shapes get *built*. The two roles do not blur, and validated
+tiny-firegrid modules do not graduate into production by copy/move:
+production code is written fresh against the simulation's answered
+contract, using production substrate, types, and Layer graph.
+
+Operational consequences for lane dispatch — when a production lane may be
+dispatched, when an unsettled upstream wave forbids it, and what happens to
+speculative production artifacts produced before the upstream wave exits —
+live in the dispatch docs, not this constraint doc:
+
+- [`docs/architecture/2026-05-22-shape-c-cutover-roadmap.md`](../../architecture/2026-05-22-shape-c-cutover-roadmap.md)
+  §"Tiny-Firegrid-First Dispatch Gate" — the per-wave precondition and the
+  dispatch decision form.
+- [`docs/architecture/2026-05-22-shape-c-cutover-operating-plan.md`](../../architecture/2026-05-22-shape-c-cutover-operating-plan.md)
+  §"Operating Rules For Lanes" — the lane-level rule and the
+  speculative-artifact deletion rule.
+
 ## Review Rule
 
 Before accepting a runtime SDD, protocol addition, workflow identity, channel
