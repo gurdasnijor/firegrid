@@ -235,22 +235,26 @@ export const reconcileOnce = (
   Effect.gen(function*() {
     yield* Ref.update(substrate.reconcilerDrains, (n) => n + 1)
     const pending = yield* SubscriptionRef.get(substrate.startRequests)
-    const drained: Array<StartRequestRow> = []
-    for (const row of pending) {
-      if (row.status !== "pending") continue
-      yield* internalHostStart(substrate, hooks)({
+    const pendingOnly = pending.filter((row) => row.status === "pending")
+    // Sequential traversal preserves the original loop's ordering and its
+    // single-threaded drain semantics (the reconciler is the only writer of
+    // these rows in this sim). `Effect.forEach` with default sequential
+    // concurrency replaces the package-source for..of loop.
+    yield* Effect.forEach(pendingOnly, (row) =>
+      internalHostStart(substrate, hooks)({
         contextId: row.contextId,
         requestId: row.requestId,
-      })
-      drained.push({ ...row, status: "completed" })
-    }
-    yield* SubscriptionRef.update(substrate.startRequests, (rows) =>
-      rows.map((row) => {
-        const completed = drained.find((d) => d.requestId === row.requestId)
-        return completed ?? row
       }),
     )
-    return { drained: drained.length }
+    const drainedIds = new Set(pendingOnly.map((row) => row.requestId))
+    yield* SubscriptionRef.update(substrate.startRequests, (rows) =>
+      rows.map((row) =>
+        drainedIds.has(row.requestId)
+          ? { ...row, status: "completed" as const }
+          : row,
+      ),
+    )
+    return { drained: pendingOnly.length }
   })
 
 // ── Routes (the wire-edge of the substrate) ──────────────────────────────
