@@ -85,6 +85,10 @@
       "types": "./src/tables/runtime-context-state.ts",
       "default": "./src/tables/runtime-context-state.ts"
     },
+    "./tables/runtime-context-input-facts": {
+      "types": "./src/tables/runtime-context-input-facts.ts",
+      "default": "./src/tables/runtime-context-input-facts.ts"
+    },
     "./subscribers/runtime-context-session": {
       "types": "./src/subscribers/runtime-context-session/index.ts",
       "default": "./src/subscribers/runtime-context-session/index.ts"
