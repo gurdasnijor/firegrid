@@ -13,6 +13,9 @@ Source: `docs/architecture/2026-05-22-runtime-physical-target-tree.md`.
 - `runtime-output.ts` — `RuntimeOutputTable`
 - `runtime-context-state.ts` — `RuntimeContextStateStore` (per-context loop
   state) and the `nextOutputObservation` point-read primitive
+- `runtime-context-input-facts.ts` — `RuntimeContextInputFacts` per-context
+  read-side stream over `RuntimeControlPlaneTable.inputIntents`, plus the
+  pure `ingressInputRowFromIntent` adapter
 
 A table file owns the schema, the `DurableTable("name", { schemas })` value,
 and the **point-read selection helpers** that decide which row to surface from
@@ -67,3 +70,13 @@ Wave 2 physically moves the implementation here; the public subpath stays
 stable. The legacy `workflow-engine/runtime-context-state.ts` import in this
 re-export is the only allowed cross-tier reach during Wave 1; the migration
 gate baselines it.
+
+`runtime-context-input-facts.ts` is a Wave A clean-room placement: the
+implementation lives physically in this folder (no legacy source to bridge
+from). The runtime package exposes it as
+`@firegrid/runtime/tables/runtime-context-input-facts` — the stable
+host-sdk/CC2 import target. The file owns the per-context read-side
+`Stream<RuntimeIngressInputRow>` over `RuntimeControlPlaneTable.inputIntents`
+and the pure `ingressInputRowFromIntent` adapter; append authority into
+`inputIntents` continues to live with its existing producer sites (no peer
+producer file is hoisted here because the hoisted slice is read-side only).
