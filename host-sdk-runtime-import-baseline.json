@@ -1,0 +1,229 @@
+{
+  "findings": [
+    {
+      "ruleId": "host-sdk-no-execute-runtime-context-workflow-symbol",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 43
+    },
+    {
+      "ruleId": "host-sdk-no-execute-runtime-context-workflow-symbol",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 546
+    },
+    {
+      "ruleId": "host-sdk-no-execute-runtime-context-workflow-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 17
+    },
+    {
+      "ruleId": "host-sdk-no-execute-runtime-context-workflow-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 67
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
+      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
+      "line": 9
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
+      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
+      "line": 35
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
+      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
+      "line": 40
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
+      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
+      "line": 62
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
+      "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+      "line": 71
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 45
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 542
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 548
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 20
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 64
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 67
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 99
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
+      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
+      "line": 42
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
+      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
+      "line": 282
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
+      "line": 30
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
+      "line": 48
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
+      "line": 91
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 41
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 197
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 533
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 569
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 35
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 87
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 206
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 231
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
+      "line": 10
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
+      "line": 21
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
+      "line": 27
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/layers.ts",
+      "line": 55
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/layers.ts",
+      "line": 340
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-observation-source-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
+      "line": 90
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-observation-source-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
+      "line": 344
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-observation-source-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
+      "line": 442
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-observation-streams-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
+      "line": 5
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-observation-streams-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
+      "line": 19
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-observation-streams-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
+      "line": 30
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-observation-streams-symbol",
+      "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
+      "line": 41
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-streams-import",
+      "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
+      "line": 5
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-streams-import",
+      "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
+      "line": 90
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-streams-import",
+      "path": "packages/host-sdk/src/host/channels/verified-webhook/index.ts",
+      "line": 13
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-streams-import",
+      "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+      "line": 20
+    }
+  ]
+}

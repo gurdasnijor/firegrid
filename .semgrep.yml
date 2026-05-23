@@ -1574,6 +1574,111 @@ rules:
     pattern-regex: 'from\s+"@firegrid/runtime/[1-7]-'
 
   # ------------------------------------------------------------------
+  # Wave C host-sdk boundary guards.
+  #
+  # Source: docs/architecture/host-sdk-runtime-boundary.md
+  #   Cannon §3 (no host-sdk @effect/workflow imports)
+  #   Cannon §6 (no host-sdk @firegrid/runtime root barrel imports)
+  #
+  # Wave C cuts host-sdk over to the runtime root assembled in #699. These
+  # two rules close the only hard bans the boundary doc names that the
+  # existing guards do NOT statically catch:
+  #
+  # - `@effect/workflow` direct imports: the depcruise rule
+  #   `host-sdk-no-workflow-or-durable-substrate-scan` includes
+  #   `node_modules/.../@effect/workflow/` in its `to.path` regex, but
+  #   `options.includeOnly: "^packages/.*/src"` filters external node_modules
+  #   modules out of the dependency list before the regex sees them, making
+  #   the @effect/workflow clause a no-op. Verified empirically: depcruise
+  #   does not list @effect/workflow as a dependency of host-sdk source files
+  #   that import it. This Semgrep rule closes that gap at the source-text
+  #   level.
+  # - `@firegrid/runtime` root barrel: the boundary doc lists
+  #   `@firegrid/host-sdk -/-> @firegrid/runtime$` as a guard but no rule
+  #   exists. Zero current host-sdk hits, so zero-baseline.
+  #
+  # The four existing host-sdk @effect/workflow residue files (the ones the
+  # boundary doc Cannon §3 names) are recorded in semgrep-error-baseline.json
+  # as Wave C/D deletion targets. New imports block.
+  # ------------------------------------------------------------------
+
+  - id: firegrid-host-sdk-no-effect-workflow-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.effect-workflow
+      category: package-boundary
+      doc: docs/architecture/host-sdk-runtime-boundary.md
+      rationale: |
+        Cannon §3 (host-sdk-runtime-boundary.md): the only sanctioned home for
+        `Workflow.make` / `Activity.make` / `DurableDeferred` / `DurableClock`
+        is a runtime-owned Shape D Layer with a justified workflow-machinery
+        rationale (runtime-design-constraints.md §SDD Gate). New host-sdk
+        `@effect/workflow` imports are bridge residue, not patterns to copy.
+        Existing residue sites are baselined as Wave C/D deletion targets;
+        this rule blocks new ones.
+      fix-hint: |
+        Move the workflow-shaped piece into a runtime-owned Shape D Layer
+        under `packages/runtime/src/subscribers/{tool-dispatch|wait-router|
+        scheduled-prompt|runtime-control}/`, where the workflow-machinery
+        justification lives. host-sdk composes the resulting Layer/Tag, not
+        the workflow execution.
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+        - "/semgrep-tests/wave-c-host-sdk-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import `@effect/workflow`. Workflow machinery
+      (`Workflow.make` / `Activity.make` / `DurableDeferred` / `DurableClock`)
+      is owned by runtime Shape D Layers with a justified workflow-machinery
+      rationale (runtime-design-constraints.md §SDD Gate;
+      host-sdk-runtime-boundary.md Cannon §3). Existing residue sites are
+      baselined as Wave C/D deletion targets; do not add new ones.
+    pattern-regex: 'from\s+"@effect/workflow'
+
+  - id: firegrid-host-sdk-no-runtime-root-barrel-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.root-barrel
+      category: package-boundary
+      doc: docs/architecture/host-sdk-runtime-boundary.md
+      rationale: |
+        Cannon §6 (host-sdk-runtime-boundary.md): the `@firegrid/runtime`
+        root barrel widens the cross-boundary surface beyond what the
+        host-sdk / runtime boundary admits. Sanctioned host-sdk imports go
+        through narrow semantic subpaths
+        (`@firegrid/runtime/tables/...`, `@firegrid/runtime/subscribers/...`,
+        `@firegrid/runtime/composition/...`, etc.). Zero-baseline.
+      fix-hint: |
+        Replace the root-barrel import with the specific semantic subpath
+        that owns the symbol (see
+        docs/architecture/2026-05-22-runtime-physical-target-tree.md
+        "Public Package Subpaths").
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+        - "/semgrep-tests/wave-c-host-sdk-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import the `@firegrid/runtime` root barrel.
+      Cross-boundary imports use narrow semantic subpaths
+      (`@firegrid/runtime/tables/...`, `@firegrid/runtime/subscribers/...`,
+      `@firegrid/runtime/composition/...`, etc.). See
+      docs/architecture/host-sdk-runtime-boundary.md Cannon §6.
+      Zero-baseline.
+    pattern-regex: 'from\s+"@firegrid/runtime"'
+
+  # ------------------------------------------------------------------
   # Wave A runtime semantic-tree boundary guards (tf-r1mv).
   #
   # Source: docs/architecture/2026-05-22-runtime-physical-target-tree.md,
