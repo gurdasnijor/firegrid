@@ -10,7 +10,7 @@ import {
 import {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
-} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
+} from "../../src/tables/runtime-output.ts"
 
 interface TestProviderEntry {
   readonly capability: object

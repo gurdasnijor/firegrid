@@ -9,11 +9,19 @@ import {
   type RuntimeAgentOutputObservation,
   runtimeAgentOutputObservationFromRow,
 } from "../events/index.ts"
-import type { RuntimeObservationSource } from "../../streams/sources.ts"
 
 export type { RuntimeAgentOutputObservation } from "../events/index.ts"
 
-type AgentOutputAfterSource = Extract<RuntimeObservationSource, { readonly _tag: "AgentOutputAfter" }>
+// Structural shape of the `AgentOutputAfter` variant of
+// `RuntimeObservationSource` (declared in `streams/sources.ts`). Inlined here
+// to keep tables/ free of type-only edges into the legacy `streams/` root
+// (enforced by scripts/runtime-target-legacy-type-only-check.mjs).
+type AgentOutputAfterSource = {
+  readonly _tag: "AgentOutputAfter"
+  readonly contextId: string
+  readonly activityAttempt: number
+  readonly afterSequence: number
+}
 
 interface RuntimeAgentOutputAfterEventsService {
   readonly initial: (

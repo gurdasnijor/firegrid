@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   makeRuntimeAgentToolExecutionService,
-} from "../../../src/agent-event-pipeline/tool-execution/runtime-agent-tool-execution.ts"
+} from "../../../src/subscribers/tool-dispatch/runtime-agent-tool-execution.ts"
 
 describe("RuntimeAgentToolExecution", () => {
   it("firegrid-agent-body-plan.SLICE_D_VERBS.2 send executes the validated append effect", async () => {

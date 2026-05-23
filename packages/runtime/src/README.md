@@ -43,19 +43,18 @@ imports of `@firegrid/runtime/kernel`, `_archive/`, and any numbered runtime
 subpath. Existing kernel-barrel sites are baselined as legacy debt; they
 shrink as host-sdk callers migrate to the semantic subpaths above.
 
-## Pre-Cutover Layout (Active)
+## Layout
 
-This directory keeps the agent event-pipeline grouped under
-`agent-event-pipeline/`. The target from
-[`SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md`](../../../docs/sdds/SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md)
-is to keep clean event-pipeline roles together while host, kernel, waits, tools,
-workflow-engine, adapters, and verified ingest remain adjacent bounded
-contexts.
+This directory follows the physical target tree in
+[`docs/architecture/2026-05-22-runtime-physical-target-tree.md`](../../../docs/architecture/2026-05-22-runtime-physical-target-tree.md).
+The legacy `agent-event-pipeline/` bounded context was physically moved into
+the role-named folders below; host, kernel, waits, workflow-engine, adapters,
+and verified ingest remain adjacent bounded contexts.
 
 The agent event pipeline is:
 
 ```txt
-agent-event-pipeline/sources -> codecs -> events -> transforms -> authorities -> subscribers
+producers/sandbox -> codecs -> events -> transforms -> authorities -> subscribers
 ```
 
 The arrows describe ownership of data flow, not import permission. Durable
@@ -94,12 +93,13 @@ transform" abstraction, the boundary is probably misclassified.
 
 | Folder | Role |
 | --- | --- |
-| [`agent-event-pipeline/sources/`](./agent-event-pipeline/sources/README.md) | Live byte/process/resource acquisition. |
-| [`agent-event-pipeline/codecs/`](./agent-event-pipeline/codecs/README.md) | Protocol wire-format normalization. |
-| [`agent-event-pipeline/events/`](./agent-event-pipeline/events/README.md) | Normalized runtime event contracts and envelope helpers. |
-| [`agent-event-pipeline/transforms/`](./agent-event-pipeline/transforms/README.md) | Pure stream/row shaping operators. |
-| [`agent-event-pipeline/authorities/`](./agent-event-pipeline/authorities/) | Durable Effect capability providers for runtime output/ingress. |
-| [`agent-event-pipeline/subscribers/`](./agent-event-pipeline/subscribers/README.md) | Runtime subscriber landing zone. The Shape C RuntimeContext per-event handler lives under `subscribers/runtime-context/`; Shape B projection consumers may live alongside as siblings. The Shape C subscribers' `R` channel must not name `WorkflowEngine`/`WorkflowInstance` (enforced by `firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber`). See [`docs/cannon/architecture/runtime-pipeline-type-boundaries.md`](../../../docs/cannon/architecture/runtime-pipeline-type-boundaries.md) §"Shape C" and `agent-event-pipeline/TOPOLOGY.md`. |
+| [`producers/sandbox/`](./producers/sandbox/README.md) | Live byte/process/resource acquisition. |
+| [`producers/codecs/`](./producers/codecs/README.md) | Protocol wire-format normalization. |
+| [`events/`](./events/README.md) | Normalized runtime event contracts and envelope helpers. |
+| [`transforms/`](./transforms/README.md) | Pure stream/row shaping operators. |
+| [`producers/ingress-writers/`](./producers/) | Durable Effect capability providers for runtime output/ingress (append authorities). |
+| [`tables/`](./tables/README.md) | Durable RuntimeContext/RuntimeOutput state-of-record bindings. |
+| [`subscribers/`](./subscribers/README.md) | Runtime subscriber landing zone. The Shape C RuntimeContext per-event handler lives under `subscribers/runtime-context/`; Shape B projection consumers live alongside as siblings. The Shape C subscribers' `R` channel must not name `WorkflowEngine`/`WorkflowInstance` (enforced by `firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber`). See [`docs/cannon/architecture/runtime-pipeline-type-boundaries.md`](../../../docs/cannon/architecture/runtime-pipeline-type-boundaries.md) §"Shape C" and the physical target tree doc. |
 
 ## Adjacent Runtime Boundaries
 

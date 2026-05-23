@@ -1,6 +1,6 @@
 import { Workflow } from "@effect/workflow"
 import { Schema } from "effect"
-import { ToolResultEventSchema } from "../../agent-event-pipeline/events/index.ts"
+import { ToolResultEventSchema } from "../../events/index.ts"
 
 export const ToolCallWorkflowPayloadSchema = Schema.Struct({
   contextId: Schema.String,

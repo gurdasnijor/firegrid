@@ -1,12 +1,12 @@
 import { Prompt } from "@effect/ai"
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { type AgentOutputEvent } from "../../src/agent-event-pipeline/events/index.ts"
+import { type AgentOutputEvent } from "../../src/events/index.ts"
 import {
   decodeRuntimeAgentOutputEnvelope,
   encodeRuntimeAgentOutputEnvelope,
   runtimeAgentOutputObservationFromRow,
-} from "../../src/agent-event-pipeline/events/output.ts"
+} from "../../src/events/output.ts"
 
 describe("runtime agent output envelope", () => {
   it("firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.8 encodes and decodes AgentOutputEvent envelopes", () => {

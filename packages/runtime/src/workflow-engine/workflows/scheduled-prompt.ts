@@ -2,7 +2,7 @@ import { DurableClock, Workflow } from "@effect/workflow"
 import { Clock, Duration, Effect, Schema } from "effect"
 import {
   appendScheduledPromptIntent,
-} from "../../agent-event-pipeline/authorities/scheduled-prompt-append.ts"
+} from "../../producers/ingress-writers/scheduled-prompt-append.ts"
 
 // tf-5ose: replay-safe, non-blocking durable scheduler for `schedule_me`.
 //

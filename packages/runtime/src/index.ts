@@ -86,14 +86,14 @@ export {
   resolveMcpServerHeaders,
   resolveSpawnEnvVars,
   type EnvLookup,
-} from "./agent-event-pipeline/sources/sandbox/secrets.ts"
+} from "./producers/sandbox/secrets.ts"
 // firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.1
 export {
   effectAi,
   EffectAiSandboxProvider,
   type EffectAiSandboxConfig,
   type EffectAiSandboxProviderHelper,
-} from "./agent-event-pipeline/sources/sandbox/effect-ai.ts"
+} from "./producers/sandbox/effect-ai.ts"
 export {
   AcpCapabilities,
   AcpSessionLive,
@@ -101,7 +101,7 @@ export {
   type AcpSessionOptions,
   StdioJsonlCapabilities,
   StdioJsonlSessionLive,
-} from "./agent-event-pipeline/codecs/index.ts"
+} from "./producers/codecs/index.ts"
 export {
   RuntimeAgentOutputEnvelopeSchema,
   decodeRuntimeAgentOutputEnvelope,
@@ -109,7 +109,7 @@ export {
   runtimeAgentOutputObservationFromRow,
   type RuntimeAgentOutputEnvelope,
   type RuntimeAgentOutputObservation,
-} from "./agent-event-pipeline/events/output.ts"
+} from "./events/output.ts"
 export {
   AdapterCancelled,
   AgentAdapter,

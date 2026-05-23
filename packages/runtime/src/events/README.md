@@ -13,11 +13,16 @@ Pure schema/type modules for the canonical pipeline:
 events -> DurableTable(events) -> transforms(rows) -> keyed subscribers(rows)
 ```
 
-- `agent-input.ts` — `AgentInputEvent` union + schema
-- `agent-output.ts` — `AgentOutputEvent` union + schema
-- `runtime-ingress.ts` — `RuntimeIngressInputRow` schema
-- `runtime-output.ts` — `RuntimeEventRow` / `RuntimeLogLineRow` schemas
-- `runtime-context-state.ts` — `RuntimeContextEventState` schema
+- `agent-input.ts` — `AgentInputEvent` union + schema (public events/agent-input subpath)
+- `agent-output.ts` — `AgentOutputEvent` union + schema (public events/agent-output subpath)
+- `contract.ts` — canonical `AgentInputEvent` / `AgentOutputEvent` definitions plus
+  `AgentToolUseMode`, `PermissionDecision`, `ToolResultEvent`. Moved from
+  `agent-event-pipeline/events/contract.ts`.
+- `output.ts` — `RuntimeAgentOutputObservation` re-export from protocol session-facade.
+  Moved from `agent-event-pipeline/events/output.ts`.
+- `stage-contracts.ts` — branded `RuntimeSubscriberId`, `RuntimeAuthoritySourceName`,
+  `RuntimeIdempotencyKey`. Moved from `agent-event-pipeline/events/stage-contracts.ts`.
+- `runtime-context-state.ts` — `RuntimeContextEventState` schema.
 
 ## May import
 
@@ -51,8 +56,11 @@ import { RuntimeOutputTable } from "../tables/runtime-output.ts"             // 
 import { handleRuntimeContextEvent } from "../subscribers/runtime-context/handler.ts" // direction violation
 ```
 
-## Scaffold status
+## Move history
 
-Empty. Wave 2 moves event schema files in from
-`packages/runtime/src/agent-event-pipeline/events/` and the protocol row
-schemas.
+Wave 2 (cleanup/aep-physical-move): physically moved
+`contract.ts`, `output.ts`, `stage-contracts.ts`, and `index.ts` from
+`packages/runtime/src/agent-event-pipeline/events/` into this folder. Public
+subpath `@firegrid/runtime/events` (and the new `events/agent-input` /
+`events/agent-output`) re-point to the new file paths through
+`packages/runtime/package.json`.

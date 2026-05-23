@@ -18,20 +18,20 @@
       "default": "./src/channels/index.ts"
     },
     "./per-context-output": {
-      "types": "./src/agent-event-pipeline/authorities/per-context-output.ts",
-      "default": "./src/agent-event-pipeline/authorities/per-context-output.ts"
+      "types": "./src/producers/ingress-writers/per-context-output.ts",
+      "default": "./src/producers/ingress-writers/per-context-output.ts"
     },
     "./tool-executor": {
-      "types": "./src/agent-event-pipeline/tool-execution/index.ts",
-      "default": "./src/agent-event-pipeline/tool-execution/index.ts"
+      "types": "./src/subscribers/tool-dispatch/index.ts",
+      "default": "./src/subscribers/tool-dispatch/index.ts"
     },
     "./control-plane": {
       "types": "./src/control-plane/index.ts",
       "default": "./src/control-plane/index.ts"
     },
     "./runtime-output": {
-      "types": "./src/agent-event-pipeline/authorities/runtime-output-public.ts",
-      "default": "./src/agent-event-pipeline/authorities/runtime-output-public.ts"
+      "types": "./src/tables/runtime-output-public.ts",
+      "default": "./src/tables/runtime-output-public.ts"
     },
     "./streams": {
       "types": "./src/streams/index.ts",
@@ -58,28 +58,24 @@
       "default": "./src/workflow-engine/workflows/index.ts"
     },
     "./events": {
-      "types": "./src/agent-event-pipeline/events/index.ts",
-      "default": "./src/agent-event-pipeline/events/index.ts"
-    },
-    "./channels": {
-      "types": "./src/channels/index.ts",
-      "default": "./src/channels/index.ts"
+      "types": "./src/events/index.ts",
+      "default": "./src/events/index.ts"
     },
     "./codecs": {
-      "types": "./src/agent-event-pipeline/codecs/index.ts",
-      "default": "./src/agent-event-pipeline/codecs/index.ts"
+      "types": "./src/producers/codecs/index.ts",
+      "default": "./src/producers/codecs/index.ts"
     },
     "./session-byte-stream-adapter": {
-      "types": "./src/agent-event-pipeline/session-byte-stream-adapter.ts",
-      "default": "./src/agent-event-pipeline/session-byte-stream-adapter.ts"
+      "types": "./src/producers/codecs/session-byte-stream-adapter.ts",
+      "default": "./src/producers/codecs/session-byte-stream-adapter.ts"
     },
     "./agent-adapters": {
       "types": "./src/agent-adapters/index.ts",
       "default": "./src/agent-adapters/index.ts"
     },
     "./sources/sandbox": {
-      "types": "./src/agent-event-pipeline/sources/sandbox/index.ts",
-      "default": "./src/agent-event-pipeline/sources/sandbox/index.ts"
+      "types": "./src/producers/sandbox/index.ts",
+      "default": "./src/producers/sandbox/index.ts"
     },
     "./tables/runtime-context-state": {
       "types": "./src/tables/runtime-context-state.ts",

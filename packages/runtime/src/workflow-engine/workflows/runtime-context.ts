@@ -31,7 +31,7 @@ import {
   type AgentInputEvent,
   type AgentOutputEvent,
   type RuntimeAgentOutputObservation,
-} from "../../agent-event-pipeline/events/index.ts"
+} from "../../events/index.ts"
 import {
   RuntimeContextStateStore,
   type RuntimeContextEventState,

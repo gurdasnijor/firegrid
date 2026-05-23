@@ -2,7 +2,7 @@ import { Context, type Effect, Layer } from "effect"
 import type {
   AgentInputEvent,
   AgentOutputEvent,
-} from "../../agent-event-pipeline/events/index.ts"
+} from "../../events/index.ts"
 
 interface RuntimeToolUseExecutorContext {
   readonly contextId: string

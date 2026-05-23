@@ -114,7 +114,7 @@ In `packages/host-sdk/src/host/` (whichever files own them):
 In `packages/runtime/src/`:
 
 - Nothing to add. The Shape D Layer at
-  `packages/runtime/src/agent-event-pipeline/tool-execution/runtime-tool-call-workflow.ts`
+  `packages/runtime/src/subscribers/tool-dispatch/runtime-tool-call-workflow.ts`
   is correct as-is. The Wave A forward-target re-export at
   `packages/runtime/src/subscribers/tool-dispatch/index.ts` already
   points at it. Wave 2 of the tree migration physically moves the body
@@ -182,7 +182,7 @@ prove the two paths coexist correctly.
 - `docs/cannon/architecture/runtime-design-constraints.md` C3 + SDD gate
 - `docs/architecture/2026-05-22-shape-c-cutover-roadmap.md` §Wave D
 - `packages/runtime/src/workflow-engine/workflows/tool-call.ts` (`ToolCallWorkflow.idempotencyKey: ({ toolUseId }) => toolUseId`)
-- `packages/runtime/src/agent-event-pipeline/tool-execution/runtime-tool-call-workflow.ts` (`RuntimeToolCallWorkflowLayer = ToolCallWorkflow.toLayer(...)`)
+- `packages/runtime/src/subscribers/tool-dispatch/runtime-tool-call-workflow.ts` (`RuntimeToolCallWorkflowLayer = ToolCallWorkflow.toLayer(...)`)
 - `packages/runtime/src/subscribers/tool-dispatch/{index.ts,README.md}` (Wave A forward-target shim; SHAPE: D — Activity memoization)
 - `packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts:76-102` (the bridge being deleted)
 - `packages/runtime/src/subscribers/runtime-context/handler.ts:200` (`runToolAndSend` in-handler path; stays)

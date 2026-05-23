@@ -1,7 +1,7 @@
 import { LanguageModel } from "@effect/ai"
 import type { Prompt } from "@effect/ai"
 import { Effect, Layer, Option, type Scope, Stream } from "effect"
-import type { AgentByteStream } from "../byte-stream.ts"
+import type { AgentByteStream } from "./byte-stream.ts"
 import { SandboxProvider } from "./SandboxProvider.ts"
 import type * as SandboxProviderContract from "./SandboxProvider.ts"
 import {

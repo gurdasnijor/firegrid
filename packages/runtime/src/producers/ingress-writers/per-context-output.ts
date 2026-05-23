@@ -12,9 +12,9 @@ import {
   encodeRuntimeAgentOutputEnvelope,
   runtimeAgentOutputObservationFromRow,
   type AgentOutputEvent,
-} from "../events/index.ts"
+} from "../../events/index.ts"
 import { runtimeContextOutputTableLayerForContext as perContextRuntimeOutputTableLayer } from "../../channels/output-table-layer.ts"
-import type { RuntimeAgentOutputAfterEvents } from "./runtime-output-public.ts"
+import type { RuntimeAgentOutputAfterEvents } from "../../tables/runtime-output-public.ts"
 
 // tf-bffo: the durable per-context RuntimeOutputTable wiring lives in the runtime
 // (the privileged durable core), parameterized by plain host topology config.

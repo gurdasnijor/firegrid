@@ -1,6 +1,6 @@
 import type { Effect, Scope, Stream } from "effect"
 import { Context, Layer, Schema } from "effect"
-import type { AgentByteStream } from "../byte-stream.ts"
+import type { AgentByteStream } from "./byte-stream.ts"
 
 type SandboxState =
   | "creating"

@@ -10,7 +10,7 @@ import type {
   AgentInputEvent,
   AgentOutputEvent,
   AgentToolUseMode,
-} from "../events/contract.ts"
+} from "../../events/contract.ts"
 
 /**
  * Error category for codec-level failures: framing errors, protocol

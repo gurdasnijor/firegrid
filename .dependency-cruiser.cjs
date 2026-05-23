@@ -3,22 +3,27 @@ const hostSdkBoundaryModules = "^packages/host-sdk/src"
 const sanctionedRuntimeCapabilitySubpaths = [
   // Runtime-owned capability tags and public observation/protocol projections
   // sanctioned for host-sdk binding composition by
-  // docs/architecture/host-sdk-runtime-boundary.md.
+  // docs/architecture/host-sdk-runtime-boundary.md. Paths point at the
+  // physically-moved homes (see
+  // docs/architecture/2026-05-22-runtime-physical-target-tree.md) after the
+  // agent-event-pipeline cleanup wave.
   "runtime-errors\\.ts$",
   "channels/index\\.ts$",
-  "agent-event-pipeline/authorities/per-context-output\\.ts$",
-  "agent-event-pipeline/tool-execution/index\\.ts$",
+  "producers/ingress-writers/per-context-output\\.ts$",
+  "subscribers/tool-dispatch/index\\.ts$",
   "authorities/index\\.ts$",
   "control-plane/index\\.ts$",
-  "agent-event-pipeline/authorities/runtime-output-public\\.ts$",
+  "tables/runtime-output-public\\.ts$",
+  "tables/runtime-output\\.ts$",
   "streams/index\\.ts$",
-  "channels/index\\.ts$",
   "verified-webhook-ingest/index\\.ts$",
-  "agent-event-pipeline/events/index\\.ts$",
-  "agent-event-pipeline/codecs/index\\.ts$",
-  "agent-event-pipeline/session-byte-stream-adapter\\.ts$",
+  "events/index\\.ts$",
+  "events/agent-input\\.ts$",
+  "events/agent-output\\.ts$",
+  "producers/codecs/index\\.ts$",
+  "producers/codecs/session-byte-stream-adapter\\.ts$",
   "agent-adapters/index\\.ts$",
-  "agent-event-pipeline/sources/sandbox/index\\.ts$",
+  "producers/sandbox/index\\.ts$",
   "kernel/index\\.ts$",
   // Wave D-A (PR #714): host-sdk composes the Shape C subscriber via the
   // runtime composition root + reaches the session-command seam contract
@@ -82,7 +87,7 @@ module.exports = {
       name: "runtime-events-no-higher-tier-import",
       severity: "error",
       comment:
-        "events/ is the pure event-vocabulary tier. It must not import from tables/, transforms/, channels/, producers/, subscribers/, composition/, workflow-engine/, or agent-event-pipeline/. Move shared types INTO events/ and have the higher tier re-export from there. Direct cause: PR #695 first push had events/runtime-context-state.ts re-exporting from ../tables/runtime-context-state.ts — wrong direction. NARROW BRIDGE CARVE-OUT: agent-event-pipeline/events/ is the legacy event-vocabulary home; the Wave 1 forward-target re-export shims under events/ (#689 pattern, transitional until the physical event-vocabulary move) may pull from that subtree only. All other agent-event-pipeline/ subpaths remain banned.",
+        "events/ is the pure event-vocabulary tier. It must not import from tables/, transforms/, channels/, producers/, subscribers/, composition/, workflow-engine/, or agent-event-pipeline/. Move shared types INTO events/ and have the higher tier re-export from there. Direct cause: PR #695 first push had events/runtime-context-state.ts re-exporting from ../tables/runtime-context-state.ts — wrong direction. The prior `agent-event-pipeline/events/` bridge carve-out is now obsolete (AEP retired by the cleanup wave); the canonical event-vocabulary source files were physically moved into this folder.",
       from: { path: "^packages/runtime/src/events/" },
       to: {
         path: [
@@ -95,7 +100,6 @@ module.exports = {
           "^packages/runtime/src/workflow-engine/",
           "^packages/runtime/src/agent-event-pipeline/",
         ],
-        pathNot: ["^packages/runtime/src/agent-event-pipeline/events/"],
       },
     },
     {
@@ -135,7 +139,7 @@ module.exports = {
       name: "runtime-producers-no-peer-or-higher-tier-import",
       severity: "error",
       comment:
-        "producers/ is a middle tier; per the target-tree doc, producers/transforms/channels are peers and peers do not import each other. producers/ may import only events/ + tables/ (+ allowed external libs); it must not import transforms/, channels/, subscribers/, or composition/.",
+        "producers/ is a middle tier; per the target-tree doc, producers/transforms/channels are peers and peers do not import each other. producers/ may import only events/ + tables/ (+ allowed external libs); it must not import transforms/, channels/, subscribers/, or composition/. Carve-out: producers/ingress-writers/per-context-output.ts (moved from agent-event-pipeline/authorities/) imports channels/output-table-layer.ts as the shared per-context RuntimeOutputTable factory. That module is the single source of truth for the per-context output stream URL + table options and is shared with the channels themselves; relocating it into tables/ is the cleanup follow-up. Carve-out shrinks when that move lands.",
       from: { path: "^packages/runtime/src/producers/" },
       to: {
         path: [
@@ -143,6 +147,9 @@ module.exports = {
           "^packages/runtime/src/channels/",
           "^packages/runtime/src/subscribers/",
           "^packages/runtime/src/composition/",
+        ],
+        pathNot: [
+          "^packages/runtime/src/channels/output-table-layer\\.ts$",
         ],
       },
     },
@@ -254,12 +261,17 @@ module.exports = {
           "^packages/runtime/src/workflow-engine/workflows/wait-for\\.ts$",
           // Bead tf-6hqx — Wave D-A subscribers/scheduled-prompt physical move
           "^packages/runtime/src/workflow-engine/workflows/scheduled-prompt\\.ts$",
-          // Bead tf-vfq9 — ToolCallWorkflow cutover/delete
-          "^packages/runtime/src/agent-event-pipeline/tool-execution/runtime-tool-call-workflow\\.ts$",
           // Bead tf-6cdy — Wave D-A authorities/ retirement (covers both
           // authorities/index.ts and authorities/runtime-control-plane-recorder.ts)
           "^packages/runtime/src/authorities/index\\.ts$",
           "^packages/runtime/src/authorities/runtime-control-plane-recorder\\.ts$",
+          // The AEP physical move (this PR) brought
+          // `runtime-tool-call-workflow.ts` into subscribers/tool-dispatch/.
+          // The file still imports the canonical `ToolCallWorkflow`
+          // definition from workflow-engine/workflows/tool-call.ts; the
+          // physical move of that Workflow.make symbol is the next cleanup
+          // slice (see runtime-physical-target-tree.md Wave 1 Application).
+          "^packages/runtime/src/workflow-engine/workflows/tool-call\\.ts$",
         ],
       },
     },
