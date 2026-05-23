@@ -1,7 +1,32 @@
 # wave-d-a-shape-b-input-identity-dedup — Wave D-A Shape (b) loop-body proof
 
-**Status: WIP — sim under construction.** Will record verdict (GREEN/RED)
-when the test matrix lands.
+**Verdict: GREEN.** All 6 hypothesis tests pass (`pnpm --filter @firegrid/tiny-firegrid exec vitest run test/wave-d-a-shape-b-input-identity-dedup/probe.test.ts`):
+
+- **Test 1** (falsification baseline) — sequence-keyed gate invokes the
+  handler but SKIPS the action: `invocations=1, dispatches=0, skips=1`.
+  Confirms the current production bug at
+  `subscribers/runtime-context/handler.ts:103-120` silently drops the first
+  input on every fresh subscriber.
+- **Test 2** (GREEN target) — identity-keyed dedup dispatches the first
+  input: `invocations=1, dispatches=1, skips=0`;
+  `state.processedInputIds === ["i-1"]`;
+  `dispatchedActionIds === ["dispatched-input-i-1"]`.
+- **Test 3** (restart idempotency) — subscriber restart redelivers the same
+  input row; handler invokes twice but dispatches once
+  (`invocations=2, dispatches=1, skips=1`); ledger stays at one action.
+- **Test 4** (output sequence-cursor) — three sequential outputs all
+  dispatched (`dispatches=3`); `lastProcessedOutputSequence` advances
+  monotonically to `2`. Outputs DO carry a kernel-allocated sequence; this
+  half of the dedup logic stays sequence-keyed and is correct.
+- **Test 5** (interleaving) — inputs + output on one contextId all
+  dispatched (`dispatches=3`); per-key mutex serializes; ledger set is
+  `{ dispatched-input-i-1, dispatched-input-i-2, dispatched-output-ctx-1-0 }`.
+- **Test 6** (cross-key concurrency) — two distinct contextIds dispatched
+  in parallel; each context's `processedInputIds` holds its own input only;
+  no per-key starvation.
+
+Shape (b) is sound. CC1 can dispatch the prod cutover bundle in the CC2
+deletion inventory under Shape (b).
 
 ## Why this sim exists
 
