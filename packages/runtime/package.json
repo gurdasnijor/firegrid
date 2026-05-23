@@ -37,6 +37,10 @@
       "types": "./src/streams/index.ts",
       "default": "./src/streams/index.ts"
     },
+    "./runtime-keyed-subscriber": {
+      "types": "./src/runtime-keyed-subscriber/index.ts",
+      "default": "./src/runtime-keyed-subscriber/index.ts"
+    },
     "./verified-webhook-ingest": {
       "types": "./src/verified-webhook-ingest/index.ts",
       "default": "./src/verified-webhook-ingest/index.ts"
