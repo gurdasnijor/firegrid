@@ -288,7 +288,7 @@ const RuntimeContextTransitionActionSchema = Schema.Union(
     output: RuntimeAgentOutputObservationSchema,
   }),
 )
-type RuntimeContextTransitionAction = Schema.Schema.Type<
+export type RuntimeContextTransitionAction = Schema.Schema.Type<
   typeof RuntimeContextTransitionActionSchema
 >
 

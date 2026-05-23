@@ -54,7 +54,7 @@ transform" abstraction, the boundary is probably misclassified.
 | [`agent-event-pipeline/events/`](./agent-event-pipeline/events/README.md) | Normalized runtime event contracts and envelope helpers. |
 | [`agent-event-pipeline/transforms/`](./agent-event-pipeline/transforms/README.md) | Pure stream/row shaping operators. |
 | [`agent-event-pipeline/authorities/`](./agent-event-pipeline/authorities/) | Durable Effect capability providers for runtime output/ingress. |
-| [`agent-event-pipeline/subscribers/`](./agent-event-pipeline/subscribers/README.md) | Historical subscriber folder; the live-owner cutover moved prompt/tool routing into the host workflow/session owner. |
+| [`agent-event-pipeline/subscribers/`](./agent-event-pipeline/subscribers/README.md) | Runtime subscriber landing zone. The Shape C RuntimeContext per-event handler lives under `subscribers/runtime-context/`; Shape B projection consumers may live alongside as siblings. The Shape C subscribers' `R` channel must not name `WorkflowEngine`/`WorkflowInstance` (enforced by `firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber`). See [`docs/cannon/architecture/runtime-pipeline-type-boundaries.md`](../../../docs/cannon/architecture/runtime-pipeline-type-boundaries.md) §"Shape C" and `agent-event-pipeline/TOPOLOGY.md`. |
 
 ## Adjacent Runtime Boundaries
 

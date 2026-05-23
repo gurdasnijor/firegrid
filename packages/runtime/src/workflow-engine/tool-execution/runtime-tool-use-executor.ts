@@ -1,4 +1,3 @@
-import { type WorkflowEngine } from "@effect/workflow"
 import { Context, type Effect, Layer } from "effect"
 import type {
   AgentInputEvent,
@@ -12,15 +11,21 @@ interface RuntimeToolUseExecutorContext {
 type RuntimeToolUseEvent = Extract<AgentOutputEvent, { _tag: "ToolUse" }>
 type RuntimeToolResultEvent = Extract<AgentInputEvent, { _tag: "ToolResult" }>
 
+// Service interface deliberately exposes only the executor tag in its R
+// channel. Implementations may internally use workflow machinery (today's
+// `RuntimeToolUseExecutorLive` is one example, capturing AgentToolHost +
+// RuntimeChannelRouter + RuntimeAgentToolExecution + RuntimeObservationStreams
+// at layer construction), but they must provide those deps inside `execute` so
+// the caller's R stays clean. This is what lets Shape C callers
+// (`handleRuntimeContextEvent`) name only `RuntimeToolUseExecutor` in R
+// without dragging `WorkflowEngine | WorkflowInstance` through every call
+// site — see `docs/cannon/architecture/runtime-pipeline-type-boundaries.md`
+// §"Shape C: Stateful Keyed Subscriber, No Workflow Machinery".
 interface RuntimeToolUseExecutorService {
   readonly execute: (
     context: RuntimeToolUseExecutorContext,
     event: RuntimeToolUseEvent,
-  ) => Effect.Effect<
-    RuntimeToolResultEvent,
-    never,
-    WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
-  >
+  ) => Effect.Effect<RuntimeToolResultEvent, never>
 }
 
 // firegrid-host-sdk.TOOL_EXECUTOR_SEAM.1
