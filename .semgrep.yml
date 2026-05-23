@@ -1486,7 +1486,7 @@ rules:
       Shape C `R` must not include WorkflowEngine.WorkflowEngine or
       WorkflowEngine.WorkflowInstance. Either model the wait as a durable
       completion keyed by domain identity, or move the file to a Shape D
-      landing (tool-execution/ or a justified workflow-engine/workflows/).
+      landing (subscribers/tool-dispatch/ or a justified workflow-engine/workflows/).
     pattern-either:
       - pattern-regex: '\bActivity\.make\s*\('
       - pattern-regex: '\bWorkflow\.suspend\s*\('

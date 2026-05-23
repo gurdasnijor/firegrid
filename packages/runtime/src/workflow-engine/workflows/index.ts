@@ -65,8 +65,8 @@ export {
 export {
   agentInputEventFromRuntimeIngressRow,
 } from "./runtime-ingress-transform.ts"
-export {
-  ToolCallWorkflow,
-  ToolCallWorkflowPayloadSchema,
-  type ToolCallWorkflowPayload,
-} from "./tool-call.ts"
+// `ToolCallWorkflow` + `ToolCallWorkflowPayloadSchema` physically moved to
+// `subscribers/tool-dispatch/workflow.ts` (post-#727 / tf-up1v cleanup wave).
+// Consume via `@firegrid/runtime/subscribers/tool-dispatch` (or the legacy
+// alias `@firegrid/runtime/tool-executor` resolving to the same barrel),
+// not via `@firegrid/runtime/workflows`.

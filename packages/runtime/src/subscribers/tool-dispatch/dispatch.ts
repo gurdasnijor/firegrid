@@ -32,8 +32,10 @@ import { WorkflowEngine } from "@effect/workflow"
 import { Context, Effect, Layer } from "effect"
 import type { ToolResultEvent } from "../../events/contract.ts"
 import { ScheduledPromptWorkflowLayer } from "../../workflow-engine/workflows/scheduled-prompt.ts"
-import { ToolCallWorkflow } from "../../workflow-engine/workflows/tool-call.ts"
-import { RuntimeToolCallWorkflowLayer } from "./runtime-tool-call-workflow.ts"
+import {
+  RuntimeToolCallWorkflowLayer,
+  ToolCallWorkflow,
+} from "./workflow.ts"
 
 /** Tool-dispatch input. Mirrors `ToolCallWorkflow` payload one-for-one. */
 export interface ToolDispatchInput {

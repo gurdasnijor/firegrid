@@ -42,7 +42,7 @@ import {
   type RuntimeContextSessionCommand,
 } from "../../../src/subscribers/runtime-context-session/index.ts"
 import { RuntimeRunAppendAndGet } from "../../../src/authorities/runtime-control-plane-recorder.ts"
-import { RuntimeToolUseExecutor } from "../../../src/workflow-engine/tool-execution/runtime-tool-use-executor.ts"
+import { RuntimeToolUseExecutor } from "../../../src/subscribers/tool-dispatch/runtime-tool-use-executor.ts"
 import {
   handleRuntimeContextEvent,
   type RuntimeContextTargetEvent,

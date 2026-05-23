@@ -3,18 +3,19 @@
 // SHAPE: D — Activity memoization (see ./README.md).
 //
 // Public subpath: `@firegrid/runtime/subscribers/tool-dispatch`. Re-exports the
-// Shape D tool-dispatch Layer (`RuntimeToolCallWorkflowLayer`) together with
-// the executor capability tag and the scheduled-prompt layer; matches the
-// barrel that previously lived under `agent-event-pipeline/tool-execution/`.
+// Shape D tool-dispatch Workflow + Layer + executor capability tag.
 //
-// Source physically moved from
-// `packages/runtime/src/agent-event-pipeline/tool-execution/`
-// (`docs/architecture/2026-05-22-runtime-physical-target-tree.md`
-// §subscribers/tool-dispatch/).
+// Source physically moved into this folder (post-#727 / tf-up1v cleanup wave):
+//   - `ToolCallWorkflow` + `RuntimeToolCallWorkflowLayer` from
+//     `packages/runtime/src/workflow-engine/workflows/tool-call.ts` +
+//     `packages/runtime/src/subscribers/tool-dispatch/runtime-tool-call-workflow.ts`
+//     (folded into `./workflow.ts`).
+//   - `RuntimeToolUseExecutor` from
+//     `packages/runtime/src/workflow-engine/tool-execution/runtime-tool-use-executor.ts`.
 
 export {
   RuntimeToolUseExecutor,
-} from "../../workflow-engine/tool-execution/runtime-tool-use-executor.ts"
+} from "./runtime-tool-use-executor.ts"
 export {
   evaluateFieldEquals,
   type FieldEqualsTrigger,
@@ -34,7 +35,9 @@ export {
 export {
   RuntimeToolCallWorkflowLayer,
   ToolCallWorkflow,
-} from "./runtime-tool-call-workflow.ts"
+  ToolCallWorkflowPayloadSchema,
+  type ToolCallWorkflowPayload,
+} from "./workflow.ts"
 export {
   ScheduledPromptWorkflowLayer,
 } from "../../workflow-engine/workflows/scheduled-prompt.ts"

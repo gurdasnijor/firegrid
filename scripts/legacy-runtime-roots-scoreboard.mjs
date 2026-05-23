@@ -95,11 +95,9 @@ const parkAllowlist = {
   },
   // Body+kernel deletion wave: per-sequence DurableDeferred input mailbox
   // (`runtime-input-deferred.ts`) deleted; entry removed.
-  "packages/runtime/src/workflow-engine/tool-execution/runtime-tool-use-executor.ts":
-    {
-      owner: "rearch-shape-c",
-      wave: "D-tool",
-    },
+  // Tool-dispatch source relocation wave: workflow-engine/tool-execution/
+  // directory deleted; `RuntimeToolUseExecutor` physically moved to
+  // `subscribers/tool-dispatch/runtime-tool-use-executor.ts`. Entry removed.
   "packages/runtime/src/workflow-engine/workflows/index.ts": {
     owner: "rearch-shape-c",
     wave: "E",
@@ -124,10 +122,8 @@ const parkAllowlist = {
     owner: "rearch-shape-c",
     wave: "D",
   },
-  "packages/runtime/src/workflow-engine/workflows/tool-call.ts": {
-    owner: "rearch-shape-c",
-    wave: "D-tool",
-  },
+  // Tool-dispatch source relocation wave: `ToolCallWorkflow` physically
+  // moved to `subscribers/tool-dispatch/workflow.ts`. Entry removed.
   "packages/runtime/src/workflow-engine/workflows/wait-for.ts": {
     owner: "rearch-shape-c",
     wave: "D-D",
