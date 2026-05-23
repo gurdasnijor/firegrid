@@ -281,12 +281,12 @@ export interface SessionAgentOutputRoute {
   ) => Effect.Effect<SessionAgentOutputObservation, Error>
 }
 
-let routeIdCounter = 0
-const nextRequestId = (): string => {
-  routeIdCounter += 1
-  return `req_${routeIdCounter}`
-}
-
+// Request-id derivation: read from the `startRequestWrites` counter the
+// route already advances (atomic via `Ref.modify`). Avoids module-scope
+// mutable state (`local/no-module-durable-cache`) — in production the
+// requestId is itself derived from the durable row identity (cf.
+// `makeRuntimeStartRequestRow` in `packages/protocol/src/launch/
+// control-request.ts:251`), not from a module counter.
 export const makeHostSessionsStartRoute = (
   substrate: Substrate,
 ): HostSessionsStartRoute => ({
@@ -294,8 +294,11 @@ export const makeHostSessionsStartRoute = (
   direction: "call",
   call: (input) =>
     Effect.gen(function*() {
-      yield* Ref.update(substrate.startRequestWrites, (n) => n + 1)
-      const requestId = nextRequestId()
+      const requestNumber = yield* Ref.modify(
+        substrate.startRequestWrites,
+        (n) => [n + 1, n + 1],
+      )
+      const requestId = `req_${requestNumber}`
       // Idempotent durable write — production uses `insertOrGet` keyed on
       // (contextId, requestedBy). The sim treats every public-facade call
       // as a new request to make the recursion counter assertion exact.
