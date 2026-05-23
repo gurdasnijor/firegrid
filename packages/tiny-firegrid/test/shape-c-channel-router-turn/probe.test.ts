@@ -356,6 +356,191 @@ describe("shape-c-channel-router-turn: permission round-trip", () => {
   })
 })
 
+// ── ERROR OBSERVATION ──────────────────────────────────────────────────
+//
+// The body-side error question CC1 was blocked on: can a client-shaped host
+// facade observe a runtime/agent error through the existing channel-router
+// path using `session.agent_output` `wait_for` / typed observation, without
+// direct handler calls, a runtime observation stream, a new router surface,
+// or the workflow body driver?
+//
+// Production already encodes this shape:
+//   - `AgentErrorEventSchema` is a variant of `AgentOutputEvent`
+//     (`packages/protocol/src/agent-output/schema.ts:` — `_tag: "Error"`,
+//     `cause: Unknown`, `recoverable: Boolean`).
+//   - `RuntimeAgentOutputObservationSchema` is a tagged union over those
+//     variants, including `_tag: "Error"` (`packages/protocol/src/
+//     session-facade/schema.ts:319-322`).
+//   - Production runtime codecs already emit recoverable Error events into
+//     the per-context output stream — see `recoverableError` in
+//     `packages/runtime/src/agent-event-pipeline/codecs/stdio-jsonl/index.ts:42`
+//     and `.../codecs/acp/index.ts:123`.
+//   - `SessionAgentOutputChannel.forContext(contextId)` projects that
+//     stream as an `IngressChannel`; the `session.agent_output` route on
+//     `HostPlaneChannelRouter` exposes the corresponding `wait_for` verb
+//     (#703 landed the last mapping).
+//
+// The error case is therefore the same "filtered typed source" production
+// already uses for `PermissionRequest` (see `firegrid.ts:743`
+// `waitForPermissionRequest`). The SDD's stance is C6: typed source +
+// cursor + match. No `session.error` route, no separate body-side error
+// channel, no mailbox.
+
+describe("shape-c-channel-router-turn: error observation", () => {
+  it("agent error reaches the client through session.agent_output filtered for _tag === \"Error\" (no new route)", async () => {
+    // Stub agent: prompt yields a recoverable Error observation, then
+    // Terminated with a non-zero exit code. Mirrors what production codecs
+    // do for a transient agent failure (cf. `recoverableError` in
+    // `packages/runtime/src/agent-event-pipeline/codecs/{stdio-jsonl,acp}/index.ts`).
+    const stubAgent = makeStubAgent({
+      onPrompt: (contextId, _payload, fixture) =>
+        Effect.gen(function*() {
+          yield* fixture.append({
+            _tag: "Error",
+            contextId,
+            sequence: -1,
+            cause: { message: "agent transport failed", code: "EAGENT" },
+            recoverable: true,
+          })
+          yield* fixture.append({
+            _tag: "Terminated",
+            contextId,
+            sequence: -1,
+            exitCode: 1,
+          })
+        }),
+    })
+
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* makeRuntimeRoutes(stubAgent)
+        const router = channelRouter({
+          "host.contexts.create": runtime.routes.hostContextsCreate,
+          "host.prompt": runtime.routes.hostPrompt,
+          "host.sessions.create_or_load": runtime.routes.hostSessionsCreateOrLoad,
+          "host.sessions.start": runtime.routes.hostSessionsStart,
+          "session.prompt": runtime.routes.sessionPrompt,
+          "session.agent_output": runtime.routes.sessionAgentOutput,
+          "host.permissions.respond": runtime.routes.hostPermissionRespond,
+        })
+        const client = makeFiregridClient(router)
+        const handle = yield* client.sessions.createOrLoad({
+          externalKey: { source: "test", id: "error-observation-1" },
+        })
+        yield* handle.start()
+        yield* handle.prompt({
+          inputId: "input_error_turn_1",
+          prompt: "trigger-failure",
+        })
+
+        // Filter-by-_tag mirrors production's `forPermissionRequest`
+        // (`firegrid.ts:743`): drive `forAgentOutput`, check the union
+        // tag, advance the cursor. No `forAgentError` method is needed
+        // on the client surface; the typed source carries the variant.
+        const collected: Array<{ _tag: string; sequence: number }> = []
+        let cursor = -1
+        let errorObservation: {
+          readonly _tag: "Error"
+          readonly contextId: string
+          readonly sequence: number
+          readonly cause: unknown
+          readonly recoverable: boolean
+        } | undefined
+        for (let step = 0; step < 8; step += 1) {
+          const obs = (yield* handle.wait.forAgentOutput({ afterSequence: cursor })) as {
+            _tag: string
+            sequence: number
+          }
+          collected.push(obs)
+          if (obs._tag === "Error") {
+            errorObservation = obs as typeof errorObservation
+          }
+          cursor = obs.sequence
+          if (obs._tag === "Terminated") break
+        }
+        return { collected, errorObservation }
+      }),
+    )
+
+    // Existing typed source carries the Error variant — proves the
+    // body-side error behavior is observable through `session.agent_output`
+    // with no new route, no observation-stream surface, no workflow body.
+    expect(result.collected.map((o) => o._tag)).toEqual(["Error", "Terminated"])
+    expect(result.errorObservation).toBeDefined()
+    expect(result.errorObservation?._tag).toBe("Error")
+    expect(result.errorObservation?.recoverable).toBe(true)
+    expect(result.errorObservation?.cause).toEqual({
+      message: "agent transport failed",
+      code: "EAGENT",
+    })
+  })
+
+  it("error observation is dispatched ONLY through the existing session.agent_output route (no parallel error route)", async () => {
+    // Structural assertion: when the agent emits an Error event, the client
+    // observes it via `wait_for("session.agent_output")` and the router
+    // exposes EXACTLY the same 7 targets it already exposes. No "session.error"
+    // / "session.error_output" / "session.runtime_error" route is registered.
+    const stubAgent = makeStubAgent({
+      onPrompt: (contextId, _payload, fixture) =>
+        fixture.append({
+          _tag: "Error",
+          contextId,
+          sequence: -1,
+          cause: { message: "non-recoverable" },
+          recoverable: false,
+        }),
+    })
+
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* makeRuntimeRoutes(stubAgent)
+        const router = channelRouter({
+          "host.contexts.create": runtime.routes.hostContextsCreate,
+          "host.prompt": runtime.routes.hostPrompt,
+          "host.sessions.create_or_load": runtime.routes.hostSessionsCreateOrLoad,
+          "host.sessions.start": runtime.routes.hostSessionsStart,
+          "session.prompt": runtime.routes.sessionPrompt,
+          "session.agent_output": runtime.routes.sessionAgentOutput,
+          "host.permissions.respond": runtime.routes.hostPermissionRespond,
+        })
+        // Catalog the routes — proves the router's exposed surface is
+        // unchanged when the Error variant joins the typed source.
+        const exposedTargets = Object.keys(router.routes).sort()
+        const client = makeFiregridClient(router)
+        const handle = yield* client.sessions.createOrLoad({
+          externalKey: { source: "test", id: "error-observation-2" },
+        })
+        yield* handle.start()
+        yield* handle.prompt({
+          inputId: "input_error_turn_2",
+          prompt: "trigger-failure",
+        })
+        const observation = (yield* handle.wait.forAgentOutput({
+          afterSequence: -1,
+        })) as {
+          _tag: string
+          sequence: number
+          recoverable?: boolean
+        }
+        return { exposedTargets, observation }
+      }),
+    )
+
+    // No new error-specific route was introduced.
+    expect(result.exposedTargets).toEqual([
+      "host.contexts.create",
+      "host.permissions.respond",
+      "host.prompt",
+      "host.sessions.create_or_load",
+      "host.sessions.start",
+      "session.agent_output",
+      "session.prompt",
+    ])
+    expect(result.observation._tag).toBe("Error")
+    expect(result.observation.recoverable).toBe(false)
+  })
+})
+
 // ── ROUTER REJECTIONS ──────────────────────────────────────────────────
 
 describe("shape-c-channel-router-turn: router rejections", () => {

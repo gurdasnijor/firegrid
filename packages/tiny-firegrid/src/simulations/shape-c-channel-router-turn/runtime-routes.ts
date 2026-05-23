@@ -150,6 +150,21 @@ export const SessionAgentOutputObservationSchema = Schema.Union(
     sequence: Schema.Number,
     exitCode: Schema.Number,
   }),
+  // Error observation: mirrors production `AgentErrorEventSchema` in
+  // `packages/protocol/src/agent-output/schema.ts` (`{ cause: Unknown,
+  // recoverable: Boolean }`) wrapped by `RuntimeAgentOutputObservationSchema`'s
+  // `_tag: "Error"` variant in `packages/protocol/src/session-facade/schema.ts:319`.
+  // Production runtime codecs already emit this — see `recoverableError` in
+  // `packages/runtime/src/agent-event-pipeline/codecs/stdio-jsonl/index.ts:42`
+  // and `.../codecs/acp/index.ts:123`. The variant joins the same typed
+  // source the SDD pins, so observation is filtered `forAgentOutput` (matches
+  // production's `forPermissionRequest` pattern; no `session.error` route).
+  Schema.TaggedStruct("Error", {
+    contextId: Schema.String,
+    sequence: Schema.Number,
+    cause: Schema.Unknown,
+    recoverable: Schema.Boolean,
+  }),
 )
 export type SessionAgentOutputObservation = Schema.Schema.Type<typeof SessionAgentOutputObservationSchema>
 
