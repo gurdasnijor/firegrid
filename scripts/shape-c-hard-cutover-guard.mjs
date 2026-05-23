@@ -308,12 +308,15 @@ const tests = walk(resolve(repoRoot, "packages")).filter((file) =>
   (file.includes("/test/") || /\.(?:test|spec)\.(?:[cm]?tsx?)$/u.test(file)) &&
   /\.(?:[cm]?tsx?)$/u.test(file)
 )
+const sourcePathReadRe =
+  /readFile\s*\([\s\S]{0,240}new URL\s*\(\s*["'][^"']*(?:\.\.\/)+[^"']*src\//u
 for (const file of tests) {
   const lines = readFileSync(file, "utf8").split("\n")
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]
+    const window = lines.slice(i, i + 5).join("\n")
     if (
-      /readFile\s*\(/u.test(line) ||
+      sourcePathReadRe.test(window) ||
       /access\s*\(\s*new URL\s*\(\s*["'][^"']*(?:\.\.\/)+[^"']*src\//u.test(line) ||
       /new URL\s*\(\s*["'][^"']*(?:\.\.\/)+[^"']*src\//u.test(line)
     ) {
