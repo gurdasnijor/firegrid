@@ -19,11 +19,11 @@ import type {
 } from "../../streams/index.ts"
 import type {
   FieldEqualsTrigger,
-} from "../../workflow-engine/workflows/field-equals.ts"
+} from "../../transforms/field-equals.ts"
 export {
   evaluateFieldEquals,
   type FieldEqualsTrigger,
-} from "../../workflow-engine/workflows/field-equals.ts"
+} from "../../transforms/field-equals.ts"
 import {
   WaitForWorkflow,
   WaitForWorkflowLayer,

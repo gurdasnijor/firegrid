@@ -30,31 +30,35 @@ import {
   runtimeContextOutputStreamUrl,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
-import {
-  RuntimeIngressInputRowSchema,
-} from "@firegrid/protocol/runtime-ingress"
 import { runtimeAgentOutputObservationFromRow } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { DurableTable } from "effect-durable-operators"
 import { Context, Effect, Layer, Option, Ref, Schema, type Scope } from "effect"
-import {
-  AgentInputEventSchema,
-  type RuntimeAgentOutputObservation,
-} from "../agent-event-pipeline/events/index.ts"
+import { type RuntimeAgentOutputObservation } from "../agent-event-pipeline/events/index.ts"
 
-// `RuntimeExitEvidence` is owned here because the durable RuntimeContext state
-// row stores it (see `RuntimeContextEventStateSchema.exitEvidence` below). It
-// used to live in `workflow-engine/workflows/runtime-context-run.ts`; Wave A
-// of the Shape C cutover physically moved this table to `tables/` and that
-// import would have created a `tables -> workflow-engine -> tables` folder
-// cycle (depcruise `runtime-src-no-folder-cycles`). The schema is two fields;
-// the legacy runtime-context-run.ts now re-exports it from here.
-export const RuntimeExitEvidence = Schema.Struct({
-  exitCode: Schema.Number,
-  signal: Schema.optional(Schema.String),
-})
-export type RuntimeExitEvidence = Schema.Schema.Type<typeof RuntimeExitEvidence>
-const RuntimeExitEvidenceSchema = RuntimeExitEvidence
+// Pure RuntimeContext loop-state vocabulary — `RuntimeContextEventStateSchema`,
+// `PendingPermissionResponseSchema`, `initialRuntimeContextEventState`, and
+// `RuntimeExitEvidence` — is owned by `../events/runtime-context-state.ts` per
+// the pipeline order `events < tables`
+// (`docs/architecture/2026-05-22-runtime-physical-target-tree.md`). This module
+// owns the durable-table storage authority around that vocabulary; the pure
+// schema is import-only here.
+import {
+  RuntimeContextEventStateSchema,
+  initialRuntimeContextEventState,
+  type RuntimeContextEventState,
+} from "../events/runtime-context-state.ts"
+
+// Re-exported through this module for caller stability while the
+// workflow-engine `runtime-context-run.ts` shim still points here. The
+// canonical source is `events/runtime-context-state.ts`.
+export {
+  RuntimeContextEventStateSchema,
+  RuntimeExitEvidence,
+  initialRuntimeContextEventState,
+  type RuntimeContextEventState,
+  type PendingPermissionResponse,
+} from "../events/runtime-context-state.ts"
 
 // ---------------------------------------------------------------------------
 // Sparse state-relevance predicate.
@@ -97,35 +101,12 @@ export const isStateRelevantOutputObservation = (
 }
 
 // ---------------------------------------------------------------------------
-// Loop state (moved from workflows/runtime-context.ts so the durable row and
-// the body share one schema source of truth).
-// ---------------------------------------------------------------------------
-
-const PendingPermissionResponseSchema = Schema.Struct({
-  permissionRequestId: Schema.String,
-  row: RuntimeIngressInputRowSchema,
-  event: AgentInputEventSchema,
-})
-export type PendingPermissionResponse = Schema.Schema.Type<typeof PendingPermissionResponseSchema>
-
-export const RuntimeContextEventStateSchema = Schema.Struct({
-  lastProcessedInputSequence: Schema.Number,
-  lastProcessedOutputSequence: Schema.Number,
-  pendingPermissionRequests: Schema.Array(Schema.String),
-  pendingPermissionResponses: Schema.Array(PendingPermissionResponseSchema),
-  exitEvidence: Schema.optional(RuntimeExitEvidenceSchema),
-})
-export type RuntimeContextEventState = Schema.Schema.Type<typeof RuntimeContextEventStateSchema>
-
-export const initialRuntimeContextEventState: RuntimeContextEventState = {
-  lastProcessedInputSequence: -1,
-  lastProcessedOutputSequence: -1,
-  pendingPermissionRequests: [],
-  pendingPermissionResponses: [],
-}
-
-// ---------------------------------------------------------------------------
 // Durable state table (workflow-private; one row per (contextId, attempt)).
+//
+// The pure loop-state schemas come from `../events/runtime-context-state.ts`
+// (imported and re-exported at the top of this module). This section owns the
+// durable-table storage authority around that schema; it does not define the
+// schema itself.
 // ---------------------------------------------------------------------------
 
 const stateKey = (contextId: string, activityAttempt: number): string =>
