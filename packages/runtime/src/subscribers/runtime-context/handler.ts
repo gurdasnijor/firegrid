@@ -98,15 +98,26 @@ export type RuntimeContextTargetEvent =
   }
 
 // Idempotent skip: replays/at-least-once delivery must not double-apply.
-// Mirrors `eventAlreadyProcessed` in the wrong-shape body but specialized to
-// the target event union (no merged-event variant here).
+//
+// Wave D-A Shape (b) — identity-keyed input dedup (CC2 directive, validated
+// by tiny-firegrid #712 GREEN). The legacy sequence-keyed gate
+// `(event.event.sequence ?? -1) <= state.lastProcessedInputSequence` SILENTLY
+// DROPPED THE FIRST INPUT because `RuntimeIngressInputRow` intent-derived
+// rows carry no sequence (`tables/runtime-context-input-facts.ts:53-57`
+// drops the allocator); `(undefined ?? -1) <= -1` is TRUE, and the cursor
+// never advances because no successful transition happens. Identity-keyed
+// dedup via `processedInputIds` membership is the correct shape: first
+// input always delivered; restart redelivery skipped on the second pass.
+//
+// Outputs DO carry a kernel-allocated sequence; their dedup stays
+// sequence-keyed and is correct.
 const eventAlreadyProcessed = (
   state: RuntimeContextEventState,
   event: RuntimeContextTargetEvent,
 ): boolean => {
   switch (event._tag) {
     case "Input":
-      return (event.event.sequence ?? -1) <= state.lastProcessedInputSequence
+      return state.processedInputIds.includes(event.event.inputId)
     case "Output":
       return event.event.sequence <= state.lastProcessedOutputSequence
     case "ToolResult":

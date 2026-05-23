@@ -130,6 +130,7 @@ export class RuntimeContextStateTable extends DurableTable(
 ) {}
 
 const stateFromRow = (row: RuntimeContextStateRow): RuntimeContextEventState => ({
+  processedInputIds: row.processedInputIds,
   lastProcessedInputSequence: row.lastProcessedInputSequence,
   lastProcessedOutputSequence: row.lastProcessedOutputSequence,
   pendingPermissionRequests: row.pendingPermissionRequests,
@@ -145,6 +146,7 @@ const rowFromState = (
   stateKey: stateKey(context.contextId, activityAttempt),
   contextId: context.contextId,
   activityAttempt,
+  processedInputIds: state.processedInputIds,
   lastProcessedInputSequence: state.lastProcessedInputSequence,
   lastProcessedOutputSequence: state.lastProcessedOutputSequence,
   pendingPermissionRequests: state.pendingPermissionRequests,
