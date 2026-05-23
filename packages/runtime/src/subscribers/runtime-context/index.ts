@@ -49,11 +49,16 @@ import { Effect, Layer, Option, Stream } from "effect"
 import { runKeyedDispatch } from "../../runtime-keyed-subscriber/index.ts"
 import { RuntimeContextInputFacts } from "../../tables/runtime-context-input-facts.ts"
 import { RuntimeAgentOutputAfterEvents } from "../../tables/runtime-context-output-facts.ts"
+// Route through the runtime's target public subpath (`@firegrid/runtime/control-plane`,
+// physical home `../../control-plane/index.ts`) instead of reaching into the
+// legacy `authorities/` tree directly. Subscribers consume read/write capability
+// tags via the control-plane re-export surface; the bare `authorities/` path is
+// not target-shape (cf. OLA2 audit 2026-05-23 target→authorities gap).
 import {
   RuntimeContextRead,
   RuntimeContexts,
   RuntimeRunAppendAndGet,
-} from "../../authorities/index.ts"
+} from "../../control-plane/index.ts"
 import {
   handleRuntimeContextEvent,
   type RuntimeContextTargetEvent,

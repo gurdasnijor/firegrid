@@ -66,7 +66,12 @@ import type { RuntimeContext } from "@firegrid/protocol/launch"
 import type { RuntimeIngressInputRow } from "@firegrid/protocol/runtime-ingress"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 import type { AgentInputEvent } from "../../events/agent-input.ts"
-import { RuntimeRunAppendAndGet } from "../../authorities/runtime-control-plane-recorder.ts"
+// Route through the runtime's target public subpath (`@firegrid/runtime/control-plane`,
+// physical home `../../control-plane/index.ts`) instead of reaching into the
+// legacy `authorities/` tree directly. Subscribers consume read/write capability
+// tags via the control-plane re-export surface; the bare `authorities/` path is
+// not target-shape (cf. OLA2 audit 2026-05-23 target→authorities gap).
+import { RuntimeRunAppendAndGet } from "../../control-plane/index.ts"
 import {
   type RuntimeContextEventState,
   RuntimeContextStateStore,
