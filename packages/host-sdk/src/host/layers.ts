@@ -20,6 +20,7 @@ import { RuntimeStartCapabilityLive } from "./commands.ts"
 import {
   RuntimeControlRequestControlPlaneLive,
 } from "@firegrid/runtime/control-plane"
+import { RuntimeHostLive } from "@firegrid/runtime/composition/host-live"
 import {
   RuntimeControlRequestSideEffectsLive,
 } from "./control-request-side-effects.ts"
@@ -32,7 +33,9 @@ import {
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
   PerContextRuntimeOutputWriterLive,
+  RuntimeContextStateStoreLive,
 } from "./per-context-runtime-output.ts"
+import { runtimeToolUseExecutorLayer } from "./runtime-context-workflow-support.ts"
 import {
   LocalProcessSandboxProvider,
   localProcessSpawnEnvFromHostEnv,
@@ -53,7 +56,6 @@ import {
 } from "./runtime-context-session/raw-adapter.ts"
 import {
   RuntimeContextWorkflowRuntimeLive,
-  RuntimeInputIntentDispatcherLive,
 } from "@firegrid/runtime/kernel"
 import {
   type RuntimeChannelRouter,
@@ -120,6 +122,24 @@ const localProcessSandboxProviderLayer = (
       Layer.provide(NodeContext.layer),
     )
 
+// Wave D-A (PR #714): host-scope bundle that satisfies
+// `RuntimeContextSubscriberLive`'s R channel — the Shape C loop body's
+// per-context state store + tool executor live alongside `RuntimeHostLive`.
+// Building the bundle as a single Layer (rather than separate
+// `provideMerge` stages downstream) preserves the `Effect.context<…>()`
+// capture order the per-context support layer relied on: each provider
+// here sees the same `RuntimeChannelRouter` / `AgentToolHost` /
+// observation substrate that `runtimeContextWorkflowSupportLayer` uses.
+//
+// The bundle's RIn surfaces up to the outer `FiregridRuntimeHostLive`
+// pipe, where `hostPublic` + `hostScoped` + `RuntimeControlPlaneRecorderLive`
+// + `RuntimeContextWorkflowSessionLive` fill it the same way they fill
+// the workflow body's RIn.
+const runtimeContextSubscriberHostBundle = RuntimeHostLive.pipe(
+  Layer.provideMerge(RuntimeContextStateStoreLive),
+  Layer.provideMerge(runtimeToolUseExecutorLayer),
+)
+
 const RuntimeContextWorkflowSessionLive = Layer.scoped(
   RuntimeContextWorkflowSession,
   Effect.gen(function*() {
@@ -134,6 +154,13 @@ const RuntimeContextWorkflowSessionLive = Layer.scoped(
         pick(context).startOrAttach(context, activityAttempt),
       send: (context, activityAttempt, command) =>
         pick(context).send(context, activityAttempt, command),
+      // Wave D-A Shape (b): per-context teardown via the seam.
+      // Fan to both adapters because a context's owner kind (raw vs
+      // codec) is selected at startOrAttach time and the registry is
+      // owned per-adapter; teardown is idempotent — calling deregister
+      // on the adapter that never started a session is a no-op.
+      deregister: (contextId) =>
+        Effect.zipRight(raw.deregister(contextId), codec.deregister(contextId)),
     })
   }),
 )
@@ -319,8 +346,19 @@ export const FiregridRuntimeHostLive = (
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
-  const hostPublic = RuntimeInputIntentDispatcherLive.pipe(
-    Layer.provideMerge(RuntimeStartCapabilityLive),
+  //
+  // Wave D-A (PR #714): `RuntimeInputIntentDispatcherLive` provide-merge
+  // dropped. The host-scoped dispatcher fiber existed to deliver durable
+  // input intents into the legacy workflow body's per-sequence
+  // `DurableDeferred` mailbox; the Shape C subscriber composed in
+  // `@firegrid/runtime/composition/host-live` consumes
+  // `RuntimeContextInputFacts.forContext` directly, so the mailbox path
+  // has no production reader anymore. The dispatcher Live symbol +
+  // `runtime-input-deferred.ts` mailbox stay PARKed under
+  // `@firegrid/runtime/kernel` / `@firegrid/runtime/workflows` until D-E
+  // retires the workflow body and the test/sim consumers that still
+  // exercise the body path.
+  const hostPublic = RuntimeStartCapabilityLive.pipe(
     Layer.provideMerge(hostChannels),
     Layer.provideMerge(HostControlChannelsLive),
   )
@@ -333,6 +371,18 @@ export const FiregridRuntimeHostLive = (
     Layer.provideMerge(RuntimeControlRequestSideEffectsLive),
   )
   return controlPlane.pipe(
+    // Wave D-A (PR #714): the runtime composition root forks the Shape C
+    // per-event subscriber (`RuntimeContextSubscriberLive`) on host scope.
+    // The subscriber owns the live loop body the legacy workflow-body
+    // runtime used to own. Its `R` channel names `RuntimeContextStateStore`,
+    // `RuntimeToolUseExecutor`, `RuntimeContextWorkflowSession`,
+    // `RuntimeRunAppendAndGet`, `RuntimeContextRead`, `RuntimeContexts`,
+    // `RuntimeAgentOutputAfterEvents`, `RuntimeContextInputFacts` — these
+    // are filled by `hostPublic` + `RuntimeContextWorkflowSessionLive` +
+    // `RuntimeControlPlaneRecorderLive` + `hostScoped` below in the pipe.
+    // The bundle is provideMerge'd FIRST so subsequent providers (which
+    // surface `RuntimeChannelRouter`, `AgentToolHost`, etc.) feed its RIn.
+    Layer.provideMerge(runtimeContextSubscriberHostBundle),
     Layer.provideMerge(hostPublic),
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),

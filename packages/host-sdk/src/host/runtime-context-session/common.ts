@@ -223,7 +223,29 @@ export const makeRuntimeContextWorkflowSessionService = <Session extends Runtime
       return runtimeContextSessionCommandAccepted(session, command)
     })
 
-  return { startOrAttach, send }
+  // Wave D-A Shape (b): seam-level per-context teardown. Removes every
+  // (contextId, *) session-record entry from the per-context registry.
+  // Forked agent-stream fibers complete naturally when the agent's byte
+  // stream ends (the `start.run` fiber forked at `forkIn(options.scope)`
+  // above carries `Effect.ensuring(removeRuntimeContextSession(...))`, so
+  // a session that fully exits has already cleared its registry entry —
+  // this is the soft-deregister contract documented on
+  // `RuntimeContextWorkflowSessionService.deregister`).
+  //
+  // The key shape is `${contextId}:${attempt}` per
+  // `runtimeContextSessionKey` above; filtering by the `${contextId}:`
+  // prefix matches every attempt for the context.
+  const deregister = (contextId: string) =>
+    Ref.update(options.sessions, (map) => {
+      const next = new Map(map)
+      const prefix = `${contextId}:`
+      for (const key of map.keys()) {
+        if (key.startsWith(prefix)) next.delete(key)
+      }
+      return next
+    })
+
+  return { startOrAttach, send, deregister }
 }
 
 export const makeRuntimeContextSessionAdapterService = <Session extends RuntimeContextSessionRecord>(

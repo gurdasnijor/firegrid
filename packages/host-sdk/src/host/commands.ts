@@ -12,12 +12,13 @@
 //     by #708 as the durable settlement evidence; ingress route registered
 //     on `HostPlaneChannelRouter` by this PR alongside the existing
 //     factory-keyed session routes;
-//   - DO NOT drive the workflow body. The body is driven server-side by
-//     `RuntimeControlRequestSideEffectsLive.start` (reconciler-side
-//     consumer of the `startRequests` row this facade writes), which
-//     calls the private `runtimeContextHostStart` in
-//     `./internal/runtime-context-host-start.ts`. The non-recursive split
-//     is the #706 contract.
+//   - DO NOT drive the workflow body. The reconciler-side
+//     `RuntimeControlRequestSideEffectsLive.start` consumes the
+//     `startRequests` row this facade writes and dispatches through the
+//     existing session seam (`RuntimeContextWorkflowSession.startOrAttach`)
+//     + the durable runs table; the per-event loop is the Shape C
+//     subscriber composed in `@firegrid/runtime/composition/host-live`
+//     (PR #714 W-D-A). The non-recursive split is the #706 contract.
 //
 // #708 finding: `session.agent_output Terminated` is a codec-emitted
 // observation that arrives BEFORE the body's lifecycle row settles. Using
@@ -31,10 +32,10 @@
 // This file no longer imports the legacy body-driver symbols
 // (`@firegrid/runtime/kernel`, `@effect/workflow`,
 // `runtime-context-workflow-support`), and no host-sdk public/CLI/client
-// caller transitively reaches them through `startRuntime` after this cut.
-// The body-driver imports are relocated to
-// `./internal/runtime-context-host-start.ts` with PARK notes tying their
-// deletion to W-D-A body-driver retirement.
+// caller transitively reaches them through `startRuntime` after the
+// cuts. Wave D-A (PR #714) deleted the previously parked body-driver
+// holding pen at `./internal/runtime-context-host-start.ts` once the
+// reconciler-side `SideEffects.start` rewired to the session seam.
 
 import {
   HostSessionsStartChannel,
@@ -258,9 +259,11 @@ const startRuntimeResultFromLifecycle = (
  *     `runs` write has settled — callers can read `runs.exited` /
  *     `runs.failed` immediately after `startRuntime` returns.
  *
- * The body executes server-side, driven by
- * `RuntimeControlRequestSideEffectsLive.start` → `runtimeContextHostStart`
- * (private internal primitive in `./internal/runtime-context-host-start.ts`).
+ * The body executes server-side: `RuntimeControlRequestSideEffectsLive
+ * .start` allocates the attempt, records `runs.started`, calls the
+ * session seam (`RuntimeContextWorkflowSession.startOrAttach`), and
+ * waits for the durable `runs.exited|failed` row the Shape C
+ * subscriber writes when it observes Terminated.
  * Non-idempotent dedup of the body invocation is enforced by a first-
  * writer-wins claim on the durable `controlRequestClaims` table inside
  * `runStartRequestSideEffect` (#709), so two parallel public starts always

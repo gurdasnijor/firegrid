@@ -60,10 +60,11 @@ import {
 } from "./handler.ts"
 import { asRuntimeContextError } from "../../runtime-errors.ts"
 
-export {
-  handleRuntimeContextEvent,
-  type RuntimeContextTargetEvent,
-} from "./handler.ts"
+// Note: `handleRuntimeContextEvent` + `RuntimeContextTargetEvent` are NOT
+// re-exported from this barrel. Consumers (tests, host-sdk session
+// adapters, sims) import them directly from `./handler.ts`. The barrel's
+// public surface is just `RuntimeContextSubscriberLive` — the Layer that
+// host composition wires in.
 
 /**
  * Per-event handler bound to the keyed dispatcher. Resolves `(context,

@@ -115,6 +115,7 @@ const makeRecordingSession = (): Effect.Effect<RecordingSession> =>
             commandId: command.commandId,
             ownerSessionId: "test-session",
           })),
+      deregister: () => Effect.void,
     })
     return { sent, layer }
   })
