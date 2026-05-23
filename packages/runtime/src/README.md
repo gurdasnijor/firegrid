@@ -1,5 +1,31 @@
 # Runtime Source Boundaries
 
+## Shape C Cutover Target Tree
+
+The Shape C cutover target layout is pinned at
+[`docs/architecture/2026-05-22-runtime-physical-target-tree.md`](../../../docs/architecture/2026-05-22-runtime-physical-target-tree.md).
+
+This scaffold PR stages the empty target folders alongside the pre-cutover
+layout below. Each new folder carries a README documenting what it owns, its
+logical pipeline position (`events` < `tables` < `producers` / `transforms` /
+`channels` < `subscribers` < `composition`), and the import-direction rule.
+Subscriber folders declare their shape (`SHAPE: B | C | D`) in their README.
+
+Wave 1 forward-target re-exports landed in this scaffold:
+
+- `tables/runtime-context-state.ts` →
+  `@firegrid/runtime/tables/runtime-context-state`
+- `subscribers/runtime-context-session/index.ts` →
+  `@firegrid/runtime/subscribers/runtime-context-session`
+
+The host-sdk import gate (Semgrep rule
+`firegrid-host-sdk-no-runtime-kernel-import` and friends) blocks new host-sdk
+imports of `@firegrid/runtime/kernel`, `_archive/`, and any numbered runtime
+subpath. Existing kernel-barrel sites are baselined as legacy debt; they
+shrink as host-sdk callers migrate to the semantic subpaths above.
+
+## Pre-Cutover Layout (Active)
+
 This directory keeps the agent event-pipeline grouped under
 `agent-event-pipeline/`. The target from
 [`SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md`](../../../docs/sdds/SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md)

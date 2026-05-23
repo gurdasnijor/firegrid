@@ -80,6 +80,14 @@
     "./sources/sandbox": {
       "types": "./src/agent-event-pipeline/sources/sandbox/index.ts",
       "default": "./src/agent-event-pipeline/sources/sandbox/index.ts"
+    },
+    "./tables/runtime-context-state": {
+      "types": "./src/tables/runtime-context-state.ts",
+      "default": "./src/tables/runtime-context-state.ts"
+    },
+    "./subscribers/runtime-context-session": {
+      "types": "./src/subscribers/runtime-context-session/index.ts",
+      "default": "./src/subscribers/runtime-context-session/index.ts"
     }
   },
   "files": [
