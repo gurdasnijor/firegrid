@@ -53,6 +53,10 @@
       "types": "./src/channels/router.ts",
       "default": "./src/channels/router.ts"
     },
+    "./channels/human": {
+      "types": "./src/channels/human/index.ts",
+      "default": "./src/channels/human/index.ts"
+    },
     "./observations": {
       "types": "./src/observations/index.ts",
       "default": "./src/observations/index.ts"

@@ -73,6 +73,42 @@
       "types": "./src/producers/sandbox/local-process-from-env.ts",
       "default": "./src/producers/sandbox/local-process-from-env.ts"
     },
+    "./channels/router/live": {
+      "types": "./src/channels/router/live.ts",
+      "default": "./src/channels/router/live.ts"
+    },
+    "./channels/session-self/live": {
+      "types": "./src/channels/session-self/live.ts",
+      "default": "./src/channels/session-self/live.ts"
+    },
+    "./channels/host-control/live": {
+      "types": "./src/channels/host-control/live.ts",
+      "default": "./src/channels/host-control/live.ts"
+    },
+    "./channels/session-agent-output/live": {
+      "types": "./src/channels/session-agent-output/live.ts",
+      "default": "./src/channels/session-agent-output/live.ts"
+    },
+    "./channels/session-permission/live": {
+      "types": "./src/channels/session-permission/live.ts",
+      "default": "./src/channels/session-permission/live.ts"
+    },
+    "./channels/host-sessions-create-or-load/live": {
+      "types": "./src/channels/host-sessions-create-or-load/live.ts",
+      "default": "./src/channels/host-sessions-create-or-load/live.ts"
+    },
+    "./channels/verified-webhook/live": {
+      "types": "./src/channels/verified-webhook/live.ts",
+      "default": "./src/channels/verified-webhook/live.ts"
+    },
+    "./channels/event-channel": {
+      "types": "./src/channels/event-channel.ts",
+      "default": "./src/channels/event-channel.ts"
+    },
+    "./channels/state-changes/live": {
+      "types": "./src/channels/state-changes/live.ts",
+      "default": "./src/channels/state-changes/live.ts"
+    },
     "./agent-adapters": {
       "types": "./src/producers/codecs/agent-adapters/index.ts",
       "default": "./src/producers/codecs/agent-adapters/index.ts"
