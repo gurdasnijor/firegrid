@@ -745,3 +745,45 @@ function* tfZchuC7EdgeTerminalFixtures(): Generator<unknown, void, unknown> {
   const observedTerminal = someOutput._tag === "TurnComplete"
   return void [synthesizedTerminal, observedTerminal]
 }
+
+// ===========================================================================
+// tf-1r0o: shape-aware drift guards for the Shape C RuntimeContext subscriber
+// landing zone and the transforms purity rule.
+// docs/cannon/architecture/runtime-pipeline-type-boundaries.md
+// ===========================================================================
+
+declare const Activity: { make: (options: unknown) => unknown }
+declare const WorkflowEngineSuspend: { (instance: unknown): unknown }
+declare const WorkflowEngineExecute: { (workflow: unknown, payload: unknown): unknown }
+declare const instance: unknown
+declare const someWorkflow: unknown
+declare const somePayload: unknown
+declare const store: { load: (k: string) => unknown; save: (k: string, v: unknown) => unknown }
+declare const sampleRow: { sequence: number }
+
+// Shape C — RuntimeContext subscriber `R` must not name workflow execution
+// machinery. The visible signal is the WorkflowEngine namespace tags (engine
+// and instance) appearing in R, typically via Activity construction or
+// Workflow suspend or execute calls. A subscriber that grows those tags is a
+// (parked, replaying) Shape D body. Move workflow-shaped work to
+// tool-execution/ or a justified workflow-engine/workflows/ landing.
+function* tfShapeCRuntimeContextNoWorkflowEngineFixtures(): Generator<unknown, void, unknown> {
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  const wrapped = Activity.make({ name: "noop", execute: undefined })
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  const parked = WorkflowEngineSuspend(instance) // analogue of `Workflow.suspend(instance)`
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  yield Workflow.suspend(instance)
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  yield Workflow.execute(someWorkflow, somePayload)
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  const engineTag = WorkflowEngine.WorkflowEngine
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  const instanceTag = WorkflowEngine.WorkflowInstance
+  // ok: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  const loaded = store.load("ctx-1")
+  // ok: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  const saved = store.save("ctx-1", loaded)
+  return void [wrapped, parked, engineTag, instanceTag, loaded, saved]
+}
+

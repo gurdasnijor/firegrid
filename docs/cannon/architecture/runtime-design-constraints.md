@@ -656,6 +656,34 @@ C5) stay review-enforced.
   (`packages/host-sdk/src/host/*edge*.ts`) where the terminal fact is not backed
   by durable runtime state. Observing a `TurnComplete` output is compliant;
   synthesizing the terminal completion locally is not.
+- Shape-aware C2 guard (`tf-1r0o`) —
+  `firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber`: fails CI
+  on `Activity.make`, `Workflow.suspend`, `Workflow.execute`,
+  `WorkflowEngine.WorkflowEngine`, or `WorkflowEngine.WorkflowInstance` inside
+  `packages/runtime/src/agent-event-pipeline/subscribers/runtime-context/**`.
+  That directory is the Shape C cutover landing zone defined by
+  [`runtime-pipeline-type-boundaries.md`](./runtime-pipeline-type-boundaries.md)
+  and [`packages/runtime/src/agent-event-pipeline/TOPOLOGY.md`](../../../packages/runtime/src/agent-event-pipeline/TOPOLOGY.md);
+  a violation either turns the subscriber into a (parked, replaying) Shape D
+  body or assumes a workflow runtime the host composition is not obligated to
+  provide. Shape D workflows live in `tool-execution/` or under a justified
+  `workflow-engine/workflows/` landing.
+- Transforms purity guard — **follow-up**, NOT YET LANDED. The intended rule
+  (`firegrid-transforms-no-effect-shaped-exports`) would fail CI on
+  `Effect.gen`, `Effect.{succeed,fail,sync,tryPromise,promise,async}`,
+  `Layer.*`, `Workflow.make`, `Activity.make`, `DurableDeferred.*`, or
+  `Context.{Tag,GenericTag}` inside
+  `packages/runtime/src/agent-event-pipeline/transforms/**`. The shape rule
+  is documented in
+  [`packages/runtime/src/agent-event-pipeline/transforms/README.md`](../../../packages/runtime/src/agent-event-pipeline/transforms/README.md)
+  and [`TOPOLOGY.md`](../../../packages/runtime/src/agent-event-pipeline/TOPOLOGY.md);
+  review-enforced today. The CI rule was deferred because `semgrep --test`
+  mode (the existing tf-zchu unit-test harness) reports a phantom rule-id
+  mismatch on `dup-detection.ts` whenever this rule is in `.semgrep.yml`,
+  regardless of `paths.include` configuration — needs deeper investigation or
+  a rule-split / second-target test invocation. Until landed, transforms
+  purity is review-enforced; the reviewer test is "callable in a unit test
+  with no Effect environment."
 
 First live-bridge application bead: `tf-c22a`. It applies this gate to existing
 bridge SDDs and PRs, including `SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE`,
