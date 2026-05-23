@@ -237,12 +237,10 @@ export const makeRuntimeContextWorkflowSessionService = <Session extends Runtime
   // prefix matches every attempt for the context.
   const deregister = (contextId: string) =>
     Ref.update(options.sessions, (map) => {
-      const next = new Map(map)
       const prefix = `${contextId}:`
-      for (const key of map.keys()) {
-        if (key.startsWith(prefix)) next.delete(key)
-      }
-      return next
+      return new Map(
+        Array.from(map.entries()).filter(([key]) => !key.startsWith(prefix)),
+      )
     })
 
   return { startOrAttach, send, deregister }

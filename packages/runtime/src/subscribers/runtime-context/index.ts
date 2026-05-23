@@ -48,12 +48,12 @@
 import { Effect, Layer, Option, Stream } from "effect"
 import { runKeyedDispatch } from "../../runtime-keyed-subscriber/index.ts"
 import { RuntimeContextInputFacts } from "../../tables/runtime-context-input-facts.ts"
-import { RuntimeAgentOutputAfterEvents } from "../../agent-event-pipeline/authorities/runtime-output-journal.ts"
+import { RuntimeAgentOutputAfterEvents } from "../../tables/runtime-context-output-facts.ts"
 import {
   RuntimeContextRead,
   RuntimeContexts,
   RuntimeRunAppendAndGet,
-} from "../../authorities/runtime-control-plane-recorder.ts"
+} from "../../authorities/index.ts"
 import {
   handleRuntimeContextEvent,
   type RuntimeContextTargetEvent,

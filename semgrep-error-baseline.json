@@ -43,7 +43,7 @@
     {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 57
+      "line": 68
     },
     {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",

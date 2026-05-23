@@ -103,17 +103,27 @@
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 56
+      "line": 55
     },
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 387
+      "line": 57
     },
     {
-      "ruleId": "host-sdk-no-runtime-input-intent-dispatcher-symbol",
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 348
+      "line": 65
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/layers.ts",
+      "line": 67
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
+      "path": "packages/host-sdk/src/host/layers.ts",
+      "line": 397
     },
     {
       "ruleId": "host-sdk-no-runtime-observation-source-symbol",
