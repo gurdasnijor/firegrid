@@ -1,5 +1,4 @@
 import { Prompt } from "@effect/ai"
-import { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
@@ -33,21 +32,8 @@ import {
 } from "./commands.ts"
 import {
   requireLocalRuntimeContextWithHostSession,
-  runtimeContextWorkflowExecutionId,
-  runtimeExecutionClock,
 } from "@firegrid/runtime/kernel"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
-import {
-  RuntimeContextWorkflowRuntime,
-} from "@firegrid/runtime/kernel"
-import { executeRuntimeContextWorkflow } from "@firegrid/runtime/kernel"
-import {
-  RuntimeContextWorkflowNative,
-  RuntimeContextWorkflowPayload,
-} from "@firegrid/runtime/kernel"
-import {
-  runtimeContextWorkflowSupportLayer,
-} from "./runtime-context-workflow-support.ts"
 import {
   RuntimeAgentOutputAfterEvents,
   type RuntimeAgentOutputObservation,
@@ -194,15 +180,13 @@ const runtimeHostAgentToolHostService = (captured: {
   // durable RuntimeControlPlaneTable backing the reconciler reads.
   readonly durableStreamsBaseUrl: string
   readonly namespace: string
-  readonly workflowRuntime: RuntimeContextWorkflowRuntime["Type"]
   readonly agentToolHost: AgentToolHostService
   readonly agentOutputEvents: RuntimeAgentOutputAfterEvents["Type"]
   // TFIND-031: ambient host durable substrate captured at layer-build
-  // time, re-provided into the deferred child-context workflow run.
+  // time, used by per-call ingress/insert helpers below.
   readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv | RuntimeChannelRouter>
   // Gap-2: optional provider side-effect capability resolved at
-  // layer-build time. NOT part of `hostContext` — never re-provided into
-  // the deferred child-context workflow capture (TFIND-031 boundary held).
+  // layer-build time.
   readonly sandboxProvider: Option.Option<SandboxProviderService>
 }): AgentToolHostService => ({
   spawnChildContext: ({
@@ -236,27 +220,24 @@ const runtimeHostAgentToolHostService = (captured: {
         idempotencyKey: inputId,
       })
       yield* requireLocalContextWithHostCapabilities(captured, childContextId)
-      // tf-kllj: startChildContextWorkflow is fire-and-forget (discard:true), so
-      // at this point the child context is created and its workflow has been
-      // *started* but the child process spawn is NOT yet confirmed. Reporting
-      // "running" here was a lie: a child whose executable does not exist
-      // (spawn ENOENT) still produced session.status="running". Return the
-      // honest pre-confirmation state ("created"); the actual run outcome
-      // (running vs failed) is recorded as durable run/lifecycle evidence by the
-      // child workflow. See the STOP-boundary note in the PR: turning this into
-      // a confirmed "running"/"failed" requires awaiting that run-start
-      // lifecycle evidence (RuntimeContext lifecycle authority), beyond this
-      // narrow startup-state patch.
-      yield* startChildContextWorkflow(captured, childContextId)
+      // Wave D-B: child-context start is implicit. The host-scope Shape C
+      // subscriber (`RuntimeContextSubscriberLive`, see
+      // `@firegrid/runtime/composition/host-live`) forks a per-key fiber for
+      // the child contextId as soon as its initial input fact lands
+      // (written above by `appendIngressWithHostCapabilities`). Reporting
+      // "created" stays honest under the new shape: the child's process
+      // spawn is observed by the subscriber, not invoked from this gen;
+      // durable run/lifecycle evidence remains the source of truth for
+      // confirmed running/failed transitions (cf. the retired legacy
+      // child-context body driver removed in this PR).
       return {
         childContextId,
         status: "created" as const,
       }
     }).pipe(
-      // TFIND-031: discharge the host runtime context the deferred
-      // child-context workflow genuinely needs. Always satisfied at
-      // runtime by the composed host layer; `any` previously hid the
-      // requirement.
+      // TFIND-031: discharge the host runtime context the per-call
+      // ingress/insert helpers (`*WithHostCapabilities`) genuinely need.
+      // Always satisfied at runtime by the composed host layer.
       Effect.provide(captured.hostContext),
       Effect.mapError(cause => toolExecutionFailed(toolUseId, "session_new", cause)),
       Effect.withSpan("firegrid.host.agent_tool.session_new", {
@@ -526,37 +507,13 @@ const appendIngressWithHostCapabilities = (
     Effect.provideService(RuntimeControlPlaneTable, captured.controlTable),
   )
 
-const startChildContextWorkflow = (
-  captured: {
-    readonly contextRead: RuntimeContextReadService
-    readonly hostSession: HostSessionRow
-    readonly workflowRuntime: RuntimeContextWorkflowRuntime["Type"]
-    readonly agentToolHost: AgentToolHostService
-  },
-  contextId: string,
-) =>
-  Effect.gen(function*() {
-    const context = yield* requireLocalContextWithHostCapabilities(captured, contextId)
-    yield* captured.workflowRuntime.run({
-      context,
-      workflowName: RuntimeContextWorkflowNative.name,
-      supportLayer: runtimeContextWorkflowSupportLayer(contextId, captured.agentToolHost),
-      effect: Effect.gen(function* () {
-        const engine = yield* WorkflowEngine.WorkflowEngine
-        yield* executeRuntimeContextWorkflow(
-          engine,
-          RuntimeContextWorkflowNative,
-          {
-            executionId: runtimeContextWorkflowExecutionId(contextId),
-            payload: RuntimeContextWorkflowPayload.make({ contextId }),
-            discard: true,
-          },
-        )
-      }).pipe(
-        Effect.withClock(runtimeExecutionClock),
-      ),
-    })
-  })
+// Wave D-B: the legacy child-context body-driver function was retired.
+// Child-context bringup is now implicit through the host-scope Shape C
+// subscriber (`RuntimeContextSubscriberLive`): writing the child's
+// initial input fact is the trigger; the subscriber's keyed dispatch
+// forks the per-context worker on first sight of a contextId. The
+// previous body workflow + execute helper + per-context support layer
+// were unreachable from host-sdk after this change and were deleted.
 
 export const RuntimeHostAgentToolHostLive = Layer.effect(
   AgentToolHost,
@@ -566,17 +523,15 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     const hostSession = yield* CurrentHostSession
     const controlTable = yield* RuntimeControlPlaneTable
     const hostConfig = yield* RuntimeHostConfig
-    const workflowRuntime = yield* RuntimeContextWorkflowRuntime
     const agentOutputEvents = yield* RuntimeAgentOutputAfterEvents
     // TFIND-031: capture the ambient host durable substrate so the
-    // deferred child-context workflow (run later, outside this gen) can
-    // re-provide it. Always present here via the composed host layer.
+    // per-call ingress/insert helpers can resolve it. Always present
+    // here via the composed host layer.
     const hostContext = yield* Effect.context<
       HostRuntimeContextExecutionEnv | RuntimeChannelRouter
     >()
-    // Gap-2: optional provider side-effect capability. Resolved at
-    // layer-build time, NOT folded into `hostContext` — the TFIND-031
-    // deferred-capture boundary stays narrow.
+    // Gap-2: optional provider side-effect capability resolved at
+    // layer-build time.
     const sandboxProvider = yield* Effect.serviceOption(SandboxProvider)
     const service: AgentToolHostService = runtimeHostAgentToolHostService({
       contextInsert,
@@ -585,7 +540,6 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
       controlTable,
       durableStreamsBaseUrl: hostConfig.durableStreamsBaseUrl,
       namespace: hostConfig.namespace,
-      workflowRuntime,
       agentOutputEvents,
       hostContext,
       sandboxProvider,

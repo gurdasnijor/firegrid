@@ -1,22 +1,25 @@
 /**
  * EXECUTION side of the agent-tool boundary
- * (`firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6`): the per-call workflow that
- * gives runtime-owned tool execution a workflow instance, and the toolkit
- * handler Layer that routes every registered tool through the host-side
- * lowering.
+ * (`firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6`): the toolkit handler Layer
+ * that routes every registered tool through the runtime-owned
+ * `ToolDispatch` facade.
  *
  * The binding values (`Tool`/`Toolkit`, failure schema, routing tag) live
- * in `../bindings`; this module composes them with host execution.
+ * in `../bindings`; this module composes them with the runtime dispatch
+ * Tag.
+ *
+ * Wave D-B: handler dispatch goes through `ToolDispatch.call(...)` from
+ * `@firegrid/runtime/subscribers/tool-dispatch`. The legacy per-call
+ * workflow-runtime bridge (kernel `.run({supportLayer, effect})` wrapper
+ * + the per-call tool support layer + the vestigial `provideRuntimeContext`
+ * call) is deleted. host-sdk no longer imports `@effect/workflow`, the
+ * kernel workflow-runtime Tag, the per-call support layer, or the
+ * protocol's `provideRuntimeContext` helper from this file.
  */
 
 import { IdGenerator } from "@effect/ai"
 import type * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
-import {
-  provideRuntimeContext,
-} from "@firegrid/protocol/launch"
-import {
-  ToolCallWorkflow,
-} from "@firegrid/runtime/tool-executor"
+import { ToolDispatch } from "@firegrid/runtime/subscribers/tool-dispatch"
 import { type Context, Effect, Layer } from "effect"
 import { toolExecutionFailed } from "../bindings/tool-error.ts"
 import {
@@ -25,35 +28,20 @@ import {
   FiregridPrimitiveProfileToolkit,
   type FiregridMcpToolFailure,
 } from "../bindings/tools.ts"
-import { AgentToolHost } from "./tool-host.ts"
-import {
-  RuntimeContextWorkflowRuntime,
-} from "@firegrid/runtime/kernel"
-import type { RuntimeChannelRouter } from "../../host/channel.ts"
-import {
-  toolCallWorkflowSupportLayer,
-  type HostRuntimeContextExecutionEnv,
-} from "../../host/runtime-context-workflow-support.ts"
 
 const TOOL_USE_ID_PREFIX = "mcp"
 
 export { ToolCallWorkflow } from "@firegrid/runtime/tool-executor"
 export { RuntimeToolCallWorkflowLayer as ToolCallWorkflowLayer } from "@firegrid/runtime/tool-executor"
 
-// TFIND-031: includes the host runtime context that deferred tool
-// handlers genuinely require. The execution-scoped observation substrate
-// is provided inside the tool-call workflow support layer instead of
-// leaking onto every MCP tool handler.
-type ToolCallHostEnvironment =
-  | RuntimeContextWorkflowRuntime
-  | AgentToolHost
-  | RuntimeChannelRouter
-  | HostRuntimeContextExecutionEnv
+type ToolCallHostEnvironment = ToolDispatch
 
 /**
- * Common handler shape: every tool routes through the runtime-owned
- * tool-call workflow so tool calls observe the same workflow identity,
- * replay safety, and host seams as direct codec paths.
+ * Common handler shape: every tool dispatches through the runtime-owned
+ * `ToolDispatch` facade so tool calls observe the same workflow identity,
+ * replay safety, and host seams as direct codec paths. At-most-once across
+ * restart is `Workflow.idempotencyKey: toolUseId` over
+ * `WorkflowEngineTable` (#713 GREEN).
  */
 const handleTool = <Output>(
   captured: Context.Context<ToolCallHostEnvironment>,
@@ -73,12 +61,6 @@ const handleTool = <Output>(
         )),
     )
     const toolUseId = `${TOOL_USE_ID_PREFIX}:${resolved.contextId}:${idSuffix}`
-    const execute = ToolCallWorkflow.execute({
-      contextId: resolved.contextId,
-      toolUseId,
-      toolName,
-      input: params,
-    })
     if (resolved.runtimeContext === undefined) {
       return yield* Effect.fail(toolExecutionFailed(
         toolUseId,
@@ -86,27 +68,25 @@ const handleTool = <Output>(
         "MCP tool execution requires a resolved runtime context",
       ))
     }
-    const runtimeContext = resolved.runtimeContext
-    const result = yield* Effect.gen(function*() {
-      const workflowRuntime = yield* RuntimeContextWorkflowRuntime
-      const agentToolHost = yield* AgentToolHost
-      return yield* workflowRuntime.run({
-        context: runtimeContext,
-        workflowName: ToolCallWorkflow.name,
-        supportLayer: toolCallWorkflowSupportLayer(agentToolHost),
-        effect: execute.pipe(provideRuntimeContext(runtimeContext)),
-      })
+    const dispatch = yield* ToolDispatch
+    const result = yield* dispatch.call({
+      contextId: resolved.contextId,
+      toolUseId,
+      toolName,
+      input: params,
     }).pipe(
-      Effect.mapError(cause =>
-        toolExecutionFailed(toolUseId, toolName, cause)),
-      Effect.provide(captured),
+      Effect.mapError(failure =>
+        toolExecutionFailed(failure.toolUseId, failure.toolName, failure.cause)),
     )
     if (result.part.isFailure) {
       const error = extractToolFailure(result.part.result)
       return yield* Effect.fail(error)
     }
     return result.part.result as Output
-  }).pipe(Effect.annotateSpans("firegrid.side", "agent-tools"))
+  }).pipe(
+    Effect.provide(captured),
+    Effect.annotateSpans("firegrid.side", "agent-tools"),
+  )
 
 /**
  * Pull a structured `ToolError` out of `ToolResult.part.result`. The
@@ -172,8 +152,8 @@ const makeToolkitHandlers = (
  * and `tools/call`.
  *
  * Host services are captured once when the MCP layer is built; each handler
- * still resolves its route-scoped runtime context at call time and then runs
- * the tool-call workflow on that context's active host-scoped RuntimeContext engine.
+ * resolves the runtime-owned `ToolDispatch` facade and a route-scoped
+ * runtime context at call time.
  */
 export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
   Effect.map(Effect.context<ToolCallHostEnvironment>(), makeToolkitHandlers),

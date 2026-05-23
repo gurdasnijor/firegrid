@@ -364,29 +364,39 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 runtime input intents", 
       ),
     )
 
-    // tf-kllj: startup state is honest — the child workflow is started
-    // fire-and-forget, so the spawn is not yet confirmed; report the truthful
-    // pre-confirmation state ("created"), not a premature "running".
+    // tf-kllj + Wave D-B: startup state is honest. The child workflow is
+    // no longer body-started here (the legacy `startChildContextWorkflow`
+    // was retired); pickup is implicit via the host-scope Shape C
+    // subscriber on the child's initial input fact. Report the truthful
+    // pre-confirmation state ("created"); the actual run outcome is
+    // durable run/lifecycle evidence.
     expect(result.session).toEqual({
       childContextId: result.session.childContextId,
       status: "created",
     })
     expect(result.context._tag).toBe("Some")
 
-    expect((await readContextDeferredInputs({
-      baseUrl,
-      namespace,
-      hostId,
-      contextId: result.session.childContextId,
-    })).map(row => ({
-      contextId: row.contextId,
-      authoredBy: row.authoredBy,
-      status: row.status,
-    }))).toEqual([{
+    // Wave D-B: replaces the legacy body-driven deferred-mailbox assertion
+    // (`readContextDeferredInputs` over `WorkflowEngineTable.deferreds` at
+    // `runtime-context/{contextId}/input/...`). The new Shape C path
+    // writes the workflow-authored prompt as a control-plane input intent
+    // that the host-scope `RuntimeContextSubscriberLive` consumes;
+    // assert intent presence + contextId match here.
+    const childIntents = await Effect.runPromise(
+      Effect.gen(function*() {
+        const table = yield* RuntimeControlPlaneTable
+        return yield* table.inputIntents.query((coll) =>
+          coll.toArray.filter(row => row.contextId === result.session.childContextId))
+      }).pipe(
+        Effect.provide(controlPlaneLayer({ baseUrl, namespace })),
+        Effect.scoped,
+      ),
+    )
+    expect(childIntents).toHaveLength(1)
+    expect(childIntents[0]).toMatchObject({
       contextId: result.session.childContextId,
       authoredBy: "workflow",
-      status: "sequenced",
-    }])
+    })
   })
 
   // tf-kllj: a child whose executable cannot spawn (ENOENT) must NOT report

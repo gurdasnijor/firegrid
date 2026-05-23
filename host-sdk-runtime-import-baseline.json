@@ -1,99 +1,9 @@
 {
   "findings": [
     {
-      "ruleId": "host-sdk-no-execute-runtime-context-workflow-symbol",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 43
-    },
-    {
-      "ruleId": "host-sdk-no-execute-runtime-context-workflow-symbol",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 546
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
-      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 9
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
-      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 40
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
-      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 45
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
-      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 67
-    },
-    {
       "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
       "path": "packages/host-sdk/src/host/runtime-substrate.ts",
       "line": 71
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 45
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 542
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 548
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
-      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
-      "line": 42
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
-      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
-      "line": 282
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
-      "line": 30
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
-      "line": 48
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
-      "line": 91
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 41
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 197
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 533
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 569
     },
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
@@ -103,27 +13,14 @@
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 55
+      "line": 62,
+      "note": "Wave D-B kept: `RuntimeContextWorkflowRuntimeLive` import \u2014 provides host-scoped WorkflowEngine + WorkflowEngineTable + RuntimeContextInput + RuntimeContextCheckpointSource sibling services that the runtime-owned ToolDispatchLive (and the Shape C subscriber) depend on."
     },
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 57
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 65
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 67
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 397
+      "line": 401,
+      "note": "Wave D-B kept: `Layer.provideMerge(RuntimeContextWorkflowRuntimeLive)` \u2014 same as above; the Live is composed into FiregridRuntimeHostLive to surface the engine + checkpoint outputs. The Tag itself has no production consumer post-D-B."
     },
     {
       "ruleId": "host-sdk-no-runtime-observation-source-symbol",
@@ -143,27 +40,27 @@
     {
       "ruleId": "host-sdk-no-runtime-observation-streams-symbol",
       "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
-      "line": 5
+      "line": 6
     },
     {
       "ruleId": "host-sdk-no-runtime-observation-streams-symbol",
       "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
-      "line": 19
+      "line": 24
     },
     {
       "ruleId": "host-sdk-no-runtime-observation-streams-symbol",
       "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
-      "line": 30
+      "line": 35
     },
     {
       "ruleId": "host-sdk-no-runtime-observation-streams-symbol",
       "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
-      "line": 41
+      "line": 46
     },
     {
       "ruleId": "host-sdk-no-runtime-streams-import",
       "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
-      "line": 5
+      "line": 6
     },
     {
       "ruleId": "host-sdk-no-runtime-streams-import",

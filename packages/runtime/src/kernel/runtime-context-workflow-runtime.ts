@@ -393,6 +393,18 @@ export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
       run,
       deregister: contextId => deregisterActiveExecution(executions, contextId),
     }).pipe(
+      // Wave D-B: surface the host-scoped `WorkflowEngine` + `WorkflowEngineTable`
+      // built once at line 188-204 above as sibling services. The
+      // runtime-owned tool-dispatch facade
+      // (`@firegrid/runtime/subscribers/tool-dispatch.ToolDispatchLive`)
+      // resolves them from this output to register the Shape D handlers
+      // host-scope and dispatch `ToolCallWorkflow.execute(...)`. The
+      // per-call `.run({supportLayer, effect})` wrapper that used to
+      // re-install handlers on every tool call is retired by that facade.
+      // The Tag itself stays private to runtime — host-sdk consumes
+      // `ToolDispatch`, not `WorkflowEngine` directly.
+      Context.add(WorkflowEngine.WorkflowEngine, hostEngine),
+      Context.add(WorkflowEngineTable, hostTable),
       Context.add(RuntimeContextInput, {
         reconcile,
         dispatchIntent,
