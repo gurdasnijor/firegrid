@@ -30,6 +30,15 @@ packages/runtime/src/
 │
 ├── README.md                         # pipeline diagram + folder pointers
 │
+├── engine/                           # 0. SUBSTRATE: durable workflow-execution infrastructure
+│   ├── README.md                     # what the substrate is + what may import it
+│   ├── durable-streams-workflow-engine.ts  # DurableStreamsWorkflowEngine.{make,layer}
+│   └── internal/                     # substrate-private implementation
+│       ├── engine-runtime.ts         # makeWorkflowEngine
+│       ├── table.ts                  # WorkflowEngineTable + row schemas
+│       ├── codec.ts                  # workflow-result codec
+│       └── contract-activity.ts      # withActivityContract / annotateActivityContractSpan
+│
 ├── events/                           # 1. WHAT crosses boundaries
 │   ├── README.md                     # event vocabulary; no I/O, state, behavior
 │   ├── agent-input.ts                # AgentInputEvent union + schema
@@ -99,28 +108,60 @@ packages/runtime/src/
 │
 ├── composition/                      # 7. runtime-local topology wiring
 │   ├── README.md                     # Layer graph; topology = Layer.mergeAll
+│   ├── runtime-host-config.ts        # RuntimeHostConfig Tag (composition-input filled by host-sdk)
+│   ├── host-workflow-engine.ts       # HostWorkflowEngineLive (host-scoped engine binding)
 │   ├── host-live.ts                  # runtime-owned layer graph for host-sdk to install
 │   └── topology-checks.ts            # CI: shape, ownership, cycle checks
 │
 └── _archive/                         # wrong-shape code pending deletion
-    └── workflow-engine/
+    └── workflow-engine/               # legacy folder is empty after Wave 2 and removed
         └── DEPRECATED.md             # names deletion bead/wave
 ```
 
+Two non-canonical legacy folders that exist in the current tree but are
+NOT part of the target shape:
+
+- `workflow-engine/` — pending dissolution into `engine/` (substrate) +
+  Shape D `subscribers/` (workflows) + per-call tool-execution Tag move
+  (`tool-execution/runtime-tool-use-executor.ts` → `subscribers/tool-dispatch/`
+  per existing `tf-up1v` carve-out). Once the dissolution lands, the
+  folder is removed (NOT relocated to `_archive/` — `_archive/` is for
+  wrong-shape code pending deletion, not for emptied directories).
+- `kernel/` — pending dissolution into named leaf homes (see
+  §Kernel Retirement). The `@firegrid/runtime/kernel` public subpath is
+  retired in the same slice that empties the folder.
+
 ## Logical Order And Import Direction
 
-The pipeline order is:
+The tree has two leaf-tier groups (no internal-to-runtime dependencies of
+their own) and a single pipeline above them:
 
 ```text
-events < tables < producers / transforms / channels < subscribers < composition
+SUBSTRATE     engine/
+VOCABULARY    events/
+PIPELINE      tables < producers / transforms / channels < subscribers < composition
 ```
 
 That order is semantic and enforceable; it is not encoded with numeric folder
-names.
+names. The two leaf-tier groups are sibling, not stacked: `engine/` does not
+import `events/`, and `events/` does not import `engine/`. Both are
+importable by pipeline tiers that need them.
 
+- `engine/` is **substrate**: the durable workflow-execution machinery
+  (`DurableStreamsWorkflowEngine` + the table/row schemas, engine runtime,
+  result codec, and activity-contract span helpers that compose it). It
+  imports only base libraries (`effect`), `@effect/workflow`,
+  `effect-durable-operators`, and `@firegrid/protocol/otel`. It does **not**
+  import any other runtime folder. It is importable by **Shape D**
+  `subscribers/` folders (under their workflow-machinery README
+  justification) and by `composition/`. It is **not** importable by
+  `events/`, `tables/`, `producers/`, `transforms/`, `channels/`, or by
+  non-Shape-D `subscribers/` folders. The substrate is `internal/`-scoped
+  inside `engine/`: only `engine/durable-streams-workflow-engine.ts` is
+  importable from outside `engine/`.
 - `events/` imports protocol schemas and base libraries only. It does not
-  import runtime state, Effects, Layers, channels, subscribers, or workflow
-  machinery.
+  import runtime state, Effects, Layers, channels, subscribers, workflow
+  machinery, or `engine/`.
 - `tables/` imports `events/` and protocol row schemas. It owns
   DurableTable-backed state and event tables.
 - `producers/` imports `events/` and `tables/`. It owns live scoped producers
@@ -131,15 +172,17 @@ names.
 - `channels/` imports `events/` and `tables/` as needed to implement channel
   bindings and route projections. It does not own subscriber logic.
 - `subscribers/` imports lower-order folders. Shape D subscribers may import
-  workflow machinery only inside their own subfolders with a README
-  justification.
-- `composition/` imports the lower-order folders to build the runtime layer
-  graph. It does not define business logic, durable row schemas, or transition
-  behavior.
+  `engine/` and `@effect/workflow` machinery only inside their own
+  subfolders with a README justification.
+- `composition/` imports the lower-order folders and `engine/` to build the
+  runtime layer graph. It does not define business logic, durable row
+  schemas, or transition behavior.
 
-Imports from an earlier folder to a later folder are structure violations. For
-example, `transforms/` must not import `subscribers/`, and `events/` must not
-import `tables/`.
+Imports from an earlier pipeline folder to a later pipeline folder are
+structure violations. For example, `transforms/` must not import
+`subscribers/`, and `events/` must not import `tables/`. Importing `engine/`
+from outside `subscribers/` Shape D folders or `composition/` is the
+substrate equivalent — disallowed at the same enforcement tier.
 
 ## Shape Rule
 
@@ -183,13 +226,23 @@ Preferred new public subpath shape:
 @firegrid/runtime/subscribers/runtime-context
 @firegrid/runtime/subscribers/runtime-context-session
 @firegrid/runtime/composition/host-live
+@firegrid/runtime/composition/host-workflow-engine
+@firegrid/runtime/composition/runtime-host-config
 ```
+
+`engine/` is **NOT a public subpath**. The substrate is composition-private;
+host-sdk and other external consumers reach the engine through
+`@firegrid/runtime/composition/host-workflow-engine`'s `HostWorkflowEngineLive`
+Layer. Surfacing `engine/` as a public subpath would re-create the host-sdk
+"reach into substrate" failure mode that the kernel-retirement and the
+host-sdk-runtime-boundary doc (Cannon §3, §6) explicitly forbid.
 
 Existing flat subpaths such as `@firegrid/runtime/runtime-output` may remain
 until deliberately migrated, but new Shape C clean-room exports should prefer
 the tree-aligned semantic shape above. Do not create public exports that expose
 ordering numbers. Do not use `@firegrid/runtime/kernel` as a convenience
-import for host-sdk or clean-room code.
+import for host-sdk or clean-room code; the subpath is retired in the
+Kernel Retirement slice below.
 
 ## Channels And Routes
 
@@ -281,3 +334,109 @@ For the current Shape C cutover:
 
 The preferred greenfield endpoint is deletion, not indefinite archival.
 `_archive/` is a staging area for deletion, not a compatibility layer.
+
+## Kernel Retirement
+
+The `kernel/` folder and the `@firegrid/runtime/kernel` public subpath are
+retired in a follow-up mechanical slice. After the body+kernel deletion wave
+(PR #726), only four leaf symbols remain in `kernel/` and each gets a named
+canonical home:
+
+| Symbol | Current location | Canonical target home | Reason |
+|---|---|---|---|
+| `RuntimeHostConfig` (Tag + `RuntimeHostConfigValue` type) | `kernel/runtime-host-config.ts` | `composition/runtime-host-config.ts` | Composition-input Tag the host fills at runtime-layer build time. `composition/` is the layer-graph home; `kernel/` is not part of the target tree. |
+| `runtimeExecutionClock` (`Clock.make()` instance) | `kernel/runtime-context-helpers.ts` | `composition/runtime-execution-clock.ts` *(or inline at the single composition call site)* | A trivial Clock instance used only when composing host effects. Composition-private. |
+| `requireLocalRuntimeContextWithHostSession` | `kernel/runtime-context-helpers.ts` | `subscribers/runtime-context/host-lookup.ts` | A `readRuntimeContext`-then-host-locality-check helper. The Shape C subscriber folder is the natural home for `RuntimeContextRead`-coupled helpers; host-sdk consumes it through a narrow target subpath (no kernel barrel). |
+| `readRuntimeContext`, `runtimeContextWorkflowExecutionId` (already re-exports) | `kernel/runtime-context-helpers.ts` (re-exports from `workflow-engine/workflows/runtime-context-run.ts`) | follow their source: `subscribers/runtime-context/lookup.ts` for `readRuntimeContext`; `transforms/runtime-context-ids.ts` for `runtimeContextWorkflowExecutionId` (pure deterministic id derivation, no Effect — fits `transforms/`) | The body-driver `runtime-context-run.ts` is deleted in #726; the surviving helper functions move to the canonical home of their behavior. |
+
+The remaining `kernel/index.ts` re-exports (`RuntimeContextWorkflowSession`,
+`RuntimeContextSessionCommand*`, `makePerContextRuntimeContextStateStore`,
+`RuntimeContextStateStore`, etc.) are already pure re-exports from
+sanctioned target subpaths (`subscribers/runtime-context-session/` and
+`tables/runtime-context-state/`). The mechanical slice deletes those
+re-exports; callers migrate to the target subpaths directly (the kernel
+barrel already documents the migration in its header comment).
+
+Retirement acceptance:
+
+1. `packages/runtime/src/kernel/` directory removed.
+2. `@firegrid/runtime/kernel` public subpath removed from
+   `packages/runtime/package.json` `exports`.
+3. The dep-cruiser carve-out at `.dependency-cruiser.cjs:40`
+   (`composition/host-workflow-engine\.ts$` exact-file allow for the
+   `runtime-composition-no-legacy-tree-import` rule) shrinks to a
+   deletion (engine substrate is no longer in `workflow-engine/`).
+4. The `firegrid-host-sdk-no-runtime-kernel-import` Semgrep rule's
+   baseline shrinks to zero on the host-sdk side as callers migrate to
+   the target subpaths named above.
+
+## Wave 2 Application
+
+The follow-up mechanical slice — strictly file moves + import rewrites +
+carve-out deletions, no behavior changes — does:
+
+**Substrate move** (closed dep set, 5 files, sourced from PR #721 substrate
+map):
+
+```
+workflow-engine/DurableStreamsWorkflowEngine.ts → engine/durable-streams-workflow-engine.ts
+workflow-engine/internal/engine-runtime.ts      → engine/internal/engine-runtime.ts
+workflow-engine/internal/table.ts               → engine/internal/table.ts
+workflow-engine/internal/codec.ts               → engine/internal/codec.ts
+workflow-engine/internal/contract-activity.ts   → engine/internal/contract-activity.ts
+```
+
+**Composition leaves**:
+
+```
+kernel/runtime-host-config.ts                   → composition/runtime-host-config.ts
+kernel/runtime-context-helpers.ts:runtimeExecutionClock → composition/runtime-execution-clock.ts (or inlined)
+```
+
+**Subscriber/transforms leaves**:
+
+```
+kernel/runtime-context-helpers.ts:requireLocalRuntimeContextWithHostSession → subscribers/runtime-context/host-lookup.ts
+workflow-engine/workflows/runtime-context-run.ts:readRuntimeContext         → subscribers/runtime-context/lookup.ts
+workflow-engine/workflows/runtime-context-run.ts:runtimeContextWorkflowExecutionId → transforms/runtime-context-ids.ts
+```
+
+**Shape D workflow placement** (already prescribed by Wave 1 §"ToolCallWorkflow,
+WaitForWorkflow, and ScheduledPromptWorkflow move or remain only under Shape D
+subscriber folders"):
+
+```
+workflow-engine/workflows/tool-call.ts          → subscribers/tool-dispatch/workflow.ts (or merged into existing handler file)
+workflow-engine/workflows/wait-for.ts           → subscribers/wait-router/workflow.ts
+workflow-engine/workflows/scheduled-prompt.ts   → subscribers/scheduled-prompt/workflow.ts
+workflow-engine/workflows/runtime-control-request.ts → subscribers/runtime-control/workflows.ts
+workflow-engine/workflows/runtime-ingress-transform.ts → transforms/runtime-ingress-transform.ts (it's already a pure transform; check no Workflow imports)
+workflow-engine/tool-execution/runtime-tool-use-executor.ts → subscribers/tool-dispatch/runtime-tool-use-executor.ts (per existing tf-up1v carve-out)
+```
+
+After the Shape D moves, the substrate move, and the kernel-leaf moves,
+`workflow-engine/` and `kernel/` are both empty. They are removed (not
+relocated to `_archive/`; `_archive/` exists for wrong-shape code pending
+deletion, not for emptied directories).
+
+**Carve-outs that shrink to deletions**:
+
+- `.dependency-cruiser.cjs:40` — `composition/host-workflow-engine\.ts$`
+  exact-file allow in `runtime-composition-no-legacy-tree-import`.
+- `.dependency-cruiser.cjs:106, 220, 233, 246, 259` — the
+  `^packages/runtime/src/workflow-engine/` regex hits in the per-tier
+  `runtime-{tables,producers,channels,subscribers}-no-legacy-tree-import`
+  rules (each was bead-owned: `tf-up1v`, `tf-hpr0`, `tf-6hqx`, `tf-vfq9`,
+  `tf-6cdy`).
+- `host-sdk-runtime-import-baseline.json` — kernel-import entries on
+  host-sdk side reach zero as host-sdk callers retarget to the new
+  target subpaths.
+
+The slice is mechanical because every move is straight `git mv` + import-string
+rewrite. No behavior change; no Layer composition change; no schema change.
+
+Dispatch order within Wave 2: substrate move first (lowest tier, no
+internal-runtime deps); composition leaves second (RuntimeHostConfig +
+runtimeExecutionClock); Shape D workflow moves third (one-at-a-time per
+bead); kernel-helper moves last; kernel/ and workflow-engine/ folder removals
++ public-subpath removal last.
