@@ -22,6 +22,18 @@ host composition and public host facade. The `7-composition/` folder below is
 runtime-local topology wiring and CI topology checks, not an excuse for
 host-sdk to import mixed runtime barrels or workflow-era host internals.
 
+The numbered folders are **physical source layout**, not public npm subpath
+names. Code inside `packages/runtime/src/` may import the numbered folders
+directly according to the dependency-direction rule. Code outside the runtime
+package, including host-sdk, imports only explicitly exported narrow semantic
+subpaths. Do not create public exports such as
+`@firegrid/runtime/2-tables/runtime-context-state` or
+`@firegrid/runtime/6-subscribers/C-runtime-context` unless a separate package
+API decision explicitly says to expose numbered internals. The expected
+external-facing names remain semantic, for example
+`@firegrid/runtime/runtime-context-state` or
+`@firegrid/runtime/runtime-context-session`.
+
 ## Target Tree
 
 ```text
@@ -176,8 +188,10 @@ layers through narrow target subpaths, but it must not import mixed runtime
 barrels such as `@firegrid/runtime/kernel` or reach into `_archive/`.
 
 If host-sdk needs a runtime capability that is only available through a mixed
-barrel today, first add a narrow target subpath under runtime. Do not import
-the mixed barrel from host-sdk to keep a cutover moving.
+barrel today, first add a narrow semantic target subpath under runtime. Do not
+import the mixed barrel from host-sdk to keep a cutover moving. The semantic
+subpath can point at a numbered source file internally; consumers should not
+see the numbered directory in the package import path.
 
 ## Archive Rule
 
