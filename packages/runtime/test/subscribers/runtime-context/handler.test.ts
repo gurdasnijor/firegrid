@@ -19,7 +19,7 @@
 // so this test no longer reaches into `workflow-engine/` for state/transitions.
 
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Effect, Layer, Ref, type Scope } from "effect"
+import { Effect, Layer, Option, Ref, type Scope } from "effect"
 import { Prompt } from "@effect/ai"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
@@ -191,6 +191,7 @@ const makeRecordingRuns = (): Effect.Effect<RecordingRuns> =>
               },
             },
           ]),
+        latestStartedAttempt: () => Effect.succeed(Option.none()),
         recordFailed: () => Effect.void,
       }),
     )

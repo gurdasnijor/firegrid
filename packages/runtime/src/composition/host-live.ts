@@ -103,9 +103,8 @@ import { WaitForWorkflowLayer } from "../subscribers/wait-router/index.ts"
 export const RuntimeHostLive = Layer.mergeAll(
   RuntimeContextInputFactsLive,
   // Wave D-A Shape (b) (PR #714): RuntimeContextSubscriberLive is the
-  // Shape C loop body that replaces the parked
-  // `RuntimeContextWorkflowNativeLayer` Workflow.make body. Forks
-  // `runKeyedDispatch({source: merge(inputs, outputs), handle:
+  // Shape C loop body that replaces the parked legacy workflow body.
+  // Forks `runKeyedDispatch({source: merge(inputs, outputs), handle:
   // handleRuntimeContextEvent})` onto host scope at acquisition.
   RuntimeContextSubscriberLive,
   RuntimeToolCallWorkflowLayer,
