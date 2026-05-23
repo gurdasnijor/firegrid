@@ -39,6 +39,7 @@
 //               numbered runtime subpaths
 //   script   -> the patterns enumerated above
 
+import { error, log } from "node:console"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
 import process from "node:process"
@@ -177,7 +178,7 @@ const main = () => {
   for (const f of current) {
     if (!allowed.has(key(f))) {
       const rule = RULES.find((r) => r.id === f.ruleId)
-      console.error(`NEW ${f.ruleId} ${f.path}:${f.line} — ${rule?.label ?? f.ruleId}`)
+      error(`NEW ${f.ruleId} ${f.path}:${f.line} — ${rule?.label ?? f.ruleId}`)
       newCount++
     }
   }
@@ -186,19 +187,19 @@ const main = () => {
   let removedCount = 0
   for (const [k, f] of allowed) {
     if (!currentKeys.has(k)) {
-      console.log(`IMPROVEMENT (remove from baseline): ${f.ruleId} ${f.path}:${f.line}`)
+      log(`IMPROVEMENT (remove from baseline): ${f.ruleId} ${f.path}:${f.line}`)
       removedCount++
     }
   }
 
   if (newCount > 0) {
-    console.error("")
-    console.error(`host-sdk runtime-import quarantine: ${newCount} new occurrence(s) not in baseline.`)
-    console.error(`Baseline lives at host-sdk-runtime-import-baseline.json; add the entry only if the new occurrence is intentional and recorded with its Wave C/D deletion target.`)
+    error("")
+    error(`host-sdk runtime-import quarantine: ${newCount} new occurrence(s) not in baseline.`)
+    error(`Baseline lives at host-sdk-runtime-import-baseline.json; add the entry only if the new occurrence is intentional and recorded with its Wave C/D deletion target.`)
     process.exit(1)
   }
 
-  console.log(`host-sdk runtime-import quarantine OK: current=${current.length}, baseline=${allowed.size}${
+  log(`host-sdk runtime-import quarantine OK: current=${current.length}, baseline=${allowed.size}${
     removedCount > 0 ? ` (${removedCount} baseline entries may be removed)` : ""
   }`)
 }
