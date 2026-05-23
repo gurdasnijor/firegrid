@@ -86,6 +86,138 @@
       "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
       "line": 212,
       "note": "C4 admissible bridge exception: per-sequence DurableDeferred input mailbox is the workflow-engine bridge (tf-5cn1); RFC-conforming deletion targets tf-vrz6/tf-w6qj. docs/cannon/architecture/runtime-design-constraints.md \"Runtime Input Mailbox\"."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
+      "line": 31,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 38,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 42,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 43,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+      "line": 47,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/channels/session-self/index.ts",
+      "line": 32,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 17,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 22,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 28,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/commands.ts",
+      "line": 36,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/config.ts",
+      "line": 3,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
+      "line": 10,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/layers.ts",
+      "line": 31,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/layers.ts",
+      "line": 57,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/per-context-runtime-output.ts",
+      "line": 12,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
+      "line": 44,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
+      "line": 47,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/runtime-context-session/common.ts",
+      "line": 26,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/runtime-context-session/common.ts",
+      "line": 29,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/runtime-context-session/raw-adapter.ts",
+      "line": 15,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
+      "line": 10,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+      "line": 17,
+      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
     }
   ]
 }

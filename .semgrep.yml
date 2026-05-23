@@ -1479,4 +1479,89 @@ rules:
       - pattern-regex: '\bWorkflowEngine\.WorkflowEngine\b'
       - pattern-regex: '\bWorkflowEngine\.WorkflowInstance\b'
 
+  # ------------------------------------------------------------------
+  # Shape C cutover: host-sdk runtime-import gate.
+  #
+  # Source: docs/architecture/2026-05-22-runtime-physical-target-tree.md,
+  # docs/architecture/host-sdk-runtime-boundary.md.
+  #
+  # Host-sdk MUST import runtime only through narrow semantic subpaths
+  # (for example `@firegrid/runtime/tables/runtime-context-state`,
+  # `@firegrid/runtime/subscribers/runtime-context-session`). The runtime
+  # `kernel` barrel and the `_archive/` holding pen are runtime-internal.
+  #
+  # The 22 existing kernel-barrel sites in host-sdk are recorded as legacy
+  # debt in semgrep-error-baseline.json; new host-sdk kernel-barrel imports
+  # are blocked. `_archive/` imports from host-sdk are zero-baseline.
+  # ------------------------------------------------------------------
+
+  - id: firegrid-host-sdk-no-runtime-kernel-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.kernel-barrel
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import @firegrid/runtime/kernel. The kernel barrel is
+      a runtime-internal mixed barrel; cross-boundary imports use a narrow
+      semantic subpath aligned with the target tree (e.g.
+      `@firegrid/runtime/tables/runtime-context-state`,
+      `@firegrid/runtime/subscribers/runtime-context-session`).
+      See docs/architecture/2026-05-22-runtime-physical-target-tree.md
+      "Public Package Subpaths".
+      Existing kernel-barrel sites are baselined as legacy debt; do not add
+      new ones.
+    pattern-regex: 'from\s+"@firegrid/runtime/kernel"'
+
+  - id: firegrid-host-sdk-no-runtime-archive-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.archive
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import @firegrid/runtime/_archive/*. The archive is a
+      time-boxed holding pen for wrong-shape code pending deletion; target
+      code never imports it. Zero-baseline.
+    pattern-regex: 'from\s+"@firegrid/runtime/_archive'
+
+  - id: firegrid-no-numbered-runtime-subpath
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.semantic-tree.no-numbered-paths
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+    paths:
+      include:
+        - "/packages/**/*.ts"
+        - "/apps/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      Numbered runtime subpaths are not part of the target tree. Folder names
+      are semantic; the pipeline order is a docs/lint convention, not a path
+      prefix. Use semantic subpaths such as `@firegrid/runtime/tables/...`,
+      `@firegrid/runtime/subscribers/...`, etc.
+      Zero-baseline.
+    pattern-regex: 'from\s+"@firegrid/runtime/[1-7]-'
+
 

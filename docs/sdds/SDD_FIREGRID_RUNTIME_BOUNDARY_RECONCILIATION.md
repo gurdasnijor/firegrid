@@ -12,6 +12,40 @@ Related specs:
 - `effect-durable-operators`
 - `firegrid-session-fact-client-surfaces`
 
+## Shape C Cutover Target Layout (2026-05-22)
+
+The active end-state for `packages/runtime/src/` is pinned at
+`docs/architecture/2026-05-22-runtime-physical-target-tree.md`. The classification
+tables in this SDD describe the pre-cutover tree; the target tree below is
+authoritative for new dispatch decisions, and the
+`scripts/runtime-public-surface-check.mjs` guard enforces that each surface
+exists and is documented:
+
+| Folder | Role | Logical position |
+|---|---|---|
+| `events/` | event vocabulary; pure schemas, no I/O, no `Effect`. | 1 |
+| `tables/` | `DurableTable`-backed state of record. | 2 |
+| `producers/` | Shape A live-boundary appenders (`sandbox/`, `codecs/`, `ingress-writers/`). | 3 |
+| `transforms/` | pure row/event transforms; no `Effect`. | 4 |
+| `channels/` | wire-edge capability boundary (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
+| `subscribers/` | keyed subscribers — Shape B/C/D recorded in folder READMEs (`projections/`, `runtime-context/`, `runtime-context-session/`, `tool-dispatch/`, `wait-router/`, `scheduled-prompt/`, `runtime-control/`). | 6 |
+| `composition/` | runtime-local layer-graph wiring + topology checks. | 7 |
+| `_archive/` | time-boxed holding pen for wrong-shape code pending deletion. | — |
+
+Folder names are semantic. The pipeline order `events < tables <
+producers / transforms / channels < subscribers < composition` is a docs and
+lint convention; numeric prefixes (`1-events/`, `2-tables/`, …) are forbidden
+at the runtime root and the public-surface guard rejects them. The host-sdk
+import gate (Semgrep rules `firegrid-host-sdk-no-runtime-kernel-import`,
+`firegrid-host-sdk-no-runtime-archive-import`,
+`firegrid-no-numbered-runtime-subpath`) blocks host-sdk imports of the
+runtime `kernel/` barrel, the `_archive/` holding pen, and any numeric
+runtime subpath.
+
+The classification tables below remain accurate for the pre-cutover tree.
+When a folder in those tables is moved or deleted as part of the cutover,
+its target landing is one of the surfaces above.
+
 ## Problem
 
 `SDD_FIREGRID_RUNTIME_AGENT_EVENT_PIPELINE.md` defines the first clean runtime
