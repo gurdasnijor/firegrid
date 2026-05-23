@@ -229,7 +229,8 @@ const otherWorkflowExecution = engine.execute(OtherWorkflow, {
   payload: {},
 })
 
-// ruleid: firegrid-no-unclassified-workflow-make
+// Wave A cross-fire: R-T1 transforms-purity also bans `Workflow.<name>(`.
+// ruleid: firegrid-no-unclassified-workflow-make, firegrid-transforms-purity-import-boundary
 const operationShapedWorkflow = Workflow.make({
   name: "firegrid.operation-wrapper",
   payload: {},
@@ -706,9 +707,13 @@ function* tfE49hReplayPathOutputScanFixtures(): Generator<unknown, void, unknown
 // per-sequence DurableDeferred mailboxes on RuntimeContext input/tool/
 // permission/child-session paths. The existing input bridge is baselined.
 function* tfZchuC4DurableDeferredFixtures(): Generator<unknown, void, unknown> {
-  // ruleid: firegrid-c4-no-new-durable-deferred-runtime-wait
+  // Wave A cross-fire: R-T1 (transforms-purity) and R-S1b (shape-c-runtime-
+  // context) also ban `DurableDeferred.<name>(` because both rules' patterns
+  // match on this file via semgrep --test (which ignores paths.include for
+  // explicit-file targets).
+  // ruleid: firegrid-c4-no-new-durable-deferred-runtime-wait, firegrid-transforms-purity-import-boundary, firegrid-shape-c-runtime-context-no-workflow-machinery
   const inputDeferred = DurableDeferred.make("input:ctx:1", {})
-  // ruleid: firegrid-c4-no-new-durable-deferred-runtime-wait
+  // ruleid: firegrid-c4-no-new-durable-deferred-runtime-wait, firegrid-transforms-purity-import-boundary, firegrid-shape-c-runtime-context-no-workflow-machinery
   const arrived = yield* DurableDeferred.await(inputDeferred)
   // ok: firegrid-c4-no-new-durable-deferred-runtime-wait
   const completion = yield* durableCompletionFor("tool:ctx:tool-1")
@@ -768,17 +773,21 @@ declare const sampleRow: { sequence: number }
 // (parked, replaying) Shape D body. Move workflow-shaped work to
 // tool-execution/ or a justified workflow-engine/workflows/ landing.
 function* tfShapeCRuntimeContextNoWorkflowEngineFixtures(): Generator<unknown, void, unknown> {
-  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  // Wave A cross-fire (semgrep --test ignores paths.include for explicit
+  // file targets): R-T1 transforms-purity bans the Activity / Workflow
+  // namespace-call shapes; R-S1b shape-c-runtime-context bans the same
+  // plus the WorkflowEngine tag identifiers.
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber, firegrid-transforms-purity-import-boundary, firegrid-shape-c-runtime-context-no-workflow-machinery
   const wrapped = Activity.make({ name: "noop", execute: undefined })
-  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber, firegrid-transforms-purity-import-boundary, firegrid-shape-c-runtime-context-no-workflow-machinery
   const parked = WorkflowEngineSuspend(instance) // analogue of `Workflow.suspend(instance)`
-  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber, firegrid-transforms-purity-import-boundary, firegrid-shape-c-runtime-context-no-workflow-machinery
   yield Workflow.suspend(instance)
-  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber, firegrid-transforms-purity-import-boundary, firegrid-shape-c-runtime-context-no-workflow-machinery
   yield Workflow.execute(someWorkflow, somePayload)
-  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber, firegrid-shape-c-runtime-context-no-workflow-machinery
   const engineTag = WorkflowEngine.WorkflowEngine
-  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+  // ruleid: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber, firegrid-shape-c-runtime-context-no-workflow-machinery
   const instanceTag = WorkflowEngine.WorkflowInstance
   // ok: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
   const loaded = store.load("ctx-1")

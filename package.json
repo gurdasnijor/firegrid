@@ -37,7 +37,7 @@
     "lint:ast-grep": "sg scan --config tooling/ast-grep/sgconfig.yml --filter hrtime-number-arithmetic --error=hrtime-number-arithmetic packages",
     "lint:semgrep": "node scripts/semgrep-check-baseline.mjs",
     "lint:semgrep:report": "semgrep --config .semgrep.yml packages",
-    "lint:semgrep:test": "semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts",
+    "lint:semgrep:test": "semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts && semgrep --test --config .semgrep.yml semgrep-tests/wave-a-runtime-boundary.ts",
     "preflight": "node scripts/preflight.mjs",
     "arch:deps": "node scripts/tooling.mjs arch deps all",
     "arch:deps:detail": "node scripts/tooling.mjs arch deps detail",
