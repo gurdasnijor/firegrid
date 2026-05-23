@@ -1,19 +1,19 @@
-// `workflow-engine/` is a non-canonical legacy root pending deletion.
-// The retired per-sequence durable-deferred input mailbox is gone — runtime
-// input arrives as durable `RuntimeControlPlaneTable.inputIntents` rows and
-// the Shape C runtime-context subscriber consumes them through
-// `tables/runtime-context-input-facts`.
+// `workflow-engine/` is a non-canonical legacy root. The retired
+// per-sequence durable-deferred input mailbox is gone (runtime input arrives
+// as durable `RuntimeControlPlaneTable.inputIntents` rows; the Shape C
+// runtime-context subscriber consumes them through
+// `tables/runtime-context-input-facts`). The substrate (engine + internals)
+// moved to `../engine/` under bead tf-z8wq per the target-tree amendment in
+// `docs/architecture/2026-05-22-runtime-physical-target-tree.md` §"Target
+// Tree" (engine/ leaf-tier substrate).
 //
-// REMAINING SUBSTRATE RESIDUE (per OLA reviewer #726 clarification on
-// blocker 3, option b): `DurableStreamsWorkflowEngine` + its engine
-// internals are residue here pending a target-tree design amendment.
-// No ownership is granted to this root.
-//
-// RETIREMENT BEAD: tf-z8wq — Target-tree amendment: canonical homes for
-// durable workflow engine substrate and remaining kernel leaf surfaces.
-// Once tf-z8wq picks the canonical home for the engine substrate, the
-// files physically move out of here, this barrel collapses, and the
-// composition/ dep-cruiser carve-out shrinks to a deletion.
+// This barrel stays as the `@firegrid/runtime/workflow-engine` public
+// subpath while host-sdk + tiny-firegrid + runtime tests still consume the
+// substrate by that name. Re-exports point at the new home; the legacy
+// subpath retires when those external callers retarget to
+// `@firegrid/runtime/composition/host-workflow-engine` (which exposes the
+// composed `HostWorkflowEngineLive` Layer rather than the bare substrate
+// factory).
 //
 // Wave 1 Shape C move: the runtime-context state store now lives under
 // `tables/runtime-context-state.ts`. Public consumers should prefer
@@ -38,4 +38,4 @@ export {
   WorkflowEngineTable,
   type WorkflowEngineTableService,
   type WorkflowExecutionRow,
-} from "./DurableStreamsWorkflowEngine.ts"
+} from "../engine/durable-streams-workflow-engine.ts"

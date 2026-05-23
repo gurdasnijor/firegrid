@@ -28,30 +28,24 @@ import {
   hostOwnedStreamUrl,
 } from "@firegrid/protocol/launch"
 import { Context, Effect, Exit, Layer, Scope } from "effect"
-import { RuntimeHostConfig } from "../kernel/runtime-host-config.ts"
+import { RuntimeHostConfig } from "./runtime-host-config.ts"
 import {
   mapRuntimeContextError,
   type RuntimeContextError,
 } from "../runtime-errors.ts"
-// Substrate residue carve-out (per OLA reviewer #726 clarification on
-// blocker 3, option b): `DurableStreamsWorkflowEngine` + its engine
-// internals physically remain under `workflow-engine/` because moving
-// them now would introduce undocumented target-tree structure (a new
-// `composition/engine/` subfolder or 5 flat files in `composition/`,
-// neither in `2026-05-22-runtime-physical-target-tree.md`). The
-// substrate is `workflow-engine/`-resident **residue**, not new
-// ownership of the legacy root. Composition reaches it through a narrow
-// exact-file carve-out in `.dependency-cruiser.cjs` +
-// `test/composition/host-live.test.ts`.
-//
-// RETIREMENT BEAD: tf-z8wq — Target-tree amendment: canonical homes for
-// durable workflow engine substrate and remaining kernel leaf surfaces.
-// Once tf-z8wq picks the canonical home for the engine substrate, this
-// import retargets and the carve-out shrinks to a deletion.
+// Composition reaches the engine substrate at its canonical home under
+// `engine/`, per the tf-z8wq target-tree amendment (see
+// `docs/architecture/2026-05-22-runtime-physical-target-tree.md` §"Logical
+// Order And Import Direction" — `engine/` is a leaf-tier substrate
+// sibling of `events/`, importable by Shape D `subscribers/` and by
+// `composition/`). The prior `workflow-engine/`-resident substrate residue
+// + the `composition/host-workflow-engine.ts` exact-file dep-cruiser
+// carve-out for `runtime-composition-no-legacy-tree-import` were retired
+// in this slice.
 import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
-} from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+} from "../engine/durable-streams-workflow-engine.ts"
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- DurableStreamsWorkflowEngine.layer still leaks any through substrate layers; the declared Layer R/ROut channel is the intended capability boundary (same carve-out the retired kernel runtime wrapper used).
 export const HostWorkflowEngineLive: Layer.Layer<

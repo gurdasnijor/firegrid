@@ -10,7 +10,7 @@ import {
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
 import { Activity, WorkflowEngine } from "@effect/workflow"
-import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { DurableStreamsWorkflowEngine } from "../engine/durable-streams-workflow-engine.ts"
 import {
   RuntimeContextProvisionWorkflow,
   RuntimeLifecycleWorkflow,

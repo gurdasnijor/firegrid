@@ -14,7 +14,7 @@ import {
   type WorkflowEngineDurableStateOptions,
   WorkflowEngineTable,
   type WorkflowEngineTableService,
-} from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
+} from "../../src/engine/durable-streams-workflow-engine.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

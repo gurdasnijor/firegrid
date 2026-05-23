@@ -49,10 +49,6 @@
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"
     },
-    "./kernel": {
-      "types": "./src/kernel/index.ts",
-      "default": "./src/kernel/index.ts"
-    },
     "./workflows": {
       "types": "./src/workflow-engine/workflows/index.ts",
       "default": "./src/workflow-engine/workflows/index.ts"
@@ -105,6 +101,10 @@
       "types": "./src/subscribers/scheduled-prompt/index.ts",
       "default": "./src/subscribers/scheduled-prompt/index.ts"
     },
+    "./subscribers/runtime-context/host-lookup": {
+      "types": "./src/subscribers/runtime-context/host-lookup.ts",
+      "default": "./src/subscribers/runtime-context/host-lookup.ts"
+    },
     "./composition/host-live": {
       "types": "./src/composition/host-live.ts",
       "default": "./src/composition/host-live.ts"
@@ -112,6 +112,10 @@
     "./composition/host-workflow-engine": {
       "types": "./src/composition/host-workflow-engine.ts",
       "default": "./src/composition/host-workflow-engine.ts"
+    },
+    "./composition/runtime-host-config": {
+      "types": "./src/composition/runtime-host-config.ts",
+      "default": "./src/composition/runtime-host-config.ts"
     },
     "./transforms": {
       "types": "./src/transforms/index.ts",

@@ -10,7 +10,7 @@ import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
   type WorkflowEngineTableService,
-} from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
+} from "../../src/engine/durable-streams-workflow-engine.ts"
 import {
   ScheduledPromptWorkflow,
   ScheduledPromptWorkflowLayer,

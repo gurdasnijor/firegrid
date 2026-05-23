@@ -73,9 +73,13 @@ const RULES = [
     label: "@firegrid/runtime/subscribers/runtime-context import",
     // Matches the subscribers/runtime-context handler subpath, NOT
     // subscribers/runtime-context-session (the durable-plane session sink
-    // host-sdk legitimately implements against). The `(?!-session)` lookahead
-    // pins the boundary precisely.
-    regex: /from\s+["']@firegrid\/runtime\/subscribers\/runtime-context(?!-session)(?:["'/])/,
+    // host-sdk legitimately implements against) and NOT
+    // subscribers/runtime-context/host-lookup (the
+    // `requireLocalRuntimeContextWithHostSession` helper landed by tf-z8wq
+    // Wave 2 as the canonical home for the retired kernel-barrel leaf;
+    // host-sdk consumes it through this narrow public subpath). The
+    // negative lookaheads pin the boundary precisely.
+    regex: /from\s+["']@firegrid\/runtime\/subscribers\/runtime-context(?!-session)(?!\/host-lookup)(?:["'/])/,
   },
   {
     id: "host-sdk-no-handle-runtime-context-event-symbol",

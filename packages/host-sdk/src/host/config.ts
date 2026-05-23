@@ -1,3 +1,3 @@
 export {
   RuntimeHostConfig,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/composition/runtime-host-config"
