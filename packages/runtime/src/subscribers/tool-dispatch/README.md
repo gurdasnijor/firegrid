@@ -13,4 +13,10 @@ exactly one load-bearing capability:
 No other workflow-machinery features are used here. No `DurableClock`, no
 parked input mailbox, no cross-execution handoff.
 
-Wave 2 moves `workflow-engine/workflows/tool-call.ts` here.
+Files (post tf-up1v cleanup):
+
+- `workflow.ts` — `ToolCallWorkflow` definition + payload schema + `RuntimeToolCallWorkflowLayer` handler. Physically moved from `workflow-engine/workflows/tool-call.ts` + the previous `runtime-tool-call-workflow.ts` (folded together).
+- `runtime-tool-use-executor.ts` — `RuntimeToolUseExecutor` capability tag + `RuntimeToolUseExecutor.layer(...)` helper. Physically moved from `workflow-engine/tool-execution/runtime-tool-use-executor.ts`.
+- `runtime-agent-tool-execution.ts` — runtime-owned validated executor service.
+- `dispatch.ts` — `ToolDispatch` Tag + `ToolDispatchLive` host-install Layer.
+- `index.ts` — public barrel (`@firegrid/runtime/subscribers/tool-dispatch`).

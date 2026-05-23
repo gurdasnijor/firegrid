@@ -55,11 +55,12 @@
 //   `@firegrid/protocol/...`         — RuntimeContext, RuntimeIngressInputRow,
 //                                     RuntimeAgentOutputObservation
 //
-// `RuntimeToolUseExecutor` is still imported from its current physical home
-// in `workflow-engine/tool-execution/`. The executor is a Shape C-valid
-// narrow live-dispatch capability tag (cf. the type-boundaries doc), but its
-// target subpath under the new tree is not yet decided. CC for the executor
-// move will retarget this import to its final home.
+// `RuntimeToolUseExecutor` now lives at `subscribers/tool-dispatch/runtime-tool-use-executor.ts`
+// (physically moved post tf-up1v cleanup wave from `workflow-engine/tool-execution/`).
+// It is a Shape C-valid narrow live-dispatch capability tag — its service
+// interface deliberately does NOT propagate `WorkflowEngine | WorkflowInstance`
+// to the caller's R; implementations provide those deps internally at layer
+// construction.
 
 import { Effect, Match } from "effect"
 import type { RuntimeContext } from "@firegrid/protocol/launch"
@@ -86,7 +87,7 @@ import {
   type RuntimeContextSessionCommand,
   RuntimeContextWorkflowSession,
 } from "../runtime-context-session/index.ts"
-import { RuntimeToolUseExecutor } from "../../workflow-engine/tool-execution/runtime-tool-use-executor.ts"
+import { RuntimeToolUseExecutor } from "../tool-dispatch/runtime-tool-use-executor.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,

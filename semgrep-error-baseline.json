@@ -102,8 +102,8 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/tool-call.ts",
-      "line": 16
+      "path": "packages/runtime/src/subscribers/tool-dispatch/workflow.ts",
+      "line": 33
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
