@@ -5,6 +5,7 @@ import {
   HostPromptChannel,
   HostSessionsCreateOrLoadChannel,
   HostSessionsStartChannel,
+  SessionAgentOutputChannel,
   SessionLifecycleChannel,
   SessionLifecycleChannelTarget,
   SessionPromptChannel,
@@ -33,6 +34,7 @@ import {
   runtimeRouteFromChannel,
   runtimeRouteFromFactoryChannel,
 } from "./router.ts"
+import { sessionAgentOutputObservationRoute } from "./session-agent-output-route.ts"
 
 export const SessionPromptRouteInputSchema = Schema.Struct({
   sessionId: Schema.String.pipe(Schema.minLength(1)),
@@ -55,6 +57,16 @@ export const makeRuntimeHostSessionsCreateOrLoadChannel = (
 export const RuntimeHostControlChannelsLive = Layer.unwrapEffect(
   Effect.gen(function*() {
     const control = yield* RuntimeControlPlaneTable
+    // Wave C (#702 mapping): `session.wait.forAgentOutput → session.agent_output / wait_for`
+    // is the 7th and last public-turn mapping. It registers on the existing
+    // `HostPlaneChannelRouter` (no new session-plane router; see SDD and
+    // SessionPromptChannel precedent — both are session-scoped factory-keyed
+    // channels surfaced through the host-plane edge dispatch surface). The
+    // route definition (`sessionAgentOutputObservationRoute`) was landed but
+    // unregistered; this slice adds the registration only. Host-sdk continues
+    // to supply the `SessionAgentOutputChannel` Live binding
+    // (`SessionAgentOutputChannelLive`) at composition time.
+    const sessionAgentOutput = yield* SessionAgentOutputChannel
     const contextsCreate = makeHostContextsCreateChannel(control)
     const hostPrompt = makeHostPromptChannel(control)
     const sessionPrompt = {
@@ -79,6 +91,7 @@ export const RuntimeHostControlChannelsLive = Layer.unwrapEffect(
       runtimeRouteFromChannel(permissionRespond),
       runtimeRouteFromChannel(contexts),
       runtimeRouteFromChannel(sessionsCreateOrLoad),
+      sessionAgentOutputObservationRoute(sessionAgentOutput),
     ])
 
     return Layer.mergeAll(
