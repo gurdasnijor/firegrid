@@ -14,7 +14,7 @@ import {
   SandboxProvider,
   type SandboxCommand,
   type SandboxProviderService,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 import { Clock, type Context, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import {
   AgentToolHost,

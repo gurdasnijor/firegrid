@@ -71,11 +71,11 @@ export { RuntimeIngressError } from "@firegrid/runtime/errors"
 export {
   localProcessSpawnEnvFromHostEnv,
   type LocalProcessSandboxProviderOptions,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 export {
   RuntimeEnvResolverPolicy,
   type RuntimeEnvResolverPolicyValue,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 export {
   decodeRunConfig,
   firegridRunCreatedBy,

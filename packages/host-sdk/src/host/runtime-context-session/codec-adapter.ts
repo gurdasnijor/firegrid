@@ -15,18 +15,18 @@ import {
   AgentSession,
   StdioJsonlSessionLive,
   type AgentCodecError,
-} from "@firegrid/runtime/codecs"
+} from "@firegrid/runtime/producers/codecs"
 import {
   AgentInputEventSchema,
 } from "@firegrid/runtime/events"
 import {
   runCodecRuntimeContextStderrJournal,
-} from "@firegrid/runtime/session-byte-stream-adapter"
+} from "@firegrid/runtime/producers/codecs/session-byte-stream-adapter"
 import {
   resolveMcpServerHeaders,
   type AgentByteStream,
   type RuntimeEnvResolverPolicy,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 import {
   Context,
   Effect,

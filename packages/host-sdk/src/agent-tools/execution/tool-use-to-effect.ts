@@ -86,7 +86,7 @@ import {
   RuntimeAgentToolExecution,
   type FieldEqualsTrigger,
   type RuntimeAgentToolExecutionError,
-} from "@firegrid/runtime/tool-executor"
+} from "@firegrid/runtime/subscribers/tool-dispatch"
 import type { RuntimeObservationSource } from "@firegrid/runtime/streams"
 import type {
   RuntimeChannelRoute,

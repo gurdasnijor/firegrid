@@ -1,5 +1,5 @@
 import type { DurableTableHeaders } from "effect-durable-operators"
-import type { LocalProcessSandboxProviderOptions } from "@firegrid/runtime/sources/sandbox"
+import type { LocalProcessSandboxProviderOptions } from "@firegrid/runtime/producers/sandbox"
 import type { ChannelRegistration } from "@firegrid/protocol/channels"
 
 export interface StartRuntimeOptions {

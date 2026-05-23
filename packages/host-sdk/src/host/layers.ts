@@ -42,7 +42,7 @@ import {
   RuntimeEnvResolverPolicy,
   SandboxStdinEmissionClaimLive,
   SandboxSupervisorCommandTable,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 import {
   RuntimeControlPlaneRecorderLive,
 } from "@firegrid/runtime/control-plane"

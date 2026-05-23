@@ -1,6 +1,6 @@
 import { Config, Effect, Layer, Option, Redacted } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
-import type { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
+import type { RuntimeEnvResolverPolicy } from "@firegrid/runtime/producers/sandbox"
 import { FiregridLocalHostLive } from "./layers.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4
