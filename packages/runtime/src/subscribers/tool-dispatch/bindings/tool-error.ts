@@ -17,7 +17,7 @@
 
 import { Prompt } from "@effect/ai"
 import { ParseResult, Schema } from "effect"
-import type { AgentInputEvent } from "@firegrid/runtime/events"
+import type { AgentInputEvent } from "../../../events/index.ts"
 
 export const ToolInvalidInputError = Schema.TaggedStruct("ToolInvalidInput", {
   toolUseId: Schema.String,

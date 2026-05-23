@@ -1,19 +1,14 @@
 import {
   RuntimeAgentToolExecution,
-  RuntimeAgentToolExecutionLive,
   RuntimeToolUseExecutor,
-} from "@firegrid/runtime/subscribers/tool-dispatch"
-import { RuntimeObservationStreams } from "@firegrid/runtime/streams"
+} from "./index.ts"
+import { RuntimeObservationStreams } from "../../streams/index.ts"
 import { Context, Effect, Layer } from "effect"
-import { RuntimeChannelRouter } from "../../host/channel.ts"
-import {
-  HostRuntimeObservationStreamsLive,
-  HostRuntimeObservationSubstrateLive,
-} from "../../host/runtime-substrate.ts"
+import { RuntimeChannelRouter } from "../../channels/index.ts"
 import {
   toolErrorResult,
   toolExecutionFailed,
-} from "../bindings/tool-error.ts"
+} from "./bindings/tool-error.ts"
 import { AgentToolHost } from "./tool-host.ts"
 import { toolUseToEffect } from "./tool-use-to-effect.ts"
 
@@ -69,18 +64,8 @@ export const RuntimeToolUseExecutorLive = Layer.effect(
   }),
 )
 
-// Wave D-A (PR #714) / Wave D-B (this PR): host-scope composition of the
-// executor with its observation substrate + agent-tool-execution providers.
-// Consumers (the Shape C subscriber bundle in `host/layers.ts`, the
-// runtime-owned `ToolDispatchLive` facade installed alongside it) compose
-// this Layer via `Layer.provideMerge`. Surfacing it here keeps the
-// host-scope tool-executor wiring in the same file as the executor Live
-// itself; the legacy `host/runtime-context-workflow-support.ts` file
-// (which used to hold this factory alongside the now-deleted per-call
-// `toolCallWorkflowSupportLayer` and per-context
-// `runtimeContextWorkflowSupportLayer`) is deleted in this PR.
-export const runtimeToolUseExecutorLayer = RuntimeToolUseExecutorLive.pipe(
-  Layer.provide(HostRuntimeObservationSubstrateLive),
-  Layer.provideMerge(HostRuntimeObservationStreamsLive),
-  Layer.provideMerge(RuntimeAgentToolExecutionLive),
-)
+// Note: the host-coupled composition that previously chained the
+// observation substrate + RuntimeAgentToolExecution into this Live now
+// lives at the use site in host-sdk (`host/layers.ts`). Keeping the bare
+// Live runtime-owned + the host-coupled composition host-owned matches the
+// host/runtime boundary: runtime defines Tags, host-sdk wires Lives.

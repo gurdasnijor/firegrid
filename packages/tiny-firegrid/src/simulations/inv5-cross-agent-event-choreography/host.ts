@@ -29,13 +29,15 @@ import type { ServeError } from "@effect/platform/HttpServerError"
 import { NodeHttpServer } from "@effect/platform-node"
 import { RpcSerialization, RpcServer } from "@effect/rpc"
 import {
-  ensurePathInput,
-  FiregridMcpServerLayer,
   FiregridRuntimeHostLive,
   RuntimeEnvResolverPolicy,
   durableStreamUrl,
   type FiregridHost,
 } from "@firegrid/host-sdk"
+import {
+  ensurePathInput,
+  FiregridMcpServerLayer,
+} from "@firegrid/runtime/producers/codecs/mcp"
 import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import {
   Deferred,
