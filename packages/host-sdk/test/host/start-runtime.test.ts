@@ -81,16 +81,13 @@ const appendRuntimeContext = (input: {
   ))
 
 describe("durable launch tracer bullet 001", () => {
-  // Wave C cutover (#706) — TARGET REGRESSION (W-D-A). The channel-observed
-  // `Terminated` observation lets `startRuntime` return before the body's
-  // `runs.exited` lifecycle row settles in the durable substrate. This test
-  // asserts `runs.status` chain reaches `["started","exited"]` immediately on
-  // `startRuntime` return; after the cutover that chain may still be in flight.
-  // The body itself continues to write the exited row (sync-run-integration
-  // tests confirm the happy path produces output events correctly). Fix paired
-  // with W-D-A reconciler-side body-driver retirement, where the public-turn
-  // wait-for-settle contract is re-established. Keeping the test SKIPPED with
-  // this note rather than weakening the assertion — see PR #708 body.
+  // Public-turn contract (post-#708): `startRuntime` waits for terminal
+  // settlement on `SessionLifecycleChannel.forSession(contextId)` filtered
+  // to `RuntimeRunEvent` status `exited` | `failed`. By the time that row
+  // arrives, the body's durable `runs.exited` write has settled, so this
+  // test asserts the full `runs.status` chain reaches
+  // `["started", "exited"]` immediately after `startRuntime` returns —
+  // no separate await on the runs stream is needed.
   it("firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.1 firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.2 firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.3 journals child JSONL stdout events and stderr logs durably through RuntimeContextWorkflow", { timeout: 15_000 }, async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`
@@ -239,13 +236,14 @@ console.error("diagnostic: child stderr")
       namespace,
     })
 
-    // Wave C cutover (#706 non-recursive split): `startRuntime` no longer
-    // bubbles body-pre-codec failures (`sandbox.openBytePipe` for a
-    // missing command) through its error channel — those happen before
-    // any codec is spawned, so no `session.agent_output` observation is
-    // emitted. The durable runs.status "started" -> "failed" row chain
-    // (asserted below) is the canonical Shape C contract. Bounded wait
-    // keeps the promise from hanging on the no-observation path.
+    // Shape C body-pre-codec failure contract: when `sandbox.openBytePipe`
+    // cannot spawn the missing command, the body writes a
+    // `runs.status: "failed"` row carrying the failure message. The public
+    // `startRuntime` resolves either through the typed error channel or
+    // via the `SessionLifecycleChannel` `failed` event (whichever the
+    // server-side dispatcher emits for this path); the bounded
+    // `Effect.timeout` guards either resolution mode without weakening
+    // the durable assertion below.
     await Effect.runPromise(
       Effect.either(startRuntime({
         contextId,
@@ -275,14 +273,11 @@ console.error("diagnostic: child stderr")
     ))
     expect(runs.map(event => event.status)).toEqual(expect.arrayContaining(["started", "failed"]))
     expect(runs).toHaveLength(2)
-    // Wave C cutover (#706) public-contract assertion preserved: the
-    // failed run row's `message` field carries the body-side
-    // sandbox-spawn failure message. The legacy `Either.isLeft` block
-    // asserted on `op: "sandbox.openBytePipe"` from the typed error
-    // bubble-up; the durable runs.failed row carries the human-readable
-    // failure message string ("local process command failed to start")
-    // for the same cause. Stale-legacy classification: error-channel
-    // surface changed, contract unchanged.
+    // Public contract: the failed `runs` row's `message` field carries
+    // the body-side sandbox-spawn failure ("local process command failed
+    // to start"). This is the durable equivalent of the pre-cutover
+    // typed-error `op: "sandbox.openBytePipe"` assertion — same cause,
+    // surfaced through the lifecycle row instead of the error channel.
     const failedRow = runs.find(event => event.status === "failed")
     expect(failedRow).toBeDefined()
     expect(failedRow?.message ?? "").toContain("local process command failed to start")
@@ -321,13 +316,16 @@ console.error("diagnostic: child stderr")
     })
   })
 
-  // Wave C cutover (#706) — TARGET REGRESSION (W-D-A). Same runs-row
-  // settling race as PHASE_1.1 above: the duplicate-starts test asserts that
-  // exactly one body invocation occurred (runs has 1 started + 1 exited).
-  // After the cutover, the runs.exited row may not have settled by the time
-  // both `startRuntime` promises resolve (each at its own Terminated
-  // observation). Keeping SKIPPED with this note rather than weakening the
-  // assertion — same W-D-A pairing as PHASE_1.1.
+  // Duplicate-prevention contract (post-#709): two parallel `startRuntime`
+  // promises against the same contextId resolve to identical results and
+  // produce exactly one body invocation. Dedup is enforced by a first-
+  // writer-wins claim on the durable `controlRequestClaims` table inside
+  // `runStartRequestSideEffect` (#709) — the losing reconcile path returns
+  // early on `Found` and the still-blocked public `startRuntime` wakes on
+  // the same `SessionLifecycleChannel` terminal row the winning path
+  // writes. Asserts 1 `started` + 1 `exited` runs row, 2 output events
+  // (one process-start marker + one terminated), and `starts: 1` in the
+  // child's filesystem marker (proves the child binary ran exactly once).
   it("firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.4 firegrid-workflow-driven-runtime.VALIDATION.1 does not duplicate external runtime execution for duplicate starts", { timeout: 15_000 }, async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`

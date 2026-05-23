@@ -245,13 +245,27 @@ const startRuntimeResultFromLifecycle = (
   })
 
 /**
- * Public host-sdk runtime turn entry. After the W-C cutover this
- * dispatches the start request via `HostSessionsStartChannel.call` and
- * waits for the channel-observable terminal observation
- * (`session.agent_output / wait_for` filtered to `Terminated` or `Error`).
+ * Public host-sdk runtime turn entry. After the W-C cutover this:
+ *
+ *   - dispatches the start request via `HostSessionsStartChannel.binding.call(...)`
+ *     (writes the durable `startRequests` row keyed by deterministic
+ *     `runtimeStartRequestId(contextId)` — concurrent starts collapse to a
+ *     single row via `insertOrGet`);
+ *   - waits for terminal settlement on
+ *     `SessionLifecycleChannel.forSession(contextId).binding.stream`,
+ *     filtered to `RuntimeRunEvent` status `exited` | `failed` (#708 GREEN).
+ *     By the time the terminal lifecycle row arrives, the body's durable
+ *     `runs` write has settled — callers can read `runs.exited` /
+ *     `runs.failed` immediately after `startRuntime` returns.
+ *
  * The body executes server-side, driven by
  * `RuntimeControlRequestSideEffectsLive.start` → `runtimeContextHostStart`
  * (private internal primitive in `./internal/runtime-context-host-start.ts`).
+ * Non-idempotent dedup of the body invocation is enforced by a first-
+ * writer-wins claim on the durable `controlRequestClaims` table inside
+ * `runStartRequestSideEffect` (#709), so two parallel public starts always
+ * produce exactly one body invocation regardless of how many engine
+ * instances observe the start row.
  */
 export const startRuntime = (
   options: StartRuntimeOptions,
