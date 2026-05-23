@@ -13,26 +13,15 @@ It operationalizes the canonical pipeline from
 events -> DurableTable(events) -> transforms(rows) -> keyed subscribers(rows)
 ```
 
-The directory tree is the data flow. Read it top to bottom and you have read
-the runtime pipeline.
+The directory tree is the data flow. The ordering is logical, but directory
+names are semantic. Do **not** encode ordering numbers or subscriber shape
+letters into physical folder names.
 
 This is a runtime-package target. It does not replace
 `docs/architecture/host-sdk-runtime-boundary.md`: host-sdk remains the outer
-host composition and public host facade. The `7-composition/` folder below is
+host composition and public host facade. The `composition/` folder below is
 runtime-local topology wiring and CI topology checks, not an excuse for
 host-sdk to import mixed runtime barrels or workflow-era host internals.
-
-The numbered folders are **physical source layout**, not public npm subpath
-names. Code inside `packages/runtime/src/` may import the numbered folders
-directly according to the dependency-direction rule. Code outside the runtime
-package, including host-sdk, imports only explicitly exported narrow semantic
-subpaths. Do not create public exports such as
-`@firegrid/runtime/2-tables/runtime-context-state` or
-`@firegrid/runtime/6-subscribers/C-runtime-context` unless a separate package
-API decision explicitly says to expose numbered internals. The expected
-external-facing names remain semantic, for example
-`@firegrid/runtime/runtime-context-state` or
-`@firegrid/runtime/runtime-context-session`.
 
 ## Target Tree
 
@@ -41,7 +30,7 @@ packages/runtime/src/
 │
 ├── README.md                         # pipeline diagram + folder pointers
 │
-├── 1-events/                         # WHAT crosses boundaries
+├── events/                           # 1. WHAT crosses boundaries
 │   ├── README.md                     # event vocabulary; no I/O, state, behavior
 │   ├── agent-input.ts                # AgentInputEvent union + schema
 │   ├── agent-output.ts               # AgentOutputEvent union + schema
@@ -49,13 +38,13 @@ packages/runtime/src/
 │   ├── runtime-output.ts             # RuntimeEventRow / RuntimeLogLineRow schemas
 │   └── runtime-context-state.ts      # RuntimeContextEventState schema
 │
-├── 2-tables/                         # WHERE durable state lives
+├── tables/                           # 2. WHERE durable state lives
 │   ├── README.md                     # DurableTable definitions; one table family per file
 │   ├── runtime-control-plane.ts      # RuntimeControlPlaneTable
 │   ├── runtime-output.ts             # RuntimeOutputTable
 │   └── runtime-context-state.ts      # RuntimeContextStateStore
 │
-├── 3-producers/                      # WHO appends rows from live boundaries
+├── producers/                        # 3. WHO appends rows from live boundaries
 │   ├── README.md                     # Shape A only: scoped live work, no owned state
 │   ├── sandbox/
 │   │   ├── byte-stream.ts            # AgentByteStream
@@ -70,45 +59,45 @@ packages/runtime/src/
 │       ├── per-context-output.ts     # AgentSession.outputs -> RuntimeOutputTable.events
 │       └── runtime-input-append.ts   # external input -> input intent rows
 │
-├── 4-transforms/                     # HOW rows shape into facts/actions; PURE
+├── transforms/                       # 4. HOW rows shape into facts/actions; PURE
 │   ├── README.md                     # no Effect, no R channel, no I/O
 │   ├── decode-ingress-row.ts         # agentInputEventFromRuntimeIngressRow
 │   ├── decode-output-row.ts          # runtimeAgentOutputObservationFromRow
 │   ├── field-equals.ts               # evaluateFieldEquals + FieldEqualsTrigger
 │   └── runtime-context-transition.ts # transitionInputEvent / transitionOutputEvent
 │
-├── 5-channels/                       # WIRE-EDGE capability boundary
+├── channels/                         # 5. WIRE-EDGE capability boundary
 │   ├── README.md                     # Ingress/Egress/Callable/Bidirectional channel rules
 │   ├── host-control/
 │   ├── session/
 │   ├── routes/                       # channel registrations -> route projections
 │   └── router.ts                     # HostPlaneChannelRouter / RuntimeChannelRouter
 │
-├── 6-subscribers/                    # WHO reacts; Shape B / C / D
+├── subscribers/                      # 6. WHO reacts; Shape B / C / D
 │   ├── README.md                     # shape table + R-channel rules
-│   ├── B-projections/                # read-only, no state
-│   ├── C-runtime-context/            # stateful per-event RuntimeContext handler
+│   ├── projections/                  # Shape B: read-only, no state
+│   ├── runtime-context/              # Shape C: stateful per-event RuntimeContext handler
 │   │   ├── README.md
 │   │   ├── handler.ts
 │   │   ├── state-ops.ts
 │   │   └── action-dispatch.ts
-│   ├── C-runtime-context-session/    # codec-session command sink, no workflow machinery
+│   ├── runtime-context-session/      # Shape C: codec-session command sink
 │   │   ├── README.md
 │   │   └── handler.ts
-│   ├── D-tool-dispatch/              # workflow-shaped; Activity memoization justified
+│   ├── tool-dispatch/                # Shape D: Activity memoization justified
 │   │   ├── README.md
 │   │   └── workflow.ts
-│   ├── D-wait-router/                # workflow-shaped; durable wait/timeout justified
+│   ├── wait-router/                  # Shape D: durable wait/timeout justified
 │   │   ├── README.md
 │   │   └── workflow.ts
-│   ├── D-scheduled-prompt/           # workflow-shaped; DurableClock justified
+│   ├── scheduled-prompt/             # Shape D: DurableClock justified
 │   │   ├── README.md
 │   │   └── workflow.ts
-│   └── D-runtime-control/            # workflow-shaped host-control request workflows
+│   └── runtime-control/              # Shape D: host-control request workflows
 │       ├── README.md
 │       └── workflows.ts
 │
-├── 7-composition/                    # runtime-local topology wiring
+├── composition/                      # 7. runtime-local topology wiring
 │   ├── README.md                     # Layer graph; topology = Layer.mergeAll
 │   ├── host-live.ts                  # runtime-owned layer graph for host-sdk to install
 │   └── topology-checks.ts            # CI: shape, ownership, cycle checks
@@ -118,56 +107,93 @@ packages/runtime/src/
         └── DEPRECATED.md             # names deletion bead/wave
 ```
 
-## Dependency Direction
+## Logical Order And Import Direction
 
-The numbered prefix is the allowed import direction.
-
-- `1-events/` imports protocol schemas and base libraries only. It does not
-  import runtime state, Effects, Layers, channels, subscribers, or workflow
-  machinery.
-- `2-tables/` imports `1-events/` and protocol row schemas. It owns
-  DurableTable-backed state and event tables.
-- `3-producers/` imports `1-events/` and `2-tables/`. It owns live scoped
-  producers and table append authority.
-- `4-transforms/` imports `1-events/` only. Every exported transform is pure;
-  no `Effect`, `Layer`, `Context.Tag`, `Workflow.make`, `Activity.make`, or
-  `DurableDeferred`.
-- `5-channels/` imports `1-events/` and `2-tables/` as needed to implement
-  channel bindings and route projections. It does not own subscriber logic.
-- `6-subscribers/` imports lower-numbered folders. Shape D subscribers may
-  import workflow machinery only inside `D-*` directories with a README
-  justification.
-- `7-composition/` imports the lower-numbered folders to build the runtime
-  layer graph. It does not define business logic, durable row schemas, or
-  transition behavior.
-
-Imports from a lower-numbered folder to a higher-numbered folder are a
-structure violation. The tree should make dependency cycles visible before the
-typechecker does.
-
-## Shape Prefix Rule
-
-Inside `6-subscribers/`, the shape letter is part of the contract:
+The pipeline order is:
 
 ```text
-B-*  read-only projection consumer
-C-*  stateful keyed subscriber; no WorkflowEngine in R
-D-*  workflow-shaped subscriber; WorkflowEngine allowed only with justification
+events < tables < producers / transforms / channels < subscribers < composition
 ```
 
-A new subscriber's PR title should include the shape. Reviewers then know what
-to check:
+That order is semantic and enforceable; it is not encoded with numeric folder
+names.
 
-- `B-*`: no state store, no write authority.
-- `C-*`: state/read/write tags allowed; no `WorkflowEngine`, no
+- `events/` imports protocol schemas and base libraries only. It does not
+  import runtime state, Effects, Layers, channels, subscribers, or workflow
+  machinery.
+- `tables/` imports `events/` and protocol row schemas. It owns
+  DurableTable-backed state and event tables.
+- `producers/` imports `events/` and `tables/`. It owns live scoped producers
+  and table append authority.
+- `transforms/` imports `events/` only. Every exported transform is pure; no
+  `Effect`, `Layer`, `Context.Tag`, `Workflow.make`, `Activity.make`, or
+  `DurableDeferred`.
+- `channels/` imports `events/` and `tables/` as needed to implement channel
+  bindings and route projections. It does not own subscriber logic.
+- `subscribers/` imports lower-order folders. Shape D subscribers may import
+  workflow machinery only inside their own subfolders with a README
+  justification.
+- `composition/` imports the lower-order folders to build the runtime layer
+  graph. It does not define business logic, durable row schemas, or transition
+  behavior.
+
+Imports from an earlier folder to a later folder are structure violations. For
+example, `transforms/` must not import `subscribers/`, and `events/` must not
+import `tables/`.
+
+## Shape Rule
+
+Subscriber shape is recorded in `subscribers/README.md` and each subscriber
+folder README. It is not encoded in folder names.
+
+```text
+subscribers/projections/              Shape B: read-only projection consumer
+subscribers/runtime-context/          Shape C: stateful keyed subscriber
+subscribers/runtime-context-session/  Shape C: session-command sink
+subscribers/tool-dispatch/            Shape D: workflow-shaped
+subscribers/wait-router/              Shape D: workflow-shaped
+subscribers/scheduled-prompt/         Shape D: workflow-shaped
+subscribers/runtime-control/          Shape D: workflow-shaped
+```
+
+Review rules:
+
+- Shape B: no state store, no write authority.
+- Shape C: state/read/write tags allowed; no `WorkflowEngine`, no
   `WorkflowInstance`, no `Activity.make`, no parked body.
-- `D-*`: workflow machinery is allowed only if the README names the load-bearing
-  reason: Activity memoization, durable timer, cross-execution handoff, or
-  restart-safe live side effect.
+- Shape D: workflow machinery is allowed only if the README names the
+  load-bearing reason: Activity memoization, durable timer, cross-execution
+  handoff, or restart-safe live side effect.
+
+## Public Package Subpaths
+
+The semantic source tree does not mean every source folder becomes a public
+package API. External consumers, including host-sdk, import only explicitly
+exported narrow semantic subpaths.
+
+When a runtime capability must be consumed outside `packages/runtime/src/`, its
+public subpath should align with the semantic tree, not with historical barrels
+and not with ad hoc flat names.
+
+Preferred new public subpath shape:
+
+```text
+@firegrid/runtime/tables/runtime-context-state
+@firegrid/runtime/producers/runtime-context-input-facts
+@firegrid/runtime/subscribers/runtime-context
+@firegrid/runtime/subscribers/runtime-context-session
+@firegrid/runtime/composition/host-live
+```
+
+Existing flat subpaths such as `@firegrid/runtime/runtime-output` may remain
+until deliberately migrated, but new Shape C clean-room exports should prefer
+the tree-aligned semantic shape above. Do not create public exports that expose
+ordering numbers. Do not use `@firegrid/runtime/kernel` as a convenience
+import for host-sdk or clean-room code.
 
 ## Channels And Routes
 
-`5-channels/` is the runtime wire-edge capability boundary:
+`channels/` is the runtime wire-edge capability boundary:
 
 - channel folders define typed `IngressChannel`, `EgressChannel`,
   `CallableChannel`, or `BidirectionalChannel` services;
@@ -180,8 +206,8 @@ Channels are not subscribers. Subscribers consume channel tags through their
 
 ## Composition Boundary
 
-`7-composition/` is runtime-local topology wiring. It is where the runtime
-Layer graph is assembled from lower-numbered runtime parts.
+`composition/` is runtime-local topology wiring. It is where the runtime Layer
+graph is assembled from lower-order runtime parts.
 
 Host-sdk remains the host composition package. It may install runtime-owned
 layers through narrow target subpaths, but it must not import mixed runtime
@@ -189,9 +215,7 @@ barrels such as `@firegrid/runtime/kernel` or reach into `_archive/`.
 
 If host-sdk needs a runtime capability that is only available through a mixed
 barrel today, first add a narrow semantic target subpath under runtime. Do not
-import the mixed barrel from host-sdk to keep a cutover moving. The semantic
-subpath can point at a numbered source file internally; consumers should not
-see the numbered directory in the package import path.
+import the mixed barrel from host-sdk to keep a cutover moving.
 
 ## Archive Rule
 
@@ -209,10 +233,10 @@ If a target file imports `_archive/`, the clean-room cutover has failed.
 
 ## README Contract
 
-Each numbered folder has a `README.md` with:
+Each top-level folder has a `README.md` with:
 
 1. what the folder owns;
-2. which lower-numbered folders it may import;
+2. which earlier folders it may import;
 3. what it must not do;
 4. one `DO` and one `DO NOT` example for the most common drift.
 
@@ -221,15 +245,15 @@ separate from implementation.
 
 ## Topology Checks
 
-`7-composition/topology-checks.ts` should grow CI checks for:
+`composition/topology-checks.ts` should grow CI checks for:
 
-- no `C-*` subscriber `R` channel mentioning `WorkflowEngine` or
+- no Shape C subscriber `R` channel mentioning `WorkflowEngine` or
   `WorkflowInstance`;
-- no `4-transforms/` export whose type includes `Effect.Effect`;
+- no `transforms/` export whose type includes `Effect.Effect`;
 - no two subscribers owning the same state store tag;
 - no read/write feedback cycle for the same table family unless explicitly
   approved as a durable operator;
-- every `D-*` folder has a README with a workflow-machinery justification;
+- every Shape D folder has a README with a workflow-machinery justification;
 - no target code imports `_archive/`;
 - host-sdk imports runtime only through narrow target subpaths.
 
@@ -240,19 +264,20 @@ abstractions.
 
 For the current Shape C cutover:
 
-- `RuntimeContextInputFacts` moves under `2-tables/` or `3-producers/`
-  depending on whether the file defines the table service or append authority.
-- `RuntimeContextStateStore` moves under `2-tables/runtime-context-state.ts`.
+- `RuntimeContextInputFacts` is created under `tables/` or `producers/`
+  depending on whether the file defines durable read/table state or append
+  authority.
+- `RuntimeContextStateStore` moves under `tables/runtime-context-state.ts`.
 - `transitionInputEvent` and `transitionOutputEvent` move under
-  `4-transforms/runtime-context-transition.ts`.
+  `transforms/runtime-context-transition.ts`.
 - `handleRuntimeContextEvent` moves under
-  `6-subscribers/C-runtime-context/handler.ts`.
+  `subscribers/runtime-context/handler.ts`.
 - the session-command sink moves under
-  `6-subscribers/C-runtime-context-session/handler.ts`.
+  `subscribers/runtime-context-session/handler.ts`.
 - `ToolCallWorkflow`, `WaitForWorkflow`, and `ScheduledPromptWorkflow` move or
-  remain only as `D-*` subscribers with README justification.
+  remain only under Shape D subscriber folders with README justification.
 - `RuntimeContextWorkflowNative`, `runtime-input-deferred`, and body-driver
   helpers move to `_archive/` only if they cannot be deleted immediately.
 
-The preferred greenfield endpoint is deletion, not indefinite archival. `_archive/`
-is a staging area for deletion, not a compatibility layer.
+The preferred greenfield endpoint is deletion, not indefinite archival.
+`_archive/` is a staging area for deletion, not a compatibility layer.
