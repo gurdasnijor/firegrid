@@ -8,6 +8,11 @@ export {
   type SessionAgentOutputRouteInput,
 } from "./session-agent-output-route.ts"
 export {
+  SessionLifecycleRouteInputSchema,
+  sessionLifecycleTerminalRoute,
+  type SessionLifecycleRouteInput,
+} from "./session-lifecycle-route.ts"
+export {
   submitSessionPermissionResponse,
 } from "./session-permission.ts"
 export {

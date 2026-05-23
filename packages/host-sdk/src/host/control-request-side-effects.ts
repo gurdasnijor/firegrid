@@ -5,7 +5,14 @@ import {
 import { Effect, Layer, type Scope } from "effect"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import type { RuntimeChannelRouter } from "./channel.ts"
-import { startRuntime } from "./commands.ts"
+// Wave C non-recursive boundary split (#706): the reconciler-side
+// `SideEffects.start` calls the private/internal host start primitive
+// instead of the public `startRuntime` facade. The public facade writes
+// the start row through `HostSessionsStartChannel.call` and observes
+// completion through `session.lifecycle / wait_for` (#708) — calling
+// `startRuntime` from here would re-enter the same row write the
+// reconciler is consuming.
+import { runtimeContextHostStart } from "./internal/runtime-context-host-start.ts"
 import { PerContextRuntimeOutputWriter } from "./per-context-runtime-output.ts"
 import { RuntimeContextWorkflowRuntime } from "@firegrid/runtime/kernel"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
@@ -29,7 +36,7 @@ export const RuntimeControlRequestSideEffectsLive = Layer.scoped(
     >()
     return RuntimeControlRequestSideEffects.of({
       start: request =>
-        startRuntime({ contextId: request.contextId }).pipe(
+        runtimeContextHostStart({ contextId: request.contextId }).pipe(
           Effect.map(result => ({
             activityAttempt: result.activityAttempt,
             exitCode: result.exitCode,

@@ -1,7 +1,50 @@
-import { WorkflowEngine } from "@effect/workflow"
+// Wave C public start facade (#706 non-recursive split + #708 terminal-
+// completion ordering).
+//
+// `startRuntime` and `RuntimeStartCapabilityLive` are the public host-sdk
+// surfaces. After this cut they:
+//
+//   - dispatch start via `HostSessionsStartChannel.binding.call(...)` —
+//     validated by #702, registered on `HostPlaneChannelRouter` pre-#703;
+//   - observe terminal completion via
+//     `SessionLifecycleChannel.forSession(sessionId).binding.stream`
+//     filtered to `RuntimeRunEvent` status `exited` | `failed` — validated
+//     by #708 as the durable settlement evidence; ingress route registered
+//     on `HostPlaneChannelRouter` by this PR alongside the existing
+//     factory-keyed session routes;
+//   - DO NOT drive the workflow body. The body is driven server-side by
+//     `RuntimeControlRequestSideEffectsLive.start` (reconciler-side
+//     consumer of the `startRequests` row this facade writes), which
+//     calls the private `runtimeContextHostStart` in
+//     `./internal/runtime-context-host-start.ts`. The non-recursive split
+//     is the #706 contract.
+//
+// #708 finding: `session.agent_output Terminated` is a codec-emitted
+// observation that arrives BEFORE the body's lifecycle row settles. Using
+// it as the public-turn completion signal races the durable runs.exited
+// row AND breaks duplicate-prevention semantics on concurrent starts.
+// `SessionLifecycleChannel` streams `RuntimeRunEvent` rows directly —
+// by the time the terminal lifecycle row arrives, the body's full
+// lifecycle write has settled, so callers can read runs.exited
+// immediately after `startRuntime` returns.
+//
+// This file no longer imports the legacy body-driver symbols
+// (`@firegrid/runtime/kernel`, `@effect/workflow`,
+// `runtime-context-workflow-support`), and no host-sdk public/CLI/client
+// caller transitively reaches them through `startRuntime` after this cut.
+// The body-driver imports are relocated to
+// `./internal/runtime-context-host-start.ts` with PARK notes tying their
+// deletion to W-D-A body-driver retirement.
+
+import {
+  HostSessionsStartChannel,
+  SessionLifecycleChannel,
+} from "@firegrid/protocol/channels"
 import {
   CurrentHostSession,
+  type HostSessionRow,
   RuntimeControlPlaneTable,
+  type RuntimeRunEvent,
   RuntimeStartCapability,
   requireLocalContext,
   type RuntimeContext,
@@ -13,36 +56,15 @@ import {
   type RuntimeIngressRequest,
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Duration, Effect, Layer, Stream } from "effect"
-import { executeRuntimeContextWorkflow } from "@firegrid/runtime/kernel"
-import type { StartRuntimeOptions } from "./types.ts"
-import {
-  RuntimeContextWorkflowNative,
-  RuntimeContextWorkflowPayload,
-} from "@firegrid/runtime/kernel"
-import {
-  readRuntimeContext,
-  requireLocalRuntimeContextWithHostSession,
-  runtimeContextWorkflowExecutionId,
-  runtimeExecutionClock,
-} from "@firegrid/runtime/kernel"
+import { Duration, Effect, Layer, Option, Stream } from "effect"
 import { RuntimeContextRead } from "@firegrid/runtime/control-plane"
 import {
+  asRuntimeContextError,
   runtimeIngressError,
+  type RuntimeContextError,
   type RuntimeIngressError,
 } from "@firegrid/runtime/errors"
-import {
-  RuntimeContextWorkflowRuntime,
-} from "@firegrid/runtime/kernel"
-import {
-  AgentToolHost,
-  type AgentToolHostService,
-} from "../agent-tools/execution/tool-host.ts"
-import {
-  runtimeContextWorkflowSupportLayer,
-} from "./runtime-context-workflow-support.ts"
-import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
-import type { RuntimeChannelRouter } from "./channel.ts"
+import type { StartRuntimeOptions, StartRuntimeResult } from "./types.ts"
 
 type RuntimeIngressAppendEnvironment =
   | RuntimeContextRead
@@ -53,64 +75,6 @@ const runtimeControlPlaneTable: Effect.Effect<
   never,
   RuntimeControlPlaneTable
 > = RuntimeControlPlaneTable
-
-const executeRuntimeContextWorkflowForContextId = (
-  contextId: string,
-) =>
-  Effect.gen(function*() {
-    const engine = yield* WorkflowEngine.WorkflowEngine
-    yield* Effect.annotateCurrentSpan({
-      "firegrid.context.id": contextId,
-      "firegrid.workflow.name": RuntimeContextWorkflowNative.name,
-      "firegrid.workflow.execution_id": runtimeContextWorkflowExecutionId(contextId),
-    })
-    const result = yield* executeRuntimeContextWorkflow(engine, RuntimeContextWorkflowNative, {
-      executionId: runtimeContextWorkflowExecutionId(contextId),
-      payload: RuntimeContextWorkflowPayload.make({
-        contextId,
-      }),
-    })
-    if (result.failure !== undefined) return yield* Effect.fail(result.failure)
-    return result
-  }).pipe(
-    Effect.withSpan("firegrid.host.runtime_context.workflow.execute", {
-      kind: "internal",
-      attributes: {
-        "firegrid.context.id": contextId,
-      },
-    }),
-    Effect.annotateSpans("firegrid.side", "host"),
-  )
-
-const claimAndRunRuntimeContextWorkflow = (
-  context: RuntimeContext,
-  runtime: RuntimeContextWorkflowRuntime["Type"],
-  agentToolHost: AgentToolHostService,
-) =>
-  Effect.gen(function*() {
-    yield* Effect.annotateCurrentSpan({
-      "firegrid.context.id": context.contextId,
-      "firegrid.runtime.agent": context.runtime.config.agent ?? "",
-      "firegrid.runtime.agent_protocol": context.runtime.config.agentProtocol ?? "",
-      "firegrid.runtime_context_mcp.enabled": context.runtime.config.runtimeContextMcp?.enabled === true,
-    })
-    return yield* runtime.run({
-      context,
-      workflowName: RuntimeContextWorkflowNative.name,
-      supportLayer: runtimeContextWorkflowSupportLayer(context.contextId, agentToolHost),
-      effect: executeRuntimeContextWorkflowForContextId(context.contextId),
-      deregisterOnExit: true,
-    })
-  }).pipe(
-    Effect.withClock(runtimeExecutionClock),
-    Effect.withSpan("firegrid.host.runtime_context.claim_and_run", {
-      kind: "internal",
-      attributes: {
-        "firegrid.context.id": context.contextId,
-      },
-    }),
-    Effect.annotateSpans("firegrid.side", "host"),
-  )
 
 const insertRuntimeInputIntent = (
   request: RuntimeIngressRequest,
@@ -132,15 +96,7 @@ const insertRuntimeInputIntent = (
   })
 
 // tf-2osu: bounded "context materialized" barrier for host ops that require a
-// local context (startRuntime, appendRuntimeIngress). The CLI used to gate
-// these with the public client `whenReady`; that primitive is deleted, so the
-// host op owns its own readiness. createOrLoad writes a context-request row
-// that the reconciler materializes asynchronously, so we wait on the contexts
-// projection stream until the row appears, bounded. On timeout we simply
-// proceed and the caller's existing requireLocalContext / readRuntimeContext
-// surfaces the real not-found error (no behavior change for an
-// already-materialized context — the stream yields it immediately — and no
-// fast-fail regression for a genuinely absent one, only a bounded wait first).
+// local context (startRuntime, appendRuntimeIngress).
 const contextMaterializationTimeout = Duration.seconds(30)
 
 const awaitContextMaterialized = (
@@ -148,15 +104,10 @@ const awaitContextMaterialized = (
 ): Effect.Effect<void, never, RuntimeControlPlaneTable> =>
   Effect.gen(function*() {
     const control = yield* runtimeControlPlaneTable
-    // Subscription-driven (NOT fixed polling): the contexts projection stream
-    // emits current rows + live changes, so we wait for the first row matching
-    // this contextId. Bounded by an explicit deadline.
     yield* control.contexts.rows().pipe(
       Stream.filter(context => context.contextId === contextId),
       Stream.runHead,
       Effect.timeout(contextMaterializationTimeout),
-      // On timeout (never materialized) or a transient stream error, proceed —
-      // the caller's require/read step surfaces the authoritative error.
       Effect.ignore,
     )
   })
@@ -164,17 +115,18 @@ const awaitContextMaterialized = (
 const readRuntimeContextForIngress = (
   request: RuntimeIngressRequest,
 ): Effect.Effect<void, RuntimeIngressError, RuntimeContextRead> =>
-  readRuntimeContext(request.contextId).pipe(
-    Effect.mapError(cause =>
-      runtimeIngressError(
-        "append",
-        "failed to resolve runtime context for ingress append",
-        request.contextId,
-        request.inputId,
-        cause,
-      )),
-    Effect.asVoid,
-  )
+  Effect.flatMap(RuntimeContextRead, (read) =>
+    read.readContext(request.contextId).pipe(
+      Effect.mapError(cause =>
+        runtimeIngressError(
+          "append",
+          "failed to resolve runtime context for ingress append",
+          request.contextId,
+          request.inputId,
+          cause,
+        )),
+      Effect.asVoid,
+    ))
 
 const makePendingRuntimeIngressInput = (
   request: RuntimeIngressRequest,
@@ -185,6 +137,122 @@ const makePendingRuntimeIngressInput = (
     createdAt: row.createdAt,
   })
 
+// Inlined host-binding sanity check (replaces the kernel-barrel
+// `requireLocalRuntimeContextWithHostSession`); the only place this file
+// reads the context-row binding. Reads via the public `RuntimeContextRead`
+// capability; verifies the host binding matches `CurrentHostSession`.
+const requireLocalContextWithHostSession = (
+  contextRead: RuntimeContextRead["Type"],
+  hostSession: HostSessionRow,
+  contextId: string,
+): Effect.Effect<RuntimeContext, RuntimeContextError> =>
+  contextRead.readContext(contextId).pipe(
+    Effect.mapError((cause) =>
+      asRuntimeContextError(
+        "host.runtime_start_capability.read_context",
+        "failed to read runtime context for host-binding check",
+        contextId,
+        cause,
+      )),
+    Effect.flatMap((maybeContext) =>
+      Option.match(maybeContext, {
+        onNone: (): Effect.Effect<RuntimeContext, RuntimeContextError> =>
+          Effect.fail(
+            asRuntimeContextError(
+              "host.runtime_start_capability.read_context",
+              `runtime context not found: ${contextId}`,
+              contextId,
+            ),
+          ),
+        onSome: (context): Effect.Effect<RuntimeContext, RuntimeContextError> =>
+          context.host?.hostId === hostSession.hostId
+            ? Effect.succeed(context)
+            : Effect.fail(
+              asRuntimeContextError(
+                "host.runtime_start_capability.host_binding",
+                `RuntimeContext ${contextId} is not bound to host ${hostSession.hostId}`,
+                contextId,
+              ),
+            ),
+      })),
+  )
+
+// Wave C terminal-completion observation via `SessionLifecycleChannel`
+// (#708 GREEN). The lifecycle ingress streams `RuntimeRunEvent` rows for a
+// given `sessionId`; we filter to terminal status (`exited` | `failed`)
+// and take the first emission. By the time this row arrives, the body has
+// settled the durable runs row — callers can read `runs.exited` /
+// `runs.failed` immediately after `startRuntime` returns. The legacy
+// `session.agent_output Terminated` settlement (codec-emitted before the
+// body's lifecycle write) caused the duplicate-prevention + runs-row-
+// timing regressions #708 resolved.
+const waitForLifecycleSettlement = (
+  lifecycleChannel: SessionLifecycleChannel["Type"],
+  contextId: string,
+) =>
+  lifecycleChannel.forSession(contextId).binding.stream.pipe(
+    Stream.filter((event) =>
+      event.status === "exited" || event.status === "failed",
+    ),
+    Stream.runHead,
+  )
+
+// Shared channel-call + lifecycle-wait composition used by both the
+// public `startRuntime` and the deferred-start `RuntimeStartCapabilityLive`
+// closure. Extracted to keep both surfaces routed through identical
+// composition (no lint:dup clone).
+const dispatchStartAndAwaitSettlement = (
+  contextId: string,
+  startChannel: HostSessionsStartChannel["Type"],
+  lifecycleChannel: SessionLifecycleChannel["Type"],
+) =>
+  Effect.gen(function* () {
+    yield* startChannel.binding.call({ sessionId: contextId })
+    const settled = yield* waitForLifecycleSettlement(lifecycleChannel, contextId)
+    return yield* startRuntimeResultFromLifecycle(contextId, settled)
+  })
+
+const startRuntimeResultFromLifecycle = (
+  contextId: string,
+  settled: Option.Option<RuntimeRunEvent>,
+): Effect.Effect<StartRuntimeResult, RuntimeContextError> =>
+  Option.match(settled, {
+    onNone: (): Effect.Effect<StartRuntimeResult, RuntimeContextError> =>
+      Effect.fail(
+        asRuntimeContextError(
+          "host.runtime_context.start.lifecycle_stream_ended",
+          "session.lifecycle stream ended before a terminal RuntimeRunEvent arrived",
+          contextId,
+        ),
+      ),
+    onSome: (event): Effect.Effect<StartRuntimeResult, RuntimeContextError> => {
+      if (event.status === "failed") {
+        return Effect.fail(
+          asRuntimeContextError(
+            "host.runtime_context.start.runs_failed",
+            event.message ?? "runtime context terminated with failure status",
+            contextId,
+          ),
+        )
+      }
+      return Effect.succeed({
+        contextId,
+        activityAttempt: event.activityAttempt,
+        exitCode: event.exitCode ?? 0,
+        ...(event.signal === undefined ? {} : { signal: event.signal }),
+      })
+    },
+  })
+
+/**
+ * Public host-sdk runtime turn entry. After the W-C cutover this
+ * dispatches the start request via `HostSessionsStartChannel.call` and
+ * waits for the channel-observable terminal observation
+ * (`session.agent_output / wait_for` filtered to `Terminated` or `Error`).
+ * The body executes server-side, driven by
+ * `RuntimeControlRequestSideEffectsLive.start` → `runtimeContextHostStart`
+ * (private internal primitive in `./internal/runtime-context-host-start.ts`).
+ */
 export const startRuntime = (
   options: StartRuntimeOptions,
 ) =>
@@ -192,20 +260,18 @@ export const startRuntime = (
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.4
   // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
   // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4
-  //
-  // requireLocalContext runs before any host-owned services are
-  // touched, so a host cannot smuggle execution of a context whose
-  // RuntimeContext.host binding names another host. The check uses
-  // RuntimeControlPlaneTable + CurrentHostSession from this same host
-  // scope; it is not a tool-arg or env-var check.
   Effect.gen(function* () {
-    // tf-2osu: own the readiness barrier instead of relying on a caller-side
-    // whenReady. Bounded; no-op once the context is materialized.
     yield* awaitContextMaterialized(options.contextId)
-    const context = yield* requireLocalContext(options.contextId)
-    const runtime = yield* RuntimeContextWorkflowRuntime
-    const agentToolHost = yield* AgentToolHost
-    return yield* claimAndRunRuntimeContextWorkflow(context, runtime, agentToolHost)
+    yield* requireLocalContext(options.contextId)
+
+    const startChannel = yield* HostSessionsStartChannel
+    const lifecycleChannel = yield* SessionLifecycleChannel
+
+    return yield* dispatchStartAndAwaitSettlement(
+      options.contextId,
+      startChannel,
+      lifecycleChannel,
+    )
   }).pipe(
     Effect.withSpan("firegrid.host.runtime_context.start", {
       kind: "server",
@@ -216,35 +282,44 @@ export const startRuntime = (
     Effect.annotateSpans("firegrid.side", "host"),
   )
 
+/**
+ * `RuntimeStartCapability` Live layer for the deferred-start seam. Uses
+ * the same channel pair as `startRuntime`. Captures the host substrate
+ * context once at Layer-build time so the deferred `start` closure can
+ * re-provide it per call.
+ */
 export const RuntimeStartCapabilityLive = Layer.effect(
   RuntimeStartCapability,
   Effect.gen(function* () {
-    // TFIND-031: capture the host durable substrate (always provided by
-    // the composed Firegrid host layer) so the deferred `start` closure
-    // can re-provide it. `never` here was only sound while
-    // `DurableTable.layer` leaked `any`.
     const captured = yield* Effect.context<
-      HostRuntimeContextExecutionEnv | RuntimeChannelRouter
+      | RuntimeControlPlaneTable
+      | RuntimeContextRead
+      | CurrentHostSession
+      | HostSessionsStartChannel
+      | SessionLifecycleChannel
     >()
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
-    const runtime = yield* RuntimeContextWorkflowRuntime
-    const agentToolHost = yield* AgentToolHost
+    const startChannel = yield* HostSessionsStartChannel
+    const lifecycleChannel = yield* SessionLifecycleChannel
     return RuntimeStartCapability.of({
-      start: options =>
+      start: (options) =>
         Effect.gen(function* () {
           yield* Effect.annotateCurrentSpan({
             "firegrid.context.id": options.contextId,
           })
-          const context = yield* requireLocalRuntimeContextWithHostSession(
+          yield* requireLocalContextWithHostSession(
             contextRead,
             hostSession,
             options.contextId,
           )
-          return yield* claimAndRunRuntimeContextWorkflow(context, runtime, agentToolHost).pipe(
-            Effect.provide(captured),
+          return yield* dispatchStartAndAwaitSettlement(
+            options.contextId,
+            startChannel,
+            lifecycleChannel,
           )
         }).pipe(
+          Effect.provide(captured),
           Effect.withSpan("firegrid.host.runtime_start_capability.start", {
             kind: "server",
             attributes: {
@@ -260,8 +335,6 @@ export const RuntimeStartCapabilityLive = Layer.effect(
 export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,
 ): Effect.Effect<RuntimeIngressInputRow, RuntimeIngressError, RuntimeIngressAppendEnvironment> =>
-  // tf-2osu: own the readiness barrier (bounded) before requiring the context;
-  // the CLI no longer gates this with whenReady.
   awaitContextMaterialized(request.contextId).pipe(
     Effect.zipRight(readRuntimeContextForIngress(request)),
     Effect.zipRight(runtimeControlPlaneTable),

@@ -2,6 +2,7 @@ import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
   makeLocalRuntimeContextForHostSession,
+  makeRuntimeControlRequestClaimRow,
   makeRuntimeControlRequestCompletionRow,
   requireLocalContext,
   type HostSessionRow,
@@ -87,6 +88,30 @@ export interface RuntimeRunAppendAndGetService {
 }
 
 interface RuntimeControlRequestsService {
+  /**
+   * First-writer-wins claim against the durable `controlRequestClaims` table.
+   * Used by side-effect handlers (e.g. start) that perform non-idempotent
+   * external work to dedupe concurrent reconcile attempts at the row level
+   * — independent of any in-process workflow-engine memoization (which does
+   * not span separate engine instances within the same host process).
+   *
+   * Returns `{ _tag: "Inserted" }` when this caller wins the claim and may
+   * proceed with the side effect, or `{ _tag: "Found" }` when another caller
+   * already owns the claim and the side effect must be skipped.
+   */
+  readonly insertOrGetClaim: (
+    input: {
+      readonly requestKind: RuntimeControlRequestKind
+      readonly requestId: string
+      readonly contextId: string
+      readonly hostId: string
+      readonly hostSessionId: string
+    },
+  ) => Effect.Effect<
+    | { readonly _tag: "Inserted" }
+    | { readonly _tag: "Found" },
+    unknown
+  >
   readonly writeCompletion: (
     requestKind: RuntimeControlRequestKind,
     request: RuntimeControlRequestRow,
@@ -136,6 +161,44 @@ const writeControlRequestCompletionTo = (
 const controlRequestsFromTable = (
   table: RuntimeControlPlaneTable["Type"],
 ): RuntimeControlRequestsService => ({
+  // First-writer-wins claim against the durable `controlRequestClaims`
+  // table. Anchored at `claimWindowStartedAtMs: 0` so the deterministic
+  // `claimId = controlRequestClaimId(requestKind, requestId, 0)` collides
+  // across concurrent attempts for the same request — `insertOrGet` then
+  // returns `Inserted` to the winner and `Found` to everyone else. Used
+  // by side-effect handlers (start) to dedupe non-idempotent external
+  // work across separate reconciler/engine instances in the same host
+  // process (cf. duplicate-prevention test PHASE_1.4).
+  insertOrGetClaim: (input) =>
+    Effect.gen(function* () {
+      const claimedAtMs = yield* Clock.currentTimeMillis
+      const row = makeRuntimeControlRequestClaimRow({
+        requestKind: input.requestKind,
+        requestId: input.requestId,
+        contextId: input.contextId,
+        hostId: input.hostId,
+        hostSessionId: input.hostSessionId,
+        claimWindowStartedAtMs: 0,
+        claimWindowExpiresAtMs: Number.MAX_SAFE_INTEGER,
+        claimedAtMs,
+      })
+      const result = yield* table.controlRequestClaims.insertOrGet(row)
+      return result._tag === "Inserted"
+        ? { _tag: "Inserted" as const }
+        : { _tag: "Found" as const }
+    }).pipe(
+      Effect.withSpan(
+        "firegrid.runtime_control_plane.control_request.claim.insert_or_get",
+        {
+          kind: "producer",
+          attributes: {
+            "firegrid.context.id": input.contextId,
+            "firegrid.control.request_id": input.requestId,
+            "firegrid.control.request_kind": input.requestKind,
+          },
+        },
+      ),
+    ),
   writeCompletion: (requestKind, request, input) =>
     writeControlRequestCompletionTo(table, requestKind, request, input),
   completionForRequest: requestId =>
