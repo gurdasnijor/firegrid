@@ -1,246 +1,275 @@
 # Host SDK / Runtime Boundary Framing
 
-Status: draft architecture framing
+Status: active
 
-Date: 2026-05-20
+Date: 2026-05-22
+
+Branch: `rearch/shape-c-cutover` (operating-plan Wave 1 = roadmap Waves A→E)
 
 ## Purpose
 
-`packages/host-sdk/` and `packages/runtime/` currently overlap in a way that
-makes implementation dispatch hard to reason about. `host-sdk` exposes
-consumer-facing host composition, but it also contains workflow definitions,
-workflow execution helpers, channel registry state, runtime input dispatch,
-control-request workflows, and tool execution lowering. Those are not all the
-same tier.
+The 2026-05-20 version of this doc framed the package boundary as composition
+vs. substrate. The Shape C cutover makes that boundary executable: the runtime
+substrate is mapped onto the four subscriber shapes (`runtime-pipeline-type-boundaries.md`),
+and the constraints doc (`runtime-design-constraints.md`) names which shapes
+need workflow machinery and which do not.
 
-This document makes the package-tier decision before the next refactor wave. It
-does not prescribe file moves line-by-line. It names the boundary rule refactor
-lanes should apply.
+This revision aligns the host-sdk / runtime boundary against today's
+**greenfield + Shape C/D framing**. It is operational guidance for lane
+dispatch on `rearch/shape-c-cutover`, not a new SDD.
 
 Inputs:
 
-- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
-- `docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
-- `docs/sdds/SDD_FIREGRID_AGGRESSIVE_ONE_SUBSTRATE_SWAPOVER.md`
-- `docs/sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md`
-- `docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
-- landed `tf-ho99`: control-request reconciler as workflow-backed hybrid
-- landed `tf-ws2x`: runtime-context engine registry collapsed into
-  Layer-provided runtime services
+- `docs/cannon/architecture/runtime-pipeline-type-boundaries.md` — Shape A/B/C/D, channels as wire-edge capability.
+- `docs/cannon/architecture/runtime-design-constraints.md` — C1–C7 + SDD gate.
+- `docs/architecture/2026-05-22-runtime-physical-target-tree.md` — **runtime-package physical target tree**: semantic folder names under `packages/runtime/src/` (`events/`, `tables/`, `producers/`, `transforms/`, `channels/`, `subscribers/`, `composition/`, plus `_archive/`). Numeric prefixes are forbidden at the runtime root and rejected by `scripts/runtime-public-surface-check.mjs`. This boundary doc does **not** recreate that tree; it references it.
+- `docs/architecture/2026-05-22-shape-c-cutover-operating-plan.md` — greenfield rules, deletion-with-proof, test triage protocol.
+- `docs/architecture/2026-05-22-shape-c-cutover-roadmap.md` — Wave A (placement) → B (runtime root assembly) → C (host-sdk cutover + turn proof) → D (paired deletion) → E (surface shrink + guard ratchet) dispatch waves.
+- `docs/architecture/2026-05-22-shape-c-cutover-baseline.md` — line/module baseline groups.
+- Landed scaffold + Wave A: #689 (semantic scaffold + Wave 1 forward-target exports + host-sdk import gate), #690 (input-facts read-side → `tables/`), #691 (RuntimeContextWorkflowSession → `subscribers/runtime-context-session/`), #692 (RuntimeContextStateStore → `tables/`), #693 (roadmap), #694 (Shape C handler → `subscribers/runtime-context/`), #695 (pure transitions/decoders → `transforms/`), #696 (folder-direction dep-cruiser + symbol-ban semgrep guards).
+
+## Cannon (2026-05-22)
+
+These statements settle ambiguities the Shape C cutover surfaced. They override
+any 2026-05-20-era guidance in this document that conflicts.
+
+1. **`AgentSession` is live codec/session-scoped — never ambient Shape C `R`.**
+   `AgentSession` is built by `AcpSessionLive` / `StdioJsonlSessionLive` from
+   an `AgentByteStream` and is **scoped inside the host's `runtime-context`
+   session-command adapter** (the live half behind `RuntimeContextWorkflowSession`).
+   It is Shape A by construction (scoped live transport). It must not appear
+   in a Shape C subscriber's `R` channel, in the host root Layer's ambient
+   context, or in any handler boundary signature. Code that needs to talk to
+   the live agent does so by `send(context, attempt, command)` on the
+   durable-side session-command sink — never by holding `AgentSession`
+   directly.
+
+2. **`RuntimeContextWorkflowSession` is the narrow session-command sink — despite the legacy "Workflow" in its name.**
+   It is the durable-plane inversion seam between the Shape C handler boundary
+   and the host-sdk-provided live session adapter (`startOrAttach` +
+   `send(context, attempt, command)`). It is not a workflow surface, does not
+   require workflow machinery in callers' `R`, and is the correct tag to thread
+   through the handler. The name reflects history, not shape; renaming is a
+   future cosmetic — the contract is already Shape C compatible (see PR #686
+   `ce07139c8`, the AgentSession → RuntimeContextWorkflowSession swap).
+
+3. **`@effect/workflow` imports inside `packages/host-sdk/` are bridge residue.**
+   The only sanctioned home for `Workflow.make`, `Activity.make`,
+   `DurableDeferred`, and `DurableClock` is a runtime-owned Shape D layer with
+   a justified workflow-machinery rationale (per the SDD gate in
+   `runtime-design-constraints.md`). A new host-sdk `@effect/workflow` import
+   is not admissible without that justification; existing ones are residue to
+   delete, not patterns to copy. Current residue lives in `commands.ts`,
+   `agent-tool-host-live.ts`, `runtime-context-workflow-support.ts`, and
+   `runtime-context-session/codec-adapter.ts`; each must move into a justified
+   Shape D runtime layer or be deleted in roadmap Wave C (host-sdk cutover)
+   or Wave D (paired deletion).
+
+4. **Two composition tiers: runtime-internal `composition/` (Wave B) vs the outer host facade in `packages/host-sdk/src/host/` (Wave C).**
+   The runtime tree's `packages/runtime/src/composition/` is **runtime-local
+   topology wiring**: the assembled Layer graph over `tables/`, `producers/`,
+   `channels/`, `subscribers/`, and justified Shape D Layers, plus topology
+   checks. Its primary artifact is `composition/host-live.ts` (roadmap §Wave B).
+   `packages/host-sdk/src/host/` is the **outer host facade** that installs
+   the runtime root through a narrow tree-aligned subpath (e.g.
+   `@firegrid/runtime/composition/host-live`, once Wave B exports it) and
+   wires the host-bound pieces around it. It keeps its public entrypoint names
+   (`FiregridRuntimeHostLive`, `layers.ts`, `types.ts`, `mcp-host.ts`, etc.)
+   where they remain useful; contents that don't match the rebuilt target
+   shape are deletion/move candidates per the operating plan, not legacy code
+   to keep importing from. `host-sdk` owns clean composition and adapters —
+   composing runtime-owned capability tags and channel Layers, presenting
+   MCP/Effect-AI tool bindings over protocol schemas, selecting Node/
+   local-process options, and providing live Layers for runtime-owned
+   inversion seams (`RuntimeContextWorkflowSession`, `RuntimeToolUseExecutor`).
+   It does not own workflow execution, durable tables, agent-event-pipeline
+   subscribers, or per-event handler bodies. Host-sdk installs the runtime
+   layer graph; it does not duplicate it.
+
+5. **The clean-room host composition replaces PR #685 by nuke/scaffold/move within `host-sdk/`, not by repairing the legacy knot in place.**
+   `[SUPERSEDED-BY-CLEAN-ROOM] shape-c: host-composition swap + input-facts
+   fused prototype` (#685) attempted to repair the legacy
+   `runtime-context-session` / codec-adapter knot in place. The cutover
+   roadmap (Wave B `composition/host-live.ts` runtime root → Wave C host-sdk
+   cutover + public turn proof) instead builds the target-shape runtime root
+   in `packages/runtime/src/composition/`, retargets host-sdk entrypoints
+   through the narrow public subpath, and deletes the wrong-shape files
+   that the proof made unreachable in the same PR (roadmap §Wave C).
+   Public entrypoint names in `packages/host-sdk/src/host/` are preserved
+   where they are still useful; the wrong-shape internals are not.
+
+6. **Rebuilt host files import only narrow runtime target subpaths — never mixed runtime barrels, never `_archive/`.**
+   The runtime physical tree is governed by
+   `docs/architecture/2026-05-22-runtime-physical-target-tree.md` with
+   **semantic** folder names (`events/`, `tables/`, `producers/`, `transforms/`,
+   `channels/`, `subscribers/`, `composition/`, plus `_archive/`). Numeric
+   prefixes at the runtime root are forbidden and rejected by
+   `scripts/runtime-public-surface-check.mjs`. Sanctioned imports from
+   `host-sdk` are the narrow capability subpaths the tree exposes:
+   - **Tree-aligned semantic subpaths** (preferred, post-Wave A):
+     `@firegrid/runtime/tables/runtime-context-state`,
+     `@firegrid/runtime/tables/runtime-context-input-facts`,
+     `@firegrid/runtime/subscribers/runtime-context-session`, and any other
+     tree-aligned subpath that Wave A/B exports.
+   - **Existing flat subpaths** (kept until deliberately migrated):
+     `@firegrid/runtime/channels`, `/tool-executor`, `/control-plane`,
+     `/runtime-output`, `/per-context-output`, `/agent-adapters`,
+     `/sources/sandbox`, `/codecs`, `/session-byte-stream-adapter`,
+     `/verified-webhook-ingest`, `/events`, `/streams`, `/errors`, and
+     `/workflows` **for installing already-defined Layers only** — not
+     `Workflow.make` / `Activity.make`.
+   Forbidden from `host-sdk`:
+   - `@firegrid/runtime/kernel` — privileged durable execution core; the
+     inversion-seam pattern exists specifically to keep it hidden. Existing
+     kernel-barrel sites are baselined as legacy debt (#689); they shrink as
+     host-sdk callers migrate to the tree-aligned subpaths above.
+   - The `@firegrid/runtime` **root barrel** — widens the surface beyond
+     what the boundary admits.
+   - **Any "mixed runtime barrel"** (the tree doc's term) that pulls
+     unrelated Shape D / kernel surfaces into one import.
+   - **`@firegrid/runtime/_archive/`** — `_archive/` is a time-boxed
+     deletion staging area, not a bridge surface (tree doc §"Archive Rule").
+   - **Numeric `^N-` runtime subpaths** — the target tree is semantic; any
+     `@firegrid/runtime/1-events` / `/2-tables` / etc. import is wrong shape.
+   Dependency-cruiser + Semgrep guards land per #689 / #696:
+   `packages/host-sdk/** -/-> @firegrid/runtime/kernel`,
+   `packages/host-sdk/** -/-> @firegrid/runtime$`,
+   `packages/host-sdk/** -/-> @firegrid/runtime/_archive`,
+   `firegrid-no-numbered-runtime-subpath`.
+
+7. **Greenfield: delete or replace wrong shape; do not build compatibility bridges.**
+   Firegrid has no production user state to preserve. When a Shape C/D
+   replacement lands, the wrong-shape code it makes unreachable is deleted in
+   the same PR (operating plan §"Wave 2"). If deleting a wrong-shape module
+   exposes a missing target capability, build the target capability directly —
+   do not add a bridge layer to keep the old shape alive (operating plan
+   §"Operating Rules For Lanes"). Bridge exceptions require the gate in
+   `runtime-design-constraints.md` §"SDD Gate".
 
 ## Decision
 
-The firewall is **schema catalog -> bindings -> execution substrate**, with
-channels as the application/agent-facing firewall inside the binding layer.
+The firewall is **schema catalog → bindings → execution substrate**, with
+channels as the application/agent-facing firewall inside the binding layer:
 
 ```text
 @firegrid/protocol
-  schema catalog, operation contracts, row/projection schemas
-  no runtime execution, no MCP server, no workflow engine
+  schema catalog, operation contracts, row/projection schemas, channel
+  capability contracts (IngressChannel/EgressChannel/CallableChannel/
+  BidirectionalChannel + ChannelTarget + ChannelRouteCompletion).
+  no runtime execution, no workflow definitions.
 
 bindings
-  @firegrid/client-sdk
-    browser/app-safe client binding over protocol schemas
-  @firegrid/agent-tools
-    MCP / Effect-AI tool binding over protocol schemas
-  future @firegrid/cli
-    CLI binding over protocol schemas
-  future @firegrid/rest / @firegrid/grpc / @firegrid/jsonrpc
-    transport bindings over protocol schemas
-  @firegrid/host-sdk
-    host composition facade, channel capability composition, local host
-    topology entrypoints, and wiring of selected projection adapters
+  @firegrid/client-sdk   browser/app-safe client over protocol
+  @firegrid/agent-tools  MCP / Effect-AI tool projection over protocol
+  future @firegrid/cli / @firegrid/rest / @firegrid/grpc / @firegrid/jsonrpc
+  @firegrid/host-sdk     host composition facade (Cannon §4)
 
 @firegrid/runtime
-  execution substrate: workflow engine integration, workflow definitions,
-  runtime event pipeline, durable authorities, adapter internals, verified
-  ingress implementation, engine-native primitives
+  execution substrate: Shape A live boundaries (codec/sandbox), Shape B
+  projections, Shape C keyed handlers (e.g. RuntimeContext), Shape D
+  justified workflow subscribers (ToolCall, WaitFor, ScheduledPrompt).
 ```
 
-Channels are the load-bearing semantic firewall for agents and applications:
+Channels (`runtime-pipeline-type-boundaries.md` §"Channels As The Wire-Edge
+Capability Boundary") are the typed capability handles between the durable
+substrate and ACP / MCP / CLI / HTTP edges. The host SDK may compose channel
+Layers; it must not make workflow handles, workflow execution ids, stream
+URLs, table CDC details, durable wait stores, or engine services part of the
+application model.
 
-```text
-agent/app intent
-  -> protocol schema
-  -> binding surface
-  -> semantic channel capability
-  -> runtime execution substrate
-```
+## Boundary Rule Under Shape C/D
 
-The host SDK may compose channel capabilities. It must not make workflow
-handles, workflow execution ids, stream URLs, table CDC details, durable wait
-stores, or engine services part of the application model.
+The 2026-05-20 "composition boundary, not substrate owner" rule still holds.
+The Shape framing makes the test mechanical via the subscriber's `R` channel:
 
-## Rationale
+| Subscriber shape | Where it lives | Why |
+|---|---|---|
+| Shape A (codec-bound: `AgentSession`, `AcpSessionLive`, `AgentByteStream`, sandbox providers) | `runtime` (implementation), `host-sdk` (composition only) | scoped live transport; `AgentSession` is never ambient (Cannon §1) |
+| Shape B (projection consumers reading typed observation sources) | wherever the consumer lives; the source belongs in `runtime` | read-only, owns no state |
+| Shape C (stateful keyed subscriber, no workflow machinery — `RuntimeContext`) | `runtime` (handler + state store); `host-sdk` provides the live session adapter Layer via `RuntimeContextWorkflowSession` | the handler's `R` must not contain `WorkflowEngine` |
+| Shape D (workflow-shaped — `ToolCallWorkflow`, `WaitForWorkflow`, `ScheduledPromptWorkflow`) | `runtime` (workflow definition + register Layer); `host-sdk` may install via composition | needs the SDD's workflow-machinery justification (Cannon §3) |
 
-The body-plan SDD states that channels are typed semantic capabilities: the
-agent sees `wait_for(channel)`, `send(channel)`, and `call(channel)`, while the
-host-provided channel binding hides workflows, durable streams, durable tables,
-clocks, and future engine-native primitives. It also explicitly says Firegrid
-channels are not aliases for `effect/Channel`; they are Firegrid-specific
-tagged capabilities backed by ordinary Effect shapes such as lazy `Stream`
-sources, effectful sinks, and request/response handlers.
+**Decision test:**
 
-The one-substrate SDD states that the workflow engine is the durable execution
-substrate. Phase 1's `wait_for(source/query) -> WaitForWorkflow` bridge is a
-substrate migration, not the final agent-facing surface. That makes workflow
-execution infrastructure lower-tier than host SDK application code.
-
-The schema-projection SDD supplies the package graph: protocol owns the schema
-catalog; client-sdk, agent-tool/MCP, CLI, REST, gRPC, and JSON-RPC packages are
-environment-specific projections; runtime owns execution. `host-sdk` is the
-host composition package that wires runtime capabilities and selected
-projection adapters, not the projection package for every surface. That is
-stronger than "channels and above = host-sdk" by itself. Channels are the
-semantic cut, but package placement is determined by whether a module is a
-schema, projection binding, host composition entrypoint, or execution
-substrate.
-
-The engine-native primitives SDD names the post-cutover direction: collapsing
-polling loops, registries, and hand-rolled coordination into workflow-engine
-services. That is runtime substrate work even when host composition starts it.
-
-## Composition Boundary Rule
-
-The shortest path out of the current ambiguity is to make `host-sdk` a
-composition boundary, not a substrate owner.
-
-Under this rule, `host-sdk` may compose ordinary Effect `Layer`s and
-application/deployment resources, but the things being composed should be
-semantic resources or projection bindings that can be lowered into the runtime
-substrate. It should not assemble workflow engines, durable table facades,
-deferred-row drivers, runtime observation providers, or control-plane dispatch
-loops directly.
-
-That gives a concrete decision test:
-
-- If the module defines a semantic binding, channel, MCP/tool projection, host
-  config DTO, or public host Layer entrypoint, it can live in `host-sdk`.
-- If the module owns durable execution, workflow-engine lifecycle, table/stream
-  authority, replay behavior, runtime output/session adapters, or control-plane
-  dispatch, it belongs below the line in `runtime`.
-- If a host binding needs runtime behavior, it should require a runtime-owned
-  capability tag and provide a host-specific implementation at composition time.
-  It should not import and assemble runtime substrate internals itself.
-
-This is why files such as `runtime-substrate.ts` are confusing: they make
-`host-sdk` both the composition boundary and the lower-tier substrate assembler.
-As that knot is split, most placement decisions become mechanical: host-sdk
-keeps the binding/projection Layer; runtime owns the live machinery underneath.
+- If `R` mentions `WorkflowEngine` / `WorkflowInstance`, the module is Shape D
+  and lives in `runtime` with a workflow-machinery justification. Host-sdk
+  installs its Layer; host-sdk does not define it.
+- If a module owns durable state, agent-event-pipeline subscribers,
+  table/stream authority, replay behavior, runtime output/session adapters,
+  or control-plane dispatch, it belongs in `runtime`.
+- If a module defines a semantic binding, channel, MCP/tool projection, host
+  config DTO, or public host Layer entrypoint — and does not touch the
+  substrate categories above — it can live in `host-sdk`.
 
 ## Package Roles
 
 ### `@firegrid/protocol`
 
-Owns:
-
-- operation input/output schemas;
-- channel target wire schemas and channel metadata schemas;
-- durable row schemas that multiple packages must agree on;
-- normalized observation schemas for client reads and agent-visible events;
-- capability tags that are pure protocol authority surfaces, such as
-  `RuntimeStartCapability`, when the service shape is a protocol-level
-  contract and not a runtime implementation.
-
-Does not own:
-
-- live Layers that touch Durable Streams;
-- workflow definitions;
-- MCP server construction;
-- Effect AI `Tool` / `Toolkit` values;
-- runtime adapter sessions;
-- host process topology.
+Owns operation / channel / row / observation schemas, channel capability
+contracts, `ChannelTarget`, and `ChannelRouteCompletion`. Does not own live
+Layers, workflow definitions, MCP server construction, Effect-AI `Tool` values,
+runtime adapter sessions, or host topology.
 
 ### `@firegrid/host-sdk`
 
-Owns binding and composition, not substrate implementation.
+Owns binding and composition. Concretely:
 
-It should contain:
-
-- public host construction helpers such as `FiregridRuntimeHostLive` and
-  config-to-Layer adapters;
+- public host construction (e.g. `FiregridRuntimeHostLive`, config-to-Layer adapters);
 - host-author composition of channel Layers;
-- channel binding definitions that are presentation-level, such as
-  `LinearWebhookLive`, `session.self.lifecycle`, `session.log`, human-channel,
-  or app-owned `state.changes(collection)` bindings;
-- MCP server exposure and metadata projection;
-- Effect AI tool binding: protocol schemas -> `Tool` / `Toolkit`;
-- Node/local-process topology selection and host-author options;
-- narrow live layers that provide runtime-owned capability tags when those
-  layers are explicitly host-bound.
+- channel binding modules whose public surface is a semantic channel
+  (`event-channel`, `state-changes-channel`, `human-channel`, `session-log`,
+  `channels/session-self/*`);
+- MCP server exposure and metadata projection (`mcp-host`);
+- Effect-AI tool binding (protocol schemas → `Tool`/`Toolkit`);
+- Node/local-process topology selection;
+- **live Layers for runtime-owned inversion seams**: `RuntimeContextWorkflowSession`
+  (`RawRuntimeContextWorkflowSessionLive`, `CodecRuntimeContextWorkflowSessionLive`),
+  `RuntimeToolUseExecutor`. These are host-bound implementations of runtime-owned
+  tags; they do not import `@effect/workflow` (Cannon §3).
 
-It should not contain as stable architecture:
+It does not own as stable architecture (any current instances are residue per
+Cannon §3 or knot per Cannon §5):
 
-- workflow definitions (`Workflow.make`, `Activity.make`) for runtime
-  execution;
+- `Workflow.make` / `Activity.make` / `DurableDeferred` / `DurableClock`;
 - workflow-engine lifecycle caches or execution registries;
-- durable wait stores, wait routers, or source registration services;
 - agent-event-pipeline subscribers that implement runtime behavior;
 - direct table CDC handling except inside a channel binding adapter whose
-  public surface remains a semantic channel;
-- common operation execution that multiple bindings could share.
-
-`host-sdk` may still have transitional internal files in these categories while
-Phase 1 and Phase 2 are landing. Treat them as debt to move below the binding
-line, not precedent for new code.
+  public surface stays semantic;
+- common operation execution that multiple bindings could share (moves to
+  runtime).
 
 ### `@firegrid/runtime`
 
-Owns execution substrate and hidden mechanics.
+Owns the execution substrate, organized by Shape A/B/C/D
+(`runtime-pipeline-type-boundaries.md` §"Physical Tree Guidance"):
 
-It should contain:
+- workflow engine implementation;
+- Shape D workflow definitions: `ToolCallWorkflow`, `WaitForWorkflow`,
+  `ScheduledPromptWorkflow`, and any others that justify the workflow-machinery
+  gate;
+- Shape C subscribers (target `RuntimeContext` keyed handler + state store);
+- Shape B projection sources (`RuntimeAgentOutputAfterEvents`, channel
+  ingress factories like `sessionAgentOutputChannel`);
+- Shape A internals (`AcpSessionLive`, `StdioJsonlSessionLive`,
+  sandbox providers, byte-stream codecs);
+- runtime event pipeline, authorities, verified-webhook ingestion.
 
-- workflow engine implementation and engine-native primitives;
-- workflow definitions: `RuntimeContextWorkflow`, `WaitForWorkflow`,
-  `RuntimeContextProvisionWorkflow`, `RuntimeStartWorkflow`,
-  `RuntimeLifecycleWorkflow`, scheduled-input/tool-call workflows, and future
-  channel wait workflows;
-- runtime event pipeline sources/codecs/events/transforms/authorities;
-- runtime output/input durable authorities;
-- verified webhook ingestion implementation and durable tables;
-- local process / ACP / provider adapter internals;
-- runtime operation execution core for validated protocol operations when that
-  execution uses workflow engine, durable streams, provider adapters, or runtime
-  authorities.
-
-It should not contain:
-
-- user-facing SDK method names;
-- MCP tool descriptions or `Tool.make` bindings;
-- CLI commands;
-- app-specific channel inventory decisions;
-- host-author convenience wrappers that only choose which Layers to compose.
-
-Runtime may export narrow capability tags and Layers for bindings to compose.
-It should not export broad table facades or "registry" objects as application
-surfaces.
+It does not own user-facing SDK methods, MCP tool descriptions, CLI commands,
+app-specific channel inventory decisions, or host-author convenience wrappers.
 
 ### `@firegrid/client-sdk`
 
-Owns browser/app-safe client binding over protocol schemas and normalized
-observations. It must remain runtime-source-free. It may depend on protocol
-schemas and explicitly supplied transport/capability services. It must not call
-workflow handles, runtime host modules, adapter sessions, or durable table
-facades directly.
+Browser/app-safe client over protocol schemas + normalized observations.
+Runtime-source-free. Depends only on protocol + supplied transport.
 
 ### Projection Packages
 
-The convergence target is one package per environment/surface projection:
+`@firegrid/client-sdk`, `@firegrid/agent-tools`, future
+`@firegrid/cli|rest|grpc|jsonrpc`. They own transport glue and surface-specific
+ergonomics over protocol contracts, never independent schemas or operation
+catalogs.
 
-- `@firegrid/client-sdk`: browser/edge/app-safe TypeScript client projection;
-- `@firegrid/agent-tools` or equivalent: MCP/agent-host and Effect AI tool
-  projection;
-- `@firegrid/cli`: terminal/Node CLI projection;
-- future `@firegrid/rest`, `@firegrid/grpc`, and `@firegrid/jsonrpc`: server
-  transport projections.
-
-Projection packages may own transport glue, runtime/environment dependencies,
-surface-specific names/help, auth/config parsing, serialization, and ergonomic
-wrappers. They must not own independent operation schemas, independent
-observation schemas, workflow handles as public API, durable-table details as
-public API, or copied operation catalogs.
-
-Dependency guardrails should enforce:
+Dependency guardrails (enforced by dependency-cruiser):
 
 ```text
 projection package -> @firegrid/protocol
@@ -248,271 +277,116 @@ projection package -/-> another projection package
 projection package -/-> @firegrid/runtime
 @firegrid/runtime -> @firegrid/protocol
 @firegrid/runtime -/-> projection packages
+@firegrid/host-sdk -/-> @effect/workflow            (Cannon §3)
+@firegrid/host-sdk -/-> @firegrid/runtime/kernel    (Cannon §6)
+@firegrid/host-sdk -/-> @firegrid/runtime$          (Cannon §6 — root barrel forbidden)
+@firegrid/host-sdk -/-> @firegrid/runtime/_archive  (Cannon §6 — archive is not a bridge)
 ```
 
-Server-side projection packages that need to execute work should be composed by
-an owning host/runtime surface, not become runtime substrate packages
-themselves.
+Sanctioned subpaths are governed by the runtime tree doc
+(`docs/architecture/2026-05-22-runtime-physical-target-tree.md`).
+`@firegrid/runtime/workflows` is allowed **for installing Layers only**
+(no `Workflow.make` / `Activity.make` from `host-sdk`).
 
-## Single Interaction Pattern
+## Runtime → Host Inversion (Shape C-Compatible)
 
-All client, agent, CLI, REST, gRPC, JSON-RPC, and host-author surfaces should
-follow one interaction pattern:
+When runtime execution needs something host-bound, invert the dependency with a
+**runtime-owned capability tag** and a **host-sdk-provided live Layer**. This is
+`RuntimeToolUseExecutor` and `RuntimeContextWorkflowSession` today.
 
 ```text
-protocol operation / observation / channel contract
-  -> environment projection package
-  -> transport or runtime-owned capability tag
-  -> runtime authority / workflow / adapter
-  -> durable streams substrate
+runtime Shape C / Shape D subscriber
+  -> requires RuntimeOwned* Tag (runtime-owned)
+  -> host-sdk provides RuntimeOwned*Live (host-bound implementation)
 ```
 
-The durable streams substrate may still be the backing transport for a local
-client or host process, but it should be hidden behind one of two shapes:
+Forbidden recoveries: moving host composition into runtime, letting runtime
+import `host-sdk`, or making `AgentSession` ambient in the Shape C handler's
+`R` (Cannon §1). The inversion is the only sanctioned shape.
 
-- a projection transport implementation owned by the projection package; or
-- a runtime-owned capability tag provided by host composition.
+## Wave Dispatch Guidance (per roadmap #693)
 
-The public surface should not expose `DurableTable` facades, workflow handles,
-stream URLs, table names, deferred-row names, execution ids, or runtime
-observation resolver tags as the way users interact with Firegrid. Those are
-lower-tier coordinates.
+The cutover roadmap subdivides operating-plan Wave 1 into:
 
-This rule also constrains tests and simulations. A simulation driver intended
-to model an end user should use the same projection package a user would use.
-Host-side simulation code may compose Layers, but should not normalize private
-substrate helpers into public import paths.
+- **Wave A — artifact placement** into the semantic target tree
+  (`tables/`, `producers/`, `transforms/`, `channels/`, `subscribers/`).
+  Landed: #690, #691, #692, #694, #695. Guards landed: #696.
+- **Wave B — runtime root assembly** at
+  `packages/runtime/src/composition/host-live.ts`. Open.
+- **Wave C — host-sdk cutover + public turn proof**: retarget host-sdk
+  entrypoints through the runtime root's public subpath, prove
+  `start context → send input → observe output → terminate` end-to-end,
+  delete the old host-sdk RuntimeContext body launch path. Open.
+- **Wave D — behavior proofs with paired deletion** for input delivery,
+  tool calls, permissions, wait/child-output, restart/idempotency. Open.
+- **Wave E — public surface shrink + guard ratchet**.
 
-## Answers To The Open Questions
+For lanes touching this boundary:
 
-### 1. Is "channels and above = host-sdk; below channel Layer = runtime" right?
+1. **Shape C `RuntimeContext` handler reshape (Wave A)** — runtime owns the
+   handler under `subscribers/runtime-context/` (#694); host-sdk provides only
+   the `RuntimeContextWorkflowSession` live adapter via the inversion seam.
+   Old `RuntimeContextWorkflowNative` body deleted with the proof that makes
+   it unreachable (Wave C).
+2. **Runtime root assembly (Wave B)** — assemble the runtime Layer graph at
+   `packages/runtime/src/composition/host-live.ts` over `tables/`,
+   `producers/`, `channels/`, `subscribers/`, and justified Shape D Layers.
+   Do not define schemas, transitions, handlers, workflow bodies, session
+   behavior, or table operations in `composition/` (roadmap §Wave B).
+3. **Host composition (Wave C)** — rebuild `packages/host-sdk/src/host/`
+   around the new runtime root subpath; preserve public entrypoint names
+   where useful; delete what the turn proof makes unreachable in the same
+   PR. Replaces #685 (Cannon §4 + §5).
+4. **Workflow definitions stay in runtime** — `ToolCallWorkflow`,
+   `WaitForWorkflow`, `ScheduledPromptWorkflow` keep their runtime homes and
+   workflow-machinery justifications. Shape D paired-deletion lanes land in
+   Wave D.
+5. **Channel bindings reviewed per Shape** — if a host-sdk channel module wraps
+   a runtime tag/table into a semantic channel, it stays host-sdk; if it
+   implements durable execution, the implementation moves to runtime.
+6. **Dependency / Semgrep guards land with the change** — the dep-cruiser
+   `@firegrid/host-sdk -/-> @effect/workflow` rule lands with the slice that
+   retires the last residue site (Cannon §3). Folder-direction +
+   symbol-ban guards for the new tree landed in #696; new guards extend
+   that file as Wave C/D shrinks the legacy import surface.
 
-Close, but incomplete.
+Do not dispatch "move all of `packages/host-sdk/src/host/` into runtime." That
+mixes composition, channel bindings, MCP edge, and workflow substrate in one
+unsafe change. Per-lane Shape C/D classification is the safer cut.
 
-The stronger rule is:
+## Specific Placements
 
-```text
-protocol schemas = protocol
-binding surfaces = client-sdk / agent-tools / CLI / REST / gRPC / JSON-RPC
-host composition = host-sdk
-execution substrate behind channel capabilities = runtime
-```
+| Surface | Shape / tier | Decision |
+|---|---|---|
+| `RuntimeContextWorkflowSession` (tag) + live Layers | runtime tag, host-sdk live | Cannon §2. Threaded into Shape C handler `R`; live adapters in host-sdk. |
+| `AgentSession`, `AcpSessionLive`, `StdioJsonlSessionLive`, `AgentByteStream` | Shape A, runtime | Cannon §1. Scoped live; never ambient in host root. |
+| `RuntimeContext` handler (replacing `RuntimeContextWorkflowNative` body) | Shape C, runtime | Per-event keyed subscriber over `RuntimeContextStateStore`. No `WorkflowEngine` in `R`. |
+| `ToolCallWorkflow`, `WaitForWorkflow`, `ScheduledPromptWorkflow` | Shape D, runtime | Workflow-machinery justified per SDD gate. |
+| `sessionAgentOutputChannel`, `sessionAgentOutputObservationRoute`, `makeRuntimeChannelRouter` | runtime (substrate), host-sdk composes | C6 typed source + cursor + match. No parallel `ChildOutput*` / `session_read`. |
+| `RuntimeToolUseExecutor` | runtime tag, host-sdk live | Existing inversion seam; pattern for future host-bound needs. |
+| `host-sdk/src/host/commands.ts`, `agent-tool-host-live.ts`, `runtime-context-workflow-support.ts`, `runtime-context-session/codec-adapter.ts` | bridge residue | Cannon §3. Move each `@effect/workflow` import into a justified Shape D runtime layer or delete in the slice that retires its consumer. |
+| MCP server / Effect-AI toolkit | host-sdk | Pure binding/projection over protocol. |
+| Durable Streams substrate access | runtime | Provider internals; consumers go through narrow tags or channel bindings. |
+| Verified webhook ingestion | runtime impl; host-sdk channel binding | Signature verification + durable insert in runtime; semantic `Channel<…>` in host-sdk. |
 
-Channels are the semantic firewall between application/agent code and runtime
-substrate. They are not the only package boundary. Agent-tool/MCP, client, CLI,
-REST, gRPC, and JSON-RPC bindings are peer projections over protocol schemas;
-runtime is below all of them. Host-sdk composes runtime and selected projection
-adapters for a local host, but should not define the contracts those projections
-expose.
+## Risk Surface — Anti-Patterns To Reject
 
-### 2. Is `packages/protocol` a third package in the firewall picture?
-
-Yes. It is the source of truth for schema and operation contracts. The intended
-picture is:
-
-```text
-protocol schema catalog
-  -> bindings: client-sdk / agent-tools / CLI / REST / gRPC / JSON-RPC
-  -> host composition: host-sdk
-  -> execution: runtime
-```
-
-Protocol may define channel target schemas, channel metadata row schemas, and
-normalized observation schemas. It should not define live channel Layers.
-
-### 3. What in `host-sdk` genuinely belongs there?
-
-Belongs in `host-sdk`:
-
-- `mcp-host.ts`: MCP server exposure and route-scoped toolkit installation.
-- `agent-tools/bindings/*`: protocol -> Effect AI tool binding.
-- `config-live.ts`, `layers.ts`, `types.ts`: host-author composition entrypoints
-  and topology options, after they stop exporting substrate internals as the
-  public model.
-- channel binding modules when they are presentation adapters, such as
-  `event-channel.ts`, `state-changes-channel.ts`, `human-channel.ts`,
-  `session-log-channel.ts`, and `channels/session-self/*`, provided they depend
-  on semantic channel capabilities and narrow runtime tags rather than workflow
-  tables directly.
-- `runtime-context-mcp-base-url.ts`: host-bound late binding for MCP URL
-  publication.
-
-Likely leaked below the line:
-
-- `runtime-context-workflow-core.ts`: workflow definition and Activity body.
-- `runtime-context-workflow-runtime.ts`: host-scoped workflow engine lifecycle,
-  execution map, input dispatch, checkpoint source.
-- `runtime-input-deferred.ts`: workflow-engine input delivery mechanics.
-- `runtime-substrate.ts`: runtime execution substrate and workflow support
-  capture.
-- `control-request-reconciler.ts`: request workflow definitions and runtime
-  control execution.
-- `agent-tools/execution/tool-use-to-effect.ts`: validated operation execution
-  and workflow/channel lowering.
-- `agent-tool-host-live.ts`: host-coupled execution of spawn/session/tool
-  operations.
-- `host-owned-durable-tools.ts`: transitional durable-tools composition; should
-  disappear with Phase 1.
-- `per-context-runtime-output.ts`, `runtime-ingress-transform.ts`, and
-  `projection-observer.ts`: likely runtime authorities/transforms unless they
-  are deliberately host binding adapters.
-
-### 4. What in `runtime` may be above the substrate line?
-
-Some runtime exports are currently binding-facing and should be reviewed:
-
-- `verified-webhook-ingest` exposes public request/config/result types and a
-  table. The ingestion implementation belongs in runtime; the channel binding
-  that turns a verified webhook fact table into `Channel<LinearWebhook>` belongs
-  in host-sdk or an app integration package. Protocol should own any stable
-  webhook fact schema that multiple bindings need.
-- `runtime-output`, `streams`, and `events` export useful observation types.
-  Stable normalized observation schemas should migrate or project through
-  protocol. Runtime may keep richer internal envelopes and authority tags.
-- `agent-adapters` are runtime substrate. Host SDK may offer composition helpers
-  that install adapters, but adapter sessions and codec mechanics are runtime.
-- `durable-tools` remains a transitional runtime surface. Phase 1 deletes it.
-
-The rule: if a runtime export is a public product contract, move or project it
-through protocol. If it is a capability implementation, keep it runtime.
-
-## Placement Of Specific Surfaces
-
-| Surface | Target tier | Decision |
-| --- | --- | --- |
-| `RuntimeContextWorkflow`, `WaitForWorkflow`, scheduled/tool-call workflows | runtime | Workflow definitions and Activities are execution substrate. Host SDK may install their Layers but should not own their bodies. |
-| `RuntimeContextProvisionWorkflow`, `RuntimeStartWorkflow`, `RuntimeLifecycleWorkflow` | runtime | `tf-ho99` proved the workflow-backed control path. The hybrid durable request-row compatibility surface can stay protocol/host-facing, but workflow execution belongs in runtime. |
-| Channel Layers such as `LinearWebhookLive`, `session.self.lifecycle`, `state.changes(collection)` | split | Channel contract/metadata schema in protocol when stable; channel binding Layer in host-sdk or app integration; substrate providers in runtime. |
-| `channel-registry.ts` | replace with binding edge only | `tf-kddg` should delete central registry architecture. Use per-channel `Context.Tag` + Layer composition. Any string lookup is only the MCP/protocol adapter from agent-supplied `channel: string` to the typed capability. |
-| `tool-use-to-effect.ts` | split | Decode and `ToolResult` adaptation may remain host-sdk binding. Validated operation execution should move to runtime execution services, especially arms that use workflow engine, durable streams, or provider adapters. |
-| `runtime-substrate.ts` | split/move below | Current host-sdk knot for runtime authorities, observation streams, workflow support, and tool execution. Runtime should own the provider/capability seams; host-sdk should compose top-level host bindings and stop exporting substrate assembly. |
-| `agent-tools/execution/toolkit-layer.ts` | split | MCP/Effect-AI toolkit projection belongs in host-sdk. Its workflow/tool execution support should depend on runtime-owned capability tags, not import `host/runtime-substrate.ts`. |
-| `runtime/authorities/*` | runtime | Narrow Effect capability providers over durable table families. This is substrate, not public API; export tags/layers and prevent table facades from leaking upward. |
-| `runtime/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts` | move within runtime | Defines a runtime tool-execution service tag, not a subscriber driver. It should live under tool-execution/workflow seams; `subscribers/` should remain scoped observation drivers. |
-| MCP server / Effect AI toolkit | host-sdk | This is host binding and route exposure. It projects protocol schemas into MCP/Effect AI surfaces. |
-| Session-handle / client facade helpers | client-sdk + protocol | Client SDK owns app-safe methods. Protocol owns schemas and normalized observations. Runtime supplies capabilities, never direct client imports. |
-| Durable Streams substrate access | runtime | Provider internals touch tables/streams. Host SDK consumes narrow tags or channel bindings; client SDK consumes protocol-safe transport/read capabilities. |
-| Verified webhook ingestion | runtime implementation, host/app channel binding | Signature verification and durable fact insert belong in runtime. Exposing those facts as `Channel<LinearWebhook>` is a host/app channel binding. |
-| Webhook route installation | host-sdk or app integration | HTTP route/server binding is deployment composition. It calls runtime ingestion and provides a channel binding; it does not own verification substrate. |
-| `RuntimeStartCapability` | protocol tag, runtime/host implementation | The service shape is protocol-owned authority. Host/runtime composition provides the live implementation. |
-
-## Dark-Factory / Consumer Story
-
-Moving infra out of `host-sdk` must not make dark-factory harder to compose. The
-consumer story should stay:
-
-```ts
-const ChannelsLive = Layer.mergeAll(
-  LinearWebhookLive(...),
-  HumanApprovalChannelLive(...),
-)
-
-Layer.mergeAll(
-  FiregridRuntimeHostLive(options).pipe(
-    Layer.provideMerge(ChannelsLive),
-  ),
-  FiregridMcpServerLayer(mcpOptions).pipe(
-    Layer.provideMerge(ChannelsLive),
-  ),
-)
-```
-
-The exact composition shape may change as channel Layers become first-class.
-The invariant is that channel Layers are ordinary Effect services provided into
-host/MCP/toolkit layers that need them; they are not a mutable registry passed
-around as application state. Today, host-sdk often exposes or contains the
-execution machinery directly. Under this framing, host-sdk composition helpers
-provide semantic capabilities and runtime-owned services. The app still
-composes one host layer; it does not import workflow definitions or durable
-table facades.
-
-That preserves ergonomics while improving testability: tests can provide a fake
-channel tag, fake runtime execution service, or fake protocol capability
-without booting the full host workflow engine.
-
-## Risk Surfaces
-
-### Runtime-to-host callback pressure
-
-If runtime execution needs something host-specific, it must not import
-`@firegrid/host-sdk`. Invert the dependency with a runtime-owned capability tag
-and a host-sdk-provided live Layer. This is the existing `RuntimeToolUseExecutor`
-shape: runtime owns the seam; host-sdk owns the host-bound implementation.
-
-Apply the same pattern for future substrate-to-host needs:
-
-```text
-runtime workflow / adapter / execution service
-  -> requires RuntimeOwnedCapability Tag
-  -> host-sdk provides RuntimeOwnedCapabilityLive from host topology
-```
-
-Do not solve these edges by moving host composition into runtime or by letting
-runtime import host-sdk. That would recreate the package cycle the firewall is
-meant to prevent.
-
-## Implementation Sequence
-
-Do not start with a broad file relocation. Start with import direction and
-surface splits.
-
-1. **Finish `tf-kddg`: channel registry to per-channel Tags/Layers.** This
-   removes the most visible registry-shaped application surface and gives the
-   binding layer a type-safe capability model.
-2. **Split agent-tool binding from execution.** Keep Effect AI `Tool` /
-   `Toolkit` and MCP exposure in host-sdk. Introduce runtime execution services
-   for validated operations. `tool-use-to-effect.ts` should shrink toward an
-   adapter that decodes protocol input, calls an execution service, and encodes
-   `ToolResult`.
-3. **Move workflow definitions below the binding line.** Runtime owns
-   `RuntimeContextWorkflow*`, `WaitForWorkflow`, and control request workflows.
-   Host SDK installs the Layers and supplies host topology.
-4. **Review channel bindings one by one.** If a channel module only wraps a
-   runtime tag/table into a semantic channel, it can stay host-sdk. If it
-   implements durable execution, move that implementation to runtime and leave a
-   thin host-sdk Layer.
-5. **Add static dependency guardrails.** Binding modules should not import
-   workflow engine, durable table facades, or runtime internals except through
-   sanctioned runtime capability subpaths. Runtime execution modules must not
-   import host-sdk bindings.
-
-This sequence is safer than "move all host code out of host-sdk" because it
-keeps the public composition entrypoint stable while shrinking what that
-entrypoint owns.
-
-## Refactor Dispatch Guidance
-
-The next dispatch should be a read/write boundary split, not another SDD:
-
-- lane A: complete `tf-kddg` channel Tags/Layers and delete registry service;
-- lane B: inventory `host-sdk/src/agent-tools/execution` and carve runtime
-  execution service boundaries;
-- lane C: move or wrap runtime-context workflow definitions under runtime-owned
-  subpaths after PR #489 settles;
-- lane D: add dependency-cruiser or lint rules for binding/execution imports.
-
-Do not dispatch a "move packages/host-sdk/src/host to runtime" task. That would
-mix composition helpers, channel bindings, MCP edge, and workflow substrate in
-one unsafe change.
-
-## Open Questions For Gurdas
-
-1. Should Firegrid introduce a separate `@firegrid/host-runtime` package, or is
-   `@firegrid/runtime` the intended home for all lower-tier host execution?
-   This framing assumes `@firegrid/runtime` is the home.
-2. Should stable channel metadata schemas live in `@firegrid/protocol` now, or
-   wait until `tf-kddg` proves the Tag/Layer shape? This framing recommends
-   protocol ownership once the wire shape is stable.
-3. Should verified webhook fact schemas become protocol-owned before the first
-   public webhook channel lands? This framing recommends yes if client/agent
-   bindings need to observe them.
-4. Should host-sdk continue exporting `FiregridRuntimeHostLive` as the primary
-   composition helper after internals move, or should it be renamed to make the
-   package's binding role clearer? This framing keeps the name for compatibility.
+- Adding any new `@effect/workflow` import in `packages/host-sdk/src/` (Cannon §3).
+- Threading `AgentSession` through a Shape C handler `R` (Cannon §1).
+- Repairing the legacy `runtime-context-session` / codec-adapter knot in place rather than replacing it clean-room (Cannon §5).
+- Adding a bridge layer "to keep the old shape working" instead of deleting the wrong shape with its replacement (Cannon §7 + operating plan §"Wave 2").
+- Importing `@firegrid/runtime/kernel` from `host-sdk`, importing the `@firegrid/runtime` root barrel, or importing any mixed runtime barrel (Cannon §6).
+- Importing `@firegrid/runtime/_archive/` from `host-sdk` — `_archive/` is a time-boxed deletion staging area, not a bridge (Cannon §6 + tree doc §"Archive Rule").
+- Treating `host-sdk/src/host/` as a legacy import target — its current contents are deletion/move candidates, not stable substrate to depend on (Cannon §4).
+- Recreating the runtime numbered tree inside `host-sdk/` — the runtime physical layout is owned by the tree doc; host-sdk consumes the published subpaths, it does not mirror the tree.
+- Introducing a parallel `ChildOutput*` / `session_read` / `DurableOutputCursor` family for child observation (already blocked by tf-zchu Semgrep C6 guard).
+- Synthesizing terminal completion at an edge from raw `TurnComplete` (already blocked by tf-zchu Semgrep C7 guard).
 
 ## Non-Goals
 
-- No immediate package split.
-- No compatibility shims for workflow handles or registries.
 - No file-by-file move list.
-- No changes to PR #489, `tf-kddg`, or in-flight Phase 1 lanes.
+- No compatibility shims for workflow handles or registries.
+- No new SDD. This is operational guidance; the SDD gate lives in
+  `runtime-design-constraints.md`.
+- No renaming pass for `RuntimeContextWorkflowSession` in the current cutover
+  branch (Cannon §2 notes the cosmetic; the shape is already correct).
