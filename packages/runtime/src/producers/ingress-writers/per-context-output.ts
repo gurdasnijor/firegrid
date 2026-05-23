@@ -6,7 +6,7 @@ import {
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
 import type { DurableTableHeaders } from "effect-durable-operators"
-import { Effect, Option, Stream } from "effect"
+import { Context, Effect, Option, Stream } from "effect"
 import { stampRowOtel } from "@firegrid/protocol/otel"
 import {
   encodeRuntimeAgentOutputEnvelope,
@@ -15,6 +15,22 @@ import {
 } from "../../events/index.ts"
 import { runtimeContextOutputTableLayerForContext as perContextRuntimeOutputTableLayer } from "../../channels/output-table-layer.ts"
 import type { RuntimeAgentOutputAfterEvents } from "../../tables/runtime-output-public.ts"
+
+// Runtime-side capability Tag wrapping `PerContextRuntimeOutputWriterService`.
+// Hosts provide the Live for this Tag (host-sdk's
+// `PerContextRuntimeOutputWriterLive` builds the service from the host's
+// durable-streams base URL + headers); runtime-internal subscribers
+// (`subscribers/runtime-control/control-request-side-effects.ts`,
+// `subscribers/runtime-context-session/{raw,codec}-adapter.ts`) consume
+// the Tag rather than passing the service value through R-channels.
+//
+// The Tag lives here, alongside the factory + interface, so runtime
+// consumers do not need to import a host-sdk Tag. Host-sdk's binding
+// Live retargets to this Tag in the tf-z8wq-follow runtime-session move
+// (see `subscribers/runtime-context-session/README.md`).
+export class PerContextRuntimeOutputWriter extends Context.Tag(
+  "@firegrid/runtime/producers/PerContextRuntimeOutputWriter",
+)<PerContextRuntimeOutputWriter, PerContextRuntimeOutputWriterService>() {}
 
 // tf-bffo: the durable per-context RuntimeOutputTable wiring lives in the runtime
 // (the privileged durable core), parameterized by plain host topology config.

@@ -1,17 +1,15 @@
+import { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
 import {
   recordLifecycleTerminalEvidence,
   RuntimeContextRead,
   RuntimeControlRequestSideEffects,
   RuntimeRunAppendAndGet,
   type RuntimeControlRequestStartResult,
-} from "@firegrid/runtime/control-plane"
-import { RuntimeContextWorkflowSession } from "@firegrid/runtime/subscribers/runtime-context-session"
-import { asRuntimeContextError } from "@firegrid/runtime/errors"
+} from "../../control-plane/index.ts"
+import { RuntimeContextWorkflowSession } from "../runtime-context-session/handler.ts"
+import { asRuntimeContextError } from "../../runtime-errors.ts"
 import { Effect, Layer, Option, type Scope } from "effect"
-import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
-import type { RuntimeChannelRouter } from "./channel.ts"
-import { PerContextRuntimeOutputWriter } from "./per-context-runtime-output.ts"
-import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
+import { PerContextRuntimeOutputWriter } from "../../producers/ingress-writers/per-context-output.ts"
 
 // Wave D-A Shape (b) cutover (PR #714):
 //
@@ -41,12 +39,10 @@ export const RuntimeControlRequestSideEffectsLive = Layer.scoped(
   RuntimeControlRequestSideEffects,
   Effect.gen(function*() {
     const captured = yield* Effect.context<
-      | AgentToolHost
-      | RuntimeChannelRouter
-      | HostRuntimeContextExecutionEnv
       | PerContextRuntimeOutputWriter
       | RuntimeContextRead
       | RuntimeContextWorkflowSession
+      | RuntimeControlPlaneTable
       | RuntimeRunAppendAndGet
       | Scope.Scope
     >()

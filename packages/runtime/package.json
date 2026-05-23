@@ -105,6 +105,10 @@
       "types": "./src/subscribers/runtime-context/host-lookup.ts",
       "default": "./src/subscribers/runtime-context/host-lookup.ts"
     },
+    "./subscribers/runtime-control": {
+      "types": "./src/subscribers/runtime-control/index.ts",
+      "default": "./src/subscribers/runtime-control/index.ts"
+    },
     "./composition/host-live": {
       "types": "./src/composition/host-live.ts",
       "default": "./src/composition/host-live.ts"

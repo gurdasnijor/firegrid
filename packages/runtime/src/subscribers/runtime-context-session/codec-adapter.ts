@@ -9,24 +9,24 @@ import {
   asRuntimeContextError,
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "@firegrid/runtime/errors"
+} from "../../runtime-errors.ts"
 import {
   AcpSessionLive,
   AgentSession,
   StdioJsonlSessionLive,
   type AgentCodecError,
-} from "@firegrid/runtime/producers/codecs"
+} from "../../producers/codecs/index.ts"
 import {
   AgentInputEventSchema,
-} from "@firegrid/runtime/events"
+} from "../../events/index.ts"
 import {
   runCodecRuntimeContextStderrJournal,
-} from "@firegrid/runtime/producers/codecs/session-byte-stream-adapter"
+} from "../../producers/codecs/session-byte-stream-adapter.ts"
 import {
   resolveMcpServerHeaders,
   type AgentByteStream,
   type RuntimeEnvResolverPolicy,
-} from "@firegrid/runtime/producers/sandbox"
+} from "../../producers/sandbox/index.ts"
 import {
   Context,
   Effect,
@@ -39,13 +39,13 @@ import {
 } from "effect"
 import {
   type RuntimeContextWorkflowSessionService,
-} from "@firegrid/runtime/subscribers/runtime-context-session"
-import * as SessionCommon from "./common.ts"
-import { runtimeContextMcpPath } from "../mcp-host.ts"
+} from "./handler.ts"
+import * as SessionCommon from "./adapter-common.ts"
 import {
   FiregridRuntimeContextMcpBaseUrl,
   type FiregridRuntimeContextMcpBase,
-} from "../runtime-context-mcp-base-url.ts"
+  runtimeContextMcpPath,
+} from "./host-mcp-base-url.ts"
 
 interface CodecRuntimeContextSession extends SessionCommon.RuntimeContextSessionRecord {
   readonly agentSession: AgentSession["Type"]
