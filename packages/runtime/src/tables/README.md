@@ -15,9 +15,17 @@ Source: `docs/architecture/2026-05-22-runtime-physical-target-tree.md`.
   state) and the `nextOutputObservation` point-read primitive
 
 A table file owns the schema, the `DurableTable("name", { schemas })` value,
-and any pure relevance predicates that gate the table's point reads (for
-example `isStateRelevantOutputObservation`). It does NOT own append/write
-authority — that lives in `producers/`.
+and the **point-read selection helpers** that decide which row to surface from
+the table (for example `nextOutputObservation`'s
+`isStateRelevantOutputObservation`, which decides which output rows the
+next-output point read may surface to a Shape C subscriber). It does NOT own
+append/write authority — that lives in `producers/`.
+
+Transition/reducer logic does NOT live here. A function that takes a state
+plus a fact and returns the next state (`transitionInputEvent`,
+`transitionOutputEvent`) belongs in `transforms/`. Tables expose selection
+helpers tied to a table point read; reducers live one tier up at the pure
+transform layer.
 
 ## May import
 

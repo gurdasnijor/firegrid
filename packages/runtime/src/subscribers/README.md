@@ -1,7 +1,13 @@
 # subscribers/
 
 Logical pipeline position: **6**. May import `events/`, `tables/`,
-`producers/`, `transforms/`, and `channels/`. Must not import `composition/`.
+`transforms/`, and `channels/`. Must not import `producers/` or
+`composition/`.
+
+Subscribers consume durable rows through table read sources and channel
+tags; they do not import producer append authorities or live producer code.
+A subscriber that needs a side effect goes through a channel binding or a
+narrow capability tag, not directly through a producer module.
 
 Source: `docs/architecture/2026-05-22-runtime-physical-target-tree.md`,
 `docs/cannon/architecture/runtime-design-constraints.md`.
@@ -16,8 +22,19 @@ the PR title. Shape is not encoded in the directory name.
 | Shape | Allowed in `R` channel | Forbidden in `R` |
 |---|---|---|
 | B | typed observation source tags | state stores, write authority, `WorkflowEngine`/`WorkflowInstance` |
-| C | state-store tag + relevant channel tags + clock | `WorkflowEngine`, `WorkflowInstance`, `Activity.make`, parked body, replay-based progress |
+| C | state-store tag + relevant channel tags | `WorkflowEngine`, `WorkflowInstance`, `Activity.make`, `DurableDeferred`, `DurableClock`, parked body, replay-based progress |
 | D | C-allowed + `WorkflowEngine`/`WorkflowInstance` *with README justification* | undocumented use of workflow machinery |
+
+Notes on time and timers:
+
+- **Shape C must not use `DurableClock`, `DurableDeferred`, or any workflow
+  machinery.** Durable timers and durable wait are load-bearing Shape D
+  capabilities (`scheduled-prompt/`, `wait-router/`).
+- If a Shape C subscriber legitimately needs to read the current time
+  (logging, deterministic ordering tags) it does so through `effect/Clock`
+  via Effect's default services. The plain `Clock` is not the same as
+  `DurableClock` and is not part of the Shape-C `R` channel inventory; it
+  is called out explicitly in the subscriber's README when used.
 
 Current subscriber folders:
 
@@ -33,16 +50,18 @@ Current subscriber folders:
 
 ## May import
 
-- `events/`, `tables/`, `producers/`, `transforms/`, `channels/`
+- `events/`, `tables/`, `transforms/`, `channels/`
 - protocol schemas, channel contracts
 - `effect`, `@effect/workflow` (Shape D folders only — see justification rule)
 
 ## Must not import
 
+- `producers/` — subscribers consume durable rows via table reads and channel
+  tags; producer append authorities are not subscriber dependencies
 - `composition/`
 - Shape B: state store tags, write authority tags, workflow machinery
 - Shape C: `WorkflowEngine`, `WorkflowInstance`, `Activity.make`,
-  `DurableDeferred` (enforced by the Shape C topology check)
+  `DurableDeferred`, `DurableClock` (enforced by the Shape C topology check)
 - Shape D: workflow machinery without a README naming the load-bearing reason
 
 ## DO

@@ -8,9 +8,14 @@ Source: `docs/architecture/2026-05-22-runtime-physical-target-tree.md`.
 
 ## Owns
 
-Shape A subscribers: scoped, live work that turns boundary events into durable
-rows. Producers have no owned RuntimeContext state; their `R` channel only
-names transport/session tags, `IdGenerator`, and `Scope`.
+Shape A live-boundary producers and append authorities: scoped, live work
+that turns boundary events into durable rows. Producers are not subscribers
+— they do not read keyed rows and dispatch behavior; they translate a live
+boundary (process stdout, codec session, external webhook) into durable
+row appends.
+
+Producers have no owned RuntimeContext state; their `R` channel only names
+transport/session tags, `IdGenerator`, and `Scope`.
 
 Layout:
 
@@ -34,7 +39,8 @@ Layout:
 - peer-tier `transforms/`, `channels/`
 - `subscribers/`, `composition/`
 - `WorkflowEngine`, `WorkflowInstance`, `Workflow.make`, `Activity.make`,
-  `DurableDeferred` — producers are Shape A, not workflow-shaped
+  `DurableDeferred` — producers are Shape A live-boundary producers, not
+  workflow-shaped subscribers
 
 A producer that needs durable wait or memoization is the wrong shape; route
 through a Shape D subscriber.
