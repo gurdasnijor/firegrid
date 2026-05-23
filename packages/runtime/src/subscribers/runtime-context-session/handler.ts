@@ -27,7 +27,7 @@ import type { RuntimeContext } from "@firegrid/protocol/launch"
 import { Context, Layer, Schema } from "effect"
 import type { Effect } from "effect"
 import { RuntimeContextError } from "../../runtime-errors.ts"
-import type { AgentInputEvent } from "../../agent-event-pipeline/events/index.ts"
+import type { AgentInputEvent } from "../../events/agent-input.ts"
 
 const RuntimeContextSessionStartedEvidenceSchema = Schema.Struct({
   contextId: Schema.String,
