@@ -1,5 +1,5 @@
 // Focused tests for the Shape C RuntimeContext per-event handler.
-// See `packages/runtime/src/agent-event-pipeline/subscribers/runtime-context/handler.ts`.
+// See `packages/runtime/src/subscribers/runtime-context/handler.ts`.
 //
 // Three slices, one invariant each:
 //   1. state transition + action dispatch through the session-command seam;
@@ -10,6 +10,13 @@
 // The handler's R names `RuntimeContextWorkflowSession` (not `AgentSession`):
 // the test double here records the `(activityAttempt, command)` pairs the
 // handler hands off to the session-command sink.
+//
+// Imports follow the post-Wave-A target tree:
+//   `tables/runtime-context-state` — state store + state schema (#692)
+//   `subscribers/runtime-context-session` — codec-session command sink (#691)
+//   `transforms/runtime-context-transition` — pure transitions (#695)
+//   `events/agent-input` — AgentInputEvent vocabulary (#695)
+// so this test no longer reaches into `workflow-engine/` for state/transitions.
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Effect, Layer, Ref, type Scope } from "effect"
@@ -21,28 +28,24 @@ import {
   type HostStreamPrefix,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
-import {
-  makeRuntimeIngressInputRow,
-} from "@firegrid/protocol/runtime-ingress"
-import {
-  makePerContextRuntimeContextStateStore,
-  RuntimeContextStateStore,
-} from "../../../../src/tables/runtime-context-state.ts"
-import {
-  RuntimeToolUseExecutor,
-} from "../../../../src/workflow-engine/tool-execution/runtime-tool-use-executor.ts"
-import {
-  RuntimeContextWorkflowSession,
-  type RuntimeContextSessionCommand,
-} from "../../../../src/subscribers/runtime-context-session/index.ts"
-import {
-  handleRuntimeContextEvent,
-  type RuntimeContextTargetEvent,
-} from "../../../../src/agent-event-pipeline/subscribers/runtime-context/handler.ts"
+import { makeRuntimeIngressInputRow } from "@firegrid/protocol/runtime-ingress"
 import type {
   AgentOutputEvent,
   RuntimeAgentOutputObservation,
-} from "../../../../src/agent-event-pipeline/events/index.ts"
+} from "@firegrid/protocol/session-facade"
+import {
+  makePerContextRuntimeContextStateStore,
+  RuntimeContextStateStore,
+} from "../../../src/tables/runtime-context-state.ts"
+import {
+  RuntimeContextWorkflowSession,
+  type RuntimeContextSessionCommand,
+} from "../../../src/subscribers/runtime-context-session/index.ts"
+import { RuntimeToolUseExecutor } from "../../../src/workflow-engine/tool-execution/runtime-tool-use-executor.ts"
+import {
+  handleRuntimeContextEvent,
+  type RuntimeContextTargetEvent,
+} from "../../../src/subscribers/runtime-context/handler.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

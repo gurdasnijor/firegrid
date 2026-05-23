@@ -15,8 +15,7 @@
 // capabilities, and returns. There is no entity-lifetime body, no
 // `WorkflowEngine` requirement, no `DurableDeferred` mailbox, and no dense
 // raw-output scan: the pure transitions (`transitionInputEvent` /
-// `transitionOutputEvent` in `workflow-engine/workflows/runtime-context.ts`)
-// are reused as-is.
+// `transitionOutputEvent` re-exported from `transforms/`) are reused as-is.
 //
 // Why `RuntimeContextWorkflowSession`, not `AgentSession`:
 //   `AgentSession` is a live codec-scoped capability built by AcpSessionLive
@@ -39,42 +38,54 @@
 // Tool execution: when `transitionOutputEvent` returns a `RunToolUse` action,
 // the handler invokes `RuntimeToolUseExecutor.execute` synchronously and
 // feeds the result back through the same session-command seam. The
-// executor's service interface has been tightened (this PR) so its `execute`
-// method does NOT propagate `WorkflowEngine | WorkflowInstance` to the
-// caller's R; implementations internally provide their real dependencies at
-// layer construction.
+// executor's service interface has been tightened so its `execute` method
+// does NOT propagate `WorkflowEngine | WorkflowInstance` to the caller's R;
+// implementations internally provide their real dependencies at layer
+// construction.
+//
+// Import boundary (target tree, per
+// `docs/architecture/2026-05-22-runtime-physical-target-tree.md`):
+//   `tables/runtime-context-state`   — durable state store + state schema
+//   `transforms/runtime-context-transition`
+//                                    — pure (state, event) -> (state, action)
+//   `transforms/decode-ingress-row`  — pure ingress-row -> AgentInputEvent
+//   `subscribers/runtime-context-session`
+//                                    — session-command sink (Shape C tag)
+//   `events/agent-input`             — AgentInputEvent vocabulary
+//   `@firegrid/protocol/...`         — RuntimeContext, RuntimeIngressInputRow,
+//                                     RuntimeAgentOutputObservation
+//
+// `RuntimeToolUseExecutor` is still imported from its current physical home
+// in `workflow-engine/tool-execution/`. The executor is a Shape C-valid
+// narrow live-dispatch capability tag (cf. the type-boundaries doc), but its
+// target subpath under the new tree is not yet decided. CC for the executor
+// move will retarget this import to its final home.
 
+import { Effect, Match } from "effect"
+import type { RuntimeContext } from "@firegrid/protocol/launch"
+import type { RuntimeIngressInputRow } from "@firegrid/protocol/runtime-ingress"
+import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
+import type { AgentInputEvent } from "../../events/agent-input.ts"
 import {
-  agentInputEventFromRuntimeIngressRow,
-} from "../../../transforms/decode-ingress-row.ts"
+  type RuntimeContextEventState,
+  RuntimeContextStateStore,
+} from "../../tables/runtime-context-state.ts"
+import { agentInputEventFromRuntimeIngressRow } from "../../transforms/decode-ingress-row.ts"
 import {
+  type RuntimeContextTransitionAction,
   transitionInputEvent,
   transitionOutputEvent,
-  type RuntimeContextTransitionAction,
-} from "../../../transforms/runtime-context-transition.ts"
+} from "../../transforms/runtime-context-transition.ts"
 import {
-  RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
-} from "../../../subscribers/runtime-context-session/index.ts"
-import {
-  RuntimeContextStateStore,
-  type RuntimeContextEventState,
-} from "../../../tables/runtime-context-state.ts"
-import {
-  RuntimeToolUseExecutor,
-} from "../../../workflow-engine/tool-execution/runtime-tool-use-executor.ts"
-import {
-  type AgentInputEvent,
-  type RuntimeAgentOutputObservation,
-} from "../../events/index.ts"
+  RuntimeContextWorkflowSession,
+} from "../runtime-context-session/index.ts"
+import { RuntimeToolUseExecutor } from "../../workflow-engine/tool-execution/runtime-tool-use-executor.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
-} from "../../../runtime-errors.ts"
-import type { RuntimeContextError } from "../../../runtime-errors.ts"
-import type { RuntimeContext } from "@firegrid/protocol/launch"
-import type { RuntimeIngressInputRow } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Match } from "effect"
+  type RuntimeContextError,
+} from "../../runtime-errors.ts"
 
 // The three sparse fact kinds a RuntimeContext subscriber observes. Mirrors
 // the target shape in the type-boundaries doc §Shape C.

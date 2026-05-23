@@ -1464,7 +1464,7 @@ rules:
         machinery justification in the SDD per the constraint-doc gate.
     paths:
       include:
-        - "/packages/runtime/src/agent-event-pipeline/subscribers/runtime-context/**/*.ts"
+        - "/packages/runtime/src/subscribers/runtime-context/**/*.ts"
         - "/semgrep-tests/**/*.ts"
       exclude:
         - "**/*.test.ts"

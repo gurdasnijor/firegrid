@@ -28,7 +28,7 @@ to name in its requirements channel.
 | Tool execution (claimed-work Shape D) | `agent-event-pipeline/tool-execution/`, `workflow-engine/workflows/tool-call.ts` | `ToolCallWorkflow`, executors | `WorkflowEngine.*`, `RuntimeToolUseExecutor` | RuntimeContext-lifetime body |
 | Channels (wire-edge capability handles) | `channels/` (runtime), `@firegrid/protocol/channels/router` | host service tags typed by protocol channel contracts; `HostPlaneChannelRouter`, `RuntimeChannelRouter` | protocol channel contracts | runtime ownership of channel schemas |
 | Streams / observation | `streams/`, `agent-event-pipeline/authorities/runtime-output-journal.ts` | `RuntimeAgentOutputAfterEvents` (initial / after / forContext) | typed read tags | write authority for the same table |
-| **Shape C subscribers** | `agent-event-pipeline/subscribers/runtime-context/` (new) | per-event keyed RuntimeContext handler | state store, channel tags, narrow live capabilities | `WorkflowEngine.WorkflowEngine`, `WorkflowEngine.WorkflowInstance`, `Activity.make`, `Workflow.suspend`/`execute` (gated by `firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber`) |
+| **Shape C subscribers** | `subscribers/runtime-context/` (Wave 2 target home; moved from `agent-event-pipeline/subscribers/runtime-context/`) | per-event keyed RuntimeContext handler | state store, channel tags, narrow live capabilities | `WorkflowEngine.WorkflowEngine`, `WorkflowEngine.WorkflowInstance`, `Activity.make`, `Workflow.suspend`/`execute` (gated by `firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber`) |
 | Shape B projection consumers | `agent-event-pipeline/subscribers/**` (other) | read-only typed source consumers | typed read tags only | state stores, write tags |
 | Shape D workflow-shaped subscribers | `agent-event-pipeline/tool-execution/`, `workflow-engine/workflows/{wait-for,scheduled-prompt}.ts` | `Workflow.make` workflows with workflow-machinery justification | `WorkflowEngine.*` | RuntimeContext-lifetime body |
 | Root layer composition | host-sdk host composition, app entry `run(...)` | `Layer.mergeAll`, `Layer.provide` | every capability | redeclaring capabilities |
@@ -45,20 +45,21 @@ counts them):
 | `packages/runtime/src/workflow-engine/workflows/runtime-context-run.ts` | spawns the parked body |
 | `packages/runtime/src/kernel/runtime-context-workflow-runtime.ts` (parts) | host-side parked-body wiring |
 
-The pure transitions in `workflow-engine/workflows/runtime-context.ts` (`transitionInputEvent`,
-`transitionOutputEvent`) move to `agent-event-pipeline/transforms/`. The
-durable state lives at `tables/runtime-context-state.ts` per
-`docs/architecture/2026-05-22-runtime-physical-target-tree.md`
-(moved out of `workflow-engine/` in Wave A of the Shape C cutover). The body
-itself is **deleted**, replaced by the per-event handler in
-`agent-event-pipeline/subscribers/runtime-context/`.
+The pure transitions in `workflow-engine/workflows/runtime-context.ts`
+(`transitionInputEvent`, `transitionOutputEvent`) moved physically to
+`transforms/runtime-context-transition.ts` in Wave A (#695). The durable state
+lives at `tables/runtime-context-state.ts` (moved out of `workflow-engine/`
+in Wave A, #692). The body itself is **deleted**, replaced by the per-event
+handler in `subscribers/runtime-context/handler.ts` (moved this slice from
+`agent-event-pipeline/subscribers/runtime-context/`).
 
 ## Why this matters for the gate
 
 The gates in `.semgrep.yml` (tf-zchu) read these paths literally:
 
 - `firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber` — paths:
-  `agent-event-pipeline/subscribers/runtime-context/**/*.ts` — blocks
+  `subscribers/runtime-context/**/*.ts` (moved this wave from
+  `agent-event-pipeline/subscribers/runtime-context/**/*.ts`) — blocks
   `Activity.make`, `Workflow.suspend`, `Workflow.execute`,
   `WorkflowEngine.WorkflowEngine`, `WorkflowEngine.WorkflowInstance`.
 - `firegrid-transforms-no-effect-shaped-exports` — **follow-up, NOT YET
