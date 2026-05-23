@@ -148,38 +148,8 @@
     },
     {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/commands.ts",
-      "line": 17,
-      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/commands.ts",
-      "line": 22,
-      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/commands.ts",
-      "line": 28,
-      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/commands.ts",
-      "line": 36,
-      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
       "path": "packages/host-sdk/src/host/config.ts",
       "line": 3,
-      "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
-      "line": 10,
       "note": "Shape C cutover legacy debt: host-sdk kernel-barrel import. Migration target subpath: aligned semantic export under @firegrid/runtime/<tree-path>; baseline shrinks as host-sdk callers move off the kernel barrel."
     },
     {
@@ -244,27 +214,57 @@
     },
     {
       "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
-      "path": "packages/host-sdk/src/host/commands.ts",
-      "line": 1,
-      "note": "Wave C/D deletion target. Cannon §3 residue site (host-sdk-runtime-boundary.md): the legacy parked-body launch path in commands.ts uses @effect/workflow directly; deleted by the Wave C cutover slice that retires the body driver."
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
       "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
       "line": 2,
-      "note": "Wave C/D deletion target. Cannon §3 residue site (host-sdk-runtime-boundary.md): the legacy tool-host live layer threads WorkflowEngine through host-sdk; moves into a runtime-owned Shape D tool-dispatch layer in Wave D."
+      "note": "Wave C/D deletion target. Cannon \u00a73 residue site (host-sdk-runtime-boundary.md): the legacy tool-host live layer threads WorkflowEngine through host-sdk; moves into a runtime-owned Shape D tool-dispatch layer in Wave D."
     },
     {
       "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
       "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
       "line": 1,
-      "note": "Wave C/D deletion target. Cannon §3 residue site (host-sdk-runtime-boundary.md): the workflow-runtime support layer for the legacy parked-body path; deleted with the body driver in Wave C."
+      "note": "Wave C/D deletion target. Cannon \u00a73 residue site (host-sdk-runtime-boundary.md): the workflow-runtime support layer for the legacy parked-body path; deleted with the body driver in Wave C."
     },
     {
       "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
       "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
       "line": 2,
-      "note": "Wave C/D deletion target. Cannon §3 residue site (host-sdk-runtime-boundary.md): the codec session adapter currently wraps WorkflowEngine; replaced by the runtime root's session-command sink wiring in Wave C."
+      "note": "Wave C/D deletion target. Cannon \u00a73 residue site (host-sdk-runtime-boundary.md): the codec session adapter currently wraps WorkflowEngine; replaced by the runtime root's session-command sink wiring in Wave C."
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
+      "line": 39,
+      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
+      "line": 43,
+      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
+      "line": 46,
+      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
+      "line": 35,
+      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
+      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
+      "line": 29,
+      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
+      "line": 17,
+      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
     }
   ]
 }

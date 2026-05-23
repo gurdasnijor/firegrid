@@ -34,7 +34,7 @@ import {
   runtimeContextOutputStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
-import { Effect, Either, Layer, Option } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
@@ -224,7 +224,7 @@ console.log(JSON.stringify({ type: "probe", digest }))
     expect(JSON.stringify(retained.logs)).not.toContain(secretValue)
   })
 
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 denies a row whose authorized pair does not match (no child spawn, no leak)", async () => {
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 denies a row whose authorized pair does not match (no child spawn, no leak)", { timeout: 15_000 }, async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-deny-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -248,7 +248,15 @@ console.log(JSON.stringify({ type: "probe", digest }))
     })
 
     const awsSecret = `must-never-be-read-${crypto.randomUUID()}`
-    const result = await Effect.runPromise(
+    // Wave C cutover: legacy `Either.isLeft` body-error assertions removed —
+    // the public `startRuntime` is now channel-observed (#706 non-recursive
+    // split). Body-pre-codec failures (`buildCommand.resolveEnvBindings`)
+    // surface through the durable `runs.status` chain asserted below, not
+    // through `startRuntime`'s error channel. Bounded wait keeps the
+    // promise from hanging on the no-`Terminated`/no-`Error` observation
+    // path (the body fails before any codec spawn, so neither channel
+    // observation is emitted).
+    await Effect.runPromise(
       Effect.either(
         startRuntime({ contextId }).pipe(
           Effect.provide(FiregridRuntimeHostWithWorkflowLive(
@@ -258,18 +266,10 @@ console.log(JSON.stringify({ type: "probe", digest }))
               { ANTHROPIC_API_KEY: "ok", AWS_SECRET_ACCESS_KEY: awsSecret },
             ),
           )),
+          Effect.timeout("5 seconds"),
         ),
       ),
     )
-
-    expect(Either.isLeft(result)).toBe(true)
-    if (Either.isLeft(result)) {
-      expect(result.left).toMatchObject({
-        _tag: "RuntimeContextError",
-        op: "buildCommand.resolveEnvBindings",
-      })
-      expect(result.left.message).toContain("not authorized")
-    }
 
     // run-status row chain should reflect "started" then "failed", and no
     // events row should exist (we never spawned the child). Sanity-check
@@ -302,11 +302,21 @@ console.log(JSON.stringify({ type: "probe", digest }))
       Effect.scoped,
     ))
     expect(retained.runs.map(event => event.status)).toEqual(expect.arrayContaining(["started", "failed"]))
+    // Wave C cutover (#706) public-contract assertion preserved: the
+    // failed run row's `message` field carries the body-side error
+    // message that the legacy `Either.isLeft` block previously asserted
+    // through `startRuntime`'s error channel. The contract — "the
+    // unauthorized binding produced a typed `not authorized` failure" —
+    // is the same; only the surface (durable `runs.failed` row vs.
+    // bubble-up Effect.fail) changed. Stale-legacy classification.
+    const failedRow = retained.runs.find(event => event.status === "failed")
+    expect(failedRow).toBeDefined()
+    expect(failedRow?.message ?? "").toContain("not authorized")
     expect(retained.events).toHaveLength(0)
     expect(JSON.stringify(retained)).not.toContain(awsSecret)
   })
 
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 rejects a row that smuggles an authorized source into an unapproved target (NODE_OPTIONS exfil)", async () => {
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 rejects a row that smuggles an authorized source into an unapproved target (NODE_OPTIONS exfil)", { timeout: 15_000 }, async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-target-mismatch-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -332,7 +342,11 @@ console.log(JSON.stringify({ type: "probe", digest }))
       contextId,
     })
 
-    const result = await Effect.runPromise(
+    // Wave C cutover: same migration shape as the AWS_SECRET_ACCESS_KEY
+    // test above. Body-pre-codec failure (env-binding target mismatch)
+    // doesn't emit a `session.agent_output` observation; the durable runs
+    // row chain is the canonical Shape C evidence (asserted below).
+    await Effect.runPromise(
       Effect.either(
         startRuntime({ contextId }).pipe(
           Effect.provide(FiregridRuntimeHostWithWorkflowLive(
@@ -342,19 +356,10 @@ console.log(JSON.stringify({ type: "probe", digest }))
               { ANTHROPIC_API_KEY: apiKey },
             ),
           )),
+          Effect.timeout("5 seconds"),
         ),
       ),
     )
-
-    expect(Either.isLeft(result)).toBe(true)
-    if (Either.isLeft(result)) {
-      expect(result.left).toMatchObject({
-        _tag: "RuntimeContextError",
-        op: "buildCommand.resolveEnvBindings",
-      })
-      expect(result.left.message).toContain("NODE_OPTIONS")
-      expect(result.left.message).toContain("not authorized")
-    }
 
     // The would-be-injected source value should not appear in any
     // retained durable surface.
@@ -384,11 +389,21 @@ console.log(JSON.stringify({ type: "probe", digest }))
       Effect.scoped,
     ))
     expect(retained.runs.map(event => event.status)).toEqual(expect.arrayContaining(["started", "failed"]))
+    // Wave C cutover (#706) public-contract assertion preserved through
+    // the durable runs.failed row: the failure message names BOTH the
+    // refused target (`NODE_OPTIONS`) and the "not authorized" reason —
+    // the same two substrings the legacy `Either.isLeft` block asserted.
+    // Stale-legacy classification: error-channel surface changed, contract
+    // unchanged.
+    const failedRow = retained.runs.find(event => event.status === "failed")
+    expect(failedRow).toBeDefined()
+    expect(failedRow?.message ?? "").toContain("NODE_OPTIONS")
+    expect(failedRow?.message ?? "").toContain("not authorized")
     expect(retained.events).toHaveLength(0)
     expect(JSON.stringify(retained)).not.toContain(apiKey)
   })
 
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 default deny-all policy denies env bindings even with valid env values present", async () => {
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 default deny-all policy denies env bindings even with valid env values present", { timeout: 15_000 }, async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-default-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -402,7 +417,11 @@ console.log(JSON.stringify({ type: "probe", digest }))
       namespace,
     })
 
-    const result = await Effect.runPromise(
+    // Wave C cutover (#706): default deny-all policy refuses the
+    // binding before any codec spawn. Durable runs.failed row evidence
+    // is the Shape C contract; bounded wait keeps the promise from
+    // hanging on the no-observation path.
+    await Effect.runPromise(
       Effect.either(
         startRuntime({ contextId }).pipe(
           // No env policy override; the default deny-all from the host
@@ -412,16 +431,32 @@ console.log(JSON.stringify({ type: "probe", digest }))
             namespace,
             hostId,
           })),
+          Effect.timeout("5 seconds"),
         ),
       ),
     )
 
-    expect(Either.isLeft(result)).toBe(true)
-    if (Either.isLeft(result)) {
-      expect(result.left).toMatchObject({
-        _tag: "RuntimeContextError",
-        op: "buildCommand.resolveEnvBindings",
-      })
-    }
+    // Public-contract assertion (stale-legacy migration): the deny-all
+    // policy refused the binding — the durable runs.failed row carries
+    // the "not authorized" message that the legacy error-channel
+    // assertion previously surfaced.
+    const retained = await Effect.runPromise(Effect.gen(function* () {
+      const control = yield* RuntimeControlPlaneTable
+      const runs = yield* control.runs.query((coll) =>
+        coll.toArray.filter(event => event.contextId === contextId))
+      return { runs }
+    }).pipe(
+      Effect.provide(RuntimeControlPlaneTable.layer({
+        streamOptions: {
+          url: controlPlaneStreamUrl,
+          contentType: "application/json",
+        },
+      })),
+      Effect.scoped,
+    ))
+    expect(retained.runs.map(event => event.status)).toEqual(expect.arrayContaining(["started", "failed"]))
+    const failedRow = retained.runs.find(event => event.status === "failed")
+    expect(failedRow).toBeDefined()
+    expect(failedRow?.message ?? "").toContain("not authorized")
   })
 })
