@@ -109,6 +109,18 @@
       "types": "./src/channels/state-changes/live.ts",
       "default": "./src/channels/state-changes/live.ts"
     },
+    "./composition/host-public": {
+      "types": "./src/composition/host-public.ts",
+      "default": "./src/composition/host-public.ts"
+    },
+    "./composition/host-substrate": {
+      "types": "./src/composition/host-substrate.ts",
+      "default": "./src/composition/host-substrate.ts"
+    },
+    "./composition/per-context-host-live": {
+      "types": "./src/composition/per-context-host-live.ts",
+      "default": "./src/composition/per-context-host-live.ts"
+    },
     "./agent-adapters": {
       "types": "./src/producers/codecs/agent-adapters/index.ts",
       "default": "./src/producers/codecs/agent-adapters/index.ts"

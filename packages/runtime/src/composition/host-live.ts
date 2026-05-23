@@ -84,32 +84,349 @@
 // performed by this file. Host-sdk cutover and a real public turn through the
 // new root land in a separate PR.
 
-import { Layer } from "effect"
+// ============================================================================
+// Wave B partial root (retained at top): the Shape C subscriber + input facts.
+// Class F3 (this slice) extends below with the full FiregridLocalHostLive /
+// FiregridRuntimeHostLive / FiregridHost / RuntimeHostTopologyFromConfig
+// composition. HostWorkflowEngineLive is installed INTERNALLY in the pipe so
+// the outward Layer type never exposes WorkflowEngine.
+// ============================================================================
+
+import { NodeContext } from "@effect/platform-node"
+import {
+  CurrentHostSession,
+  HostIdSegmentSchema,
+  RuntimeControlPlaneTable,
+  RuntimeOutputTable,
+  type RuntimeStartCapability,
+  hostOwnedStreamUrl,
+  makeHostSessionRow,
+  runtimeControlPlaneStreamUrl,
+  type HostId,
+  type HostSessionId,
+} from "@firegrid/protocol/launch"
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import type { DurableTableHeaders } from "effect-durable-operators"
+import { RuntimeHostConfig } from "./runtime-host-config.ts"
+import {
+  type RuntimeHostTopologyOptions,
+  RuntimeStartCapabilityLive,
+} from "./host-public.ts"
+import { RuntimeHostAgentToolHostLive } from "../subscribers/tool-dispatch/agent-tool-host-live.ts"
+import {
+  RuntimeControlRequestControlPlaneLive,
+} from "../control-plane/index.ts"
+import {
+  RuntimeControlRequestSideEffectsLive,
+} from "../subscribers/runtime-control/index.ts"
+import {
+  FiregridRuntimeContextMcpBaseUrlLive,
+} from "../subscribers/runtime-context-session/host-mcp-base-url.ts"
+import { RuntimeContextWorkflowSession } from "../subscribers/runtime-context-session/index.ts"
+import {
+  PerContextRuntimeAgentOutputAfterEventsLive,
+  PerContextRuntimeOutputWriterLive,
+  RuntimeContextStateStoreLive,
+} from "./per-context-host-live.ts"
+import { RuntimeToolUseExecutorLive as runtimeToolUseExecutorLayer } from "../subscribers/tool-dispatch/runtime-tool-use-executor-live.ts"
+import { ToolDispatchLive } from "../subscribers/tool-dispatch/index.ts"
+import {
+  LocalProcessSandboxProvider,
+  RuntimeEnvResolverPolicy,
+  SandboxStdinEmissionClaimLive,
+  SandboxSupervisorCommandTable,
+} from "../producers/sandbox/index.ts"
+import { FiregridLocalProcess } from "../producers/sandbox/local-process-from-env.ts"
+import {
+  RuntimeControlPlaneRecorderLive,
+} from "../control-plane/index.ts"
+import type { RuntimeLocalContextResolver } from "../control-plane/index.ts"
+import {
+  makeCodecRuntimeContextWorkflowSessionService,
+} from "../subscribers/runtime-context-session/codec-adapter.ts"
+import {
+  makeRawRuntimeContextWorkflowSessionService,
+} from "../subscribers/runtime-context-session/raw-adapter.ts"
+import { HostWorkflowEngineLive } from "./host-workflow-engine.ts"
 import { RuntimeContextInputFactsLive } from "../tables/runtime-context-input-facts.ts"
 import { RuntimeContextSubscriberLive } from "../subscribers/runtime-context/index.ts"
+import {
+  type RuntimeChannelRouter,
+} from "../channels/router/live.ts"
+import {
+  SessionSelfChannelsLive,
+} from "../channels/session-self/live.ts"
+import {
+  HostControlChannelsLive,
+} from "../channels/host-control/live.ts"
+import type { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
+import {
+  SessionAgentOutputChannelLive,
+} from "../channels/session-agent-output/live.ts"
 
 /**
  * Canonical runtime root Layer for the Shape C target tree.
  *
- * Provided services come from `tables/` and the Shape C subscriber.
- * Requirements that remain in the `R` channel (durable substrate,
- * `RuntimeContextWorkflowSession`, `RuntimeToolUseExecutor`,
- * `WorkflowEngine`) are filled by host-sdk at composition time.
- *
- * Use this Layer to install runtime services. Do not call this file's
- * exports directly; reach them through the Layer.
+ * Wave B partial: provided services come from `tables/` and the Shape C
+ * subscriber. Outer host composition (`FiregridRuntimeHostLive` below)
+ * provideMerges this against the host substrate.
  */
-// `provideMerge` so `RuntimeContextInputFactsLive`'s output
-// (`RuntimeContextInputFacts`) feeds the subscriber's `RIn`; the merged
-// Layer still exposes `RuntimeContextInputFacts` upstream so other
-// runtime consumers can resolve it without duplicating the binding.
-// The subscriber's remaining requirements (`RuntimeContextRead`,
-// `RuntimeContexts`, `RuntimeRunAppendAndGet`,
-// `RuntimeAgentOutputAfterEvents`, `RuntimeContextStateStore`,
-// `RuntimeContextWorkflowSession`, `RuntimeToolUseExecutor`) stay in the
-// merged Layer's `RIn` — host-sdk fulfils them via
-// `RuntimeControlPlaneRecorderLive` + per-context state-store /
-// session adapter / tool-executor bindings at composition time.
 export const RuntimeHostLive = RuntimeContextSubscriberLive.pipe(
   Layer.provideMerge(RuntimeContextInputFactsLive),
 )
+
+// ============================================================================
+// Class F3 — full host composition relocated from deleted
+// `host-sdk/src/host/layers.ts`. Outward Layer type does NOT expose
+// `WorkflowEngine` (HostWorkflowEngineLive folded internally).
+// ============================================================================
+
+const runtimeEnvResolverPolicyLayer = (
+  envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
+): Layer.Layer<RuntimeEnvResolverPolicy> =>
+  envPolicy ??
+  Layer.unwrapEffect(
+    Effect.map(
+      Effect.serviceOption(RuntimeEnvResolverPolicy),
+      Option.match({
+        onNone: () => RuntimeEnvResolverPolicy.denyAll,
+        onSome: policy => Layer.succeed(RuntimeEnvResolverPolicy, policy),
+      }),
+    ),
+  )
+
+const localProcessSandboxProviderLayer = (
+  options: RuntimeHostTopologyOptions,
+) =>
+  options.localProcessEnv === undefined
+    ? Layer.unwrapEffect(
+      Effect.map(
+        Effect.serviceOption(FiregridLocalProcess),
+        Option.match({
+          onNone: () => LocalProcessSandboxProvider.layer(undefined),
+          onSome: localProcessEnv => LocalProcessSandboxProvider.layer(localProcessEnv),
+        }),
+      ),
+    ).pipe(Layer.provide(NodeContext.layer))
+    : LocalProcessSandboxProvider.layer(options.localProcessEnv).pipe(
+      Layer.provide(NodeContext.layer),
+    )
+
+// Wave D-A (PR #714): host-scope bundle that satisfies
+// `RuntimeContextSubscriberLive`'s R channel — the Shape C loop body's
+// per-context state store + tool executor live alongside `RuntimeHostLive`.
+const runtimeContextSubscriberHostBundle = RuntimeHostLive.pipe(
+  Layer.provideMerge(RuntimeContextStateStoreLive),
+  Layer.provideMerge(runtimeToolUseExecutorLayer),
+)
+
+const RuntimeContextWorkflowSessionLive = Layer.scoped(
+  RuntimeContextWorkflowSession,
+  Effect.gen(function*() {
+    const raw = yield* makeRawRuntimeContextWorkflowSessionService
+    const codec = yield* makeCodecRuntimeContextWorkflowSessionService
+    const pick = (context: Parameters<typeof raw.startOrAttach>[0]) =>
+      context.runtime.config.agentProtocol === undefined || context.runtime.config.agentProtocol === "raw"
+        ? raw
+        : codec
+    return RuntimeContextWorkflowSession.of({
+      startOrAttach: (context, activityAttempt) =>
+        pick(context).startOrAttach(context, activityAttempt),
+      send: (context, activityAttempt, command) =>
+        pick(context).send(context, activityAttempt, command),
+      deregister: (contextId) =>
+        Effect.zipRight(raw.deregister(contextId), codec.deregister(contextId)),
+    })
+  }),
+)
+
+const hostOwnedSandboxCommandLayer = (
+  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
+) =>
+  Layer.unwrapEffect(
+    Effect.map(CurrentHostSession, (session) =>
+      SandboxSupervisorCommandTable.layer({
+        streamOptions: {
+          url: hostOwnedStreamUrl({
+            baseUrl: options.baseUrl,
+            prefix: session.streamPrefix,
+            segment: "durableTools",
+          }),
+          contentType: "application/json",
+          ...(options.headers !== undefined ? { headers: options.headers } : {}),
+        },
+      })),
+  )
+
+const currentHostSessionLayer = (
+  options: RuntimeHostTopologyOptions,
+) =>
+  Layer.effect(
+    CurrentHostSession,
+    Effect.gen(function* () {
+      const startedAtMs = yield* Clock.currentTimeMillis
+      const hostId = options.hostId as HostId
+      const hostSessionId = (options.hostSessionId
+        ?? `session-${crypto.randomUUID()}`) as HostSessionId
+      return makeHostSessionRow({
+        hostId,
+        hostSessionId,
+        namespace: options.namespace,
+        startedAtMs,
+      })
+    }),
+  )
+
+const namespaceScopedLayer = (
+  options: RuntimeHostTopologyOptions,
+) =>
+  Layer.mergeAll(
+    Layer.succeed(RuntimeHostConfig, {
+      inputEnabled: options.input === true,
+      durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+      namespace: options.namespace,
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
+    }),
+    RuntimeControlPlaneTable.layer({
+      streamOptions: {
+        url: runtimeControlPlaneStreamUrl({
+          baseUrl: options.durableStreamsBaseUrl,
+          namespace: options.namespace,
+        }),
+        contentType: "application/json",
+        ...(options.headers !== undefined ? { headers: options.headers } : {}),
+      },
+    }),
+    localProcessSandboxProviderLayer(options),
+  )
+
+const hostOwnedOutputLayer = (
+  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
+) =>
+  Layer.unwrapEffect(
+    Effect.map(CurrentHostSession, (session) =>
+      RuntimeOutputTable.layer({
+        streamOptions: {
+          url: hostOwnedStreamUrl({
+            baseUrl: options.baseUrl,
+            prefix: session.streamPrefix,
+            segment: "runtimeOutput",
+          }),
+          contentType: "application/json",
+          ...(options.headers !== undefined ? { headers: options.headers } : {}),
+        },
+      })),
+  )
+
+const hostScopedLayer = (
+  options: RuntimeHostTopologyOptions,
+) => {
+  const sharedOptions = {
+    baseUrl: options.durableStreamsBaseUrl,
+    ...(options.headers !== undefined ? { headers: options.headers } : {}),
+  }
+  const hostTables = Layer.mergeAll(
+    hostOwnedOutputLayer(sharedOptions),
+    hostOwnedSandboxCommandLayer(sharedOptions),
+  )
+  const hostServices = RuntimeHostAgentToolHostLive.pipe(
+    Layer.provide(RuntimeControlPlaneRecorderLive),
+    Layer.provideMerge(PerContextRuntimeAgentOutputAfterEventsLive),
+    Layer.provideMerge(PerContextRuntimeOutputWriterLive),
+    Layer.provideMerge(SessionAgentOutputChannelLive),
+    Layer.provideMerge(hostTables),
+  )
+  const stdinClaim = SandboxStdinEmissionClaimLive.pipe(
+    Layer.provideMerge(hostTables),
+  )
+  return Layer.mergeAll(hostServices, stdinClaim)
+}
+
+/** @category models */
+export type FiregridHost =
+  | RuntimeStartCapability
+  | SessionAgentOutputChannel
+  | CurrentHostSession
+  | RuntimeLocalContextResolver
+  | RuntimeControlPlaneTable
+  | RuntimeOutputTable
+  | RuntimeChannelRouter
+
+export const FiregridRuntimeHostLive = (
+  options: RuntimeHostTopologyOptions,
+  envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
+) => {
+  const session = currentHostSessionLayer(options)
+  const namespaceScoped = namespaceScopedLayer(options)
+  const hostScoped = hostScopedLayer(options)
+  const hostChannels = SessionSelfChannelsLive(options.mcpChannels)
+  const hostPublic = RuntimeStartCapabilityLive.pipe(
+    Layer.provideMerge(hostChannels),
+    Layer.provideMerge(HostControlChannelsLive),
+  )
+  const controlPlane = RuntimeControlRequestControlPlaneLive({
+    durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+    namespace: options.namespace,
+    ...(options.headers !== undefined ? { headers: options.headers } : {}),
+    daemon: options.controlRequestReconciler !== false,
+  }).pipe(
+    Layer.provideMerge(RuntimeControlRequestSideEffectsLive),
+  )
+  return controlPlane.pipe(
+    Layer.provideMerge(runtimeContextSubscriberHostBundle),
+    Layer.provideMerge(ToolDispatchLive),
+    Layer.provideMerge(hostPublic),
+    Layer.provideMerge(RuntimeContextWorkflowSessionLive),
+    Layer.provideMerge(RuntimeControlPlaneRecorderLive),
+    Layer.provideMerge(hostScoped),
+    // HostWorkflowEngineLive is installed INSIDE the pipe so the outward
+    // Layer type never exposes WorkflowEngine to callers.
+    Layer.provideMerge(HostWorkflowEngineLive),
+    Layer.provideMerge(namespaceScoped),
+    Layer.provideMerge(session),
+    Layer.provideMerge(runtimeEnvResolverPolicyLayer(envPolicy)),
+    Layer.provideMerge(FiregridRuntimeContextMcpBaseUrlLive),
+    Layer.annotateSpans("firegrid.side", "host"),
+  )
+}
+
+export const FiregridRuntimeHostWithWorkflowLive = (
+  options: RuntimeHostTopologyOptions,
+  envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
+) => FiregridRuntimeHostLive(options, envPolicy)
+
+const localHostIdForNamespace = (namespace: string): HostId => {
+  const sanitized = namespace.replaceAll(".", "_")
+  return Schema.decodeUnknownSync(HostIdSegmentSchema)(`${sanitized}-host`)
+}
+
+export const FiregridLocalHostLive = (
+  options: {
+    readonly durableStreamsBaseUrl: string
+    readonly namespace: string
+    readonly input?: boolean
+    readonly headers?: DurableTableHeaders
+    readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
+    readonly controlRequestReconciler?: boolean
+    readonly mcpChannels?: RuntimeHostTopologyOptions["mcpChannels"]
+  },
+  envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
+) => {
+  const composed: RuntimeHostTopologyOptions = {
+    durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+    namespace: options.namespace,
+    hostId: localHostIdForNamespace(options.namespace),
+    ...(options.input === undefined ? {} : { input: options.input }),
+    ...(options.headers === undefined ? {} : { headers: options.headers }),
+    ...(options.localProcessEnv === undefined
+      ? {}
+      : { localProcessEnv: options.localProcessEnv }),
+    ...(options.controlRequestReconciler === undefined
+      ? {}
+      : { controlRequestReconciler: options.controlRequestReconciler }),
+    ...(options.mcpChannels === undefined
+      ? {}
+      : { mcpChannels: options.mcpChannels }),
+  }
+  return FiregridRuntimeHostWithWorkflowLive(composed, envPolicy)
+}
