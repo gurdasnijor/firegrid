@@ -45,9 +45,7 @@ export {
   runtimeExecutionClock,
 } from "./runtime-context-helpers.ts"
 export {
-  RuntimeContextCheckpointSource,
   RuntimeContextInput,
   RuntimeContextWorkflowRuntime,
   RuntimeContextWorkflowRuntimeLive,
-  type RuntimeContextWorkflowCheckpointHandle,
 } from "./runtime-context-workflow-runtime.ts"

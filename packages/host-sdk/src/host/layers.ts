@@ -53,11 +53,14 @@ import {
 import {
   makeRawRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/raw-adapter.ts"
-// Wave D-B kept: kernel layer composed for the two sibling outputs still
-// consumed downstream (workflow-engine pair for the tool-dispatch facade
-// above; checkpoint-source for the session-self channel). Removal is a
-// separate slice — see PR body "Remaining residue" section for the exact
-// consumer lines + D-E blocker rationale.
+// Wave D-B / D-E post-cutover: kernel layer composed for the host-scoped
+// `WorkflowEngine` + `WorkflowEngineTable` outputs the tool-dispatch facade
+// above consumes, plus its `RuntimeContextInput` output. Wave D-E retired
+// the per-context workflow-engine row-projection Tag together with the
+// session-self ingress that was its only reader (engine-internal row shapes
+// leaked to the agent surface, no production source populator post-D-A/D-B,
+// zero successful router dispatches across six recent ACP traces). The Tag
+// stays public until any remaining test consumers migrate.
 import {
   RuntimeContextWorkflowRuntimeLive,
 } from "@firegrid/runtime/kernel"

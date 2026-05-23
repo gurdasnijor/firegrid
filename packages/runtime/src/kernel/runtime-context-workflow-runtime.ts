@@ -33,11 +33,12 @@ interface ActiveRuntimeContextExecution {
   readonly table: WorkflowEngineTable["Type"]
 }
 
-export interface RuntimeContextWorkflowCheckpointHandle {
-  readonly context: RuntimeContext
-  readonly executionId: string
-  readonly table: WorkflowEngineTable["Type"]
-}
+// Wave D-E retired the per-context workflow-engine row handle + its kernel
+// Tag along with the session-self ingress that was their only reader
+// (engine-internal row shapes leaked to the agent surface, no production
+// source populator post-D-A/D-B, zero successful router dispatches across
+// six recent ACP traces). Nothing else reached into the workflow-engine row
+// internals through this kernel surface.
 
 interface RuntimeContextWorkflowRuntimeService {
   readonly ensureActive: (
@@ -70,13 +71,6 @@ interface RuntimeContextInputService {
   ) => Effect.Effect<Option.Option<RuntimeIngressInputRow>, RuntimeContextError>
 }
 
-interface RuntimeContextCheckpointSourceService {
-  readonly get: (
-    contextId: string,
-  ) => Effect.Effect<Option.Option<RuntimeContextWorkflowCheckpointHandle>>
-  readonly activeContextIds: Effect.Effect<ReadonlyArray<string>>
-}
-
 export class RuntimeContextWorkflowRuntime extends Context.Tag(
   "@firegrid/host-sdk/RuntimeContextWorkflowRuntime",
 )<RuntimeContextWorkflowRuntime, RuntimeContextWorkflowRuntimeService>() {}
@@ -84,10 +78,6 @@ export class RuntimeContextWorkflowRuntime extends Context.Tag(
 export class RuntimeContextInput extends Context.Tag(
   "@firegrid/host-sdk/RuntimeContextInput",
 )<RuntimeContextInput, RuntimeContextInputService>() {}
-
-export class RuntimeContextCheckpointSource extends Context.Tag(
-  "@firegrid/host-sdk/RuntimeContextCheckpointSource",
-)<RuntimeContextCheckpointSource, RuntimeContextCheckpointSourceService>() {}
 
 const runtimeInputIntentOrder = (
   left: RuntimeInputIntentRow,
@@ -379,15 +369,6 @@ export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
         ),
       )
 
-    const checkpointGet: RuntimeContextCheckpointSourceService["get"] = contextId =>
-      get(contextId).pipe(
-        Effect.map(Option.map(handle => ({
-          context: handle.context,
-          executionId: handle.executionId,
-          table: handle.table,
-        }))),
-      )
-
     return Context.make(RuntimeContextWorkflowRuntime, {
       ensureActive: context => ensureActiveHandle(context).pipe(Effect.asVoid),
       run,
@@ -408,12 +389,6 @@ export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
       Context.add(RuntimeContextInput, {
         reconcile,
         dispatchIntent,
-      }),
-      Context.add(RuntimeContextCheckpointSource, {
-        get: checkpointGet,
-        activeContextIds: Ref.get(executions).pipe(
-          Effect.map(map => [...map.keys()]),
-        ),
       }),
     )
   }),
