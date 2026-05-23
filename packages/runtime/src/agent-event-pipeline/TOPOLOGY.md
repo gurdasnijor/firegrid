@@ -47,9 +47,11 @@ counts them):
 
 The pure transitions in `workflow-engine/workflows/runtime-context.ts` (`transitionInputEvent`,
 `transitionOutputEvent`) move to `agent-event-pipeline/transforms/`. The
-durable state in `workflow-engine/runtime-context-state.ts` moves to
-`agent-event-pipeline/authorities/`. The body itself is **deleted**, replaced
-by the per-event handler in `agent-event-pipeline/subscribers/runtime-context/`.
+durable state lives at `tables/runtime-context-state.ts` per
+`docs/architecture/2026-05-22-runtime-physical-target-tree.md`
+(moved out of `workflow-engine/` in Wave A of the Shape C cutover). The body
+itself is **deleted**, replaced by the per-event handler in
+`agent-event-pipeline/subscribers/runtime-context/`.
 
 ## Why this matters for the gate
 

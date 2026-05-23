@@ -63,13 +63,17 @@ import { Workflow } from "@effect/workflow"   // table owns rows, not workflow e
 
 ## Scaffold status
 
-`runtime-context-state.ts` is a Wave 1 forward-target re-export that points at
-the current physical location (`workflow-engine/runtime-context-state.ts`).
-The runtime package exposes it as `@firegrid/runtime/tables/runtime-context-state`.
-Wave 2 physically moves the implementation here; the public subpath stays
-stable. The legacy `workflow-engine/runtime-context-state.ts` import in this
-re-export is the only allowed cross-tier reach during Wave 1; the migration
-gate baselines it.
+`runtime-context-state.ts` is the canonical home for `RuntimeContextStateStore`,
+`makePerContextRuntimeContextStateStore`, `nextOutputObservation`, and
+`isStateRelevantOutputObservation`. The Wave 1 forward-target re-export shim
+that previously pointed back at `workflow-engine/runtime-context-state.ts` was
+replaced by the physical move in Wave A of the Shape C cutover. The public
+subpath `@firegrid/runtime/tables/runtime-context-state` is unchanged.
+
+In-tree legacy re-exports through `@firegrid/runtime/kernel` and
+`@firegrid/runtime/workflow-engine` remain available to existing host-sdk
+callers until they migrate to the semantic subpath; new code MUST import from
+`@firegrid/runtime/tables/runtime-context-state` directly.
 
 `runtime-context-input-facts.ts` is a Wave A clean-room placement: the
 implementation lives physically in this folder (no legacy source to bridge

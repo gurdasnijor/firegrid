@@ -27,7 +27,7 @@ import {
 import {
   makePerContextRuntimeContextStateStore,
   RuntimeContextStateStore,
-} from "../../../../src/workflow-engine/runtime-context-state.ts"
+} from "../../../../src/tables/runtime-context-state.ts"
 import {
   RuntimeToolUseExecutor,
 } from "../../../../src/workflow-engine/tool-execution/runtime-tool-use-executor.ts"

@@ -39,7 +39,7 @@ import {
   RuntimeContextEventStateSchema,
   type RuntimeContextEventState,
   type PendingPermissionResponse,
-} from "../runtime-context-state.ts"
+} from "../../tables/runtime-context-state.ts"
 import {
   RuntimeContextError,
   asRuntimeContextError,

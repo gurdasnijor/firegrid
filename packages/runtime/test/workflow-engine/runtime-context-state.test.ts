@@ -25,7 +25,7 @@ import {
 import {
   initialRuntimeContextEventState,
   makePerContextRuntimeContextStateStore,
-} from "../../src/workflow-engine/runtime-context-state.ts"
+} from "../../src/tables/runtime-context-state.ts"
 import {
   transitionInputEvent,
   transitionOutputEvent,

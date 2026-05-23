@@ -1,6 +1,11 @@
 export {
   appendRuntimeInputDeferred,
 } from "./runtime-input-deferred.ts"
+// Wave 1 Shape C move: the runtime-context state store now lives under
+// `tables/runtime-context-state.ts`. Public consumers should prefer
+// `@firegrid/runtime/tables/runtime-context-state`; this re-export is kept
+// for in-tree legacy callers still on `@firegrid/runtime/workflow-engine`
+// (host-sdk test suite) until they retarget.
 export {
   makePerContextRuntimeContextStateStore,
   nextOutputObservation,
@@ -8,7 +13,7 @@ export {
   RuntimeContextStateStore,
   type RuntimeContextStateStoreService,
   RuntimeContextStateTable,
-} from "./runtime-context-state.ts"
+} from "../tables/runtime-context-state.ts"
 export {
   DurableStreamsWorkflowEngine,
   make,
