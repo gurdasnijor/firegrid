@@ -66,6 +66,7 @@ import type { RuntimeContext } from "@firegrid/protocol/launch"
 import type { RuntimeIngressInputRow } from "@firegrid/protocol/runtime-ingress"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 import type { AgentInputEvent } from "../../events/agent-input.ts"
+import { RuntimeRunAppendAndGet } from "../../authorities/runtime-control-plane-recorder.ts"
 import {
   type RuntimeContextEventState,
   RuntimeContextStateStore,
@@ -98,15 +99,26 @@ export type RuntimeContextTargetEvent =
   }
 
 // Idempotent skip: replays/at-least-once delivery must not double-apply.
-// Mirrors `eventAlreadyProcessed` in the wrong-shape body but specialized to
-// the target event union (no merged-event variant here).
+//
+// Wave D-A Shape (b) — identity-keyed input dedup (CC2 directive, validated
+// by tiny-firegrid #712 GREEN). The legacy sequence-keyed gate
+// `(event.event.sequence ?? -1) <= state.lastProcessedInputSequence` SILENTLY
+// DROPPED THE FIRST INPUT because `RuntimeIngressInputRow` intent-derived
+// rows carry no sequence (`tables/runtime-context-input-facts.ts:53-57`
+// drops the allocator); `(undefined ?? -1) <= -1` is TRUE, and the cursor
+// never advances because no successful transition happens. Identity-keyed
+// dedup via `processedInputIds` membership is the correct shape: first
+// input always delivered; restart redelivery skipped on the second pass.
+//
+// Outputs DO carry a kernel-allocated sequence; their dedup stays
+// sequence-keyed and is correct.
 const eventAlreadyProcessed = (
   state: RuntimeContextEventState,
   event: RuntimeContextTargetEvent,
 ): boolean => {
   switch (event._tag) {
     case "Input":
-      return (event.event.sequence ?? -1) <= state.lastProcessedInputSequence
+      return state.processedInputIds.includes(event.event.inputId)
     case "Output":
       return event.event.sequence <= state.lastProcessedOutputSequence
     case "ToolResult":
@@ -270,9 +282,19 @@ const reduce = (
 }
 
 // The Shape C per-event handler. Materializes for one event, advances durable
-// state, dispatches actions, returns. R channel is exactly the three target
+// state, dispatches actions, returns. R channel is exactly the four target
 // services from the type-boundaries doc; no `WorkflowEngine`, no
 // `AgentSession`.
+//
+// Wave D-A Shape (b): `RuntimeRunAppendAndGet` added because the subscriber
+// owns the terminal `runs.exited` write once the workflow body retires
+// (cf. `workflow-engine/workflows/runtime-context-run.ts:95-109` — the
+// previous sole writer). When `transitionOutputEvent` newly sets
+// `state.exitEvidence` (Terminated observation), the handler calls
+// `recordExited` exactly once per (contextId, activityAttempt) — durable
+// idempotency comes from `RuntimeRunEvent`'s composite primary key plus
+// the state row's persistent `exitEvidence` (the next event's load sees
+// the already-recorded transition and no longer triggers a write).
 export const handleRuntimeContextEvent = (
   context: RuntimeContext,
   activityAttempt: number,
@@ -283,6 +305,7 @@ export const handleRuntimeContextEvent = (
   | RuntimeContextStateStore
   | RuntimeContextWorkflowSession
   | RuntimeToolUseExecutor
+  | RuntimeRunAppendAndGet
 > =>
   Effect.gen(function*() {
     // ToolResult facts are inline dispatches: forward to the session and
@@ -325,6 +348,23 @@ export const handleRuntimeContextEvent = (
         context.contextId,
       ),
     )
+    // Wave D-A Shape (b): when the transition newly sets `exitEvidence`
+    // (Terminated observation; cf. `transforms/runtime-context-transition.ts`
+    // §Terminated branch), the subscriber writes `runs.exited` — taking over
+    // the terminal-row write the body's `writeRunExitedResult` did at
+    // `workflow-engine/workflows/runtime-context.ts:675`. Edge-triggered on
+    // the prior state being undefined; the next handler materialization
+    // loads the saved row with `exitEvidence` set and never re-fires.
+    if (state.exitEvidence === undefined && result.state.exitEvidence !== undefined) {
+      const runs = yield* RuntimeRunAppendAndGet
+      yield* runs.recordExited(context, activityAttempt, result.state.exitEvidence).pipe(
+        mapRuntimeContextError(
+          "runtime-context.runs.exited",
+          "failed to append runs.exited row",
+          context.contextId,
+        ),
+      )
+    }
   }).pipe(
     Effect.withSpan("firegrid.runtime_context.subscriber.event.handle", {
       kind: "internal",

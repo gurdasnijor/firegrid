@@ -49,6 +49,5 @@ export {
   RuntimeContextInput,
   RuntimeContextWorkflowRuntime,
   RuntimeContextWorkflowRuntimeLive,
-  RuntimeInputIntentDispatcherLive,
   type RuntimeContextWorkflowCheckpointHandle,
 } from "./runtime-context-workflow-runtime.ts"

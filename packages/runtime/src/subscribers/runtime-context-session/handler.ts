@@ -75,6 +75,23 @@ export interface RuntimeContextWorkflowSessionService {
     activityAttempt: number,
     command: RuntimeContextSessionCommand,
   ) => Effect.Effect<RuntimeContextSessionCommandAccepted, RuntimeContextError>
+  /**
+   * Wave D-A Shape (b): per-context session teardown. Semantic equivalent
+   * of the retired `RuntimeContextWorkflowRuntime.deregister(contextId)` —
+   * tears down per-context session resources (per-attempt session records
+   * for this contextId). The session-command seam owns this lifecycle
+   * directly now that the workflow body no longer holds the per-context
+   * scope.
+   *
+   * Soft semantics: removes the contextId's session-record entries from
+   * the per-context registry. Forked agent-stream fibers complete on
+   * their own when the agent's byte stream ends; explicit interrupt is
+   * out of scope for the seam (D-E may extend if a hard-kill primitive
+   * becomes necessary).
+   */
+  readonly deregister: (
+    contextId: string,
+  ) => Effect.Effect<void, RuntimeContextError>
 }
 
 /**

@@ -15,8 +15,7 @@ import {
   type RuntimeRunEventRow,
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
-import { Clock, Context, Effect, Layer, Stream } from "effect"
-import type { Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Stream } from "effect"
 import { authorityNowIso } from "./time.ts"
 
 type RuntimeControlRequestRow =
@@ -80,6 +79,41 @@ export interface RuntimeRunAppendAndGetService {
       readonly signal?: string | undefined
     },
   ) => Effect.Effect<void, unknown>
+  /**
+   * Latest `runs.started` row's `activityAttempt` per `contextId`. Wave D-A
+   * Shape (b) Q2 directive: the Shape C subscriber resolves the in-flight
+   * attempt for an event by reading the durable runs table through this
+   * typed authority service, never by extracting `RuntimeControlPlaneTable`
+   * directly (which is forbidden outside `tables/` + `authorities/`).
+   *
+   * Returns `Option.none()` when no `runs.started` row exists for the
+   * contextId yet; the subscriber drops the event in that case (the
+   * spawn handshake from `SideEffects.start` writes the started row;
+   * the next event materialization picks it up).
+   */
+  readonly latestStartedAttempt: (
+    contextId: string,
+  ) => Effect.Effect<Option.Option<number>, unknown>
+  /**
+   * Wave D-A Shape (b): wait for the terminal (`exited` | `failed`)
+   * `RuntimeRunEvent` row for a specific `(contextId, activityAttempt)`.
+   * Used by `SideEffects.start` to block until the Shape C subscriber
+   * writes the terminal row (via `recordExited` on Terminated, or
+   * `recordFailed` on start error). The Shape C subscriber is the sole
+   * production writer of terminal rows post-D-A.
+   *
+   * Authority-side `Stream.runHead` keeps `RuntimeControlPlaneTable`
+   * confined to `authorities/`; callers in host-sdk consume the typed
+   * result without yielding the table service directly.
+   *
+   * Returns `Option.none()` only if the underlying runs stream ends
+   * before a terminal row arrives — a substrate-level error condition
+   * that the caller surfaces as failure.
+   */
+  readonly waitTerminal: (
+    contextId: string,
+    activityAttempt: number,
+  ) => Effect.Effect<Option.Option<RuntimeRunEventRow>, unknown>
   readonly recordFailed: (
     context: RuntimeContext,
     activityAttempt: number,
@@ -491,6 +525,48 @@ const localContextResolverFromTable = (
     ),
 })
 
+const waitTerminalTo = (
+  table: RuntimeControlPlaneTable["Type"],
+  contextId: string,
+  activityAttempt: number,
+) =>
+  table.runs.rows().pipe(
+    Stream.filter((row) =>
+      row.contextId === contextId &&
+      row.activityAttempt === activityAttempt &&
+      (row.status === "exited" || row.status === "failed")),
+    Stream.runHead,
+    Effect.withSpan("firegrid.runtime_control_plane.run.wait_terminal", {
+      kind: "consumer",
+      attributes: {
+        "firegrid.context.id": contextId,
+        "firegrid.runtime.activity_attempt": activityAttempt,
+      },
+    }),
+  )
+
+const latestStartedAttemptTo = (
+  table: RuntimeControlPlaneTable["Type"],
+  contextId: string,
+) =>
+  table.runs.query((coll) => {
+    const startedRows = coll.toArray.filter((row) =>
+      row.contextId === contextId && row.status === "started")
+    if (startedRows.length === 0) return Option.none<number>()
+    const max = startedRows.reduce(
+      (acc, row) => row.activityAttempt > acc ? row.activityAttempt : acc,
+      startedRows[0]!.activityAttempt,
+    )
+    return Option.some(max)
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_control_plane.run.latest_started", {
+      kind: "consumer",
+      attributes: {
+        "firegrid.context.id": contextId,
+      },
+    }),
+  )
+
 const runtimeRunAppendAndGetFromTable = (
   table: RuntimeControlPlaneTable["Type"],
 ): RuntimeRunAppendAndGetService => ({
@@ -499,6 +575,10 @@ const runtimeRunAppendAndGetFromTable = (
     recordStartedTo(table, context, activityAttempt),
   recordExited: (context, activityAttempt, exit) =>
     recordExitedTo(table, context, activityAttempt, exit),
+  latestStartedAttempt: (contextId) =>
+    latestStartedAttemptTo(table, contextId),
+  waitTerminal: (contextId, activityAttempt) =>
+    waitTerminalTo(table, contextId, activityAttempt),
   recordFailed: (context, activityAttempt, message) =>
     recordFailedTo(
       table,

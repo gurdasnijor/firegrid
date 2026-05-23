@@ -20,6 +20,13 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "agent-adapters/index\\.ts$",
   "agent-event-pipeline/sources/sandbox/index\\.ts$",
   "kernel/index\\.ts$",
+  // Wave D-A (PR #714): host-sdk composes the Shape C subscriber via the
+  // runtime composition root + reaches the session-command seam contract
+  // directly. Both subpaths are part of the runtime/package.json exports
+  // and named in the host-sdk/runtime boundary doc as the post-D-A binding
+  // surface.
+  "subscribers/runtime-context-session/index\\.ts$",
+  "composition/host-live\\.ts$",
 ].join("|")
 
 const currentHostSdkSubstrateDebt = [
@@ -189,8 +196,13 @@ module.exports = {
       name: "runtime-tables-no-legacy-tree-import",
       severity: "error",
       comment:
-        "Target-tree tables/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. The Wave A semantic move makes tables/ self-contained (it depends on events/ + protocol only); imports back into the legacy tree defeat the move.",
-      from: { path: "^packages/runtime/src/tables/" },
+        "Target-tree tables/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. The Wave A semantic move makes tables/ self-contained (it depends on events/ + protocol only); imports back into the legacy tree defeat the move. Wave D-A carve-out: `tables/runtime-context-output-facts.ts` is a thin target-tree facade for the per-context output observation source the Shape C subscriber consumes; the canonical Live binding still lives in `agent-event-pipeline/authorities/per-context-output.ts` until the physical move lands in Wave 2. The carve-out shrinks to a deletion when the symbol is physically moved.",
+      from: {
+        path: "^packages/runtime/src/tables/",
+        pathNot: [
+          "^packages/runtime/src/tables/runtime-context-output-facts\\.ts$",
+        ],
+      },
       to: {
         path: [
           "^packages/runtime/src/workflow-engine/",

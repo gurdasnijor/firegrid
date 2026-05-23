@@ -25,7 +25,12 @@ import type { RuntimeChannelRouter } from "./channel.ts"
 
 export type { HostRuntimeContextExecutionEnv }
 
-const runtimeToolUseExecutorLayer = RuntimeToolUseExecutorLive.pipe(
+// Wave D-A (PR #714): exported so `layers.ts` can compose it alongside
+// `RuntimeHostLive` at host scope. The Shape C subscriber's `R` includes
+// `RuntimeToolUseExecutor` for the `RunToolUse` transition branch; the
+// host-level wiring routes the same pipe `Effect.context<…>()` capture
+// (TFIND-031 Option Y) that the per-context support layer uses.
+export const runtimeToolUseExecutorLayer = RuntimeToolUseExecutorLive.pipe(
   Layer.provide(HostRuntimeObservationSubstrateLive),
   Layer.provideMerge(HostRuntimeObservationStreamsLive),
   Layer.provideMerge(RuntimeAgentToolExecutionLive),

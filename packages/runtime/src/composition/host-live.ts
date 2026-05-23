@@ -35,12 +35,24 @@
 //     (typed read source over `RuntimeControlPlaneTable.inputIntents`; the
 //     greenfield replacement for the per-sequence `DurableDeferred` input
 //     mailbox).
-//   - `subscribers/tool-dispatch` → `RuntimeToolCallWorkflowLayer`
-//     (Shape D — Activity memoization).
-//   - `subscribers/wait-router` → `WaitForWorkflowLayer`
-//     (Shape D — durable wait/timeout).
-//   - `subscribers/scheduled-prompt` → `ScheduledPromptWorkflowLayer`
-//     (Shape D — `DurableClock` deadline).
+//   - `subscribers/runtime-context` → `RuntimeContextSubscriberLive`
+//     (Shape C per-event handler; forks `runKeyedDispatch({source:
+//     merge(inputs, outputs), handle: handleRuntimeContextEvent})` on host
+//     scope at acquisition; the Wave D-A Shape (b) loop body landed in
+//     PR #714 + proven by the tiny-firegrid
+//     `wave-d-a-shape-b-input-identity-dedup` simulation).
+//
+// Wave D-A note (PR #714):
+// Shape D workflow Layers (`RuntimeToolCallWorkflowLayer`,
+// `WaitForWorkflowLayer`, `ScheduledPromptWorkflowLayer`) are wired
+// **per-context** via `runtime-context-workflow-support.ts` /
+// `toolCallWorkflowSupportLayer` (inside `runtime.run(...supportLayer)`)
+// because they require per-context `WorkflowEngine` instances. Including
+// them at the host scope here would surface their `WorkflowEngine`
+// requirement at a level that has no per-context engine to satisfy it.
+// The Wave B composition included them speculatively; D-A's production
+// wire-in surfaces the scope mismatch, so the host-level composition root
+// now carries only the Shape C subscriber + its typed input source.
 //
 // What this root requires (filled by host-sdk at composition time)
 // ---------------------------------------------------------------
@@ -83,9 +95,7 @@
 
 import { Layer } from "effect"
 import { RuntimeContextInputFactsLive } from "../tables/runtime-context-input-facts.ts"
-import { ScheduledPromptWorkflowLayer } from "../subscribers/scheduled-prompt/index.ts"
-import { RuntimeToolCallWorkflowLayer } from "../subscribers/tool-dispatch/index.ts"
-import { WaitForWorkflowLayer } from "../subscribers/wait-router/index.ts"
+import { RuntimeContextSubscriberLive } from "../subscribers/runtime-context/index.ts"
 
 /**
  * Canonical runtime root Layer for the Shape C target tree.
@@ -99,9 +109,17 @@ import { WaitForWorkflowLayer } from "../subscribers/wait-router/index.ts"
  * Use this Layer to install runtime services. Do not call this file's
  * exports directly; reach them through the Layer.
  */
-export const RuntimeHostLive = Layer.mergeAll(
-  RuntimeContextInputFactsLive,
-  RuntimeToolCallWorkflowLayer,
-  WaitForWorkflowLayer,
-  ScheduledPromptWorkflowLayer,
+// `provideMerge` so `RuntimeContextInputFactsLive`'s output
+// (`RuntimeContextInputFacts`) feeds the subscriber's `RIn`; the merged
+// Layer still exposes `RuntimeContextInputFacts` upstream so other
+// runtime consumers can resolve it without duplicating the binding.
+// The subscriber's remaining requirements (`RuntimeContextRead`,
+// `RuntimeContexts`, `RuntimeRunAppendAndGet`,
+// `RuntimeAgentOutputAfterEvents`, `RuntimeContextStateStore`,
+// `RuntimeContextWorkflowSession`, `RuntimeToolUseExecutor`) stay in the
+// merged Layer's `RIn` — host-sdk fulfils them via
+// `RuntimeControlPlaneRecorderLive` + per-context state-store /
+// session adapter / tool-executor bindings at composition time.
+export const RuntimeHostLive = RuntimeContextSubscriberLive.pipe(
+  Layer.provideMerge(RuntimeContextInputFactsLive),
 )

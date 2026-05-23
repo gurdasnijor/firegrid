@@ -123,6 +123,13 @@ const withPermissionResponse = (
 ]
 
 // Pure state transition for an input event.
+//
+// Wave D-A Shape (b): records the input identity (`row.inputId`) in
+// `processedInputIds` for identity-keyed dedup. `lastProcessedInputSequence`
+// continues to advance for the parked workflow body's mailbox path (see
+// PARK note in `events/runtime-context-state.ts`); when an intent-derived
+// row carries no sequence, the cursor stays at `-1` and is functionally a
+// no-op — the body's mailbox is the only consumer that still reads it.
 export const transitionInputEvent = (
   state: RuntimeContextEventState,
   row: RuntimeIngressInputRow,
@@ -131,6 +138,9 @@ export const transitionInputEvent = (
   const sequence = row.sequence ?? -1
   const nextState = {
     ...state,
+    processedInputIds: state.processedInputIds.includes(row.inputId)
+      ? state.processedInputIds
+      : [...state.processedInputIds, row.inputId],
     lastProcessedInputSequence: sequence,
   }
   if (event._tag !== "PermissionResponse") {

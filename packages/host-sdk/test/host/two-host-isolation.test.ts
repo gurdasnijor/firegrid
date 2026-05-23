@@ -157,7 +157,15 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     ).resolves.toBeUndefined()
   })
 
-  it("firegrid-workflow-driven-runtime.BOUNDARIES.6-1 each host writes workflow rows only to its host-owned workflow stream", async () => {
+  // Wave D-A (PR #714) PARK — D-E BODY RETIREMENT: asserts the legacy
+  // body workflow engine writes per-host workflow rows. With Shape C
+  // subscriber owning the runtime-context loop, the body no longer
+  // executes in production; the workflow engine still runs for D-B
+  // ToolCall + D-D WaitFor + D-Es ScheduledPrompt (per-context layers),
+  // and those layers' workflow rows still respect host isolation, but
+  // the assertion harness drives the body workflow. Body retirement
+  // (D-E) deletes this test.
+  it.skip("firegrid-workflow-driven-runtime.BOUNDARIES.6-1 each host writes workflow rows only to its host-owned workflow stream", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `two-host-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -226,7 +234,12 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     expect(resultB.executionIds).not.toContain(`runtime-context:${contextA}`)
   })
 
-  it("firegrid-workflow-driven-runtime.VALIDATION.7-1 one host-scoped engine owns multiple context executions", async () => {
+  // Wave D-A (PR #714) PARK — D-E BODY RETIREMENT: same body-execution
+  // mechanism as BOUNDARIES.6-1 above. The host-scoped engine no longer
+  // owns runtime-context loop executions — Shape C subscriber owns
+  // context dispatch at host scope, not via per-context workflow engine
+  // for the loop body. D-E body retirement deletes this test.
+  it.skip("firegrid-workflow-driven-runtime.VALIDATION.7-1 one host-scoped engine owns multiple context executions", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `two-context-one-host-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId

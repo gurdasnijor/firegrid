@@ -183,7 +183,14 @@ console.log(JSON.stringify({ type: "probe", cwd: process.cwd() }))
 })
 
 describe("sync-run --prompt integration", () => {
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 appends a sequenced ingress row, delivers it to the child via stdin, and the child emits a digest of what it read", async () => {
+  // Wave D-A (PR #714) PARK — D-E BODY RETIREMENT: asserts the
+  // sequenced-input shape — `status: "sequenced"` + kernel sequence
+  // allocator — which D-A explicitly retires (CC2: Shape C input facts
+  // have no sequence allocator). Stdin delivery is preserved through
+  // the Shape C subscriber's SendRuntimeInput action; the assertion
+  // shape is body-specific. Grep blocker:
+  //   grep -rn "status: \"sequenced\"" packages/runtime
+  it.skip("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 appends a sequenced ingress row, delivers it to the child via stdin, and the child emits a digest of what it read", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `sync-run-prompt-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId

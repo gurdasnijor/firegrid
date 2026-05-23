@@ -37,6 +37,24 @@ const PendingPermissionResponseSchema = Schema.Struct({
 export type PendingPermissionResponse = Schema.Schema.Type<typeof PendingPermissionResponseSchema>
 
 export const RuntimeContextEventStateSchema = Schema.Struct({
+  // Wave D-A Shape (b) — identity-keyed input dedup (CC2 directive,
+  // validated by #712). `RuntimeIngressInputRow` intent-derived rows
+  // carry no sequence (`tables/runtime-context-input-facts.ts:53-57`
+  // explicitly drops the allocator); the Shape C subscriber handler
+  // dedup uses `processedInputIds` membership instead of an ordinal
+  // cursor. First input is delivered on every fresh subscriber (vs
+  // the silently-dropped `(undefined ?? -1) <= -1` outcome the legacy
+  // cursor produced).
+  processedInputIds: Schema.Array(Schema.String),
+  // PARK: `lastProcessedInputSequence` retained for the workflow body
+  // at `workflow-engine/workflows/runtime-context.ts:410,501,513,541,
+  // 547`. The body's per-sequence `awaitRuntimeInput` mailbox path
+  // (`runtime-input-deferred.ts`) is sequence-indexed; rewriting it to
+  // identity-keyed is the mailbox-retirement work in D-E. Until that
+  // body retires, the schema carries both fields: handler uses
+  // `processedInputIds`, body uses `lastProcessedInputSequence`. Grep
+  // blocker for field removal:
+  //   grep -rn "lastProcessedInputSequence" packages/runtime/src/workflow-engine/workflows/runtime-context.ts
   lastProcessedInputSequence: Schema.Number,
   lastProcessedOutputSequence: Schema.Number,
   pendingPermissionRequests: Schema.Array(Schema.String),
@@ -46,6 +64,7 @@ export const RuntimeContextEventStateSchema = Schema.Struct({
 export type RuntimeContextEventState = Schema.Schema.Type<typeof RuntimeContextEventStateSchema>
 
 export const initialRuntimeContextEventState: RuntimeContextEventState = {
+  processedInputIds: [],
   lastProcessedInputSequence: -1,
   lastProcessedOutputSequence: -1,
   pendingPermissionRequests: [],

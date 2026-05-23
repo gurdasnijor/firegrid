@@ -336,6 +336,7 @@ const reconstructableSessionLayer = (events: {
             }
             return acceptedCommand(context.contextId, activityAttempt, command)
           }),
+        deregister: () => Effect.void,
       })
     }),
   )
@@ -680,6 +681,7 @@ describe("workflow-native runtime-context core", () => {
             sent.push(command)
             return acceptedCommand(context.contextId, activityAttempt, command)
           }),
+        deregister: () => Effect.void,
       }),
       workerId: "prompt-delivery-worker",
     })
@@ -834,6 +836,7 @@ describe("workflow-native runtime-context core", () => {
             sent.push(command)
             return acceptedCommand(context.contextId, activityAttempt, command)
           }),
+        deregister: () => Effect.void,
       })
 
     await Effect.runPromise(
@@ -954,6 +957,7 @@ describe("workflow-native runtime-context core", () => {
             sent.push(command.event)
             return acceptedCommand(context.contextId, activityAttempt, command)
           }),
+        deregister: () => Effect.void,
       })),
       Layer.provideMerge(RuntimeToolUseExecutor.layer({
         execute: (_context, event) =>
