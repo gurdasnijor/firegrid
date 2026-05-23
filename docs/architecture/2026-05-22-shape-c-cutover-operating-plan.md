@@ -11,6 +11,9 @@ This document operationalizes the greenfield Shape C cutover. It is the branch
 level contract for lane dispatch, integration, and the remaining waves after
 the current cutover branch lands.
 
+The dispatch roadmap for the remaining waves after the semantic scaffold is
+`docs/architecture/2026-05-22-shape-c-cutover-roadmap.md`.
+
 The governing frame is greenfield: Firegrid has no production users or durable
 user contexts to preserve. The branch is therefore a replacement branch, not a
 compatibility migration. Do not add bridge layers whose purpose is to keep the
