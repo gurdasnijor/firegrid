@@ -225,6 +225,86 @@ decide on before final dispatch:
 
 Neither blocks Wave C public-turn dispatch.
 
+## Addendum (2026-05-23): error observation — GREEN
+
+**Question (CC1 unblock):** can a client-shaped host facade observe a
+runtime/agent error through the existing channel-router path using
+`session.agent_output` `wait_for` / typed observation, **without** direct
+handler calls, a `RuntimeObservationStreams` surface, a new router
+surface, or the workflow body driver?
+
+**Verdict: GREEN.** The Error case is the same filtered typed source
+production already uses for `PermissionRequest`. The existing
+`session.agent_output / wait_for` route on `HostPlaneChannelRouter` (#703)
+carries `_tag: "Error"` observations end-to-end. No new route, no new
+abstraction.
+
+### Production wiring already in place
+
+| Production surface | Symbol / location |
+|---|---|
+| Agent-error event variant | `AgentErrorEventSchema` (`packages/protocol/src/agent-output/schema.ts`) — `Schema.TaggedStruct("Error", { cause: Unknown, recoverable: Boolean })`, union member of `AgentOutputEventSchema` |
+| Runtime observation variant | `RuntimeAgentOutputObservationSchema` (`packages/protocol/src/session-facade/schema.ts:319-322`) — `_tag: Schema.Literal("Error")`, `event: AgentErrorEventSchema` |
+| Stdio-jsonl codec emit | `recoverableError` (`packages/runtime/src/agent-event-pipeline/codecs/stdio-jsonl/index.ts:42`) — appends `{ _tag: "Error", cause, recoverable: true }` into the per-context output stream |
+| ACP codec emit | `recoverableError` (`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:123`) — same shape |
+| Per-context observation source | `SessionAgentOutputChannel.forContext(contextId)` (`packages/protocol/src/channels/session-agent-output.ts`) — typed `IngressChannel<…>` |
+| Router-registered `wait_for` route | `sessionAgentOutputObservationRoute` (`packages/runtime/src/channels/host-control-routes.ts`, registered on `HostPlaneChannelRouter` by #703) |
+| Client-side waiter | `waitForAgentOutputObservation` (`packages/client-sdk/src/firegrid.ts`); `handle.wait.forAgentOutput(...)` — already returns the `RuntimeAgentOutputObservation` union (Error variant inclusive) |
+| Filter-by-tag pattern | `firegrid.ts:743` `waitForPermissionRequest` uses the same `forAgentOutput` source with a predicate; mirror the predicate for `_tag === "Error"` |
+
+### Wave C dispatch contract — error observation (mapping back to production)
+
+| Public client behavior | Production channel target | Verb | Direction | Completion | `client/firegrid.ts` method |
+|---|---|---|---|---|---|
+| Observe agent error during a turn | `session.agent_output` (factory-keyed by `contextId`) | `wait_for` | `ingress` | `terminal` via `RouteCompletionReceipt` | `handle.wait.forAgentOutput(...)`; caller filters on `observation._tag === "Error"` (or wraps in a small predicate helper analogous to `waitForPermissionRequest`) |
+| Observe terminal exit code after an error | same | `wait_for` | `ingress` | `terminal` | `handle.wait.forAgentOutput(...)`; same loop pattern existing tests already use, advancing the cursor past the Error observation to the `Terminated` event |
+| Distinguish recoverable vs non-recoverable | — | — | — | — | The observation carries `recoverable: Boolean` directly (mirrors `AgentErrorEventSchema`). No second route needed for "fatal vs transient" |
+
+### What this proves about CC1's sync-facade deletion
+
+The host-sdk sync facade's body-side error behavior — currently observed
+through the workflow body / mailbox bridge — can be re-expressed as a
+filtered typed observation on the existing `session.agent_output`
+ingress, exactly mirroring how production already implements
+`waitForPermissionRequest`. Concretely:
+
+- `RuntimeContextWorkflowNative` / `RuntimeContextWorkflowRuntime` /
+  `runtime-input-deferred` are **not** required to observe the Error
+  variant. The codecs already write Error events into
+  `RuntimeOutputTable.events`; `RuntimeAgentOutputObservation` already
+  carries the `_tag: "Error"` variant; the `session.agent_output`
+  route already streams it.
+- The sync-facade's "fail this run if the body emitted an Error event"
+  semantics can be expressed as a small client-side predicate in the
+  `forAgentOutput` loop. No public client API change is needed (the
+  surface already exposes the typed observation; the Error variant is
+  part of the existing union).
+- No `RuntimeObservationStreams` surface, no `session.error_output`
+  route, no `wait_for` predicate-tag schema extension. **No new SDD
+  surface required.**
+
+### Negative guards (in the new tests)
+
+1. The router's exposed targets after the error path runs are exactly
+   the same 7 production targets — no `session.error` /
+   `session.error_output` / `session.runtime_error` route appears. The
+   second test asserts `Object.keys(router.routes).sort()` matches the
+   original 7.
+2. The Error variant arrives on `session.agent_output` interleaved with
+   `Terminated`, advancing the same `afterSequence` cursor — same
+   ordering contract used by the happy-path turn (C6 typed source +
+   cursor + match).
+3. Both `recoverable: true` and `recoverable: false` cases observe
+   correctly — the field passes through the wire-edge unchanged.
+
+### Test command
+
+```
+pnpm --filter @firegrid/tiny-firegrid test test/shape-c-channel-router-turn/probe.test.ts
+```
+
+25/25 pass (23 from #702 + 2 new error-observation tests).
+
 ## Sources
 
 - `docs/sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md`
