@@ -11,7 +11,7 @@ import {
 import type { PublicLaunchRuntimeIntent } from "@firegrid/protocol/launch"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
-import { HostPlaneChannelRouter } from "@firegrid/runtime/channels"
+import { HostPlaneChannelRouter } from "../../../channels/index.ts"
 import { Clock, Context, Duration, Effect, Layer, Option, Runtime, Schema, Stream } from "effect"
 
 type RunEffect = <A, E>(effect: Effect.Effect<A, E, never>) => Promise<A>

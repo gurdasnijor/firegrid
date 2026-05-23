@@ -4,7 +4,7 @@ import {
   durableStreamUrl,
   type FiregridHost,
 } from "@firegrid/host-sdk"
-import { toolResult } from "@firegrid/host-sdk/agent-tools/bindings"
+import { toolResult } from "@firegrid/runtime/subscribers/tool-dispatch"
 import {
   RuntimeToolUseExecutor,
 } from "@firegrid/runtime/tool-executor"

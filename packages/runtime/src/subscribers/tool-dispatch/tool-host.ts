@@ -35,8 +35,8 @@ import type {
   SpawnTask,
   WorkflowTerminalState,
 } from "@firegrid/protocol/agent-tools"
-import type { AgentPrompt } from "@firegrid/runtime/events"
-import type { ToolExecutionFailedError } from "../bindings/tool-error.ts"
+import type { AgentPrompt } from "../../events/index.ts"
+import type { ToolExecutionFailedError } from "./bindings/tool-error.ts"
 
 export interface SpawnChildContextParams {
   readonly parentContextId: string

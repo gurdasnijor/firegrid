@@ -62,7 +62,15 @@ packages/runtime/src/
 │   │   └── SandboxProvider.ts        # provider contract
 │   ├── codecs/
 │   │   ├── contract.ts               # AgentSession live codec boundary
-│   │   ├── acp/
+│   │   ├── acp/                      # ACP wire-protocol translator
+│   │   │   ├── index.ts              #   outbound: decode bytes from spawned ACP agent
+│   │   │   ├── mapping.ts            #   shared ACP↔runtime mapping helpers
+│   │   │   └── stdio-edge.ts         #   inbound: translate inbound ACP stdio requests
+│   │   │                             #     into host-plane channel-router dispatches
+│   │   ├── mcp/                      # MCP wire-protocol translator (inbound only)
+│   │   │   ├── host.ts               #   host-owned localhost MCP HTTP server
+│   │   │   ├── channel-metadata.ts   #   MCP tools/list channel-inventory enrichment
+│   │   │   └── base-url.ts           #   single-purpose late-bind of bound MCP address
 │   │   └── stdio-jsonl/
 │   └── ingress-writers/
 │       ├── per-context-output.ts     # AgentSession.outputs -> RuntimeOutputTable.events
@@ -256,6 +264,35 @@ Kernel Retirement slice below.
 
 Channels are not subscribers. Subscribers consume channel tags through their
 `R` channel.
+
+### Wire-Protocol Codecs (Producers): Inbound + Outbound
+
+`producers/codecs/<protocol>/` houses both directions of a wire-protocol
+translator under one protocol folder:
+
+- **Outbound codec** — the runtime spawned an external agent process and
+  decodes its wire frames into runtime rows. Existing example:
+  `producers/codecs/acp/index.ts` (decodes bytes from an ACP child agent
+  into `AgentSession.outputs`).
+- **Inbound edge** — an external client (Zed for ACP, an MCP-capable LLM
+  client for MCP) sends wire frames into our process, and we translate them
+  into `HostPlaneChannelRouter.dispatch` calls. Per PR #702, public
+  clients/tools interact through the channel router only; the edge is the
+  thin wire translator that turns inbound ACP/MCP/HTTP frames into typed
+  router dispatches. Examples: `producers/codecs/acp/stdio-edge.ts`,
+  `producers/codecs/mcp/host.ts`.
+
+Co-locating both directions under one protocol folder makes the wire-format
+schema a single source of truth and keeps protocol-version constants next
+to both the encoder and the decoder. The folder's "producer" framing is
+preserved because both directions ultimately append rows or dispatch
+intents that write rows; neither owns durable state.
+
+Inbound edges may NOT define their own channel registrations — they project
+public-router targets onto the inbound protocol shape. Adding a new
+publicly-routable surface still requires a channel registration under
+`channels/<family>/`. The edge translates wire frames to/from the existing
+router targets.
 
 ## Composition Boundary
 

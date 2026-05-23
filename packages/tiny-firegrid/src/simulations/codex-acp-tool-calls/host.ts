@@ -1,10 +1,12 @@
 import {
-  ensurePathInput,
   FiregridEnvBindingsFromEnv,
   FiregridLocalHostLive,
   FiregridLocalProcessFromEnv,
-  FiregridMcpServerLayer,
 } from "@firegrid/host-sdk"
+import {
+  ensurePathInput,
+  FiregridMcpServerLayer,
+} from "@firegrid/runtime/producers/codecs/mcp"
 import { Layer } from "effect"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 

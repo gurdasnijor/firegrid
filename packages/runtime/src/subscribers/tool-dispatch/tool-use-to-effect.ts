@@ -81,16 +81,16 @@ import {
 import {
   type AgentInputEvent,
   type AgentOutputEvent,
-} from "@firegrid/runtime/events"
+} from "../../events/index.ts"
 import {
   RuntimeAgentToolExecution,
   type FieldEqualsTrigger,
   type RuntimeAgentToolExecutionError,
-} from "@firegrid/runtime/subscribers/tool-dispatch"
-import type { RuntimeObservationSource } from "@firegrid/runtime/streams"
+} from "./index.ts"
+import type { RuntimeObservationSource } from "../../streams/index.ts"
 import type {
   RuntimeChannelRoute,
-} from "@firegrid/runtime/channels"
+} from "../../channels/index.ts"
 import type {
   ChannelDirection,
 } from "@firegrid/protocol/channels"
@@ -98,8 +98,8 @@ import type { ChannelRouteDescriptor } from "@firegrid/protocol/channels/router"
 import { AgentToolHost } from "./tool-host.ts"
 import {
   RuntimeChannelRouter,
-} from "../../host/channel.ts"
-import type { UnknownChannelTarget } from "../../host/channel.ts"
+} from "../../channels/index.ts"
+import type { UnknownChannelTarget } from "@firegrid/protocol/channels/router"
 import {
   toolErrorResult,
   toolExecutionFailed,
@@ -107,7 +107,7 @@ import {
   toolResult,
   unknownToolResult,
   type ToolError,
-} from "../bindings/tool-error.ts"
+} from "./bindings/tool-error.ts"
 
 type ToolUseEvent = Extract<AgentOutputEvent, { _tag: "ToolUse" }>
 type ToolResultEvent = Extract<AgentInputEvent, { _tag: "ToolResult" }>

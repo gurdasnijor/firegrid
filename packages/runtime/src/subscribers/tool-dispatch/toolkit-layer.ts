@@ -19,15 +19,15 @@
 
 import { IdGenerator } from "@effect/ai"
 import type * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
-import { ToolDispatch } from "@firegrid/runtime/subscribers/tool-dispatch"
+import { ToolDispatch } from "./index.ts"
 import { type Context, Effect, Layer } from "effect"
-import { toolExecutionFailed } from "../bindings/tool-error.ts"
+import { toolExecutionFailed } from "./bindings/tool-error.ts"
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
   FiregridPrimitiveProfileToolkit,
   type FiregridMcpToolFailure,
-} from "../bindings/tools.ts"
+} from "./bindings/tools.ts"
 
 const TOOL_USE_ID_PREFIX = "mcp"
 

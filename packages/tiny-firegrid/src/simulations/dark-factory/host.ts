@@ -4,11 +4,13 @@ import {
   ApprovalCallRequestSchema,
 } from "@firegrid/protocol/agent-tools"
 import {
+  ensurePathInput,
+  FiregridMcpServerLayer,
+} from "@firegrid/runtime/producers/codecs/mcp"
+import {
   RuntimeContextChannelRouterLive,
   dmChannel,
   eventChannelTarget,
-  ensurePathInput,
-  FiregridMcpServerLayer,
   FiregridRuntimeHostLive,
   makeBidirectionalChannel,
   makeCallableChannel,

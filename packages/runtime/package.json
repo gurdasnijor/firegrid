@@ -124,6 +124,18 @@
     "./transforms": {
       "types": "./src/transforms/index.ts",
       "default": "./src/transforms/index.ts"
+    },
+    "./producers/codecs/mcp": {
+      "types": "./src/producers/codecs/mcp/host.ts",
+      "default": "./src/producers/codecs/mcp/host.ts"
+    },
+    "./producers/codecs/mcp/base-url": {
+      "types": "./src/producers/codecs/mcp/base-url.ts",
+      "default": "./src/producers/codecs/mcp/base-url.ts"
+    },
+    "./producers/codecs/acp/stdio-edge": {
+      "types": "./src/producers/codecs/acp/stdio-edge.ts",
+      "default": "./src/producers/codecs/acp/stdio-edge.ts"
     }
   },
   "files": [
