@@ -77,8 +77,6 @@ const streamForSource = (
       return service.agentOutput
     case "AgentOutputAfter":
       return service.agentOutputAfter(source)
-    case "RuntimeRun":
-      return service.runtimeRun
     case "CallerFact":
       return service.callerFact(source.stream)
   }

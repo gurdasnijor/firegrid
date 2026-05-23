@@ -188,5 +188,65 @@ function* tfWaveARC1Fixtures(): Generator<unknown, void, unknown> {
   const d: unknown = RuntimeContextWorkflowRuntime
   return void [a, b, c, d]
 }
-// ruleid: firegrid-composition-no-legacy-imports
+// Cross-fire: the legacy mailbox subpath is also blocked by the new
+// workflow-engine host-sdk rule (R-CW1) because it sits under the
+// `@firegrid/runtime/workflow-engine/` legacy root.
+// ruleid: firegrid-composition-no-legacy-imports, firegrid-host-sdk-no-runtime-workflow-engine-import
 import { someAppendDef as fakeAppendDefRC1 } from "@firegrid/runtime/workflow-engine/runtime-input-deferred"
+
+// ---------------------------------------------------------------------------
+// R-CW1 firegrid-host-sdk-no-runtime-workflow-engine-import
+// R-CS1 firegrid-host-sdk-no-runtime-streams-import
+//
+// Cleanup-wave preservation visibility: new host-sdk imports of the legacy
+// `@firegrid/runtime/workflow-engine` and `@firegrid/runtime/streams` roots
+// are blocked. Existing sites are baselined as Wave D / D-D deletion
+// targets (see semgrep-error-baseline.json). The regex catches the exact
+// root subpath and any deeper path under it.
+// ---------------------------------------------------------------------------
+
+// Bare-root positives.
+// ruleid: firegrid-host-sdk-no-runtime-workflow-engine-import
+import { someAppendDef as fakeWfEngineRCW1A } from "@firegrid/runtime/workflow-engine"
+// ruleid: firegrid-host-sdk-no-runtime-streams-import
+import { someAppendDef as fakeStreamsRCS1A } from "@firegrid/runtime/streams"
+
+// Deep-subpath positives (the regex includes a trailing `[/"]` so deeper
+// imports also fail — closes the hole the bare-quote pattern would leave).
+// ruleid: firegrid-host-sdk-no-runtime-workflow-engine-import
+import { someAppendDef as fakeWfEngineRCW1B } from "@firegrid/runtime/workflow-engine/workflows/wait-for"
+// ruleid: firegrid-host-sdk-no-runtime-streams-import
+import { someAppendDef as fakeStreamsRCS1B } from "@firegrid/runtime/streams/sources"
+
+// Re-export form (semgrep regex matches `from\s+"..."`, which catches both
+// import and re-export statements).
+// ruleid: firegrid-host-sdk-no-runtime-workflow-engine-import
+export { someAppendDef as fakeWfEngineRCW1Reexport } from "@firegrid/runtime/workflow-engine"
+// ruleid: firegrid-host-sdk-no-runtime-streams-import
+export { someAppendDef as fakeStreamsRCS1Reexport } from "@firegrid/runtime/streams"
+
+// Negatives — target-tree subpaths are the sanctioned host-sdk import shape
+// per docs/architecture/2026-05-22-runtime-physical-target-tree.md §"Public
+// Package Subpaths" and must NOT trigger either rule. These exercise that
+// the regexes anchor at the legacy root names rather than the broader
+// `@firegrid/runtime` prefix.
+// ok: firegrid-host-sdk-no-runtime-workflow-engine-import, firegrid-host-sdk-no-runtime-streams-import
+import { tablesAlpha as fakeTablesNeg } from "@firegrid/runtime/tables/runtime-context-state"
+// ok: firegrid-host-sdk-no-runtime-workflow-engine-import, firegrid-host-sdk-no-runtime-streams-import
+import { channelsAlpha as fakeChannelsNeg } from "@firegrid/runtime/channels"
+// ok: firegrid-host-sdk-no-runtime-workflow-engine-import, firegrid-host-sdk-no-runtime-streams-import
+import { transformsAlpha as fakeTransformsNeg } from "@firegrid/runtime/transforms"
+// ok: firegrid-host-sdk-no-runtime-workflow-engine-import, firegrid-host-sdk-no-runtime-streams-import
+import { producersAlpha as fakeSubscribersNeg } from "@firegrid/runtime/subscribers/runtime-context"
+
+void [
+  fakeWfEngineRCW1A,
+  fakeStreamsRCS1A,
+  fakeWfEngineRCW1B,
+  fakeStreamsRCS1B,
+  fakeAppendDefRC1,
+  fakeTablesNeg,
+  fakeChannelsNeg,
+  fakeTransformsNeg,
+  fakeSubscribersNeg,
+]

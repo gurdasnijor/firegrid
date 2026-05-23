@@ -1,14 +1,34 @@
 {
   "findings": [
     {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
-      "line": 31
+      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
+      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
+      "line": 154
+    },
+    {
+      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
+      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
+      "line": 162
     },
     {
       "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
       "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
       "line": 2
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
+      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
+      "line": 2
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
+      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
+      "line": 1
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
+      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
+      "line": 31
     },
     {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
@@ -51,11 +71,6 @@
       "line": 12
     },
     {
-      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
-      "line": 2
-    },
-    {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
       "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
       "line": 44
@@ -81,11 +96,6 @@
       "line": 15
     },
     {
-      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
-      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 1
-    },
-    {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
       "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
       "line": 10
@@ -96,14 +106,34 @@
       "line": 17
     },
     {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 154
+      "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
+      "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
+      "line": 5
     },
     {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 162
+      "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
+      "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
+      "line": 90
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
+      "path": "packages/host-sdk/src/host/channels/verified-webhook/index.ts",
+      "line": 13
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
+      "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+      "line": 20
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-workflow-engine-import",
+      "path": "packages/host-sdk/src/host/channels/session-self/index.ts",
+      "line": 23
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-workflow-engine-import",
+      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
+      "line": 3
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",

@@ -29,12 +29,10 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "composition/host-live\\.ts$",
 ].join("|")
 
-const currentHostSdkSubstrateDebt = [
-  "^packages/host-sdk/src/host/internal/runtime-context-helpers\\.ts$",
-  "^packages/host-sdk/src/host/runtime-context-workflow-core\\.ts$",
-  "^packages/host-sdk/src/host/runtime-context-workflow-runtime\\.ts$",
-  "^packages/host-sdk/src/host/session-log-channel\\.ts$",
-]
+// All four prior currentHostSdkSubstrateDebt carve-outs were stale (files
+// absent on disk as of 2026-05-23). Empty by design: any new debt MUST
+// have a named bead owning its retirement before it lands here.
+const currentHostSdkSubstrateDebt = []
 
 module.exports = {
   forbidden: [
@@ -196,9 +194,10 @@ module.exports = {
       name: "runtime-tables-no-legacy-tree-import",
       severity: "error",
       comment:
-        "Target-tree tables/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. The Wave A semantic move makes tables/ self-contained (it depends on events/ + protocol only); imports back into the legacy tree defeat the move. Wave D-A carve-out: `tables/runtime-context-output-facts.ts` is a thin target-tree facade for the per-context output observation source the Shape C subscriber consumes; the canonical Live binding still lives in `agent-event-pipeline/authorities/per-context-output.ts` until the physical move lands in Wave 2. The carve-out shrinks to a deletion when the symbol is physically moved.",
+        "Target-tree tables/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. The Wave A semantic move makes tables/ self-contained (it depends on events/ + protocol only); imports back into the legacy tree defeat the move. Bead-owned carve-out tf-f9n1: `tables/runtime-context-output-facts.ts` is a thin target-tree facade for the per-context output observation source the Shape C subscriber consumes; the canonical Live binding (`RuntimeAgentOutputAfterEvents`) still lives in `agent-event-pipeline/authorities/runtime-output-journal.ts` until the physical move lands in Wave 2. The carve-out shrinks to a deletion when tf-f9n1 moves the symbol.",
       from: {
         path: "^packages/runtime/src/tables/",
+        // Bead tf-f9n1 — Wave 2 tables/ physical move of RuntimeAgentOutputAfterEvents
         pathNot: [
           "^packages/runtime/src/tables/runtime-context-output-facts\\.ts$",
         ],
@@ -240,18 +239,27 @@ module.exports = {
       name: "runtime-subscribers-no-legacy-tree-import",
       severity: "error",
       comment:
-        "Target-tree subscribers/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. PR #694 (handler move) declared one named temporary outlier — RuntimeToolUseExecutor's target subpath in the new tree is not yet decided, so the per-event handler imports it from workflow-engine/tool-execution/runtime-tool-use-executor.ts. Wave B (composition/host-live.ts) requires three additional time-boxed carve-outs: the Shape D forward-target shims at subscribers/{tool-dispatch,wait-router,scheduled-prompt}/index.ts re-export their justified Shape D Layers from the legacy substrate homes (the workflow body files have not yet been physically moved). The four carved-out files are named below; each carve-out shrinks to a deletion when the corresponding Wave 2 lane physically moves the file under its target subscriber folder. All other workflow-engine/ + agent-event-pipeline/ subpaths remain banned.",
+        "Target-tree subscribers/ folder must not reach back into the legacy workflow-engine/, agent-event-pipeline/, or authorities/ subtrees. Each currently-sanctioned target->legacy edge carries a bead-numbered carve-out below (no anonymous carve-outs; audit gate added 2026-05-23). Edge inventory: tf-up1v RuntimeToolUseExecutor placement (subscribers/runtime-context/handler.ts -> workflow-engine/tool-execution/runtime-tool-use-executor.ts); tf-hpr0 WaitForWorkflow collapse (subscribers/wait-router/index.ts -> workflow-engine/workflows/wait-for.ts); tf-6hqx ScheduledPromptWorkflow physical move (subscribers/scheduled-prompt/index.ts -> workflow-engine/workflows/scheduled-prompt.ts); tf-vfq9 ToolCallWorkflow cutover/delete (subscribers/tool-dispatch/index.ts -> agent-event-pipeline/tool-execution/runtime-tool-call-workflow.ts); tf-6cdy authorities/ retirement, two edges (subscribers/runtime-context/index.ts -> authorities/index.ts, subscribers/runtime-context/handler.ts -> authorities/runtime-control-plane-recorder.ts). All other workflow-engine/ + agent-event-pipeline/ + authorities/ subpaths remain banned. Each carve-out shrinks to a deletion when the named bead lands the target-tree physical move.",
       from: { path: "^packages/runtime/src/subscribers/" },
       to: {
         path: [
           "^packages/runtime/src/workflow-engine/",
           "^packages/runtime/src/agent-event-pipeline/",
+          "^packages/runtime/src/authorities/",
         ],
         pathNot: [
+          // Bead tf-up1v — Wave D-A RuntimeToolUseExecutor placement
           "^packages/runtime/src/workflow-engine/tool-execution/runtime-tool-use-executor\\.ts$",
+          // Bead tf-hpr0 — Collapse WaitForWorkflow into owning-workflow primitive
           "^packages/runtime/src/workflow-engine/workflows/wait-for\\.ts$",
+          // Bead tf-6hqx — Wave D-A subscribers/scheduled-prompt physical move
           "^packages/runtime/src/workflow-engine/workflows/scheduled-prompt\\.ts$",
+          // Bead tf-vfq9 — ToolCallWorkflow cutover/delete
           "^packages/runtime/src/agent-event-pipeline/tool-execution/runtime-tool-call-workflow\\.ts$",
+          // Bead tf-6cdy — Wave D-A authorities/ retirement (covers both
+          // authorities/index.ts and authorities/runtime-control-plane-recorder.ts)
+          "^packages/runtime/src/authorities/index\\.ts$",
+          "^packages/runtime/src/authorities/runtime-control-plane-recorder\\.ts$",
         ],
       },
     },

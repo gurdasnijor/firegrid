@@ -1,7 +1,6 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   CurrentHostSession,
-  RuntimeControlPlaneTable,
   RuntimeOutputTable,
   runtimeContextOutputStreamUrl,
   runtimeContextWorkflowStreamUrl,
@@ -26,9 +25,6 @@ import {
 import {
   HostRuntimeObservationStreamsLive,
 } from "../../src/host/runtime-substrate.ts"
-
-// Typed runtime wait sources. firegrid-typed-wait-source-redesign.TYPED_SOURCES.6
-const RUNTIME_RUN_SOURCE = { _tag: "RuntimeRun" } as const
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -88,17 +84,6 @@ const PermissionObservationSchema = Schema.TaggedStruct("PermissionRequest", {
   toolUseId: Schema.String,
   event: Schema.Unknown,
 })
-
-const RuntimeExitedRowSchema = Schema.Struct({
-  contextId: Schema.String,
-  activityAttempt: Schema.Number,
-  provider: Schema.String,
-  status: Schema.Literal("exited"),
-  at: Schema.String,
-  exitCode: Schema.Number,
-  runEventId: Schema.Unknown,
-})
-
 
 describe("runtime-host wait_for source registrations", () => {
   // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
@@ -196,55 +181,8 @@ describe("runtime-host wait_for source registrations", () => {
     })
   })
 
-  it("firegrid-factory-aligned-agent-tools.OBSERVATION.3 observes terminal RuntimeControlPlane run status", async () => {
-    if (baseUrl === undefined) throw new Error("server not started")
-    const namespace = `runtime-observation-run-${crypto.randomUUID()}`
-    const hostId = `host_${crypto.randomUUID()}` as HostId
-    const contextId = `ctx_${crypto.randomUUID()}`
-
-    const layer = WaitForWorkflowLayer.pipe(
-      Layer.provideMerge(HostRuntimeObservationStreamsLive),
-      Layer.provideMerge(workflowEngineLayer({ namespace, contextId })),
-      Layer.provideMerge(hostLayer({ namespace, hostId })),
-    ) as Layer.Layer<never, unknown, never>
-
-    const result = await runWith(
-      layer,
-      Effect.gen(function* () {
-        const controlPlane = yield* RuntimeControlPlaneTable
-        const fiber = yield* Effect.fork(WaitForWorkflow.execute({
-          executionKey: `runtime-observation-run:${contextId}`,
-          source: RUNTIME_RUN_SOURCE,
-          trigger: [
-            { path: ["contextId"], equals: contextId },
-            { path: ["status"], equals: "exited" },
-          ],
-        }))
-        yield* Effect.sleep("50 millis")
-        yield* controlPlane.runs.upsert({
-          runEventId: {
-            contextId,
-            activityAttempt: 1,
-            status: "exited",
-          },
-          contextId,
-          activityAttempt: 1,
-          provider: "local-process",
-          status: "exited",
-          at: new Date().toISOString(),
-          exitCode: 0,
-        })
-        const outcome = yield* Fiber.join(fiber)
-        if (outcome._tag !== "Match") throw new Error("expected Match")
-        return yield* Schema.decodeUnknown(RuntimeExitedRowSchema)(outcome.raw)
-      }),
-    )
-
-    expect(result).toMatchObject({
-      contextId,
-      status: "exited",
-      activityAttempt: 1,
-      exitCode: 0,
-    })
-  })
+  // The legacy "observes terminal RuntimeControlPlane run status" case
+  // moved to `start-runtime.test.ts` (#708): the public `startRuntime`
+  // waits on `SessionLifecycleChannel.forSession(contextId)` filtered to
+  // `RuntimeRunEvent` status `exited` | `failed`.
 })

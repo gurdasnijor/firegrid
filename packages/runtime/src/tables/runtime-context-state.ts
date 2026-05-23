@@ -34,7 +34,7 @@ import { runtimeAgentOutputObservationFromRow } from "@firegrid/protocol/session
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { DurableTable } from "effect-durable-operators"
 import { Context, Effect, Layer, Option, Ref, Schema, type Scope } from "effect"
-import { type RuntimeAgentOutputObservation } from "../agent-event-pipeline/events/index.ts"
+import { type RuntimeAgentOutputObservation } from "../events/agent-output.ts"
 
 // Pure RuntimeContext loop-state vocabulary — `RuntimeContextEventStateSchema`,
 // `PendingPermissionResponseSchema`, `initialRuntimeContextEventState`, and
