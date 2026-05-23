@@ -61,9 +61,13 @@
       "types": "./src/verified-webhook/index.ts",
       "default": "./src/verified-webhook/index.ts"
     },
-    "./channels": {
-      "types": "./src/channels/index.ts",
-      "default": "./src/channels/index.ts"
+    "./acp": {
+      "types": "./src/acp/index.ts",
+      "default": "./src/acp/index.ts"
+    },
+    "./mcp": {
+      "types": "./src/mcp/index.ts",
+      "default": "./src/mcp/index.ts"
     }
   },
   "files": [
