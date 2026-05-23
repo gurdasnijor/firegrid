@@ -94,6 +94,26 @@ export interface RuntimeRunAppendAndGetService {
   readonly latestStartedAttempt: (
     contextId: string,
   ) => Effect.Effect<Option.Option<number>, unknown>
+  /**
+   * Wave D-A Shape (b): wait for the terminal (`exited` | `failed`)
+   * `RuntimeRunEvent` row for a specific `(contextId, activityAttempt)`.
+   * Used by `SideEffects.start` to block until the Shape C subscriber
+   * writes the terminal row (via `recordExited` on Terminated, or
+   * `recordFailed` on start error). The Shape C subscriber is the sole
+   * production writer of terminal rows post-D-A.
+   *
+   * Authority-side `Stream.runHead` keeps `RuntimeControlPlaneTable`
+   * confined to `authorities/`; callers in host-sdk consume the typed
+   * result without yielding the table service directly.
+   *
+   * Returns `Option.none()` only if the underlying runs stream ends
+   * before a terminal row arrives — a substrate-level error condition
+   * that the caller surfaces as failure.
+   */
+  readonly waitTerminal: (
+    contextId: string,
+    activityAttempt: number,
+  ) => Effect.Effect<Option.Option<RuntimeRunEventRow>, unknown>
   readonly recordFailed: (
     context: RuntimeContext,
     activityAttempt: number,
@@ -505,6 +525,26 @@ const localContextResolverFromTable = (
     ),
 })
 
+const waitTerminalTo = (
+  table: RuntimeControlPlaneTable["Type"],
+  contextId: string,
+  activityAttempt: number,
+) =>
+  table.runs.rows().pipe(
+    Stream.filter((row) =>
+      row.contextId === contextId &&
+      row.activityAttempt === activityAttempt &&
+      (row.status === "exited" || row.status === "failed")),
+    Stream.runHead,
+    Effect.withSpan("firegrid.runtime_control_plane.run.wait_terminal", {
+      kind: "consumer",
+      attributes: {
+        "firegrid.context.id": contextId,
+        "firegrid.runtime.activity_attempt": activityAttempt,
+      },
+    }),
+  )
+
 const latestStartedAttemptTo = (
   table: RuntimeControlPlaneTable["Type"],
   contextId: string,
@@ -537,6 +577,8 @@ const runtimeRunAppendAndGetFromTable = (
     recordExitedTo(table, context, activityAttempt, exit),
   latestStartedAttempt: (contextId) =>
     latestStartedAttemptTo(table, contextId),
+  waitTerminal: (contextId, activityAttempt) =>
+    waitTerminalTo(table, contextId, activityAttempt),
   recordFailed: (context, activityAttempt, message) =>
     recordFailedTo(
       table,

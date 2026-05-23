@@ -52,6 +52,17 @@ import {
 import {
   makeRawRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/raw-adapter.ts"
+// D-B PARK: `RuntimeContextWorkflowRuntimeLive` import is the
+// pre-existing D-B tool bridge residue. The only remaining production
+// consumer of `RuntimeContextWorkflowRuntime` Tag is the host's
+// per-context tool-host bridge — `RuntimeHostAgentToolHostLive` at
+// `host-sdk/src/host/agent-tool-host-live.ts` + the toolkit layer at
+// `host-sdk/src/agent-tools/execution/toolkit-layer.ts:30,48,91`.
+// Both delete with the D-B production slice (CC2 D-B inventory).
+// Do not add new uses; the dispatcher path retires in D-A (here);
+// the tool-bridge path retires in D-B.
+// Grep blocker:
+//   grep -rn "RuntimeContextWorkflowRuntime" packages/host-sdk/src
 import {
   RuntimeContextWorkflowRuntimeLive,
 } from "@firegrid/runtime/kernel"
@@ -345,16 +356,15 @@ export const FiregridRuntimeHostLive = (
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
   //
-  // Wave D-A (PR #714): `RuntimeInputIntentDispatcherLive` provide-merge
-  // dropped (definitively, per #712 Shape (b) selection). The host-scoped
+  // Wave D-A (PR #714): legacy input-dispatcher provide-merge dropped
+  // (definitively, per the #712 Shape (b) selection). The host-scoped
   // dispatcher fiber existed to deliver durable input intents into the
-  // legacy workflow body's per-sequence `DurableDeferred` mailbox; the
-  // Shape C subscriber installed via `runtimeContextSubscriberHostBundle`
-  // consumes `RuntimeContextInputFacts.forContext` directly, so the
-  // production input/output path is input-facts → Shape C subscriber →
-  // handler → `RuntimeRunEvent` terminal row. Any test/sim still
-  // exercising the body/mailbox path is stale-legacy under D-A; classify
-  // and migrate or skip, not preserve via host composition.
+  // legacy workflow body's per-sequence mailbox; the Shape C subscriber
+  // installed via `runtimeContextSubscriberHostBundle` consumes input
+  // facts directly, so the production input/output path is input-facts →
+  // Shape C subscriber → handler → `RuntimeRunEvent` terminal row. Any
+  // test/sim still exercising the body/mailbox path is stale-legacy under
+  // D-A; classify and migrate or skip, not preserve via host composition.
   const hostPublic = RuntimeStartCapabilityLive.pipe(
     Layer.provideMerge(hostChannels),
     Layer.provideMerge(HostControlChannelsLive),

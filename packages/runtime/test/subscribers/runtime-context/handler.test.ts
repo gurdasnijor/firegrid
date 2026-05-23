@@ -193,6 +193,7 @@ const makeRecordingRuns = (): Effect.Effect<RecordingRuns> =>
             },
           ]),
         latestStartedAttempt: () => Effect.succeed(Option.none()),
+        waitTerminal: () => Effect.succeed(Option.none()),
         recordFailed: () => Effect.void,
       }),
     )

@@ -18,17 +18,17 @@
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
       "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 35
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
-      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
       "line": 40
     },
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
       "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 62
+      "line": 45
+    },
+    {
+      "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
+      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
+      "line": 67
     },
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-native-layer-symbol",
@@ -103,22 +103,17 @@
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 55
+      "line": 56
     },
     {
       "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 340
+      "line": 387
     },
     {
       "ruleId": "host-sdk-no-runtime-input-intent-dispatcher-symbol",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 56
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-input-intent-dispatcher-symbol",
-      "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 322
+      "line": 348
     },
     {
       "ruleId": "host-sdk-no-runtime-observation-source-symbol",
@@ -174,72 +169,6 @@
       "ruleId": "host-sdk-no-runtime-streams-import",
       "path": "packages/host-sdk/src/host/runtime-substrate.ts",
       "line": 20
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
-      "line": 17,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
-      "line": 34,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-execute-runtime-context-workflow-symbol",
-      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
-      "line": 35,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-execute-runtime-context-workflow-symbol",
-      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
-      "line": 70,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
-      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
-      "line": 37,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
-      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
-      "line": 67,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
-      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
-      "line": 70,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-native-symbol",
-      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
-      "line": 103,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
-      "line": 45,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
-      "line": 90,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
-    },
-    {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/internal/runtime-context-host-start.ts",
-      "line": 129,
-      "note": "relocated from public start facade in W-C boundary split; deletion paired with body-driver retirement in W-D-A"
     }
   ]
 }

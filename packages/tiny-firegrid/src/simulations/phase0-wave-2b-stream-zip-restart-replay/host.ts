@@ -685,6 +685,10 @@ const sessionLayer = (
           ownerSessionId: `owner-${context.contextId}-${activityAttempt}`,
         }
       }),
+    // Wave D-A (PR #714): seam adds `deregister(contextId)`. No-op in
+    // this restart-replay sim — the sim ends-of-test interruption
+    // already drops session state.
+    deregister: () => Effect.void,
   })
 
 const probeLayer = (

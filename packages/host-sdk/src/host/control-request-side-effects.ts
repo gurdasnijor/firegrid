@@ -6,8 +6,8 @@ import {
   type RuntimeControlRequestStartResult,
 } from "@firegrid/runtime/control-plane"
 import { RuntimeContextWorkflowSession } from "@firegrid/runtime/subscribers/runtime-context-session"
-import { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
-import { Effect, Layer, Option, Stream, type Scope } from "effect"
+import { asRuntimeContextError } from "@firegrid/runtime/errors"
+import { Effect, Layer, Option, type Scope } from "effect"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import type { RuntimeChannelRouter } from "./channel.ts"
 import { PerContextRuntimeOutputWriter } from "./per-context-runtime-output.ts"
@@ -17,16 +17,20 @@ import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 //
 //   start      — `allocateActivityAttempt` -> `recordStarted` ->
 //                `RuntimeContextWorkflowSession.startOrAttach` ->
-//                wait for the durable `runs.exited|failed` row the Shape C
-//                subscriber writes when it observes Terminated
-//                (`subscribers/runtime-context/handler.ts`).
+//                `RuntimeRunAppendAndGet.waitTerminal(contextId, attempt)`
+//                (the typed authority surface that wraps the durable
+//                runs.rows() Stream.runHead). The Shape C subscriber is
+//                the sole production writer of the terminal row, via
+//                `recordExited` on Terminated transition or
+//                `recordFailed` on startOrAttach failure (handled below).
 //   deregister — `RuntimeContextWorkflowSession.deregister(contextId)` via
 //                the seam extension that replaces the retired
 //                `RuntimeContextWorkflowRuntime.deregister`. No
-//                `@firegrid/runtime/kernel` import remains on this file
-//                after the cutover; the legacy body-driver primitive
-//                `host/internal/runtime-context-host-start.ts` deletes
-//                with this commit.
+//                `@firegrid/runtime/kernel` import remains on this file.
+//
+// All errors are typed `RuntimeContextError` (via `asRuntimeContextError`)
+// matching `host/commands.ts`'s diagnostic shape — no raw `new Error(...)`
+// reaches the typed seam.
 //
 // Wave C non-recursive boundary split (#706) carries forward: the
 // reconciler-side `SideEffects.start` writes the durable rows that the
@@ -43,7 +47,6 @@ export const RuntimeControlRequestSideEffectsLive = Layer.scoped(
       | PerContextRuntimeOutputWriter
       | RuntimeContextRead
       | RuntimeContextWorkflowSession
-      | RuntimeControlPlaneTable
       | RuntimeRunAppendAndGet
       | Scope.Scope
     >()
@@ -62,12 +65,13 @@ export const RuntimeControlRequestSideEffectsLive = Layer.scoped(
   }),
 )
 
-// Per-request side-effect body. The subscriber writes the terminal
-// `runs.exited|failed` row when it observes Terminated; this body waits on
-// that row via a bounded stream subscription. Soft-fail of the lookup
-// stages (context not found, etc.) propagate through the typed error
-// channel so the caller's `Effect.tapError` writes a `status:"failed"`
-// completion row (cf. `control-request-dispatcher.ts:395-405`).
+// Per-request side-effect body. The Shape C subscriber writes the
+// terminal `runs.exited|failed` row when it observes Terminated; this
+// function waits on that row via the typed authority surface
+// `RuntimeRunAppendAndGet.waitTerminal`. Errors are typed
+// `RuntimeContextError`; `runStartRequestSideEffect`'s `Effect.tapError`
+// at `control-request-dispatcher.ts:395-405` converts the typed cause
+// into a failed completion row.
 const startRuntimeContext = (
   contextId: string,
 ): Effect.Effect<
@@ -75,15 +79,16 @@ const startRuntimeContext = (
   unknown,
   | RuntimeContextRead
   | RuntimeContextWorkflowSession
-  | RuntimeControlPlaneTable
   | RuntimeRunAppendAndGet
 > =>
   Effect.gen(function*() {
     const contextRead = yield* RuntimeContextRead
     const contextOpt = yield* contextRead.readContext(contextId)
     if (Option.isNone(contextOpt)) {
-      return yield* Effect.fail(
-        new Error(`runtime context ${contextId} not found in control plane`),
+      return yield* asRuntimeContextError(
+        "host.runtime_context.side_effect.start.context_not_found",
+        `runtime context ${contextId} not found in control plane`,
+        contextId,
       )
     }
     const context = contextOpt.value
@@ -91,13 +96,11 @@ const startRuntimeContext = (
     const attempt = yield* runs.allocateActivityAttempt(context)
     yield* runs.recordStarted(context, attempt)
     const session = yield* RuntimeContextWorkflowSession
-    // Wave D-A: if `startOrAttach` fails (e.g. sandbox.openBytePipe could
-    // not spawn the agent), write `runs.failed` before propagating so the
+    // If `startOrAttach` fails (e.g. sandbox.openBytePipe could not
+    // spawn the agent), write `runs.failed` before propagating so the
     // durable run lifecycle row chain matches the legacy body's
-    // failure-path contract (cf. workflow-engine/workflows/runtime-context-
-    // run.ts:117-118 `writeRunFailed`). Without this, the runs.status
-    // chain stays at [started] forever and no terminal evidence reaches
-    // the completion row.
+    // failure-path contract (cf. retired
+    // `workflow-engine/workflows/runtime-context-run.ts:117-118`).
     yield* session.startOrAttach(context, attempt).pipe(
       Effect.tapError((cause) =>
         runs.recordFailed(
@@ -106,25 +109,20 @@ const startRuntimeContext = (
           cause instanceof Error ? cause.message : String(cause),
         )),
     )
-    const control = yield* RuntimeControlPlaneTable
-    const terminalOpt = yield* control.runs.rows().pipe(
-      Stream.filter((row) =>
-        row.contextId === contextId &&
-        row.activityAttempt === attempt &&
-        (row.status === "exited" || row.status === "failed")),
-      Stream.runHead,
-    )
+    const terminalOpt = yield* runs.waitTerminal(contextId, attempt)
     if (Option.isNone(terminalOpt)) {
-      return yield* Effect.fail(
-        new Error(
-          `runs.rows stream ended before a terminal row arrived for ${contextId}@${attempt}`,
-        ),
+      return yield* asRuntimeContextError(
+        "host.runtime_context.side_effect.start.runs_stream_ended",
+        `runs.rows stream ended before a terminal row arrived for ${contextId}@${attempt}`,
+        contextId,
       )
     }
     const terminal = terminalOpt.value
     if (terminal.status === "failed") {
-      return yield* Effect.fail(
-        new Error(terminal.message ?? "runtime context terminated with failure status"),
+      return yield* asRuntimeContextError(
+        "host.runtime_context.side_effect.start.runs_failed",
+        terminal.message ?? "runtime context terminated with failure status",
+        contextId,
       )
     }
     return {
