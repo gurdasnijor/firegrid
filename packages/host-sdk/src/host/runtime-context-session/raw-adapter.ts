@@ -5,7 +5,7 @@ import {
   makeRawRuntimeContextByteSession,
   prepareRawRuntimeContextInput,
   type RuntimeRawByteSession,
-} from "@firegrid/runtime/session-byte-stream-adapter"
+} from "@firegrid/runtime/producers/codecs/session-byte-stream-adapter"
 import {
   Effect,
   Scope,

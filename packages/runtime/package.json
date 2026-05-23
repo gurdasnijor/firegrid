@@ -61,13 +61,17 @@
       "types": "./src/events/index.ts",
       "default": "./src/events/index.ts"
     },
-    "./codecs": {
+    "./producers/codecs": {
       "types": "./src/producers/codecs/index.ts",
       "default": "./src/producers/codecs/index.ts"
     },
-    "./session-byte-stream-adapter": {
+    "./producers/codecs/session-byte-stream-adapter": {
       "types": "./src/producers/codecs/session-byte-stream-adapter.ts",
       "default": "./src/producers/codecs/session-byte-stream-adapter.ts"
+    },
+    "./producers/sandbox": {
+      "types": "./src/producers/sandbox/index.ts",
+      "default": "./src/producers/sandbox/index.ts"
     },
     "./agent-adapters": {
       "types": "./src/agent-adapters/index.ts",

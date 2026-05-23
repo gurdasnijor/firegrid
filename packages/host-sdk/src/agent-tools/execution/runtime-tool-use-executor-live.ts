@@ -2,7 +2,7 @@ import {
   RuntimeAgentToolExecution,
   RuntimeAgentToolExecutionLive,
   RuntimeToolUseExecutor,
-} from "@firegrid/runtime/tool-executor"
+} from "@firegrid/runtime/subscribers/tool-dispatch"
 import { RuntimeObservationStreams } from "@firegrid/runtime/streams"
 import { Context, Effect, Layer } from "effect"
 import { RuntimeChannelRouter } from "../../host/channel.ts"
