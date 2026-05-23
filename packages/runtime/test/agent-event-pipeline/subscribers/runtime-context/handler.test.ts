@@ -34,7 +34,7 @@ import {
 import {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
-} from "../../../../src/workflow-engine/workflows/runtime-context.ts"
+} from "../../../../src/subscribers/runtime-context-session/index.ts"
 import {
   handleRuntimeContextEvent,
   type RuntimeContextTargetEvent,

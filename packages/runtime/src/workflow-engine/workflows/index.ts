@@ -33,15 +33,21 @@ export {
 export {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,
-  RuntimeContextWorkflowSession,
   runtimeInputDeferredFor,
   runtimeInputDeferredName,
+  type RuntimeContextWorkflowExecutionEnv,
+} from "./runtime-context.ts"
+// Wave 2 (Shape C): the codec-session command sink contract is owned by the
+// subscriber target folder, not the workflow body. Barrels that historically
+// re-exported these names from `./runtime-context.ts` now forward through the
+// public subscriber subpath.
+export {
+  RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
   type RuntimeContextSessionCommandAccepted,
   type RuntimeContextSessionStartedEvidence,
-  type RuntimeContextWorkflowExecutionEnv,
   type RuntimeContextWorkflowSessionService,
-} from "./runtime-context.ts"
+} from "../../subscribers/runtime-context-session/index.ts"
 export {
   RuntimeContextWorkflowPayload,
   readRuntimeContext,

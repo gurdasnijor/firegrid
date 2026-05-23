@@ -23,7 +23,6 @@ export {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,
   RuntimeContextWorkflowPayload,
-  RuntimeContextWorkflowSession,
   RuntimeLifecycleWorkflow,
   RuntimeLifecycleWorkflowPayload,
   RuntimeStartWorkflow,
@@ -46,11 +45,7 @@ export {
   runtimeInputDeferredName,
   waitForWorkflowExecutionId,
   type RuntimeControlRequestDispatchOutcome,
-  type RuntimeContextSessionCommand,
-  type RuntimeContextSessionCommandAccepted,
-  type RuntimeContextSessionStartedEvidence,
   type RuntimeContextWorkflowExecutionEnv,
-  type RuntimeContextWorkflowSessionService,
   type RuntimeExitEvidence,
   type StartRuntimeResult,
   type ToolCallWorkflowPayload,
@@ -60,6 +55,17 @@ export {
   type WaitForWorkflowPayload,
   evaluateFieldEquals,
 } from "./workflow-engine/workflows/index.ts"
+// Wave 2 (Shape C): the codec-session command sink contract is owned by the
+// subscriber target folder. The runtime root barrel re-exports it directly
+// from the public subscriber subpath; the workflow-engine substrate path no
+// longer defines it.
+export {
+  RuntimeContextWorkflowSession,
+  type RuntimeContextSessionCommand,
+  type RuntimeContextSessionCommandAccepted,
+  type RuntimeContextSessionStartedEvidence,
+  type RuntimeContextWorkflowSessionService,
+} from "./subscribers/runtime-context-session/index.ts"
 export {
   AgentOutputAfterObservationSourceSchema,
   AgentOutputObservationSourceSchema,
