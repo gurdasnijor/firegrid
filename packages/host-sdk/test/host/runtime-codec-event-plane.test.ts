@@ -28,7 +28,7 @@ import {
 } from "@firegrid/runtime/workflows"
 import {
   runtimeContextWorkflowExecutionId,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/workflows"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

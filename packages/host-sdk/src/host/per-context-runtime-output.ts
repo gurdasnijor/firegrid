@@ -9,7 +9,7 @@ import { RuntimeAgentOutputAfterEvents } from "@firegrid/runtime/runtime-output"
 import {
   makePerContextRuntimeContextStateStore,
   RuntimeContextStateStore,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/tables/runtime-context-state"
 import { RuntimeHostConfig } from "./config.ts"
 
 // tf-bffo: the durable per-context RuntimeOutputTable wiring now lives in

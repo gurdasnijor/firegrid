@@ -20,11 +20,11 @@ import {
   mapRuntimeContextError,
   type RuntimeContextError,
 } from "@firegrid/runtime/errors"
-import { Context, Effect, Exit, Layer, Option, Ref, Scope, Stream, type Tracer } from "effect"
+import { Context, Effect, Exit, Layer, Option, Ref, Scope, type Tracer } from "effect"
 import { RuntimeHostConfig } from "./runtime-host-config.ts"
 import {
   runtimeContextWorkflowExecutionId,
-} from "./runtime-context-helpers.ts"
+} from "@firegrid/runtime/workflows"
 
 interface ActiveRuntimeContextExecution {
   readonly context: RuntimeContext
@@ -407,23 +407,8 @@ export const RuntimeContextWorkflowRuntimeLive = Layer.scopedContext(
   }),
 )
 
-export const RuntimeInputIntentDispatcherLive = Layer.scopedDiscard(
-  Effect.gen(function*() {
-    const table = yield* RuntimeControlPlaneTable
-    const input = yield* RuntimeContextInput
-    // firegrid-workflow-driven-runtime.BOUNDARIES.7
-    yield* table.inputIntents.rows().pipe(
-      Stream.withSpan("firegrid.host.runtime_input_intent.dispatcher", {
-        kind: "internal",
-      }),
-      Stream.runForEach(intent =>
-        input.dispatchIntent(intent).pipe(
-          Effect.catchAll(cause =>
-            Effect.logError("[host-sdk] runtime input intent dispatch failed").pipe(
-              Effect.annotateLogs({ contextId: intent.contextId, intentId: intent.intentId, cause }),
-            )),
-        )),
-      Effect.forkScoped,
-    )
-  }),
-)
+// Wave D-A retirement (PR #714): the per-sequence input mailbox dispatcher
+// path has no consumer post-D-A. The Shape C subscriber consumes typed input
+// facts (via `RuntimeContextInputFactsLive`) — there is no dispatcher to wake
+// a parked body. The `RuntimeInputIntentDispatcherLive` Layer that previously
+// lived here was deleted in the legacy-root deletion wave.

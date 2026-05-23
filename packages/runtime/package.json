@@ -49,10 +49,6 @@
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"
     },
-    "./kernel": {
-      "types": "./src/kernel/index.ts",
-      "default": "./src/kernel/index.ts"
-    },
     "./workflows": {
       "types": "./src/workflow-engine/workflows/index.ts",
       "default": "./src/workflow-engine/workflows/index.ts"

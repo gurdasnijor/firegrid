@@ -65,12 +65,14 @@ import {
 } from "../../../../host-sdk/src/agent-tools/bindings/tool-error.ts"
 import {
   executeRuntimeContextWorkflow,
-} from "@firegrid/runtime/kernel"
+} from "../../../../host-sdk/src/host/internal/run-context-workflow.ts"
 import {
   allocateRuntimeActivityAttempt,
   agentInputEventFromRuntimeIngressRow,
   failAfterWritingRunFailed,
+  readRuntimeContext,
   RuntimeContextWorkflowPayload,
+  runtimeContextWorkflowExecutionId,
   StartRuntimeResultSchema,
   type RuntimeExitEvidence,
   type StartRuntimeResult,
@@ -79,13 +81,11 @@ import {
   writeRunStarted,
 } from "@firegrid/runtime/workflows"
 import {
-  readRuntimeContext,
-  runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
-} from "@firegrid/runtime/kernel"
+} from "../../../../host-sdk/src/host/internal/runtime-context-helpers.ts"
 import {
   RuntimeContextWorkflowRuntime,
-} from "@firegrid/runtime/kernel"
+} from "../../../../host-sdk/src/host/internal/runtime-context-workflow-runtime.ts"
 import {
   RuntimeAgentToolExecutionLive,
 } from "@firegrid/runtime/tool-executor"

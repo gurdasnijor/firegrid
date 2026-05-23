@@ -33,18 +33,26 @@ import {
 } from "./commands.ts"
 import {
   requireLocalRuntimeContextWithHostSession,
-  runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
-} from "@firegrid/runtime/kernel"
+} from "./internal/runtime-context-helpers.ts"
+import {
+  runtimeContextWorkflowExecutionId,
+} from "@firegrid/runtime/workflows"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
+// D-B PARK: `RuntimeContextWorkflowRuntime` Tag + `executeRuntimeContextWorkflow`
+// launcher are the pre-existing D-B tool-bridge residue. Consumers:
+// - `host-sdk/src/host/agent-tool-host-live.ts` (this file)
+// - `host-sdk/src/host/layers.ts` (the matching `*Live` Layer)
+// - `host-sdk/src/agent-tools/execution/toolkit-layer.ts` (Tag-only type ref)
+// Both retire with the D-B production slice (CC2 D-B inventory).
 import {
   RuntimeContextWorkflowRuntime,
-} from "@firegrid/runtime/kernel"
-import { executeRuntimeContextWorkflow } from "@firegrid/runtime/kernel"
+} from "./internal/runtime-context-workflow-runtime.ts"
+import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/workflows"
 import {
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"

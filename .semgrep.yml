@@ -790,7 +790,6 @@ rules:
         - "/packages/runtime/src/agent-event-pipeline/authorities/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
-        - "/packages/runtime/src/kernel/**"
         - "/packages/runtime/src/host/index.ts"
         - "/packages/runtime/src/host/observation-sources.ts"
         - "/packages/runtime/src/agent-tools/mcp-host.ts"
@@ -1499,9 +1498,11 @@ rules:
   # `@firegrid/runtime/subscribers/runtime-context-session`). The runtime
   # `kernel` barrel and the `_archive/` holding pen are runtime-internal.
   #
-  # The 22 existing kernel-barrel sites in host-sdk are recorded as legacy
-  # debt in semgrep-error-baseline.json; new host-sdk kernel-barrel imports
-  # are blocked. `_archive/` imports from host-sdk are zero-baseline.
+  # The kernel barrel and its on-disk subtree (`packages/runtime/src/kernel/`)
+  # were deleted in the legacy-root deletion wave. The host-sdk-no-kernel
+  # baseline is now zero; this rule remains as a regression guard against
+  # reintroducing the import string. `_archive/` imports from host-sdk are
+  # zero-baseline.
   # ------------------------------------------------------------------
 
   - id: firegrid-host-sdk-no-runtime-kernel-import

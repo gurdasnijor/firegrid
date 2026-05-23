@@ -61,14 +61,16 @@ import {
   Cause,
 } from "effect"
 // nosemgrep: firegrid-runtime-no-host-internal-imports-outside-host -- simulation intentionally probes private runtime-context workflow composition before production promotion.
-import { RuntimeHostConfig } from "@firegrid/runtime/kernel"
+import { RuntimeHostConfig } from "../../../../host-sdk/src/host/internal/runtime-host-config.ts"
 // nosemgrep: firegrid-runtime-no-host-internal-imports-outside-host -- simulation intentionally probes private runtime-context workflow composition before production promotion.
 import {
   executeRuntimeContextWorkflow,
-} from "@firegrid/runtime/kernel"
+} from "../../../../host-sdk/src/host/internal/run-context-workflow.ts"
 // nosemgrep: firegrid-runtime-no-host-internal-imports-outside-host -- simulation intentionally probes private runtime-context workflow composition before production promotion.
 import {
+  readRuntimeContext,
   RuntimeContextWorkflowPayload,
+  runtimeContextWorkflowExecutionId,
   StartRuntimeResultSchema,
   agentInputEventFromRuntimeIngressRow,
   allocateRuntimeActivityAttempt,
@@ -81,10 +83,8 @@ import {
 } from "@firegrid/runtime/workflows"
 // nosemgrep: firegrid-runtime-no-host-internal-imports-outside-host -- simulation intentionally probes private runtime-context workflow composition before production promotion.
 import {
-  readRuntimeContext,
-  runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
-} from "@firegrid/runtime/kernel"
+} from "../../../../host-sdk/src/host/internal/runtime-context-helpers.ts"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
   PerContextRuntimeOutputWriter,

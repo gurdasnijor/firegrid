@@ -14,7 +14,7 @@ import {
 } from "@firegrid/runtime/runtime-output"
 import {
   type RuntimeContextStateStore,
-} from "@firegrid/runtime/kernel"
+} from "@firegrid/runtime/tables/runtime-context-state"
 import {
   RuntimeObservationStreamsLive,
 } from "@firegrid/runtime/streams"

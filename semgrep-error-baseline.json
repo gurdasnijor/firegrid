@@ -17,6 +17,16 @@
     },
     {
       "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
+      "path": "packages/host-sdk/src/host/internal/run-context-workflow.ts",
+      "line": 11
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
+      "path": "packages/host-sdk/src/host/internal/runtime-context-workflow-runtime.ts",
+      "line": 1
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
       "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
       "line": 2
     },
@@ -24,86 +34,6 @@
       "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
       "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
       "line": 1
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
-      "line": 31
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 38
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 42
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 43
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 47
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/channels/session-self/index.ts",
-      "line": 32
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/config.ts",
-      "line": 3
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 68
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/per-context-runtime-output.ts",
-      "line": 12
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
-      "line": 44
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
-      "line": 47
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/common.ts",
-      "line": 26
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/common.ts",
-      "line": 29
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/raw-adapter.ts",
-      "line": 15
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 10
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-substrate.ts",
-      "line": 17
     },
     {
       "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
@@ -129,6 +59,11 @@
       "ruleId": "firegrid-host-sdk-no-runtime-workflow-engine-import",
       "path": "packages/host-sdk/src/host/channels/session-self/index.ts",
       "line": 23
+    },
+    {
+      "ruleId": "firegrid-host-sdk-no-runtime-workflow-engine-import",
+      "path": "packages/host-sdk/src/host/internal/runtime-context-workflow-runtime.ts",
+      "line": 17
     },
     {
       "ruleId": "firegrid-host-sdk-no-runtime-workflow-engine-import",

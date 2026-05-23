@@ -11,11 +11,6 @@ import {
   readRuntimeContext,
 } from "@firegrid/runtime/workflows"
 
-export {
-  readRuntimeContext,
-  runtimeContextWorkflowExecutionId,
-} from "@firegrid/runtime/workflows"
-
 // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5
 export const runtimeExecutionClock = Clock.make()
 

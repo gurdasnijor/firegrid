@@ -43,29 +43,11 @@ const legacyRoots = [
 // D-tool, D-D wait/child-output, D-control are sub-lanes).
 const parkAllowlist = {
   // -- packages/runtime/src/kernel/ -----------------------------------
-  // Wave D / Wave E body: legacy RuntimeContext body driver, helpers,
-  // and barrel; deleted alongside the Shape C cutover behavior proofs
-  // (roadmap §"Wave D" input/restart, §"Wave E" public-surface shrink).
-  "packages/runtime/src/kernel/index.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  "packages/runtime/src/kernel/internal/run-context-workflow.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  "packages/runtime/src/kernel/runtime-context-helpers.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  "packages/runtime/src/kernel/runtime-context-workflow-runtime.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
-  "packages/runtime/src/kernel/runtime-host-config.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
+  // Legacy-root deletion wave (this PR): the entire kernel subtree is
+  // deleted. `index.ts` (public barrel) is gone with the `./kernel`
+  // package export; the 4 kernel-internal files moved into
+  // host-sdk/src/host/internal/ (host-shaped tag namespaces, host-only
+  // consumers). No PARK entries remain for kernel/.
 
   // -- packages/runtime/src/workflow-engine/ --------------------------
   // The legacy body, per-sequence input deferred mailbox, and engine

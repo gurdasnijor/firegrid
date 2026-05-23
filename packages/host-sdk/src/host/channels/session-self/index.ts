@@ -26,10 +26,16 @@ import {
   RuntimeChannelRouter,
   makeRuntimeContextChannelRouter,
 } from "../../channel.ts"
+// D-B PARK: `RuntimeContextCheckpointSource` Tag + per-context
+// `RuntimeContextWorkflowCheckpointHandle` are part of the D-B tool-bridge
+// residue (now host-owned at
+// `../../internal/runtime-context-workflow-runtime.ts`). The session-self
+// checkpoint channel reads from this source today; it retires when the
+// D-B production slice replaces the per-context workflow runtime.
 import {
   RuntimeContextCheckpointSource,
   type RuntimeContextWorkflowCheckpointHandle,
-} from "@firegrid/runtime/kernel"
+} from "../../internal/runtime-context-workflow-runtime.ts"
 
 const lifecycleEventFromRow = (
   row: RuntimeRunEventRow,

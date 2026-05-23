@@ -26,9 +26,15 @@ import {
   type FiregridMcpToolFailure,
 } from "../bindings/tools.ts"
 import { AgentToolHost } from "./tool-host.ts"
+// D-B PARK: `RuntimeContextWorkflowRuntime` Tag is the pre-existing D-B
+// tool-bridge residue, now host-owned at
+// `../../host/internal/runtime-context-workflow-runtime.ts`. Retires with
+// the D-B production slice (CC2 D-B inventory) alongside
+// `layers.ts:RuntimeContextWorkflowRuntimeLive` and
+// `host/agent-tool-host-live.ts:RuntimeHostAgentToolHostLive`.
 import {
   RuntimeContextWorkflowRuntime,
-} from "@firegrid/runtime/kernel"
+} from "../../host/internal/runtime-context-workflow-runtime.ts"
 import type { RuntimeChannelRouter } from "../../host/channel.ts"
 import {
   toolCallWorkflowSupportLayer,

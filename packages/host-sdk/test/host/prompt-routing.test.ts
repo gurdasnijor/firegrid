@@ -26,7 +26,7 @@ import {
 import {
   RuntimeContextInput,
   RuntimeContextWorkflowRuntime,
-} from "@firegrid/runtime/kernel"
+} from "../../src/host/internal/runtime-context-workflow-runtime.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

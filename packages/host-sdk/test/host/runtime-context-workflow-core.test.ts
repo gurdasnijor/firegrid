@@ -60,8 +60,8 @@ import { RuntimeHostConfig } from "../../src/host/config.ts"
 import {
   PerContextRuntimeOutputWriter,
 } from "../../src/host/per-context-runtime-output.ts"
-import { executeRuntimeContextWorkflow } from "@firegrid/runtime/kernel"
-import { runtimeContextWorkflowExecutionId } from "@firegrid/runtime/kernel"
+import { executeRuntimeContextWorkflow } from "../../src/host/internal/run-context-workflow.ts"
+import { runtimeContextWorkflowExecutionId } from "@firegrid/runtime/workflows"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

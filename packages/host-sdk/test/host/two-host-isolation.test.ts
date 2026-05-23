@@ -134,24 +134,48 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     expect(contents).not.toContain("runtime-context-engine-registry")
   })
 
-  it("firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5 firegrid-host-sdk.PACKAGE_BOUNDARIES.9 firegrid-agent-body-plan.SESSION_LOG.5 keeps runtime workflow and session-log implementation out of host-sdk", async () => {
-    const removedHostRuntimeFiles = [
+  it("firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5 firegrid-host-sdk.PACKAGE_BOUNDARIES.9 firegrid-agent-body-plan.SESSION_LOG.5 keeps session-log channel implementation in runtime; legacy-root deletion wave hosts the runtime-context-workflow D-B residue in host-sdk/internal", async () => {
+    // Pre-deletion-wave: these files lived under runtime/src/kernel/ and the
+    // old HOST_HARDENING.5 enforcement asserted they did NOT exist in host-sdk.
+    // The legacy-root deletion wave reversed that boundary for the kernel
+    // residue: the runtime tag namespaces were `@firegrid/host-sdk/...` and
+    // the only consumers are host-sdk, so the files moved into
+    // host-sdk/src/host/internal/ and runtime/src/kernel/ was deleted.
+    // The new D-B residue files MUST live in host-sdk/internal/ until their
+    // host-sdk consumers (agent-tool-host-live, layers.ts D-B install) retire.
+    const dbResidueInHostSdkInternal = [
+      "../../src/host/internal/runtime-host-config.ts",
+      "../../src/host/internal/runtime-context-helpers.ts",
+      "../../src/host/internal/runtime-context-workflow-runtime.ts",
+      "../../src/host/internal/run-context-workflow.ts",
+    ]
+    await Promise.all(
+      dbResidueInHostSdkInternal.map(file =>
+        expect(access(new URL(file, import.meta.url))).resolves.toBeUndefined(),
+      ),
+    )
+
+    // The previously-extracted host-sdk-runtime-workflow-core file remains
+    // forbidden in host-sdk; the session-log channel implementation stays in
+    // runtime/src/channels/.
+    const stillForbiddenInHostSdk = [
       "../../src/host/runtime-context-workflow-core.ts",
       "../../src/host/runtime-context-workflow-runtime.ts",
-      "../../src/host/internal/run-context-workflow.ts",
-      "../../src/host/internal/runtime-context-helpers.ts",
       "../../src/host/session-log-channel.ts",
     ]
-
     await Promise.all(
-      removedHostRuntimeFiles.map(file =>
+      stillForbiddenInHostSdk.map(file =>
         expect(access(new URL(file, import.meta.url))).rejects.toThrow(),
       ),
     )
 
+    // Runtime kernel barrel + its on-disk subtree are deleted by the
+    // legacy-root deletion wave (kernel-internal files moved to host-sdk/internal).
     await expect(
-      access(new URL("../../../runtime/src/kernel/runtime-context-workflow-runtime.ts", import.meta.url)),
-    ).resolves.toBeUndefined()
+      access(new URL("../../../runtime/src/kernel", import.meta.url)),
+    ).rejects.toThrow()
+
+    // Session-log channel stays in runtime/src/channels/.
     await expect(
       access(new URL("../../../runtime/src/channels/session-log.ts", import.meta.url)),
     ).resolves.toBeUndefined()

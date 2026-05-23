@@ -19,7 +19,6 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "agent-event-pipeline/session-byte-stream-adapter\\.ts$",
   "agent-adapters/index\\.ts$",
   "agent-event-pipeline/sources/sandbox/index\\.ts$",
-  "kernel/index\\.ts$",
   // Wave D-A (PR #714): host-sdk composes the Shape C subscriber via the
   // runtime composition root + reaches the session-command seam contract
   // directly. Both subpaths are part of the runtime/package.json exports
@@ -27,12 +26,34 @@ const sanctionedRuntimeCapabilitySubpaths = [
   // surface.
   "subscribers/runtime-context-session/index\\.ts$",
   "composition/host-live\\.ts$",
+  // Legacy-root deletion wave: tree-aligned semantic subpaths replacing the
+  // deleted @firegrid/runtime/kernel barrel, per cannon §6 (Tree-aligned
+  // semantic subpaths preferred post-Wave A) and the runtime physical target
+  // tree doc (§Public Package Subpaths). `workflows/index.ts` is the
+  // already-defined-Layer install seam (no Workflow.make from host-sdk).
+  "tables/runtime-context-state\\.ts$",
+  "tables/runtime-context-input-facts\\.ts$",
+  "workflow-engine/workflows/index\\.ts$",
 ].join("|")
 
 // All four prior currentHostSdkSubstrateDebt carve-outs were stale (files
 // absent on disk as of 2026-05-23). Empty by design: any new debt MUST
 // have a named bead owning its retirement before it lands here.
-const currentHostSdkSubstrateDebt = []
+//
+// Legacy-root deletion wave (this PR): the four files that previously
+// lived under packages/runtime/src/kernel/ were relocated into
+// packages/host-sdk/src/host/internal/ (host-shaped @firegrid/host-sdk/...
+// tag namespaces, host-only consumers). One of those four —
+// runtime-context-workflow-runtime.ts — wraps DurableStreamsWorkflowEngine
+// and therefore imports @firegrid/runtime/workflow-engine substrate. Its
+// consumers (host-sdk/src/host/agent-tool-host-live.ts, layers.ts D-B
+// install, agent-tools/execution/toolkit-layer.ts) are the D-B tool-bridge
+// residue tracked by CC5; this carve-out retires when CC5's D-B production
+// slice deletes those consumers and this file becomes unused.
+// Owner: rearch-shape-c / Wave D-B.
+const currentHostSdkSubstrateDebt = [
+  "^packages/host-sdk/src/host/internal/runtime-context-workflow-runtime\\.ts$",
+]
 
 module.exports = {
   forbidden: [
@@ -424,7 +445,7 @@ module.exports = {
       name: "host-sdk-no-workflow-or-durable-substrate-scan",
       severity: "error",
       comment:
-        "Lane D hard guardrail: host-sdk binding modules must not depend on workflow engine substrate, durable-tools, or durable table facades as stable architecture. Existing substrate-debt files are carved out explicitly.",
+        "Lane D hard guardrail: host-sdk binding modules must not depend on workflow engine substrate, durable-tools, or durable table facades as stable architecture. Existing substrate-debt files are carved out explicitly. The public `workflow-engine/workflows/index.ts` subpath (exported as `@firegrid/runtime/workflows`) is sanctioned for installing already-defined Layers per the host-sdk/runtime boundary doc Cannon §6 — Workflow.make/Activity.make still forbidden.",
       from: {
         path: hostSdkBoundaryModules,
         pathNot: currentHostSdkSubstrateDebt,
@@ -432,6 +453,7 @@ module.exports = {
       to: {
         path:
           "(^packages/runtime/src/(?:workflow-engine|durable-tools)(?:/|$)|^packages/effect-durable-operators/src|(^|/)node_modules/(?:\\.pnpm/)?@effect/workflow/)",
+        pathNot: "^packages/runtime/src/workflow-engine/workflows/index\\.ts$",
       },
     },
     {

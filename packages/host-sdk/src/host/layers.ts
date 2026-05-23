@@ -52,20 +52,18 @@ import {
 import {
   makeRawRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/raw-adapter.ts"
-// D-B PARK: `RuntimeContextWorkflowRuntimeLive` import is the
-// pre-existing D-B tool bridge residue. The only remaining production
-// consumer of `RuntimeContextWorkflowRuntime` Tag is the host's
-// per-context tool-host bridge — `RuntimeHostAgentToolHostLive` at
-// `host-sdk/src/host/agent-tool-host-live.ts` + the toolkit layer at
-// `host-sdk/src/agent-tools/execution/toolkit-layer.ts:30,48,91`.
-// Both delete with the D-B production slice (CC2 D-B inventory).
-// Do not add new uses; the dispatcher path retires in D-A (here);
-// the tool-bridge path retires in D-B.
+// D-B PARK: `RuntimeContextWorkflowRuntimeLive` is the pre-existing D-B
+// tool-bridge residue, now host-owned at
+// `./internal/runtime-context-workflow-runtime.ts`. Production consumers
+// of the matching `RuntimeContextWorkflowRuntime` Tag: this Layer +
+// `RuntimeHostAgentToolHostLive` (`./agent-tool-host-live.ts`) +
+// `agent-tools/execution/toolkit-layer.ts`. All retire with the D-B
+// production slice (CC2 D-B inventory). Do not add new uses.
 // Grep blocker:
 //   grep -rn "RuntimeContextWorkflowRuntime" packages/host-sdk/src
 import {
   RuntimeContextWorkflowRuntimeLive,
-} from "@firegrid/runtime/kernel"
+} from "./internal/runtime-context-workflow-runtime.ts"
 import {
   type RuntimeChannelRouter,
 } from "./channel.ts"
