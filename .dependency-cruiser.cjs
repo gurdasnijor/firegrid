@@ -55,6 +55,191 @@ module.exports = {
       from: { path: "^packages/runtime/src" },
       to: { circular: true },
     },
+    // ------------------------------------------------------------------
+    // Wave A semantic-tree folder-direction rules
+    // (docs/architecture/2026-05-22-runtime-physical-target-tree.md).
+    //
+    // Layering (lowest → highest):
+    //   events/  <-  tables/, transforms/  <-  channels/, producers/,
+    //   subscribers/  <-  composition/
+    //
+    // Each rule fails any folder importing from a sibling or higher tier
+    // that the target-tree doc disallows. Folder-path enforcement lives
+    // here (dep-cruiser is path-graph aware); symbol-level bans (Activity
+    // .make, Workflow.suspend, Effect.Effect<>, etc.) stay in semgrep.
+    //
+    // Rules are scoped to packages/runtime/src/<tier>/** only. The legacy
+    // pre-cutover tree (agent-event-pipeline/, workflow-engine/) is not
+    // touched except where transforms/ -> agent-event-pipeline/ is banned
+    // explicitly below (Wave A semantic-move enforcement).
+    // ------------------------------------------------------------------
+    {
+      name: "runtime-events-no-higher-tier-import",
+      severity: "error",
+      comment:
+        "events/ is the pure event-vocabulary tier. It must not import from tables/, transforms/, channels/, producers/, subscribers/, composition/, workflow-engine/, or agent-event-pipeline/. Move shared types INTO events/ and have the higher tier re-export from there. Direct cause: PR #695 first push had events/runtime-context-state.ts re-exporting from ../tables/runtime-context-state.ts — wrong direction. NARROW BRIDGE CARVE-OUT: agent-event-pipeline/events/ is the legacy event-vocabulary home; the Wave 1 forward-target re-export shims under events/ (#689 pattern, transitional until the physical event-vocabulary move) may pull from that subtree only. All other agent-event-pipeline/ subpaths remain banned.",
+      from: { path: "^packages/runtime/src/events/" },
+      to: {
+        path: [
+          "^packages/runtime/src/tables/",
+          "^packages/runtime/src/transforms/",
+          "^packages/runtime/src/channels/",
+          "^packages/runtime/src/producers/",
+          "^packages/runtime/src/subscribers/",
+          "^packages/runtime/src/composition/",
+          "^packages/runtime/src/workflow-engine/",
+          "^packages/runtime/src/agent-event-pipeline/",
+        ],
+        pathNot: ["^packages/runtime/src/agent-event-pipeline/events/"],
+      },
+    },
+    {
+      name: "runtime-tables-no-higher-tier-import",
+      severity: "error",
+      comment:
+        "tables/ is the durable state-of-record tier; it may depend on events/ + protocol. It must not import from transforms/ (transforms are pure consumers of events, not callable from tables), channels/, producers/, subscribers/, or composition/.",
+      from: { path: "^packages/runtime/src/tables/" },
+      to: {
+        path: [
+          "^packages/runtime/src/transforms/",
+          "^packages/runtime/src/channels/",
+          "^packages/runtime/src/producers/",
+          "^packages/runtime/src/subscribers/",
+          "^packages/runtime/src/composition/",
+        ],
+      },
+    },
+    {
+      name: "runtime-transforms-no-higher-tier-import",
+      severity: "error",
+      comment:
+        "transforms/ is the pure-function tier. It may depend on events/ and protocol. It must not import from tables/, channels/, producers/, subscribers/, composition/, or the legacy agent-event-pipeline/ tree (the pre-cutover event-vocab home — use events/ instead).",
+      from: { path: "^packages/runtime/src/transforms/" },
+      to: {
+        path: [
+          "^packages/runtime/src/tables/",
+          "^packages/runtime/src/channels/",
+          "^packages/runtime/src/producers/",
+          "^packages/runtime/src/subscribers/",
+          "^packages/runtime/src/composition/",
+          "^packages/runtime/src/agent-event-pipeline/",
+        ],
+      },
+    },
+    {
+      name: "runtime-producers-no-peer-or-higher-tier-import",
+      severity: "error",
+      comment:
+        "producers/ is a middle tier; per the target-tree doc, producers/transforms/channels are peers and peers do not import each other. producers/ may import only events/ + tables/ (+ allowed external libs); it must not import transforms/, channels/, subscribers/, or composition/.",
+      from: { path: "^packages/runtime/src/producers/" },
+      to: {
+        path: [
+          "^packages/runtime/src/transforms/",
+          "^packages/runtime/src/channels/",
+          "^packages/runtime/src/subscribers/",
+          "^packages/runtime/src/composition/",
+        ],
+      },
+    },
+    {
+      name: "runtime-channels-no-peer-or-higher-tier-import",
+      severity: "error",
+      comment:
+        "channels/ is a middle tier; per the target-tree doc, channels/transforms/producers are peers and peers do not import each other. channels/ may import only events/ + tables/ (+ protocol/external libs); it must not import transforms/, producers/, subscribers/, or composition/.",
+      from: { path: "^packages/runtime/src/channels/" },
+      to: {
+        path: [
+          "^packages/runtime/src/transforms/",
+          "^packages/runtime/src/producers/",
+          "^packages/runtime/src/subscribers/",
+          "^packages/runtime/src/composition/",
+        ],
+      },
+    },
+    {
+      name: "runtime-subscribers-no-composition-import",
+      severity: "error",
+      comment:
+        "subscribers/ depend on typed lower-tier sources (tables/, transforms/, channels/, events/). composition/ wires subscribers into the runtime graph, not the reverse.",
+      from: { path: "^packages/runtime/src/subscribers/" },
+      to: { path: "^packages/runtime/src/composition/" },
+    },
+    {
+      name: "runtime-subscribers-no-producers-import",
+      severity: "error",
+      comment:
+        "HARD STOP per the target-tree roadmap: subscribers/ must not import producers/, full stop. Subscribers depend on typed lower-tier sources (tables/, transforms/, channels/, events/). A subscriber that needs producer behavior either needs a typed table read (cleaner) or itself crosses into producer responsibilities (wrong tier). The Shape C-specific rule below stays in place for sharper messaging on the runtime-context subtree.",
+      from: { path: "^packages/runtime/src/subscribers/" },
+      to: { path: "^packages/runtime/src/producers/" },
+    },
+    {
+      name: "runtime-shape-c-runtime-context-no-producers-import",
+      severity: "error",
+      comment:
+        "Shape C subscribers under subscribers/runtime-context/ and subscribers/runtime-context-session/ depend on typed table reads + narrow channel tags. Importing from producers/ either grows a write authority into the per-event handler (Shape D drift) or duplicates a producer's own responsibilities. (Redundant with the broader subscribers->producers ban above; kept for the sharper Shape C message.)",
+      from: {
+        path: [
+          "^packages/runtime/src/subscribers/runtime-context/",
+          "^packages/runtime/src/subscribers/runtime-context-session/",
+        ],
+      },
+      to: { path: "^packages/runtime/src/producers/" },
+    },
+    {
+      name: "runtime-tables-no-legacy-tree-import",
+      severity: "error",
+      comment:
+        "Target-tree tables/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. The Wave A semantic move makes tables/ self-contained (it depends on events/ + protocol only); imports back into the legacy tree defeat the move.",
+      from: { path: "^packages/runtime/src/tables/" },
+      to: {
+        path: [
+          "^packages/runtime/src/workflow-engine/",
+          "^packages/runtime/src/agent-event-pipeline/",
+        ],
+      },
+    },
+    {
+      name: "runtime-producers-no-legacy-tree-import",
+      severity: "error",
+      comment:
+        "Target-tree producers/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. Wave A semantic-move enforcement.",
+      from: { path: "^packages/runtime/src/producers/" },
+      to: {
+        path: [
+          "^packages/runtime/src/workflow-engine/",
+          "^packages/runtime/src/agent-event-pipeline/",
+        ],
+      },
+    },
+    {
+      name: "runtime-channels-no-legacy-tree-import",
+      severity: "error",
+      comment:
+        "Target-tree channels/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. Wave A semantic-move enforcement.",
+      from: { path: "^packages/runtime/src/channels/" },
+      to: {
+        path: [
+          "^packages/runtime/src/workflow-engine/",
+          "^packages/runtime/src/agent-event-pipeline/",
+        ],
+      },
+    },
+    {
+      name: "runtime-subscribers-no-legacy-tree-import",
+      severity: "error",
+      comment:
+        "Target-tree subscribers/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. PR #694 (handler move) declared one named temporary outlier — RuntimeToolUseExecutor's target subpath in the new tree is not yet decided, so the per-event handler imports it from workflow-engine/tool-execution/runtime-tool-use-executor.ts. That single file is carved out below; when a follow-up PR lands the executor's Shape-C-friendly subpath, the carveout shrinks to a deletion. All other workflow-engine/ + agent-event-pipeline/ subpaths remain banned.",
+      from: { path: "^packages/runtime/src/subscribers/" },
+      to: {
+        path: [
+          "^packages/runtime/src/workflow-engine/",
+          "^packages/runtime/src/agent-event-pipeline/",
+        ],
+        pathNot: [
+          "^packages/runtime/src/workflow-engine/tool-execution/runtime-tool-use-executor\\.ts$",
+        ],
+      },
+    },
     {
       // firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.4
       // firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.6
