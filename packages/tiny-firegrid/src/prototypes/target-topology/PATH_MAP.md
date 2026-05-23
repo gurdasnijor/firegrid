@@ -23,14 +23,14 @@ folder; **keep** = already in the right place; **delete** = bridge code retired.
 | Prototype | Production target | Action |
 |---|---|---|
 | `tables/runtime-context-state-store.ts` | `packages/runtime/src/workflow-engine/runtime-context-state.ts` → re-home under `agent-event-pipeline/authorities/` | move — this is the Shape C state-of-record |
-| `tables/runtime-output-table.ts` (`*Read`/`*Write`) | `agent-event-pipeline/authorities/runtime-output-journal.ts` (read) + `agent-event-pipeline/authorities/per-context-output-writer` (write) | keep — already split by polarity in prod |
+| `tables/runtime-output-table.ts` (`*Read`/`*Write`) | `tables/runtime-output.ts` (read) + `producers/ingress-writers/per-context-output-writer` (write) | keep — already split by polarity in prod |
 
 ## producers/
 
 | Prototype | Production target | Action |
 |---|---|---|
 | `producers/agent-session.ts` | `agent-event-pipeline/codecs/contract.ts` (`AgentSession`) + `sources/byte-stream.ts` | keep — Shape A live boundary |
-| `producers/tool-use-executor.ts` | `packages/runtime/src/workflow-engine/tool-execution/` + `agent-event-pipeline/tool-execution/` | keep |
+| `producers/tool-use-executor.ts` | `packages/runtime/src/workflow-engine/tool-execution/` + `subscribers/tool-dispatch/` | keep |
 
 ## transforms/
 

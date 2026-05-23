@@ -18,7 +18,7 @@ import {
   type HostStreamPrefix,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
-import { encodeRuntimeAgentOutputEnvelope } from "../../src/agent-event-pipeline/events/index.ts"
+import { encodeRuntimeAgentOutputEnvelope } from "../../src/events/index.ts"
 import {
   makeRuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
@@ -33,7 +33,7 @@ import {
 import type {
   AgentInputEvent,
   RuntimeAgentOutputObservation,
-} from "../../src/agent-event-pipeline/events/index.ts"
+} from "../../src/events/index.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

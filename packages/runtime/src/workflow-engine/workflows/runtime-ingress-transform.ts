@@ -13,7 +13,7 @@
 
 import type { Effect } from "effect"
 import type { RuntimeIngressInputRow } from "@firegrid/protocol/runtime-ingress"
-import type { AgentInputEvent } from "../../agent-event-pipeline/events/index.ts"
+import type { AgentInputEvent } from "../../events/index.ts"
 import { agentInputEventFromRuntimeIngressRow as decodeAgentInputEventEither } from "../../transforms/decode-ingress-row.ts"
 import type { RuntimeIngressAgentInputTransformError } from "../../transforms/decode-ingress-row.ts"
 

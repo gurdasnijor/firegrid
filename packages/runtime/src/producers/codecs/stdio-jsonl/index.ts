@@ -5,8 +5,8 @@ import type {
   AgentInputEvent,
   AgentOutputEvent,
   StopReason,
-} from "../../events/index.ts"
-import type { AgentByteStream } from "../../sources/byte-stream.ts"
+} from "../../../events/index.ts"
+import type { AgentByteStream } from "../../sandbox/byte-stream.ts"
 import { AgentCodecError, AgentSession } from "../contract.ts"
 
 const codec = "stdio-jsonl"

@@ -1,6 +1,6 @@
 // Runtime side: register the `ToolCallWorkflow` handler with the engine.
 //
-// Mirrors production `packages/runtime/src/agent-event-pipeline/tool-execution/
+// Mirrors production `packages/runtime/src/subscribers/tool-dispatch/
 // runtime-tool-call-workflow.ts`:
 //
 //   export const RuntimeToolCallWorkflowLayer = ToolCallWorkflow.toLayer(

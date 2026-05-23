@@ -61,9 +61,9 @@ const memoized = yield* Activity.make(/* ... */)   // workflow machinery in a pr
 
 ## Scaffold status
 
-Empty subfolders staged. Wave 2 moves `agent-event-pipeline/sources/sandbox/`,
-`agent-event-pipeline/codecs/`, and
-`agent-event-pipeline/authorities/per-context-output.ts` into this tree, and
+Empty subfolders staged. Wave 2 moves `producers/sandbox/`,
+`producers/codecs/`, and
+`producers/ingress-writers/per-context-output.ts` into this tree, and
 introduces `runtime-context-input-facts.ts` as the input-fact append authority.
 The public subpath `@firegrid/runtime/producers/runtime-context-input-facts` is
 reserved for that Wave 2 export.

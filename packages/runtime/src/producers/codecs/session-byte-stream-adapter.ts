@@ -14,16 +14,16 @@ import {
 import type {
   AgentInputEvent,
   AgentOutputEvent,
-} from "./events/index.ts"
+} from "../../events/index.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "../runtime-errors.ts"
+} from "../../runtime-errors.ts"
 import type {
   AgentByteStream,
   ProcessOutputChunk,
-} from "./sources/sandbox/index.ts"
+} from "../sandbox/index.ts"
 
 type SequencedChunk = {
   readonly sequence: number

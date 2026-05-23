@@ -15,7 +15,7 @@ import {
 import type {
   AgentInputEvent,
   RuntimeAgentOutputObservation,
-} from "../../src/agent-event-pipeline/events/index.ts"
+} from "../../src/events/index.ts"
 
 const CTX = "ctx_transition_test"
 const PERMISSION_ID = "perm-1"

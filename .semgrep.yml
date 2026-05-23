@@ -552,7 +552,8 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
@@ -577,8 +578,8 @@ rules:
         functions from host/pipeline composition.
     paths:
       include:
-        - "/packages/runtime/src/agent-event-pipeline/subscribers/**/*.ts"
-        - "/packages/runtime/src/agent-event-pipeline/transforms/**/*.ts"
+        - "/packages/runtime/src/subscribers/**/*.ts"
+        - "/packages/runtime/src/transforms/**/*.ts"
         - "/semgrep-tests/**/*.ts"
       exclude:
         - "**/*.test.ts"
@@ -714,8 +715,10 @@ rules:
         owning authority module. Layer.succeed/effect elsewhere creates a hidden
         second writer/reader authority.
       fix-hint: |
-        Move the provider to packages/runtime/src/authorities/** or packages/runtime/src/agent-event-pipeline/authorities/** or compose the
-        existing authority provider layer.
+        Move the provider to packages/runtime/src/authorities/**,
+        packages/runtime/src/producers/ingress-writers/**, or
+        packages/runtime/src/tables/**, or compose the existing authority
+        provider layer.
     paths:
       include:
         - "/packages/runtime/src/**/*.ts"
@@ -726,7 +729,8 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
     message: |
@@ -750,8 +754,8 @@ rules:
         Stream parameter for pure transform code.
     paths:
       include:
-        - "/packages/runtime/src/agent-event-pipeline/subscribers/**/*.ts"
-        - "/packages/runtime/src/agent-event-pipeline/transforms/**/*.ts"
+        - "/packages/runtime/src/subscribers/**/*.ts"
+        - "/packages/runtime/src/transforms/**/*.ts"
         - "/semgrep-tests/**/*.ts"
       exclude:
         - "**/*.test.ts"
@@ -787,7 +791,8 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/kernel/**"
@@ -991,7 +996,8 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
@@ -1330,13 +1336,13 @@ rules:
     paths:
       # RuntimeContext input/tool/permission/child-session durable-progress
       # surfaces. workflow-engine/workflows holds the input-wait body and child
-      # spawn; agent-event-pipeline/control-plane/channels hold tool, permission,
+      # spawn; control-plane/channels hold tool, permission,
       # and routed waits. workflow-engine/internal is intentionally OUT of scope:
       # its DurableDeferred clock-wakeup is an engine primitive, not a
       # RuntimeContext wait kind C4 governs.
       include:
         - "/packages/runtime/src/workflow-engine/workflows/**/*.ts"
-        - "/packages/runtime/src/agent-event-pipeline/**/*.ts"
+        - "/packages/runtime/src/{producers,subscribers,tables,transforms,events}/**/*.ts"
         - "/packages/runtime/src/control-plane/**/*.ts"
         - "/packages/runtime/src/channels/**/*.ts"
         - "/semgrep-tests/**/*.ts"
@@ -1434,7 +1440,7 @@ rules:
   # tf-1r0o cutover: shape-aware drift guards for the Shape C RuntimeContext
   # subscriber landing zone and the transforms purity rule. These extend the
   # tf-zchu cannon enforcement (above) to the production target paths named in
-  # packages/runtime/src/agent-event-pipeline/TOPOLOGY.md.
+  # docs/architecture/2026-05-22-runtime-physical-target-tree.md.
   # ===========================================================================
 
   - id: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
@@ -1454,7 +1460,7 @@ rules:
         either turns the subscriber into a Shape D body (parked, replaying,
         C2 violation) or implicitly assumes a workflow runtime the host
         composition is not obligated to provide. A subscriber that genuinely
-        needs Activity machinery lives in `agent-event-pipeline/tool-execution/`
+        needs Activity machinery lives in `subscribers/tool-dispatch/`
         or under a justified `workflow-engine/workflows/` landing, not here.
       fix-hint: |
         Make the wait a durable completion keyed by domain identity
@@ -1463,7 +1469,7 @@ rules:
         Run side effects through narrow capability tags
         (RuntimeToolUseExecutor, AgentSession, EgressChannel). If the work
         genuinely earns workflow machinery, move the file to
-        agent-event-pipeline/tool-execution/ (Shape D) and surface the
+        subscribers/tool-dispatch/ (Shape D) and surface the
         machinery justification in the SDD per the constraint-doc gate.
     paths:
       include:
@@ -1800,7 +1806,7 @@ rules:
         `tables/`, `channels/`, `producers/`, `subscribers/`, or
         `composition/` is a structure violation (lower-tier importing
         higher-tier). Reaching back into the legacy
-        `agent-event-pipeline/events/` (the pre-cutover event-vocab home)
+        `events/` (the pre-cutover event-vocab home)
         defeats the Wave A semantic move — the new `events/` folder is the
         canonical event-vocabulary home. Other `@effect/<sub>` packages
         (`@effect/ai`, `@effect/platform`, etc.) are NOT silently blocked
@@ -1813,7 +1819,7 @@ rules:
         (state, actions)`; if you need to read durable state, the caller
         provides the state value; if you need to dispatch an effect, return an
         action record the caller consumes. If you need a legacy event-vocab
-        symbol from `agent-event-pipeline/events/`, add a re-export under
+        symbol from `events/`, add a re-export under
         `packages/runtime/src/events/` first and import from `../events/*`.
     paths:
       include:

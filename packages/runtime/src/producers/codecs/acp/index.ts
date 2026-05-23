@@ -7,8 +7,8 @@ import type {
   AgentOutputEvent,
   PermissionDecision,
   PermissionOption,
-} from "../../events/index.ts"
-import type { AgentByteStream } from "../../sources/byte-stream.ts"
+} from "../../../events/index.ts"
+import type { AgentByteStream } from "../../sandbox/byte-stream.ts"
 import { AgentCodecError, AgentSession } from "../contract.ts"
 import {
   acpStopReasonToFinishReason,

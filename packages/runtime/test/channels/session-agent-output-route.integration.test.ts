@@ -22,7 +22,7 @@ import {
 import { SessionAgentOutputChannelTarget } from "@firegrid/protocol/channels"
 import { Effect, type Scope } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { encodeRuntimeAgentOutputEnvelope } from "../../src/agent-event-pipeline/events/index.ts"
+import { encodeRuntimeAgentOutputEnvelope } from "../../src/events/index.ts"
 import { sessionAgentOutputChannel } from "../../src/channels/session-agent-output.ts"
 import {
   makeRuntimeChannelRouter,
@@ -31,7 +31,7 @@ import {
 import type {
   AgentOutputEvent,
   RuntimeAgentOutputObservation,
-} from "../../src/agent-event-pipeline/events/index.ts"
+} from "../../src/events/index.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

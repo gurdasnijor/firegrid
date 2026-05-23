@@ -891,7 +891,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts",
+      "file": "packages/runtime/src/producers/codecs/acp/index.ts",
       "line": 566,
       "column": 54,
       "severity": "message",
@@ -900,7 +900,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts",
+      "file": "packages/runtime/src/producers/codecs/acp/index.ts",
       "line": 596,
       "column": 54,
       "severity": "message",
@@ -909,7 +909,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts",
+      "file": "packages/runtime/src/producers/codecs/acp/index.ts",
       "line": 642,
       "column": 9,
       "severity": "message",
@@ -918,7 +918,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/agent-event-pipeline/codecs/stdio-jsonl/index.ts",
+      "file": "packages/runtime/src/producers/codecs/stdio-jsonl/index.ts",
       "line": 224,
       "column": 21,
       "severity": "message",

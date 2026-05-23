@@ -42,24 +42,28 @@ docs-only metadata, compatibility aliases, or tests.
 
 | Folder | Responsibility |
 | --- | --- |
-| `src/agent-event-pipeline/` | Agent runtime event pipeline bounded context. |
-| `src/agent-event-pipeline/sources/` | Live process, byte stream, and sandbox edges. |
-| `src/agent-event-pipeline/codecs/` | Protocol wire/session normalization into `AgentSession`. |
-| `src/agent-event-pipeline/events/` | Normalized agent input/output events, envelope helpers, and stage contracts. |
-| `src/agent-event-pipeline/transforms/` | Pure stream and row-shaping functions shared by pipeline components. |
-| `src/agent-event-pipeline/authorities/` | Runtime output durable capability providers. |
-| `src/agent-event-pipeline/subscribers/` | Historical subscriber boundary; runtime-context routing now lives in the host workflow/session owner. |
+| `src/events/` | Normalized agent input/output events, envelope helpers, and stage contracts (pipeline layer 1). |
+| `src/tables/` | Durable runtime state and event-table bindings (pipeline layer 2). |
+| `src/producers/sandbox/` | Live process, byte stream, and sandbox edges (Shape A producers). |
+| `src/producers/codecs/` | Protocol wire/session normalization into `AgentSession` (Shape A producers). |
+| `src/producers/ingress-writers/` | Append authorities bridging live boundaries into durable rows. |
+| `src/transforms/` | Pure stream/row-shaping reducers, decoders, trigger evaluation. |
+| `src/channels/` | Runtime channel implementations, route projections, host-plane router. |
+| `src/subscribers/runtime-context/` | Shape C per-event RuntimeContext handler. |
+| `src/subscribers/runtime-context-session/` | Shape C codec-session command sink. |
+| `src/subscribers/tool-dispatch/` | Shape D tool-dispatch workflow + executor capability. |
+| `src/subscribers/wait-router/`, `scheduled-prompt/`, `runtime-control/`, `projections/` | Shape D/B subscriber landing zones. |
+| `src/composition/` | Runtime-local Layer composition and topology checks. |
 | `src/authorities/` | Runtime control-plane authorities for contexts and runs. |
-| `src/host/` | Runtime host topology, command entrypoints, config-derived layers, host-owned table wiring, and host-coupled tool services. |
-| `src/workflow-engine/` | Firegrid durable-table adapter for `@effect/workflow`. |
-| `src/agent-tools/` | Runtime tool catalog, MCP host projection, scheduled input workflow, and tool lowering. |
+| `src/workflow-engine/` | Firegrid durable-table adapter for `@effect/workflow` (legacy + Shape D workflow body home). |
 | `src/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping. |
 | `src/verified-webhook-ingest/` | Adjacent verified webhook fact ingest adapter. |
 
-`agent-event-pipeline/` is the only folder that should grow stage-like runtime
-event pipeline code. Host, workflow engine, tools, adapters, source
-registration, verified ingest, and control-plane authorities are adjacent
-bounded contexts, not pipeline stages.
+Layer order is `events < tables < producers/transforms/channels < subscribers < composition`. See
+[`docs/architecture/2026-05-22-runtime-physical-target-tree.md`](../../docs/architecture/2026-05-22-runtime-physical-target-tree.md)
+for the canonical map. The legacy `src/agent-event-pipeline/` bounded context
+was retired by the cleanup wave that physically moved its files into the
+folders above.
 
 ## Event Pipeline Shape
 
@@ -132,7 +136,7 @@ Runtime-owned durable writes are grouped by authority provider:
 
 | Durable family | Authority/provider |
 | --- | --- |
-| Runtime output events and logs | `RuntimeAgentOutputEventsLayer` and read-side output tags in `agent-event-pipeline/authorities/runtime-output-journal.ts`. |
+| Runtime output events and logs | `RuntimeAgentOutputEventsLayer` and read-side output tags in `tables/runtime-output.ts`. |
 | Runtime contexts and run events | `RuntimeControlPlaneRecorderLive` in `src/authorities/`. |
 
 Authority modules expose concrete write capabilities and concrete read
