@@ -4,9 +4,10 @@
 // `docs/cannon/architecture/runtime-pipeline-type-boundaries.md`
 // §"Shape C: Stateful Keyed Subscriber, No Workflow Machinery":
 //
-//   handleRuntimeContextEvent: (context, event: RuntimeContextTargetEvent) =>
+//   handleRuntimeContextEvent: (context, attempt, event) =>
 //     Effect<void, RuntimeContextError,
-//       RuntimeContextStateStore | AgentSession | RuntimeToolUseExecutor>
+//       RuntimeContextStateStore | RuntimeContextWorkflowSession
+//       | RuntimeToolUseExecutor>
 //
 // The handler is a (state, event) → (newState, actions) reducer that
 // materializes for ONE event, advances the durable state row via the
@@ -17,17 +18,31 @@
 // `transitionOutputEvent` in `workflow-engine/workflows/runtime-context.ts`)
 // are reused as-is.
 //
-// `activityAttempt` is currently part of the `RuntimeContextStateStore` row
-// key, so this handler takes it explicitly. Once Shape C is the only writer of
-// runtime-context state, the attempt becomes context-private (kernel-allocated)
-// and can drop from the public signature; see the cutover delta doc.
+// Why `RuntimeContextWorkflowSession`, not `AgentSession`:
+//   `AgentSession` is a live codec-scoped capability built by AcpSessionLive
+//   / StdioJsonlSessionLive from `AgentByteStream`; host-sdk stores it inside
+//   `CodecRuntimeContextSession` and uses it there. Making it ambient in
+//   host composition would leak live codec state into durable subscriber
+//   composition. `RuntimeContextWorkflowSession` is already the runtime-owned
+//   inversion seam between the durable plane and the host-sdk live session
+//   adapter (`startOrAttach` + `send(command)`); reusing it keeps Shape C R
+//   addressed to a durable-side tag and gives host composition an existing
+//   layer to satisfy.
 //
-// Tool execution: when transitionOutputEvent returns a `RunToolUse` action, the
-// handler invokes `RuntimeToolUseExecutor.execute` synchronously and feeds the
-// result back via `AgentSession.send`. The executor's service interface has
-// been tightened (this PR) so its `execute` method does NOT propagate
-// `WorkflowEngine | WorkflowInstance` to the caller's R; implementations
-// internally provide their real dependencies at layer construction.
+// `activityAttempt` is part of both `RuntimeContextStateStore`'s row key and
+// the `RuntimeContextWorkflowSession.send(context, attempt, command)` surface,
+// so this handler takes it explicitly. Once Shape C is the only writer of
+// runtime-context state, the attempt becomes context-private
+// (kernel-allocated) and can drop from the public signature; see the cutover
+// delta doc.
+//
+// Tool execution: when `transitionOutputEvent` returns a `RunToolUse` action,
+// the handler invokes `RuntimeToolUseExecutor.execute` synchronously and
+// feeds the result back through the same session-command seam. The
+// executor's service interface has been tightened (this PR) so its `execute`
+// method does NOT propagate `WorkflowEngine | WorkflowInstance` to the
+// caller's R; implementations internally provide their real dependencies at
+// layer construction.
 
 import {
   agentInputEventFromRuntimeIngressRow,
@@ -35,6 +50,8 @@ import {
 import {
   transitionInputEvent,
   transitionOutputEvent,
+  RuntimeContextWorkflowSession,
+  type RuntimeContextSessionCommand,
   type RuntimeContextTransitionAction,
 } from "../../../workflow-engine/workflows/runtime-context.ts"
 import {
@@ -44,7 +61,6 @@ import {
 import {
   RuntimeToolUseExecutor,
 } from "../../../workflow-engine/tool-execution/runtime-tool-use-executor.ts"
-import { AgentSession } from "../../codecs/contract.ts"
 import {
   type AgentInputEvent,
   type RuntimeAgentOutputObservation,
@@ -84,24 +100,51 @@ const eventAlreadyProcessed = (
       // ToolResult facts do not advance the cursor today: they are produced
       // inline from a ToolUse output transition. The arrival of a separately-
       // delivered ToolResult event is treated as a fresh dispatch each time;
-      // AgentSession.send is the idempotency boundary downstream.
+      // `RuntimeContextWorkflowSession.send` is the idempotency boundary
+      // downstream (commandId-keyed).
       return false
   }
 }
 
+// Build a deterministic commandId for an outgoing session command. Matches the
+// shape the wrong-shape body used so the host-sdk live session adapter sees
+// stable ids across the cutover (input rows by inputId; tool results by
+// toolUseId).
+const commandIdForInputRow = (
+  contextId: string,
+  row: RuntimeIngressInputRow,
+): string => `runtime-input-${contextId}-${row.inputId}`
+
+const commandIdForToolResult = (
+  contextId: string,
+  activityAttempt: number,
+  toolUseId: string,
+): string => `tool-${contextId}-${activityAttempt}-${toolUseId}`
+
 const dispatchAction = (
   context: RuntimeContext,
+  activityAttempt: number,
   action: RuntimeContextTransitionAction,
 ): Effect.Effect<
   void,
   RuntimeContextError,
-  AgentSession | RuntimeToolUseExecutor
+  RuntimeContextWorkflowSession | RuntimeToolUseExecutor
 > =>
   Match.value(action).pipe(
     Match.tagsExhaustive({
       None: () => Effect.void,
-      SendRuntimeInput: ({ event }) => sendToSession(context, event),
-      SendPermissionResponse: ({ event }) => sendToSession(context, event),
+      SendRuntimeInput: ({ row, event }) =>
+        sendSessionCommand(context, activityAttempt, {
+          _tag: "AgentInput",
+          commandId: commandIdForInputRow(context.contextId, row),
+          event,
+        }),
+      SendPermissionResponse: ({ row, event }) =>
+        sendSessionCommand(context, activityAttempt, {
+          _tag: "AgentInput",
+          commandId: commandIdForInputRow(context.contextId, row),
+          event,
+        }),
       RunToolUse: ({ output }) =>
         // ACP codecs are observation-only: the provider already executed the
         // tool. stdio-jsonl is host-result roundtrip. This guard preserves
@@ -109,39 +152,38 @@ const dispatchAction = (
         // (Mirrors the dispatch guard in the wrong-shape `handleToolUseOutput`.)
         context.runtime.config.agentProtocol === "acp"
           ? Effect.void
-          : runToolAndSend(context, output),
+          : runToolAndSend(context, activityAttempt, output),
     }),
   )
 
-const sendToSession = (
+const sendSessionCommand = (
   context: RuntimeContext,
-  event: AgentInputEvent,
-): Effect.Effect<void, RuntimeContextError, AgentSession> =>
+  activityAttempt: number,
+  command: RuntimeContextSessionCommand,
+): Effect.Effect<void, RuntimeContextError, RuntimeContextWorkflowSession> =>
   Effect.gen(function*() {
-    const session = yield* AgentSession
-    yield* session.send(event)
+    const session = yield* RuntimeContextWorkflowSession
+    yield* session.send(context, activityAttempt, command)
   }).pipe(
-    mapRuntimeContextError(
-      "runtime-context.session.send",
-      "failed forwarding event to agent session",
-      context.contextId,
-    ),
     Effect.withSpan("firegrid.runtime_context.subscriber.session.send", {
       kind: "producer",
       attributes: {
         "firegrid.context.id": context.contextId,
-        "firegrid.agent_input.event_tag": event._tag,
+        "firegrid.runtime.activity_attempt": activityAttempt,
+        "firegrid.runtime.command_id": command.commandId,
+        "firegrid.agent_input.event_tag": command.event._tag,
       },
     }),
   )
 
 const runToolAndSend = (
   context: RuntimeContext,
+  activityAttempt: number,
   output: RuntimeAgentOutputObservation,
 ): Effect.Effect<
   void,
   RuntimeContextError,
-  AgentSession | RuntimeToolUseExecutor
+  RuntimeContextWorkflowSession | RuntimeToolUseExecutor
 > =>
   Effect.gen(function*() {
     if (output.event._tag !== "ToolUse") return
@@ -150,7 +192,15 @@ const runToolAndSend = (
       { contextId: context.contextId },
       output.event,
     )
-    yield* sendToSession(context, result)
+    yield* sendSessionCommand(context, activityAttempt, {
+      _tag: "AgentInput",
+      commandId: commandIdForToolResult(
+        context.contextId,
+        activityAttempt,
+        output.event.part.id,
+      ),
+      event: result,
+    })
   }).pipe(
     Effect.withSpan("firegrid.runtime_context.subscriber.tool_use.run", {
       kind: "internal",
@@ -205,7 +255,8 @@ const reduce = (
 
 // The Shape C per-event handler. Materializes for one event, advances durable
 // state, dispatches actions, returns. R channel is exactly the three target
-// services from the type-boundaries doc; no `WorkflowEngine` appears.
+// services from the type-boundaries doc; no `WorkflowEngine`, no
+// `AgentSession`.
 export const handleRuntimeContextEvent = (
   context: RuntimeContext,
   activityAttempt: number,
@@ -213,15 +264,26 @@ export const handleRuntimeContextEvent = (
 ): Effect.Effect<
   void,
   RuntimeContextError,
-  RuntimeContextStateStore | AgentSession | RuntimeToolUseExecutor
+  | RuntimeContextStateStore
+  | RuntimeContextWorkflowSession
+  | RuntimeToolUseExecutor
 > =>
   Effect.gen(function*() {
     // ToolResult facts are inline dispatches: forward to the session and
     // return. They carry no input/output cursor and do not mutate the
     // RuntimeContext durable row — the state cursor model belongs to
-    // input/output. AgentSession.send is the downstream idempotency boundary.
+    // input/output. The session-command seam is the downstream idempotency
+    // boundary (commandId-keyed).
     if (event._tag === "ToolResult") {
-      yield* sendToSession(context, event.event)
+      yield* sendSessionCommand(context, activityAttempt, {
+        _tag: "AgentInput",
+        commandId: commandIdForToolResult(
+          context.contextId,
+          activityAttempt,
+          event.event.part.id,
+        ),
+        event: event.event,
+      })
       return
     }
     const stateStore = yield* RuntimeContextStateStore
@@ -239,7 +301,7 @@ export const handleRuntimeContextEvent = (
       return
     }
     const result = yield* reduce(context, state, event)
-    yield* dispatchAction(context, result.action)
+    yield* dispatchAction(context, activityAttempt, result.action)
     yield* stateStore.save(context, activityAttempt, result.state).pipe(
       mapRuntimeContextError(
         "runtime-context.state.save",

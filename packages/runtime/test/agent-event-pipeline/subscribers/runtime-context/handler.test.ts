@@ -1,10 +1,15 @@
 // Focused tests for the Shape C RuntimeContext per-event handler.
-// See `packages/runtime/src/subscribers/C-runtime-context/handler.ts`.
+// See `packages/runtime/src/agent-event-pipeline/subscribers/runtime-context/handler.ts`.
 //
 // Three slices, one invariant each:
-//   1. state transition + action dispatch through AgentSession;
+//   1. state transition + action dispatch through the session-command seam;
 //   2. reload-after-restart idempotency (second handler call is a no-op);
-//   3. tool-result roundtrip through RuntimeToolUseExecutor + AgentSession.
+//   3. tool-result roundtrip through RuntimeToolUseExecutor + the session-
+//      command seam.
+//
+// The handler's R names `RuntimeContextWorkflowSession` (not `AgentSession`):
+// the test double here records the `(activityAttempt, command)` pairs the
+// handler hands off to the session-command sink.
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Effect, Layer, Ref, type Scope } from "effect"
@@ -27,15 +32,14 @@ import {
   RuntimeToolUseExecutor,
 } from "../../../../src/workflow-engine/tool-execution/runtime-tool-use-executor.ts"
 import {
-  AgentSession,
-} from "../../../../src/agent-event-pipeline/codecs/contract.ts"
-import type { AgentSessionService } from "../../../../src/agent-event-pipeline/codecs/contract.ts"
+  RuntimeContextWorkflowSession,
+  type RuntimeContextSessionCommand,
+} from "../../../../src/workflow-engine/workflows/runtime-context.ts"
 import {
   handleRuntimeContextEvent,
   type RuntimeContextTargetEvent,
 } from "../../../../src/agent-event-pipeline/subscribers/runtime-context/handler.ts"
 import type {
-  AgentInputEvent,
   AgentOutputEvent,
   RuntimeAgentOutputObservation,
 } from "../../../../src/agent-event-pipeline/events/index.ts"
@@ -68,22 +72,46 @@ const contextFor = (
     runtime: { config: { agentProtocol } },
   }) as unknown as RuntimeContext
 
-// AgentSession test double: a Ref that records every `send` invocation. The
-// `outputs` stream and the metadata fields are never consumed by the Shape C
-// handler; the test cast keeps the stub minimal.
-interface RecordingAgentSession {
-  readonly sent: Ref.Ref<ReadonlyArray<AgentInputEvent>>
-  readonly layer: Layer.Layer<AgentSession>
+// Session-command sink test double: records every (activityAttempt, command)
+// the handler emits. `startOrAttach` is not exercised by the per-event
+// handler (composition owns lifecycle), so its impl is a no-op default that
+// fails loudly if a test accidentally drives it.
+interface RecordingSession {
+  readonly sent: Ref.Ref<ReadonlyArray<{
+    readonly activityAttempt: number
+    readonly command: RuntimeContextSessionCommand
+  }>>
+  readonly layer: Layer.Layer<RuntimeContextWorkflowSession>
 }
 
-const makeRecordingAgentSession = (): Effect.Effect<RecordingAgentSession> =>
+const makeRecordingSession = (): Effect.Effect<RecordingSession> =>
   Effect.gen(function*() {
-    const sent = yield* Ref.make<ReadonlyArray<AgentInputEvent>>([])
-    const service = {
-      send: (event: AgentInputEvent) =>
-        Ref.update(sent, current => [...current, event]),
-    } as unknown as AgentSessionService
-    const layer = Layer.succeed(AgentSession, service)
+    const sent = yield* Ref.make<ReadonlyArray<{
+      readonly activityAttempt: number
+      readonly command: RuntimeContextSessionCommand
+    }>>([])
+    // `startOrAttach` is owned by composition/lifecycle; the per-event handler
+    // never invokes it. Return synthetic evidence so the service is total —
+    // any future test that accidentally drives it surfaces through the `sent`
+    // ref's assertions rather than a thrown defect.
+    const layer = RuntimeContextWorkflowSession.layer({
+      startOrAttach: (context, activityAttempt) =>
+        Effect.succeed({
+          contextId: context.contextId,
+          activityAttempt,
+          ownerKind: "raw" as const,
+          ownerSessionId: "test-session",
+          startCommandId: `test-start-${context.contextId}-${activityAttempt}`,
+        }),
+      send: (context, activityAttempt, command) =>
+        Ref.update(sent, current => [...current, { activityAttempt, command }])
+          .pipe(Effect.as({
+            contextId: context.contextId,
+            activityAttempt,
+            commandId: command.commandId,
+            ownerSessionId: "test-session",
+          })),
+    })
     return { sent, layer }
   })
 
@@ -178,10 +206,10 @@ const toolUseOutputObservation = (
 }
 
 describe("Shape C handleRuntimeContextEvent", () => {
-  it("dispatches a prompt input through AgentSession and advances the durable cursor", async () => {
+  it("dispatches a prompt input through the session-command seam and advances the durable cursor", async () => {
     await run(Effect.gen(function*() {
       const context = contextFor("ctx-input")
-      const session = yield* makeRecordingAgentSession()
+      const session = yield* makeRecordingSession()
       const executor = yield* makeRecordingExecutor()
       const baseLayer = Layer.mergeAll(
         stateStoreLayer(),
@@ -198,7 +226,9 @@ describe("Shape C handleRuntimeContextEvent", () => {
 
       const sent = yield* Ref.get(session.sent)
       expect(sent).toHaveLength(1)
-      expect(sent[0]?._tag).toBe("Prompt")
+      expect(sent[0]?.command.event._tag).toBe("Prompt")
+      expect(sent[0]?.command.commandId).toBe(`runtime-input-ctx-input-${row.inputId}`)
+      expect(sent[0]?.activityAttempt).toBe(ATTEMPT)
 
       // The cursor on the durable row must have advanced to the input's seq.
       const store = yield* Effect.provide(
@@ -213,7 +243,7 @@ describe("Shape C handleRuntimeContextEvent", () => {
   it("is idempotent across a reload: a second invocation is a no-op", async () => {
     await run(Effect.gen(function*() {
       const context = contextFor("ctx-idem")
-      const session = yield* makeRecordingAgentSession()
+      const session = yield* makeRecordingSession()
       const executor = yield* makeRecordingExecutor()
       const baseLayer = Layer.mergeAll(
         stateStoreLayer(),
@@ -245,10 +275,10 @@ describe("Shape C handleRuntimeContextEvent", () => {
     }))
   })
 
-  it("runs a tool and forwards the result through AgentSession on a ToolUse output", async () => {
+  it("runs a tool and forwards the result through the session-command seam on a ToolUse output", async () => {
     await run(Effect.gen(function*() {
       const context = contextFor("ctx-tool", "stdio-jsonl")
-      const session = yield* makeRecordingAgentSession()
+      const session = yield* makeRecordingSession()
       const executor = yield* makeRecordingExecutor()
       const baseLayer = Layer.mergeAll(
         stateStoreLayer(),
@@ -266,7 +296,8 @@ describe("Shape C handleRuntimeContextEvent", () => {
       expect(yield* Ref.get(executor.calls)).toBe(1)
       const sent = yield* Ref.get(session.sent)
       expect(sent).toHaveLength(1)
-      expect(sent[0]?._tag).toBe("ToolResult")
+      expect(sent[0]?.command.event._tag).toBe("ToolResult")
+      expect(sent[0]?.command.commandId).toBe(`tool-ctx-tool-${ATTEMPT}-tu-1`)
 
       // Output cursor advanced to the observation's sequence.
       const store = yield* Effect.provide(
