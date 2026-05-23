@@ -1420,3 +1420,63 @@ rules:
       runtime-produced RouteCompletionReceipt or observe the durable terminal
       fact).
     pattern-regex: '_tag:\s*["'']Done["'']'
+
+  # ===========================================================================
+  # tf-1r0o cutover: shape-aware drift guards for the Shape C RuntimeContext
+  # subscriber landing zone and the transforms purity rule. These extend the
+  # tf-zchu cannon enforcement (above) to the production target paths named in
+  # packages/runtime/src/agent-event-pipeline/TOPOLOGY.md.
+  # ===========================================================================
+
+  - id: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      cannon: docs/cannon/architecture/runtime-pipeline-type-boundaries.md
+      constraint: C2
+      category: runtime-architecture
+      rationale: |
+        Shape C subscribers are keyed stateful per-event handlers; their `R`
+        channel may name a state-store tag and the narrow live/channel tags
+        they dispatch through, but it MUST NOT name workflow execution
+        machinery (`WorkflowEngine.WorkflowEngine` / `WorkflowEngine.WorkflowInstance`).
+        Calling `Activity.make` / `Workflow.suspend` / `Workflow.execute`
+        inside a Shape C handler grows the workflow tags into `R`, which
+        either turns the subscriber into a Shape D body (parked, replaying,
+        C2 violation) or implicitly assumes a workflow runtime the host
+        composition is not obligated to provide. A subscriber that genuinely
+        needs Activity machinery lives in `agent-event-pipeline/tool-execution/`
+        or under a justified `workflow-engine/workflows/` landing, not here.
+      fix-hint: |
+        Make the wait a durable completion keyed by domain identity
+        (tool:<contextId>:<toolUseId>, permission:<permissionRequestId>,
+        input identity, child contextId), resolved first-valid-terminal-wins.
+        Run side effects through narrow capability tags
+        (RuntimeToolUseExecutor, AgentSession, EgressChannel). If the work
+        genuinely earns workflow machinery, move the file to
+        agent-event-pipeline/tool-execution/ (Shape D) and surface the
+        machinery justification in the SDD per the constraint-doc gate.
+    paths:
+      include:
+        - "/packages/runtime/src/agent-event-pipeline/subscribers/runtime-context/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Shape C RuntimeContext subscriber names workflow execution machinery
+      (Activity.make / Workflow.suspend / Workflow.execute / WorkflowEngine.*).
+      Shape C `R` must not include WorkflowEngine.WorkflowEngine or
+      WorkflowEngine.WorkflowInstance. Either model the wait as a durable
+      completion keyed by domain identity, or move the file to a Shape D
+      landing (tool-execution/ or a justified workflow-engine/workflows/).
+    pattern-either:
+      - pattern-regex: '\bActivity\.make\s*\('
+      - pattern-regex: '\bWorkflow\.suspend\s*\('
+      - pattern-regex: '\bWorkflow\.execute\s*\('
+      - pattern-regex: '\bWorkflowEngine\.WorkflowEngine\b'
+      - pattern-regex: '\bWorkflowEngine\.WorkflowInstance\b'
+
+

@@ -41,6 +41,31 @@ Layer.Layer<never, WaitRouterError,
 That shape means "start this driver for its scope." It does not create a
 service other code should call.
 
+## Shape rule
+
+A file in this folder is one of:
+
+- **Shape B** — read-only projection consumer. `R` only mentions a typed read
+  source / `IngressChannel`. No state stores, no `*Write` / `EgressChannel`, no
+  `WorkflowEngine`.
+- **Shape C** — keyed stateful subscriber. `R` includes a state-store tag (it
+  OWNS state for that key kind) plus the narrow live/channel tags it dispatches
+  through. **`WorkflowEngine.WorkflowEngine` / `WorkflowEngine.WorkflowInstance`
+  MUST NOT appear in `R`.** Shape C handlers materialize for one event, load
+  state, run a pure transition from [`../transforms/`](../transforms/README.md),
+  save, dispatch actions, return. They do not park on multiple semantic wait
+  kinds, do not scan dense raw output, and do not have a context-lifetime body.
+
+The Shape C RuntimeContext cutover lands under
+[`runtime-context/`](./runtime-context/README.md). That directory is gated by
+`firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber` — see
+[`../TOPOLOGY.md`](../TOPOLOGY.md) and
+[`docs/cannon/architecture/runtime-design-constraints.md`](../../../../../docs/cannon/architecture/runtime-design-constraints.md).
+
+A subscriber that genuinely needs `Activity.make` / `DurableDeferred` /
+`DurableClock` is **Shape D** and belongs in [`../tool-execution/`](../tool-execution/),
+not here.
+
 ## Boundary Rules
 
 - Depend on `Stream` capability tags, not table facades.
@@ -49,3 +74,6 @@ service other code should call.
   capabilities.
 - Keep generic wait routing in `waits/`; it is subscriber-shaped but wait-owned
   because its vocabulary is wait rows and source handles, not agent events.
+- Do not import from `workflow-engine/**` here. If you need workflow machinery,
+  the subscriber is Shape D and belongs in `tool-execution/` or under a
+  justified `workflow-engine/workflows/` landing.
