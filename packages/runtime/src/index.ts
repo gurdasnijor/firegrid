@@ -25,28 +25,34 @@ export {
   RuntimeLifecycleWorkflowPayload,
   RuntimeStartWorkflow,
   RuntimeStartWorkflowPayload,
-  WaitForWorkflow,
-  WaitForWorkflowLayer,
   FieldEqualsPredicateSchema,
   FieldEqualsTriggerSchema,
-  WaitForWorkflowMatchOutcomeSchema,
-  WaitForWorkflowOutcomeSchema,
-  WaitForWorkflowPayloadSchema,
-  WaitForWorkflowTimeoutOutcomeSchema,
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,
   runtimeControlRequestWorkflowExecutionId,
   runtimeControlRequestWorkflowStreamUrl,
-  waitForWorkflowExecutionId,
   type RuntimeControlRequestDispatchOutcome,
   type RuntimeExitEvidence,
   type StartRuntimeResult,
   type FieldEqualsPredicate,
   type FieldEqualsTrigger,
-  type WaitForWorkflowOutcome,
-  type WaitForWorkflowPayload,
   evaluateFieldEquals,
 } from "./workflow-engine/workflows/index.ts"
+// tf-hpr0 HARD REDIRECT: WaitForWorkflow physically moved to
+// `subscribers/wait-router/workflow.ts`. The runtime root barrel re-exports
+// directly from the canonical subscriber subpath; no compatibility re-export
+// remains in `workflow-engine/workflows/`.
+export {
+  WaitForWorkflow,
+  WaitForWorkflowLayer,
+  WaitForWorkflowMatchOutcomeSchema,
+  WaitForWorkflowOutcomeSchema,
+  WaitForWorkflowPayloadSchema,
+  WaitForWorkflowTimeoutOutcomeSchema,
+  waitForWorkflowExecutionId,
+  type WaitForWorkflowOutcome,
+  type WaitForWorkflowPayload,
+} from "./subscribers/wait-router/index.ts"
 // Post-#727 / tf-up1v cleanup wave: ToolCallWorkflow + payload schema
 // physically moved to `subscribers/tool-dispatch/workflow.ts`. The runtime
 // root barrel re-exports them directly from the tree-aligned subscribers

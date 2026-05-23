@@ -28,7 +28,7 @@ import {
   WaitForWorkflow,
   WaitForWorkflowLayer,
   type WaitForWorkflowOutcome,
-} from "../../workflow-engine/workflows/wait-for.ts"
+} from "../wait-router/workflow.ts"
 import {
   ScheduledPromptWorkflow,
 } from "../../workflow-engine/workflows/scheduled-prompt.ts"

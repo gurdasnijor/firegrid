@@ -90,16 +90,18 @@ const parkAllowlist = {
       owner: "rearch-shape-c",
       wave: "D-input",
     },
+  // Wave D Shape-D relocation: wait-for.ts physically moved to
+  // subscribers/wait-router/workflow.ts (tf-hpr0); entry removed.
+  // scheduled-prompt.ts move (tf-6hqx) BLOCKED on producer dep reshape —
+  // see docs/architecture/2026-05-23-tf-6hqx-scheduled-prompt-move-blocker.md.
   "packages/runtime/src/workflow-engine/workflows/scheduled-prompt.ts": {
     owner: "rearch-shape-c",
     wave: "D",
   },
-  // Tool-dispatch source relocation wave: `ToolCallWorkflow` physically
-  // moved to `subscribers/tool-dispatch/workflow.ts`. Entry removed.
-  "packages/runtime/src/workflow-engine/workflows/wait-for.ts": {
-    owner: "rearch-shape-c",
-    wave: "D-D",
-  },
+  // Tool-dispatch source relocation wave (PR #728): `ToolCallWorkflow`
+  // physically moved to `subscribers/tool-dispatch/workflow.ts`. Entry removed.
+  // Wave D Shape-D relocation (this PR): `wait-for.ts` physically moved to
+  // `subscribers/wait-router/workflow.ts` (tf-hpr0). Entry removed.
 
   // -- packages/runtime/src/streams/ -----------------------------------
   // Wave D-D: route-based observation through the channel router replaces

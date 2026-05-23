@@ -23,17 +23,18 @@ export {
   type FieldEqualsPredicate,
   type FieldEqualsTrigger,
 } from "../../transforms/field-equals.ts"
-export {
-  WaitForWorkflow,
-  WaitForWorkflowLayer,
-  WaitForWorkflowMatchOutcomeSchema,
-  WaitForWorkflowOutcomeSchema,
-  WaitForWorkflowPayloadSchema,
-  WaitForWorkflowTimeoutOutcomeSchema,
-  waitForWorkflowExecutionId,
-  type WaitForWorkflowOutcome,
-  type WaitForWorkflowPayload,
-} from "./wait-for.ts"
+// WaitForWorkflow physically moved out of workflow-engine/workflows/ per the
+// runtime physical target tree (tf-hpr0); HARD REDIRECT — no compatibility
+// re-export is kept here. Consumers must import directly from
+// `@firegrid/runtime/subscribers/wait-router` (the canonical subscriber
+// subpath). The workflow-engine/ folder is deletion-bound; preserving the
+// surface here would keep it alive past its retirement.
+//
+// ScheduledPromptWorkflow's physical move (tf-6hqx) is BLOCKED on reshaping
+// its `producers/ingress-writers/scheduled-prompt-append.ts` dependency —
+// `runtime-subscribers-no-producers-import` is a HARD STOP. See
+// `docs/architecture/2026-05-23-tf-6hqx-scheduled-prompt-move-blocker.md`
+// for the report. It stays in this folder until the dependency is reshaped.
 // Body driver retired in the body+kernel deletion wave (stacked on D-B).
 // The workflow body Layer + payload, the per-sequence DurableDeferred
 // mailbox helpers, and the body's execution-env type alias no longer

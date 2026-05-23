@@ -107,7 +107,7 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/wait-for.ts",
+      "path": "packages/runtime/src/subscribers/wait-router/workflow.ts",
       "line": 63
     },
     {

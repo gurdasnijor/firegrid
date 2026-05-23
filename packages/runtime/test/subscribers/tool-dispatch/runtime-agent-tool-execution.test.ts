@@ -49,6 +49,6 @@ describe("RuntimeAgentToolExecution", () => {
   // `wait` effects — it routes the descriptor (source, trigger) pairs through
   // the durable WaitForWorkflow so an in-flight race survives host restart. The
   // race + winnerIndex + timeout behavior is covered at the workflow level in
-  // test/workflow-engine/workflows/wait-for-workflow.test.ts (including a
+  // test/subscribers/wait-router/wait-for-workflow.test.ts (including a
   // durable-restart proof).
 })

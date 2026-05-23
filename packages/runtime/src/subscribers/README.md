@@ -101,8 +101,8 @@ Wave 2 moves:
 - codec-session sink → `subscribers/runtime-context-session/`
 - `workflow-engine/workflows/tool-call.ts` → `subscribers/tool-dispatch/workflow.ts` ✅ done (tf-up1v)
 - `workflow-engine/tool-execution/runtime-tool-use-executor.ts` → `subscribers/tool-dispatch/runtime-tool-use-executor.ts` ✅ done (tf-up1v)
-- `workflow-engine/workflows/wait-for.ts` → `subscribers/wait-router/`
-- `workflow-engine/workflows/scheduled-prompt.ts` → `subscribers/scheduled-prompt/`
+- `workflow-engine/workflows/wait-for.ts` → `subscribers/wait-router/workflow.ts` ✅ done (tf-hpr0)
+- `workflow-engine/workflows/scheduled-prompt.ts` → `subscribers/scheduled-prompt/workflow.ts` ⛔ BLOCKED (tf-6hqx; HARD STOP `runtime-subscribers-no-producers-import` until the body's `producers/ingress-writers/scheduled-prompt-append.ts` dep is reshaped — see `docs/architecture/2026-05-23-tf-6hqx-scheduled-prompt-move-blocker.md`)
 - `workflow-engine/workflows/runtime-control-request.ts` → `subscribers/runtime-control/`
 
 Reserved public subpaths (Wave 2 export targets):
