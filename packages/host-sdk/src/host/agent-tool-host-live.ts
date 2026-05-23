@@ -40,12 +40,9 @@ import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 import {
   RuntimeContextWorkflowRuntime,
 } from "@firegrid/runtime/kernel"
-import { executeRuntimeContextWorkflow } from "@firegrid/runtime/kernel"
 import {
-  RuntimeContextWorkflowNative,
-  RuntimeContextWorkflowPayload,
-} from "@firegrid/runtime/kernel"
-import {
+  makeRuntimeContextExitSignal,
+  runtimeContextAwaitExit,
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"
 import {
@@ -537,24 +534,12 @@ const startChildContextWorkflow = (
 ) =>
   Effect.gen(function*() {
     const context = yield* requireLocalContextWithHostCapabilities(captured, contextId)
+    const exitSignal = yield* makeRuntimeContextExitSignal
     yield* captured.workflowRuntime.run({
       context,
-      workflowName: RuntimeContextWorkflowNative.name,
-      supportLayer: runtimeContextWorkflowSupportLayer(contextId, captured.agentToolHost),
-      effect: Effect.gen(function* () {
-        const engine = yield* WorkflowEngine.WorkflowEngine
-        yield* executeRuntimeContextWorkflow(
-          engine,
-          RuntimeContextWorkflowNative,
-          {
-            executionId: runtimeContextWorkflowExecutionId(contextId),
-            payload: RuntimeContextWorkflowPayload.make({ contextId }),
-            discard: true,
-          },
-        )
-      }).pipe(
-        Effect.withClock(runtimeExecutionClock),
-      ),
+      workflowName: "firegrid.runtime-context.shape-c",
+      supportLayer: runtimeContextWorkflowSupportLayer(context, captured.agentToolHost, exitSignal),
+      effect: runtimeContextAwaitExit(exitSignal).pipe(Effect.withClock(runtimeExecutionClock)),
     })
   })
 

@@ -13,8 +13,12 @@ authorities -> subscribers -> authorities/codecs
 ```
 
 The legacy ingress-delivery, tool-router, and stderr-journal subscribers were
-deleted by the live-owner cutover. New runtime-context prompt/tool routing lives
-in the host workflow/session owner rather than in runtime subscriber fibers.
+deleted by the live-owner cutover. The Shape C rearch (2026-05-22) places new
+target-shape subscribers back under this folder: `runtime-context/` is the
+canonical home for the per-event Shape C RuntimeContext subscriber
+(`handler.ts` + `subscriber.ts`), driven by `runtime-keyed-subscriber`'s
+`runKeyedDispatch` over the typed sources in `authorities/` (input facts,
+state-relevant output observations).
 
 Subscriber shape:
 

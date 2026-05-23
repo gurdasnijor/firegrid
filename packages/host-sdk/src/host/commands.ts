@@ -1,4 +1,3 @@
-import { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
@@ -14,16 +13,10 @@ import {
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { Duration, Effect, Layer, Stream } from "effect"
-import { executeRuntimeContextWorkflow } from "@firegrid/runtime/kernel"
 import type { StartRuntimeOptions } from "./types.ts"
-import {
-  RuntimeContextWorkflowNative,
-  RuntimeContextWorkflowPayload,
-} from "@firegrid/runtime/kernel"
 import {
   readRuntimeContext,
   requireLocalRuntimeContextWithHostSession,
-  runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
 } from "@firegrid/runtime/kernel"
 import { RuntimeContextRead } from "@firegrid/runtime/control-plane"
@@ -39,6 +32,8 @@ import {
   type AgentToolHostService,
 } from "../agent-tools/execution/tool-host.ts"
 import {
+  makeRuntimeContextExitSignal,
+  runtimeContextAwaitExit,
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
@@ -54,33 +49,13 @@ const runtimeControlPlaneTable: Effect.Effect<
   RuntimeControlPlaneTable
 > = RuntimeControlPlaneTable
 
-const executeRuntimeContextWorkflowForContextId = (
-  contextId: string,
-) =>
-  Effect.gen(function*() {
-    const engine = yield* WorkflowEngine.WorkflowEngine
-    yield* Effect.annotateCurrentSpan({
-      "firegrid.context.id": contextId,
-      "firegrid.workflow.name": RuntimeContextWorkflowNative.name,
-      "firegrid.workflow.execution_id": runtimeContextWorkflowExecutionId(contextId),
-    })
-    const result = yield* executeRuntimeContextWorkflow(engine, RuntimeContextWorkflowNative, {
-      executionId: runtimeContextWorkflowExecutionId(contextId),
-      payload: RuntimeContextWorkflowPayload.make({
-        contextId,
-      }),
-    })
-    if (result.failure !== undefined) return yield* Effect.fail(result.failure)
-    return result
-  }).pipe(
-    Effect.withSpan("firegrid.host.runtime_context.workflow.execute", {
-      kind: "internal",
-      attributes: {
-        "firegrid.context.id": contextId,
-      },
-    }),
-    Effect.annotateSpans("firegrid.side", "host"),
-  )
+// sidecar/shape-c-host-composition: Shape C cutover. The Shape C subscriber
+// lives in `runtimeContextWorkflowSupportLayer`'s scope, so the run's `effect`
+// only needs to hold the run-scope open until external interrupt (context
+// deregister / host shutdown). Replaces the OLD
+// `executeRuntimeContextWorkflowForContextId` driver and the
+// `executeRuntimeContextWorkflow` engine call — neither has any consumer left
+// on this branch.
 
 const claimAndRunRuntimeContextWorkflow = (
   context: RuntimeContext,
@@ -93,12 +68,14 @@ const claimAndRunRuntimeContextWorkflow = (
       "firegrid.runtime.agent": context.runtime.config.agent ?? "",
       "firegrid.runtime.agent_protocol": context.runtime.config.agentProtocol ?? "",
       "firegrid.runtime_context_mcp.enabled": context.runtime.config.runtimeContextMcp?.enabled === true,
+      "firegrid.runtime.shape": "C",
     })
+    const exitSignal = yield* makeRuntimeContextExitSignal
     return yield* runtime.run({
       context,
-      workflowName: RuntimeContextWorkflowNative.name,
-      supportLayer: runtimeContextWorkflowSupportLayer(context.contextId, agentToolHost),
-      effect: executeRuntimeContextWorkflowForContextId(context.contextId),
+      workflowName: "firegrid.runtime-context.shape-c",
+      supportLayer: runtimeContextWorkflowSupportLayer(context, agentToolHost, exitSignal),
+      effect: runtimeContextAwaitExit(exitSignal),
       deregisterOnExit: true,
     })
   }).pipe(
@@ -241,9 +218,15 @@ export const RuntimeStartCapabilityLive = Layer.effect(
             hostSession,
             options.contextId,
           )
-          return yield* claimAndRunRuntimeContextWorkflow(context, runtime, agentToolHost).pipe(
+          const result = yield* claimAndRunRuntimeContextWorkflow(context, runtime, agentToolHost).pipe(
             Effect.provide(captured),
           )
+          return {
+            contextId: context.contextId,
+            activityAttempt: result.activityAttempt,
+            exitCode: result.exitCode,
+            ...(result.signal === undefined ? {} : { signal: result.signal }),
+          }
         }).pipe(
           Effect.withSpan("firegrid.host.runtime_start_capability.start", {
             kind: "server",

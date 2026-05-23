@@ -41,6 +41,14 @@
       "types": "./src/runtime-keyed-subscriber/index.ts",
       "default": "./src/runtime-keyed-subscriber/index.ts"
     },
+    "./runtime-context-input-facts": {
+      "types": "./src/agent-event-pipeline/authorities/runtime-context-input-facts.ts",
+      "default": "./src/agent-event-pipeline/authorities/runtime-context-input-facts.ts"
+    },
+    "./runtime-context-subscriber": {
+      "types": "./src/agent-event-pipeline/subscribers/runtime-context/subscriber.ts",
+      "default": "./src/agent-event-pipeline/subscribers/runtime-context/subscriber.ts"
+    },
     "./verified-webhook-ingest": {
       "types": "./src/verified-webhook-ingest/index.ts",
       "default": "./src/verified-webhook-ingest/index.ts"

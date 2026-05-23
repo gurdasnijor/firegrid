@@ -1,5 +1,5 @@
 // Focused tests for the Shape C RuntimeContext per-event handler.
-// See `packages/runtime/src/subscribers/C-runtime-context/handler.ts`.
+// See `packages/runtime/src/agent-event-pipeline/subscribers/runtime-context/handler.ts`.
 //
 // Three slices, one invariant each:
 //   1. state transition + action dispatch through AgentSession;

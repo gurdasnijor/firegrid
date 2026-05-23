@@ -1,13 +1,24 @@
-import type { WorkflowEngine } from "@effect/workflow"
 import { Layer } from "effect"
-import type { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
+import type { RuntimeContext } from "@firegrid/protocol/launch"
 import {
   AgentToolHost,
   type AgentToolHostService,
 } from "../agent-tools/execution/tool-host.ts"
 import {
-  RuntimeContextWorkflowNativeLayer,
-} from "@firegrid/runtime/kernel"
+  RuntimeContextInputFactsLive,
+} from "@firegrid/runtime/runtime-context-input-facts"
+import {
+  makeRuntimeContextExitSignal,
+  RuntimeContextSubscriberLive,
+  runtimeContextAwaitExit,
+  type RuntimeContextExitSignal,
+} from "@firegrid/runtime/runtime-context-subscriber"
+
+export {
+  makeRuntimeContextExitSignal,
+  runtimeContextAwaitExit,
+  type RuntimeContextExitSignal,
+}
 import {
   HostRuntimeObservationSubstrateLive,
   HostRuntimeObservationStreamsLive,
@@ -31,43 +42,47 @@ const runtimeToolUseExecutorLayer = RuntimeToolUseExecutorLive.pipe(
   Layer.provideMerge(RuntimeAgentToolExecutionLive),
 )
 
-// TFIND-031 (Option Y, layer-composition-order fix): BOTH the workflow
-// body (`RuntimeContextWorkflowNativeLayer`) and the tool executor
-// (`RuntimeToolUseExecutorLive`) capture execution-scoped substrate via
-// `Effect.context<…>()`. The executor MUST stay `provideMerge`d into the
-// workflow chain — the workflow handler resolves `RuntimeToolUseExecutor`
-// from the context captured at layer-build time, so its output has to be
-// fed into `RuntimeContextWorkflowNativeLayer`'s build context. A plain
-// sibling `Layer.merge` silently breaks that wiring (the tool activity
-// can no longer resolve the executor at workflow-execution time → e.g.
-// `schedule_me` produces nothing).
+// Shape C cutover (Wave 1 host-composition slice): the per-context support
+// layer no longer registers a `RuntimeContextWorkflowNative` workflow body. It
+// composes the target-shape Shape C subscriber (`RuntimeContextSubscriberLive`)
+// fed by the typed sources Wave 1 owns:
 //
-// The executor's own observation-substrate RIn is discharged by providing
-// `HostRuntimeObservationSubstrateLive` into `RuntimeToolUseExecutorLive`
-// too. This is the SAME layer reference provided into the workflow body,
-// so Effect Layer memoization builds it exactly once; recorder and waker
-// cannot diverge. The public host contract is unchanged.
+//   - input  : `RuntimeContextInputFacts.forContext(contextId)` (#682)
+//   - output : `RuntimeAgentOutputAfterEvents.forContext(contextId)` filtered
+//              by `isStateRelevantOutputObservation` (#681)
+//
+// The subscriber forks into the layer scope and is interrupted on
+// `RuntimeContextWorkflowRuntime.run` exit (context deregister / host
+// shutdown). Tool execution remains live via `RuntimeToolUseExecutor` provided
+// here (the executor's own observation substrate is discharged by the same
+// provideMerge memoised reference).
+//
+// No `RuntimeContextWorkflowNativeLayer`. No `DurableDeferred` mailbox. No
+// entity-lifetime parked body. The R channel below no longer mentions
+// `WorkflowEngine.WorkflowEngine` / `WorkflowEngineTable` for this layer —
+// those tags stay in `RuntimeContextWorkflowRuntime`'s engine provisioning for
+// the surviving Shape D subscribers (tool-call, scheduled-prompt, wait-for).
 export const runtimeContextWorkflowSupportLayer = (
-  contextId: string,
+  context: RuntimeContext,
   agentToolHost: AgentToolHostService,
+  exitSignal: RuntimeContextExitSignal,
 ): Layer.Layer<
   never,
   unknown,
-  | HostRuntimeContextExecutionEnv
-  | RuntimeChannelRouter
-  | WorkflowEngine.WorkflowEngine
-  | WorkflowEngineTable
+  HostRuntimeContextExecutionEnv | RuntimeChannelRouter
 > =>
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer still leaks any through substrate layers; the declared Layer R channel is the intended capability boundary.
-  RuntimeContextWorkflowNativeLayer.pipe(
+  RuntimeContextSubscriberLive(context, exitSignal).pipe(
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
     Layer.provideMerge(HostRuntimeObservationStreamsLive),
+    Layer.provideMerge(RuntimeContextInputFactsLive),
     Layer.provideMerge(runtimeToolUseExecutorLayer),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
     Layer.withSpan("firegrid.host.runtime_context.workflow_support.layer", {
       kind: "internal",
       attributes: {
-        "firegrid.context.id": contextId,
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime.shape": "C",
       },
     }),
   )
