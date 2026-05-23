@@ -243,7 +243,18 @@ describe("Runtime control request reconciler", () => {
       createdBy: "control-request-reconciler-test",
       host: { hostId },
     })
-    expect(state.claims).toHaveLength(0)
+    // #709: `runStartRequestSideEffect` writes a first-writer-wins claim
+    // row against `controlRequestClaims` BEFORE invoking the non-idempotent
+    // external start, so each successful start request produces exactly
+    // one claim row anchored at `claimWindowStartedAtMs: 0`.
+    expect(state.claims).toHaveLength(1)
+    expect(state.claims[0]).toMatchObject({
+      requestKind: "start",
+      requestId: startRequest.requestId,
+      contextId,
+      hostId,
+      claimWindowStartedAtMs: 0,
+    })
     const workflow = await Effect.runPromise(readControlRequestWorkflow(namespace))
     expect(workflow.executions.map(row => row.executionId)).toEqual(
       expect.arrayContaining([
@@ -342,7 +353,17 @@ describe("Runtime control request reconciler", () => {
     ))
 
     const state = await Effect.runPromise(readControlPlane(namespace, contextId))
-    expect(state.claims).toHaveLength(0)
+    // #709: exactly one start-claim row regardless of how many hosts
+    // raced the reconciler — `controlRequestClaims.insertOrGet` collides
+    // both attempts on the deterministic `claimId` so the second sees
+    // `Found` and returns before invoking the non-idempotent side effect.
+    expect(state.claims).toHaveLength(1)
+    expect(state.claims[0]).toMatchObject({
+      requestKind: "start",
+      requestId: `req_start_${contextId}`,
+      contextId,
+      claimWindowStartedAtMs: 0,
+    })
     const workflow = await Effect.runPromise(readControlRequestWorkflow(namespace))
     expect(workflow.activityClaims.filter(row =>
       row.executionId === runtimeControlRequestWorkflowExecutionId(

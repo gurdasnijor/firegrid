@@ -371,6 +371,26 @@ const runStartRequestSideEffect = (
   Effect.gen(function*() {
     if (yield* requestIsTerminal(request)) return
     const session = yield* currentHostSession
+    // #709 duplicate-start dedup: the external `sideEffects.start` is
+    // non-idempotent (spawns an OS process). Workflow-engine memoization
+    // dedupes within a single engine instance but does NOT span the
+    // separate engines built by two parallel `startRuntime` promises
+    // when each provides its own `FiregridRuntimeHostWithWorkflowLive`.
+    // The durable `controlRequestClaims` table gives us a row-level
+    // first-writer-wins primitive (see `RuntimeControlRequests.insertOrGetClaim`).
+    // `Found` means another reconcile path already owns the side effect —
+    // public `startRuntime` is waiting on `SessionLifecycleChannel`, which
+    // streams the terminal `runs.exited` / `runs.failed` event the OTHER
+    // path will write.
+    const requests = yield* RuntimeControlRequests
+    const claim = yield* requests.insertOrGetClaim({
+      requestKind: "start",
+      requestId: request.requestId,
+      contextId: request.contextId,
+      hostId: session.hostId,
+      hostSessionId: session.hostSessionId,
+    })
+    if (claim._tag === "Found") return
     const sideEffects = yield* RuntimeControlRequestSideEffects
     const result = yield* sideEffects.start(request).pipe(
       Effect.tapError(cause =>
