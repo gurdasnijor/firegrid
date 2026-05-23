@@ -69,6 +69,10 @@
       "types": "./src/producers/sandbox/index.ts",
       "default": "./src/producers/sandbox/index.ts"
     },
+    "./producers/sandbox/local-process-from-env": {
+      "types": "./src/producers/sandbox/local-process-from-env.ts",
+      "default": "./src/producers/sandbox/local-process-from-env.ts"
+    },
     "./agent-adapters": {
       "types": "./src/producers/codecs/agent-adapters/index.ts",
       "default": "./src/producers/codecs/agent-adapters/index.ts"
