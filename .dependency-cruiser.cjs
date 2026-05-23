@@ -241,6 +241,19 @@ module.exports = {
       },
     },
     {
+      name: "runtime-composition-no-legacy-tree-import",
+      severity: "error",
+      comment:
+        "composition/ wires the runtime layer graph from target-tree exports only (events/, tables/, transforms/, channels/, producers/, subscribers/). It must not import from the legacy workflow-engine/ or agent-event-pipeline/ subtrees — not via relative path (`../workflow-engine/...`, `../agent-event-pipeline/...`) and not via the public barrel (`@firegrid/runtime/workflow-engine/...` etc., resolved to the same tree). Shape D temporary target shims under `subscribers/<name>/` may still re-export from current legacy implementation homes; composition imports the TARGET path (`subscribers/<name>/`), not the legacy barrel. Gap finding: #696's existing `firegrid-composition-no-legacy-imports` (semgrep) caught legacy SYMBOL names + a few specific paths (`runtime-input-deferred`, `@firegrid/runtime/kernel`, `@firegrid/runtime/_archive`); CC1's Wave B draft showed those signatures weren't enough — relative `../workflow-engine` / `../agent-event-pipeline` imports slipped through. This rule closes that.",
+      from: { path: "^packages/runtime/src/composition/" },
+      to: {
+        path: [
+          "^packages/runtime/src/workflow-engine/",
+          "^packages/runtime/src/agent-event-pipeline/",
+        ],
+      },
+    },
+    {
       // firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.4
       // firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.6
       name: "runtime-no-host-internal-imports-outside-host",
