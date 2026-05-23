@@ -23,5 +23,4 @@
 
 export {
   RuntimeAgentOutputAfterEvents,
-  type RuntimeAgentOutputObservation,
 } from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
