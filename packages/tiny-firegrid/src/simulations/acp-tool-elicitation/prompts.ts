@@ -49,27 +49,17 @@ export const elicitationPrompts: ReadonlyArray<ElicitationPrompt> = [
     text:
       "Call sleep three times in a row: 250ms, 250ms, and 250ms. Report after all three complete.",
   },
-  // -- channel: wait_for / wait_for_any / send, including known-negative channels. -
-  {
-    label: "wait_for",
-    group: "channel",
-    text:
-      "Use wait_for to block on a session.self.checkpoint event with a 5 second timeout, and " +
-      "report the row you receive or the timeout.",
-  },
+  // -- channel: wait_for / send, including known-negative channels. -
+  // Wave D-E removed two elicitation prompts whose target ingress was the
+  // workflow-engine row-projection channel retired in that wave. The
+  // `wait_for_any_mixed` prompt went with them (its second target was the
+  // same retired channel).
   {
     label: "send",
     group: "channel",
     text:
       "Use the send tool to append the payload {\"hello\":\"firegrid\"} to an egress channel of " +
       "your choosing, and report the exact result or error.",
-  },
-  {
-    label: "wait_for_any_mixed",
-    group: "channel",
-    text:
-      "Use wait_for_any with two channels: session.self.checkpoint and factory.events. " +
-      "Use a 3000ms timeout. Report whether it timed out, matched, or failed, including the exact error.",
   },
   {
     label: "unknown_channel_explicit",

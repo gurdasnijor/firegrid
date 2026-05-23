@@ -17,15 +17,9 @@ import {
   makeChannelTarget,
   makeEgressChannel,
   makeIngressChannel,
-  SessionSelfCheckpointChannel,
-  SessionSelfCheckpointChannelTarget,
   SessionSelfLifecycleChannel,
   SessionSelfLifecycleChannelTarget,
 } from "../../src/host/index.ts"
-import {
-  RuntimeContextCheckpointSource,
-  RuntimeContextWorkflowRuntime,
-} from "@firegrid/runtime/kernel"
 
 const FactoryEventRowSchema = Schema.Struct({
   eventType: Schema.String,
@@ -159,7 +153,11 @@ describe("channel Tags", () => {
     expect(result.text).not.toContain("stream")
   })
 
-  it("firegrid-agent-body-plan.SESSION_SELF.1 firegrid-agent-body-plan.SESSION_SELF.2 firegrid-agent-body-plan.SESSION_SELF.3 provides session.self lifecycle and checkpoint channels without substrate metadata", async () => {
+  // Wave D-E: `session.self.checkpoint` was deleted (engine-substrate-shaped,
+  // no production source populator post-D-A/D-B, zero live consumers). Only
+  // the lifecycle half of the original combined SESSION_SELF.1/.2/.3 test
+  // remains.
+  it("firegrid-agent-body-plan.SESSION_SELF.1 firegrid-agent-body-plan.SESSION_SELF.3 provides session.self lifecycle channel without substrate metadata", async () => {
     expect(baseUrl).toBeDefined()
     const durableStreamsBaseUrl = baseUrl ?? ""
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -170,14 +168,9 @@ describe("channel Tags", () => {
     const observed = await Effect.runPromise(
       Effect.gen(function* () {
         const control = yield* RuntimeControlPlaneTable
-        const workflowRuntime = yield* RuntimeContextWorkflowRuntime
-        const checkpoints = yield* RuntimeContextCheckpointSource
         const lifecycle = yield* SessionSelfLifecycleChannel
-        const checkpoint = yield* SessionSelfCheckpointChannel
         const lifecycleMetadata = channelMetadata(lifecycle)
-        const checkpointMetadata = channelMetadata(checkpoint)
         const lifecycleStream = lifecycle.binding.stream
-        const checkpointStream = checkpoint.binding.stream
         const lifecycleFiber = yield* lifecycleStream.pipe(
           Stream.filter(event =>
             event.event.contextId === contextId &&
@@ -206,25 +199,6 @@ describe("channel Tags", () => {
           },
         }
         yield* control.contexts.upsert(context)
-        yield* workflowRuntime.ensureActive(context)
-        const handle = Option.getOrThrow(yield* checkpoints.get(contextId))
-        const checkpointFiber = yield* checkpointStream.pipe(
-          Stream.filter(event =>
-            event.contextId === contextId &&
-            event._tag === "Execution" &&
-            event.workflowName === "firegrid.runtime-context",
-          ),
-          Stream.runHead,
-          Effect.map(Option.getOrThrow),
-          Effect.fork,
-        )
-        yield* handle.table.executions.upsert({
-          executionId: handle.executionId,
-          workflowName: "firegrid.runtime-context",
-          payload: { contextId },
-          interrupted: false,
-          suspended: true,
-        })
         yield* control.runs.upsert({
           runEventId: {
             contextId,
@@ -238,14 +212,10 @@ describe("channel Tags", () => {
           at: new Date().toISOString(),
         })
         const lifecycleEvent = yield* Fiber.join(lifecycleFiber)
-        const checkpointEvent = yield* Fiber.join(checkpointFiber)
         return {
           lifecycleDirection: lifecycleMetadata.direction,
-          checkpointDirection: checkpointMetadata.direction,
           lifecycleText: JSON.stringify(lifecycleMetadata),
-          checkpointText: JSON.stringify(checkpointMetadata),
           lifecycleEvent,
-          checkpointEvent,
         }
       }).pipe(
         Effect.provide(FiregridRuntimeHostWithWorkflowLive({
@@ -259,7 +229,6 @@ describe("channel Tags", () => {
     )
 
     expect(observed.lifecycleDirection).toBe("ingress")
-    expect(observed.checkpointDirection).toBe("ingress")
     expect(observed.lifecycleEvent).toMatchObject({
       channel: SessionSelfLifecycleChannelTarget,
       event: {
@@ -267,18 +236,9 @@ describe("channel Tags", () => {
         status: "started",
       },
     })
-    expect(observed.checkpointEvent).toMatchObject({
-      _tag: "Execution",
-      channel: SessionSelfCheckpointChannelTarget,
-      contextId,
-      workflowName: "firegrid.runtime-context",
-    })
     expect(observed.lifecycleText).not.toContain("firegrid.runtime_context.workflow")
     expect(observed.lifecycleText).not.toContain("WorkflowEngineTable")
     expect(observed.lifecycleText).not.toContain("stream")
-    expect(observed.checkpointText).not.toContain("firegrid.runtime_context.workflow")
-    expect(observed.checkpointText).not.toContain("WorkflowEngineTable")
-    expect(observed.checkpointText).not.toContain("stream")
   })
 
   it("firegrid-agent-body-plan.CHANNEL_REGISTRY.2-1 removes the ChannelRegistry service surface", async () => {

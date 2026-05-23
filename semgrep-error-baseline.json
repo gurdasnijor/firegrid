@@ -11,29 +11,9 @@
       "line": 162
     },
     {
-      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 2
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
-      "line": 2
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-effect-workflow-import",
-      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 1
-    },
-    {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
       "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
       "line": 35
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/channels/session-self/index.ts",
-      "line": 32
     },
     {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
@@ -43,7 +23,7 @@
     {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
       "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 63
+      "line": 66
     },
     {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
@@ -54,11 +34,6 @@
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
       "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
       "line": 42
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
-      "line": 47
     },
     {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
@@ -99,16 +74,6 @@
       "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
       "path": "packages/host-sdk/src/host/runtime-substrate.ts",
       "line": 20
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-workflow-engine-import",
-      "path": "packages/host-sdk/src/host/channels/session-self/index.ts",
-      "line": 23
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-workflow-engine-import",
-      "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
-      "line": 3
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
