@@ -11,6 +11,25 @@ logical pipeline position (`events` < `tables` < `producers` / `transforms` /
 `channels` < `subscribers` < `composition`), and the import-direction rule.
 Subscriber folders declare their shape (`SHAPE: B | C | D`) in their README.
 
+### Target Surfaces (semantic, first-class)
+
+The script `scripts/runtime-public-surface-check.mjs` enforces that each of
+the surfaces below exists and is documented here:
+
+| Folder | Role | Logical position |
+|---|---|---|
+| [`events/`](./events/README.md) | event vocabulary; pure schemas, no I/O. | 1 |
+| [`tables/`](./tables/README.md) | DurableTable-backed state of record. | 2 |
+| [`producers/`](./producers/README.md) | Shape A live-boundary appenders (`sandbox/`, `codecs/`, `ingress-writers/`). | 3 |
+| [`transforms/`](./transforms/README.md) | pure row/event transforms; no `Effect`. | 4 |
+| [`channels/`](./channels/README.md) | wire-edge capability boundary (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
+| [`subscribers/`](./subscribers/README.md) | keyed subscribers — Shape B/C/D recorded in folder READMEs. | 6 |
+| [`composition/`](./composition/README.md) | runtime-local layer-graph wiring + topology checks. | 7 |
+| [`_archive/`](./_archive/DEPRECATED.md) | time-boxed holding pen for wrong-shape code pending deletion. | — |
+
+Folder names are semantic. Numeric prefixes are forbidden at the runtime
+root; the public-surface guard rejects any `^[0-9]+-` top-level directory.
+
 Wave 1 forward-target re-exports landed in this scaffold:
 
 - `tables/runtime-context-state.ts` →
