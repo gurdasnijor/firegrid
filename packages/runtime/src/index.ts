@@ -128,7 +128,7 @@ export {
   type AgentAdapterRegistryService,
   type AgentAdapterService,
   type AgentTurn,
-} from "./agent-adapters/index.ts"
+} from "./producers/codecs/agent-adapters/index.ts"
 export {
   ingestVerifiedWebhook,
   LinearWebhookFactSchema,

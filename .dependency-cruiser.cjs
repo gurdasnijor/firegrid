@@ -22,7 +22,7 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "events/agent-output\\.ts$",
   "producers/codecs/index\\.ts$",
   "producers/codecs/session-byte-stream-adapter\\.ts$",
-  "agent-adapters/index\\.ts$",
+  "producers/codecs/agent-adapters/index\\.ts$",
   "producers/sandbox/index\\.ts$",
   "kernel/index\\.ts$",
   // Wave D-A (PR #714): host-sdk composes the Shape C subscriber via the

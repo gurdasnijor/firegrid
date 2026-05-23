@@ -22,8 +22,10 @@ const codec = "acp"
 // response plane) would otherwise hang the agent's `requestPermission` until the
 // opaque ~30s edge turn timeout. Bound the wait and resolve ACP with a typed
 // default so the invariant "ACP is always owed a response" holds even when no
-// decision is delivered — mirrors agent-adapters/acp/adapter.ts ("always reply
-// cancelled, even when we cannot notify a (gone) turn queue").
+// decision is delivered — mirrors agent-adapters/acp/adapter.ts (under the
+// sibling `../agent-adapters/acp/adapter.ts` after the retire-agent-adapters
+// move: "always reply cancelled, even when we cannot notify a (gone) turn
+// queue").
 //
 // This is a SAFETY NET under the edge turn timeout, not a human-approval UX
 // policy: it is generous, fires only when no decision arrives, and the host can

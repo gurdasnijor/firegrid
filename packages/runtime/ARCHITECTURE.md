@@ -56,7 +56,7 @@ docs-only metadata, compatibility aliases, or tests.
 | `src/composition/` | Runtime-local Layer composition and topology checks. |
 | `src/authorities/` | Runtime control-plane authorities for contexts and runs. |
 | `src/workflow-engine/` | Firegrid durable-table adapter for `@effect/workflow` (legacy + Shape D workflow body home). |
-| `src/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping. |
+| `src/producers/codecs/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping (Shape A codec-adjacent). |
 | `src/verified-webhook-ingest/` | Adjacent verified webhook fact ingest adapter. |
 
 Layer order is `events < tables < producers/transforms/channels < subscribers < composition`. See
@@ -185,9 +185,12 @@ It imports shared protocol schemas, exposes Effect AI tools/toolkits, projects
 them to MCP when needed, and lowers codec `ToolUse` events to effects. It is a
 tool boundary, not an agent event-pipeline subscriber.
 
-`src/agent-adapters/` owns projections over codec sessions, such as language
-model adapter surfaces and ACP mapping. Adapters do not own durable runtime
-rows or pipeline lifecycle.
+`src/producers/codecs/agent-adapters/` owns projections over codec sessions,
+such as language model adapter surfaces and ACP mapping. Adapters do not own
+durable runtime rows or pipeline lifecycle. (Re-homed under
+`producers/codecs/` per the runtime physical target tree — the contract is
+Shape A codec-bound; legacy public subpath `@firegrid/runtime/agent-adapters`
+is preserved.)
 
 ## Verified Webhook Ingest
 
