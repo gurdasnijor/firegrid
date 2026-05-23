@@ -12,19 +12,13 @@ export {
 // write-ownership / commit points for durable collection families. They are NOT
 // part of the above-box public surface: code above the substrate boundary reaches
 // durable state through CHANNELS, not these service doors. Internal host
-// composition still wires them via the `@firegrid/runtime/control-plane` and
-// `@firegrid/runtime/runtime-output` subpaths; they are intentionally absent here.
+// composition still wires them via the `@firegrid/runtime/authorities` and
+// `@firegrid/runtime/runtime-output` subpaths; they are intentionally absent
+// here. (Lane 4 runtime-control drain replaced the prior
+// `@firegrid/runtime/control-plane` subpath with `authorities` for the tags
+// and `subscribers/runtime-control` for the reconciler.)
 export {
-  RuntimeContextProvisionWorkflow,
-  RuntimeContextProvisionWorkflowPayload,
-  RuntimeControlRequestClaimedOutcomeSchema,
-  RuntimeControlRequestDispatchOutcomeSchema,
-  RuntimeControlRequestDoneOutcomeSchema,
   RuntimeContextWorkflowPayload,
-  RuntimeLifecycleWorkflow,
-  RuntimeLifecycleWorkflowPayload,
-  RuntimeStartWorkflow,
-  RuntimeStartWorkflowPayload,
   WaitForWorkflow,
   WaitForWorkflowLayer,
   FieldEqualsPredicateSchema,
@@ -35,10 +29,7 @@ export {
   WaitForWorkflowTimeoutOutcomeSchema,
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,
-  runtimeControlRequestWorkflowExecutionId,
-  runtimeControlRequestWorkflowStreamUrl,
   waitForWorkflowExecutionId,
-  type RuntimeControlRequestDispatchOutcome,
   type RuntimeExitEvidence,
   type StartRuntimeResult,
   type FieldEqualsPredicate,
@@ -56,6 +47,24 @@ export {
   ToolCallWorkflowPayloadSchema,
   type ToolCallWorkflowPayload,
 } from "./subscribers/tool-dispatch/workflow.ts"
+// Lane 4 runtime-control drain: runtime-control workflow defs source from
+// their physical home directly (sourcing them via a back-compat re-export
+// in workflow-engine/workflows/index.ts would create a workflow-engine ↔
+// subscribers/runtime-control folder cycle).
+export {
+  RuntimeContextProvisionWorkflow,
+  RuntimeContextProvisionWorkflowPayload,
+  RuntimeControlRequestClaimedOutcomeSchema,
+  RuntimeControlRequestDispatchOutcomeSchema,
+  RuntimeControlRequestDoneOutcomeSchema,
+  RuntimeLifecycleWorkflow,
+  RuntimeLifecycleWorkflowPayload,
+  RuntimeStartWorkflow,
+  RuntimeStartWorkflowPayload,
+  runtimeControlRequestWorkflowExecutionId,
+  runtimeControlRequestWorkflowStreamUrl,
+  type RuntimeControlRequestDispatchOutcome,
+} from "./subscribers/runtime-control/workflows.ts"
 // Wave 2 (Shape C): the codec-session command sink contract is owned by the
 // subscriber target folder. The runtime root barrel re-exports it directly
 // from the public subscriber subpath; the workflow-engine substrate path no

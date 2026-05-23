@@ -1,11 +1,6 @@
 {
   "findings": [
     {
-      "ruleId": "host-sdk-no-runtime-context-workflow-runtime-symbol",
-      "path": "packages/host-sdk/src/host/control-request-side-effects.ts",
-      "line": 28
-    },
-    {
       "ruleId": "host-sdk-no-runtime-observation-source-symbol",
       "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
       "line": 90

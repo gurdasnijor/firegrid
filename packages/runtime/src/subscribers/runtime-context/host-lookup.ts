@@ -25,9 +25,11 @@ import {
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import { Effect, Option } from "effect"
+// Lane 4 runtime-control drain: `@firegrid/runtime/control-plane` is gone;
+// the authority Tag/service types live at their canonical home.
 import {
   type RuntimeContextReadService,
-} from "@firegrid/runtime/control-plane"
+} from "@firegrid/runtime/authorities"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,

@@ -4,7 +4,7 @@ import {
   type RuntimeLifecycleRequestRow,
 } from "@firegrid/protocol/launch"
 import { Effect, Option } from "effect"
-import type { PerContextRuntimeOutputWriterService } from "../producers/ingress-writers/per-context-output.ts"
+import type { PerContextRuntimeOutputWriterService } from "../../producers/ingress-writers/per-context-output.ts"
 
 // tf-bffo: the durable control-request lifecycle evidence (RuntimeControlPlaneTable
 // runs query/upsert + the terminal output append) is kernel-internal durable-state

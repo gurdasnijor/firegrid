@@ -12,7 +12,7 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "producers/ingress-writers/per-context-output\\.ts$",
   "subscribers/tool-dispatch/index\\.ts$",
   "authorities/index\\.ts$",
-  "control-plane/index\\.ts$",
+  "subscribers/runtime-control/index\\.ts$",
   "tables/runtime-output-public\\.ts$",
   "tables/runtime-output\\.ts$",
   "streams/index\\.ts$",
@@ -265,7 +265,7 @@ module.exports = {
       name: "runtime-subscribers-no-legacy-tree-import",
       severity: "error",
       comment:
-        "Target-tree subscribers/ folder must not reach back into the legacy workflow-engine/, agent-event-pipeline/, or authorities/ subtrees. Each currently-sanctioned target->legacy edge carries a bead-numbered carve-out below (no anonymous carve-outs; audit gate added 2026-05-23). Edge inventory: tf-hpr0 WaitForWorkflow collapse (subscribers/wait-router/index.ts -> workflow-engine/workflows/wait-for.ts); tf-6hqx ScheduledPromptWorkflow physical move (subscribers/scheduled-prompt/index.ts -> workflow-engine/workflows/scheduled-prompt.ts); tf-6cdy authorities/ retirement, two edges (subscribers/runtime-context/index.ts -> authorities/index.ts, subscribers/runtime-context/handler.ts -> authorities/runtime-control-plane-recorder.ts). The tf-up1v RuntimeToolUseExecutor placement and tf-vfq9 ToolCallWorkflow cutover edges were retired this wave: those source files physically moved into subscribers/tool-dispatch/, eliminating the legacy edges. All other workflow-engine/ + agent-event-pipeline/ + authorities/ subpaths remain banned. Each remaining carve-out shrinks to a deletion when the named bead lands the target-tree physical move.",
+        "Target-tree subscribers/ folder must not reach back into the legacy workflow-engine/, agent-event-pipeline/, or authorities/ subtrees. Each currently-sanctioned target->legacy edge carries a bead-numbered carve-out below (no anonymous carve-outs; audit gate added 2026-05-23). Edge inventory: tf-hpr0 WaitForWorkflow collapse (subscribers/wait-router/index.ts -> workflow-engine/workflows/wait-for.ts); tf-6hqx ScheduledPromptWorkflow physical move (subscribers/scheduled-prompt/index.ts -> workflow-engine/workflows/scheduled-prompt.ts); tf-6cdy authorities/ retirement, three edges (subscribers/runtime-context/index.ts -> authorities/index.ts, subscribers/runtime-context/handler.ts -> authorities/runtime-control-plane-recorder.ts, subscribers/runtime-control/dispatcher.ts -> authorities/index.ts — the third edge is the Lane 4 dispatcher's authority Tag consumption; same authorities-retirement bead). The tf-up1v RuntimeToolUseExecutor placement and tf-vfq9 ToolCallWorkflow cutover edges were retired in the tool-dispatch wave; the tf-z8wq DurableStreamsWorkflowEngine substrate edge was retired in the engine/ move (engine/ is sanctioned target substrate, not legacy). All other workflow-engine/ + agent-event-pipeline/ + authorities/ subpaths remain banned. Each remaining carve-out shrinks to a deletion when the named bead lands the target-tree physical move.",
       from: { path: "^packages/runtime/src/subscribers/" },
       to: {
         path: [
@@ -278,8 +278,9 @@ module.exports = {
           "^packages/runtime/src/workflow-engine/workflows/wait-for\\.ts$",
           // Bead tf-6hqx — Wave D-A subscribers/scheduled-prompt physical move
           "^packages/runtime/src/workflow-engine/workflows/scheduled-prompt\\.ts$",
-          // Bead tf-6cdy — Wave D-A authorities/ retirement (covers both
-          // authorities/index.ts and authorities/runtime-control-plane-recorder.ts)
+          // Bead tf-6cdy — authorities/ retirement (covers authorities/index.ts
+          // and authorities/runtime-control-plane-recorder.ts, plus the Lane 4
+          // dispatcher's authority Tag consumption).
           "^packages/runtime/src/authorities/index\\.ts$",
           "^packages/runtime/src/authorities/runtime-control-plane-recorder\\.ts$",
         ],

@@ -1,11 +1,17 @@
 import { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
+// Lane 4 runtime-control drain: `../../control-plane/index.ts` is gone.
+// Authority Tags live at `../../authorities/`; the reconciler/side-effects
+// symbols moved into this same folder (`./dispatcher.ts`,
+// `./lifecycle-evidence.ts`).
 import {
-  recordLifecycleTerminalEvidence,
   RuntimeContextRead,
-  RuntimeControlRequestSideEffects,
   RuntimeRunAppendAndGet,
+} from "../../authorities/index.ts"
+import {
+  RuntimeControlRequestSideEffects,
   type RuntimeControlRequestStartResult,
-} from "../../control-plane/index.ts"
+} from "./dispatcher.ts"
+import { recordLifecycleTerminalEvidence } from "./lifecycle-evidence.ts"
 import { RuntimeContextWorkflowSession } from "../runtime-context-session/handler.ts"
 import { asRuntimeContextError } from "../../runtime-errors.ts"
 import { Effect, Layer, Option, type Scope } from "effect"

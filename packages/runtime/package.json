@@ -25,9 +25,13 @@
       "types": "./src/subscribers/tool-dispatch/index.ts",
       "default": "./src/subscribers/tool-dispatch/index.ts"
     },
-    "./control-plane": {
-      "types": "./src/control-plane/index.ts",
-      "default": "./src/control-plane/index.ts"
+    "./authorities": {
+      "types": "./src/authorities/index.ts",
+      "default": "./src/authorities/index.ts"
+    },
+    "./subscribers/runtime-control": {
+      "types": "./src/subscribers/runtime-control/index.ts",
+      "default": "./src/subscribers/runtime-control/index.ts"
     },
     "./runtime-output": {
       "types": "./src/tables/runtime-output-public.ts",

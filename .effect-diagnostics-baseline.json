@@ -963,7 +963,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts",
+      "file": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
       "line": 27,
       "column": 58,
       "severity": "message",
@@ -972,7 +972,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts",
+      "file": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
       "line": 32,
       "column": 55,
       "severity": "message",

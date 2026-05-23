@@ -555,7 +555,7 @@ rules:
         - "/packages/runtime/src/producers/ingress-writers/**"
         - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
-        - "/packages/runtime/src/control-plane/**"
+        - "/packages/runtime/src/subscribers/runtime-control/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
     message: |
       Runtime-owned DurableTable writes must go through the owning runtime
@@ -732,7 +732,7 @@ rules:
         - "/packages/runtime/src/producers/ingress-writers/**"
         - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
-        - "/packages/runtime/src/control-plane/**"
+        - "/packages/runtime/src/subscribers/runtime-control/**"
     message: |
       Durable capability tag provided outside its authority module. Use the
       owning provider layer instead.
@@ -794,7 +794,7 @@ rules:
         - "/packages/runtime/src/producers/ingress-writers/**"
         - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
-        - "/packages/runtime/src/control-plane/**"
+        - "/packages/runtime/src/subscribers/runtime-control/**"
         - "/packages/runtime/src/kernel/**"
         - "/packages/runtime/src/host/index.ts"
         - "/packages/runtime/src/host/observation-sources.ts"
@@ -999,7 +999,7 @@ rules:
         - "/packages/runtime/src/producers/ingress-writers/**"
         - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
-        - "/packages/runtime/src/control-plane/**"
+        - "/packages/runtime/src/subscribers/runtime-control/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
         - "/packages/runtime/src/durable-tools/internal/table.ts"
         # tf-aseo + #692 Wave A: workflow-owned durable loop-state provider
@@ -1336,14 +1336,15 @@ rules:
     paths:
       # RuntimeContext input/tool/permission/child-session durable-progress
       # surfaces. workflow-engine/workflows holds the input-wait body and child
-      # spawn; control-plane/channels hold tool, permission,
-      # and routed waits. workflow-engine/internal is intentionally OUT of scope:
-      # its DurableDeferred clock-wakeup is an engine primitive, not a
-      # RuntimeContext wait kind C4 governs.
+      # spawn; channels/ + subscribers/runtime-control/ hold tool, permission,
+      # and routed waits (Lane 4 runtime-control drain dissolved control-plane/
+      # into authorities/ + subscribers/runtime-control/, both already in scope
+      # via the subscribers/** glob). workflow-engine/internal is intentionally
+      # OUT of scope: its DurableDeferred clock-wakeup is an engine primitive,
+      # not a RuntimeContext wait kind C4 governs.
       include:
         - "/packages/runtime/src/workflow-engine/workflows/**/*.ts"
         - "/packages/runtime/src/{producers,subscribers,tables,transforms,events}/**/*.ts"
-        - "/packages/runtime/src/control-plane/**/*.ts"
         - "/packages/runtime/src/channels/**/*.ts"
         - "/semgrep-tests/**/*.ts"
       exclude:

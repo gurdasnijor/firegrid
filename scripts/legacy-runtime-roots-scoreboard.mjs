@@ -80,16 +80,10 @@ const parkAllowlist = {
   },
   // Body+kernel deletion wave: workflow body
   // (`workflows/runtime-context.ts`) deleted; entry removed.
-  "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts":
-    {
-      owner: "rearch-shape-c",
-      wave: "D-control",
-    },
-  "packages/runtime/src/workflow-engine/workflows/runtime-ingress-transform.ts":
-    {
-      owner: "rearch-shape-c",
-      wave: "D-input",
-    },
+  // Lane 4 runtime-control drain (this PR):
+  //   runtime-control-request.ts → subscribers/runtime-control/workflows.ts
+  //   runtime-ingress-transform.ts → transforms/runtime-ingress-transform.ts
+  // (PARK entries removed; files moved to their target-tree homes.)
   "packages/runtime/src/workflow-engine/workflows/scheduled-prompt.ts": {
     owner: "rearch-shape-c",
     wave: "D",

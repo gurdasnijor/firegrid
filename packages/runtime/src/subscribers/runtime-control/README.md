@@ -11,4 +11,13 @@ prompt-now, etc.). The workflow body owns one load-bearing capability:
   execution boundary; a non-workflow subscriber cannot guarantee single-writer
   ownership of the controlled RuntimeContext.
 
-Wave 2 moves `workflow-engine/workflows/runtime-control-request.ts` here.
+Lane 4 runtime-control drain (this PR) moved the host-control surface here:
+
+- `workflow-engine/workflows/runtime-control-request.ts` → `./workflows.ts`
+- `control-plane/control-request-dispatcher.ts` → `./dispatcher.ts`
+- `control-plane/lifecycle-evidence.ts` → `./lifecycle-evidence.ts`
+
+The runtime-internal `control-plane/` folder is deleted. Authority Tags
+(`RuntimeContextInsert`, `RuntimeContextRead`, etc.) stayed in
+`@firegrid/runtime/authorities`; the subscriber-shaped reconciler + workflow
+defs live here under `@firegrid/runtime/subscribers/runtime-control`.

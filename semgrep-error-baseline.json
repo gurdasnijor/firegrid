@@ -1,16 +1,6 @@
 {
   "findings": [
     {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 154
-    },
-    {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 162
-    },
-    {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
       "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
       "line": 35
@@ -19,11 +9,6 @@
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
       "path": "packages/host-sdk/src/host/config.ts",
       "line": 3
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 66
     },
     {
       "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
@@ -77,22 +62,17 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 686
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts",
+      "path": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
       "line": 50
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts",
+      "path": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
       "line": 59
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts",
+      "path": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
       "line": 68
     },
     {
@@ -127,11 +107,6 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/host.ts",
-      "line": 596
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/wait-for-workflow.ts",
       "line": 63
     },
@@ -147,11 +122,6 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/phase0-wave-2b-stream-zip-restart-replay/host.ts",
-      "line": 575
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/host.ts",
       "line": 84
     },
@@ -164,6 +134,16 @@
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/shape-d-workflow-admission/resources.ts",
       "line": 212
+    },
+    {
+      "ruleId": "firegrid-transforms-purity-import-boundary",
+      "path": "packages/runtime/src/transforms/runtime-ingress-transform.ts",
+      "line": 12
+    },
+    {
+      "ruleId": "firegrid-transforms-purity-import-boundary",
+      "path": "packages/runtime/src/transforms/runtime-ingress-transform.ts",
+      "line": 20
     }
   ]
 }
