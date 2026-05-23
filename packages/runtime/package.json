@@ -92,6 +92,10 @@
     "./subscribers/runtime-context-session": {
       "types": "./src/subscribers/runtime-context-session/index.ts",
       "default": "./src/subscribers/runtime-context-session/index.ts"
+    },
+    "./transforms": {
+      "types": "./src/transforms/index.ts",
+      "default": "./src/transforms/index.ts"
     }
   },
   "files": [

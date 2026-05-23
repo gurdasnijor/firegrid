@@ -28,16 +28,13 @@ import type {
 } from "../../authorities/index.ts"
 import {
   AgentInputEventSchema,
-  AgentOutputEventSchema,
   type AgentInputEvent,
   type AgentOutputEvent,
   type RuntimeAgentOutputObservation,
 } from "../../agent-event-pipeline/events/index.ts"
 import {
   RuntimeContextStateStore,
-  RuntimeContextEventStateSchema,
   type RuntimeContextEventState,
-  type PendingPermissionResponse,
 } from "../../tables/runtime-context-state.ts"
 import {
   RuntimeContextError,
@@ -51,6 +48,12 @@ import {
   runtimeContextWorkflowExecutionId,
 } from "./runtime-context-run.ts"
 import { agentInputEventFromRuntimeIngressRow } from "./runtime-ingress-transform.ts"
+import {
+  RuntimeContextTransitionResultSchema,
+  transitionInputEvent,
+  transitionOutputEvent,
+  type RuntimeContextTransitionAction,
+} from "../../transforms/runtime-context-transition.ts"
 import {
   type StartRuntimeResult,
   RuntimeContextWorkflowPayload,
@@ -196,56 +199,18 @@ const completedRuntimeInput = (
     }),
   )
 
-const RuntimeAgentOutputObservationSchema = Schema.Struct({
-  contextId: Schema.String,
-  activityAttempt: Schema.Number,
-  sequence: Schema.Number,
-  _tag: Schema.Literal(
-    "Ready",
-    "TextChunk",
-    "ToolUse",
-    "PermissionRequest",
-    "TurnComplete",
-    "Status",
-    "Error",
-    "Terminated",
-  ),
-  event: AgentOutputEventSchema,
-  permissionRequestId: Schema.optional(Schema.String),
-  toolUseId: Schema.optional(Schema.String),
-  toolName: Schema.optional(Schema.String),
-}) as unknown as Schema.Schema<RuntimeAgentOutputObservation>
-
 type RuntimeContextMergedEvent =
   | { readonly _tag: "Input"; readonly event: RuntimeIngressInputRow }
   | { readonly _tag: "Output"; readonly event: RuntimeAgentOutputObservation }
 
-const RuntimeContextTransitionActionSchema = Schema.Union(
-  Schema.TaggedStruct("None", {}),
-  Schema.TaggedStruct("SendRuntimeInput", {
-    row: RuntimeIngressInputRowSchema,
-    event: AgentInputEventSchema,
-  }),
-  Schema.TaggedStruct("SendPermissionResponse", {
-    permissionRequestId: Schema.String,
-    row: RuntimeIngressInputRowSchema,
-    event: AgentInputEventSchema,
-  }),
-  Schema.TaggedStruct("RunToolUse", {
-    output: RuntimeAgentOutputObservationSchema,
-  }),
-)
-export type RuntimeContextTransitionAction = Schema.Schema.Type<
-  typeof RuntimeContextTransitionActionSchema
->
-
-const RuntimeContextTransitionResultSchema = Schema.Struct({
-  state: RuntimeContextEventStateSchema,
-  action: RuntimeContextTransitionActionSchema,
-})
-type RuntimeContextTransitionResult = Schema.Schema.Type<
-  typeof RuntimeContextTransitionResultSchema
->
+// `RuntimeContextTransitionActionSchema`, `RuntimeContextTransitionResultSchema`,
+// `RuntimeContextTransitionAction`, `transitionInputEvent`, and
+// `transitionOutputEvent` are imported from `../../transforms/runtime-context-transition.ts`
+// (Shape C cutover physical target tree). They are the pure reducer factoring
+// described in docs/cannon/architecture/runtime-design-constraints.md (C2/C5).
+// The barrel re-exports the transitions just below; new callers should import
+// the action/result types from `transforms/runtime-context-transition.ts`
+// directly.
 
 const toolExecutionFailed = (
   toolUseId: string,
@@ -423,139 +388,13 @@ const handleRuntimeInput = (
     withRowOtelParent(row),
   )
 
-const withoutPermissionRequest = (
-  state: RuntimeContextEventState,
-  permissionRequestId: string,
-) => state.pendingPermissionRequests.filter(id => id !== permissionRequestId)
-
-const withPermissionRequest = (
-  state: RuntimeContextEventState,
-  permissionRequestId: string,
-) =>
-  state.pendingPermissionRequests.includes(permissionRequestId)
-    ? state.pendingPermissionRequests
-    : [...state.pendingPermissionRequests, permissionRequestId]
-
-const withoutPermissionResponse = (
-  state: RuntimeContextEventState,
-  permissionRequestId: string,
-) =>
-  state.pendingPermissionResponses.filter(response =>
-    response.permissionRequestId !== permissionRequestId)
-
-const withPermissionResponse = (
-  state: RuntimeContextEventState,
-  response: PendingPermissionResponse,
-) => [
-  ...withoutPermissionResponse(state, response.permissionRequestId),
-  response,
-]
-
-// Exported for focused tests: pure state transition for an input event.
-export const transitionInputEvent = (
-  state: RuntimeContextEventState,
-  row: RuntimeIngressInputRow,
-  event: AgentInputEvent,
-): RuntimeContextTransitionResult => {
-  const sequence = row.sequence ?? -1
-  const nextState = {
-    ...state,
-    lastProcessedInputSequence: sequence,
-  }
-  if (event._tag !== "PermissionResponse") {
-    return {
-      state: nextState,
-      action: { _tag: "SendRuntimeInput", row, event },
-    }
-  }
-
-  if (state.pendingPermissionRequests.includes(event.permissionRequestId)) {
-    return {
-      state: {
-        ...nextState,
-        pendingPermissionRequests: withoutPermissionRequest(state, event.permissionRequestId),
-      },
-      action: {
-        _tag: "SendPermissionResponse",
-        permissionRequestId: event.permissionRequestId,
-        row,
-        event,
-      },
-    }
-  }
-
-  return {
-    state: {
-      ...nextState,
-      pendingPermissionResponses: withPermissionResponse(state, {
-        permissionRequestId: event.permissionRequestId,
-        row,
-        event,
-      }),
-    },
-    action: { _tag: "None" },
-  }
-}
-
-// Exported for focused tests: pure state transition for an output observation.
-export const transitionOutputEvent = (
-  context: RuntimeContext,
-  state: RuntimeContextEventState,
-  output: RuntimeAgentOutputObservation,
-): RuntimeContextTransitionResult => {
-  const nextState = {
-    ...state,
-    lastProcessedOutputSequence: output.sequence,
-  }
-  const event = output.event
-  if (event._tag === "PermissionRequest") {
-    const pendingResponse = state.pendingPermissionResponses.find(response =>
-      response.permissionRequestId === event.permissionRequestId)
-    if (pendingResponse !== undefined) {
-      return {
-        state: {
-          ...nextState,
-          pendingPermissionRequests: withoutPermissionRequest(state, event.permissionRequestId),
-          pendingPermissionResponses: withoutPermissionResponse(state, event.permissionRequestId),
-        },
-        action: {
-          _tag: "SendPermissionResponse",
-          permissionRequestId: event.permissionRequestId,
-          row: pendingResponse.row,
-          event: pendingResponse.event,
-        },
-      }
-    }
-    return {
-      state: {
-        ...nextState,
-        pendingPermissionRequests: withPermissionRequest(state, event.permissionRequestId),
-      },
-      action: { _tag: "None" },
-    }
-  }
-  if (event._tag === "ToolUse" && context.runtime.config.agentProtocol !== "acp") {
-    return {
-      state: nextState,
-      action: { _tag: "RunToolUse", output },
-    }
-  }
-  if (event._tag === "Terminated") {
-    return {
-      state: {
-        ...nextState,
-        exitEvidence: {
-          exitCode: event.exitCode ?? 0,
-        },
-      },
-      action: { _tag: "None" },
-    }
-  }
-  return {
-    state: nextState,
-    action: { _tag: "None" },
-  }
-}
+// Pure transitions moved to `transforms/runtime-context-transition.ts`. The
+// `transitionRuntimeContextEventActivity` below still wraps them in
+// `Activity.make` so the body's at-most-once memoization seam is unchanged.
+export {
+  transitionInputEvent,
+  transitionOutputEvent,
+} from "../../transforms/runtime-context-transition.ts"
 
 const transitionActivityName = (
   contextId: string,

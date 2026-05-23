@@ -6,7 +6,7 @@ import { Duration, Effect, Option, Schema, Stream } from "effect"
 import {
   evaluateFieldEquals,
   FieldEqualsTriggerSchema,
-} from "./field-equals.ts"
+} from "../../transforms/field-equals.ts"
 import {
   RuntimeObservationSourceSchema,
   RuntimeObservationStreams,

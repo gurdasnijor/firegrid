@@ -1,110 +1,25 @@
-import { Prompt } from "@effect/ai"
-import {
-  type RuntimeIngressInputRow,
-} from "@firegrid/protocol/runtime-ingress"
-import {
-  AgentInputEventSchema,
-  type AgentInputEvent,
-} from "../../agent-event-pipeline/events/index.ts"
-import { Effect, Either, Schema } from "effect"
+// Effect-form adapter over the pure ingress-row decoder in
+// `packages/runtime/src/transforms/decode-ingress-row.ts` (Shape C cutover
+// physical target tree). The pure decoder returns `Either`, which in
+// `effect@3` is a subtype of `Effect`, so this re-export keeps the
+// Effect-form symbol stable for callers that compose with
+// `.pipe(Effect.mapError)` / `Effect.gen`.
+//
+// Deletion blocker: this shim drops when the remaining `.pipe(Effect.mapError(...))`
+// callers (runtime-context body, tiny-firegrid host) migrate to
+// `Either.mapLeft` / direct Effect-subtype use over the transforms/ symbol
+// directly. Tracked under the Wave 2 RuntimeContext body removal lanes
+// (docs/architecture/2026-05-22-shape-c-legacy-deletion-map.md §Lane A).
 
-class RuntimeIngressAgentInputTransformError extends Schema.TaggedError<
-  RuntimeIngressAgentInputTransformError
->()("RuntimeIngressAgentInputTransformError", {
-  op: Schema.String,
-  contextId: Schema.String,
-  inputId: Schema.String,
-  message: Schema.String,
-  cause: Schema.optional(Schema.Unknown),
-}) {}
-
-const transformError = (
-  row: RuntimeIngressInputRow,
-  message: string,
-  cause?: unknown,
-): RuntimeIngressAgentInputTransformError =>
-  new RuntimeIngressAgentInputTransformError({
-    op: "runtime-ingress.agent-input.decode",
-    contextId: row.contextId,
-    inputId: row.inputId,
-    message,
-    ...(cause === undefined ? {} : { cause }),
-  })
-
-const RuntimePromptTextPayloadSchema = Schema.Union(
-  Schema.String,
-  Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),
-  Schema.Struct({ text: Schema.String }),
-  Schema.Array(Schema.Union(
-    Schema.String,
-    Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),
-    Schema.Struct({ text: Schema.String }),
-  )),
-)
-
-type RuntimePromptTextPayload = Schema.Schema.Type<
-  typeof RuntimePromptTextPayloadSchema
->
-
-const textFromIngressPayload = (
-  payload: RuntimePromptTextPayload,
-): string => {
-  if (typeof payload === "string") return payload
-  if (Array.isArray(payload)) return payload.map(textFromIngressPayload).join("\n")
-  return (payload as { readonly text: string }).text
-}
-
-const promptFromIngressPayload = (
-  row: RuntimeIngressInputRow,
-): Effect.Effect<Extract<AgentInputEvent, { readonly _tag: "Prompt" }>, RuntimeIngressAgentInputTransformError> => {
-  const text = Schema.decodeUnknownEither(RuntimePromptTextPayloadSchema)(row.payload)
-  if (Either.isRight(text)) {
-    return Effect.succeed({
-      _tag: "Prompt",
-      correlationId: row.inputId,
-      prompt: Prompt.userMessage({
-        content: [Prompt.textPart({ text: textFromIngressPayload(text.right) })],
-      }),
-    })
-  }
-  return Schema.decodeUnknown(Prompt.UserMessage)(row.payload).pipe(
-    Effect.map(prompt => ({
-      _tag: "Prompt" as const,
-      correlationId: row.inputId,
-      prompt,
-    })),
-    Effect.mapError(cause =>
-      transformError(
-        row,
-        "runtime message ingress payload is not an AgentInputEvent, text payload, or Prompt.UserMessage",
-        cause,
-      )),
-  )
-}
+import type { Effect } from "effect"
+import type { RuntimeIngressInputRow } from "@firegrid/protocol/runtime-ingress"
+import type { AgentInputEvent } from "../../agent-event-pipeline/events/index.ts"
+import { agentInputEventFromRuntimeIngressRow as decodeAgentInputEventEither } from "../../transforms/decode-ingress-row.ts"
+import type { RuntimeIngressAgentInputTransformError } from "../../transforms/decode-ingress-row.ts"
 
 export const agentInputEventFromRuntimeIngressRow = (
   row: RuntimeIngressInputRow,
-): Effect.Effect<AgentInputEvent, RuntimeIngressAgentInputTransformError> => {
-  const decoded = Schema.decodeUnknownEither(AgentInputEventSchema)(row.payload)
-  if (Either.isRight(decoded)) return Effect.succeed(decoded.right)
-
-  if (row.kind === "message") return promptFromIngressPayload(row)
-
-  if (row.kind === "tool_result") {
-    return Schema.decodeUnknown(Prompt.ToolResultPart)(row.payload).pipe(
-      Effect.map(part => ({ _tag: "ToolResult" as const, part })),
-      Effect.mapError(cause =>
-        transformError(
-          row,
-          "runtime tool_result ingress payload is not an AgentInputEvent or Prompt.ToolResultPart",
-          cause,
-        )),
-    )
-  }
-
-  return Effect.fail(transformError(
-    row,
-    `runtime ${row.kind} ingress payload is not an AgentInputEvent`,
-    decoded.left,
-  ))
-}
+): Effect.Effect<AgentInputEvent, RuntimeIngressAgentInputTransformError> =>
+  // `Either<A, E>` IS an `Effect<A, E>` subtype in effect@3; the pure decoder's
+  // return value satisfies the Effect-form signature directly.
+  decodeAgentInputEventEither(row)

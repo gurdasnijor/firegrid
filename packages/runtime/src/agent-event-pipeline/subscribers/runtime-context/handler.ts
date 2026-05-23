@@ -46,12 +46,12 @@
 
 import {
   agentInputEventFromRuntimeIngressRow,
-} from "../../../workflow-engine/workflows/runtime-ingress-transform.ts"
+} from "../../../transforms/decode-ingress-row.ts"
 import {
   transitionInputEvent,
   transitionOutputEvent,
   type RuntimeContextTransitionAction,
-} from "../../../workflow-engine/workflows/runtime-context.ts"
+} from "../../../transforms/runtime-context-transition.ts"
 import {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
@@ -240,6 +240,9 @@ const reduce = (
 > => {
   switch (event._tag) {
     case "Input":
+      // The transforms/ decoder is pure (returns `Either`, which IS an Effect
+      // subtype in effect@3); pass it directly to `.pipe(Effect.map/mapError)`
+      // — no lift wrapper needed.
       return agentInputEventFromRuntimeIngressRow(event.event).pipe(
         Effect.map(decoded => transitionInputEvent(state, event.event, decoded)),
         Effect.mapError(cause =>
