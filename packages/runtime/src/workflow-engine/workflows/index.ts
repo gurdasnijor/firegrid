@@ -19,17 +19,10 @@ export {
   type FieldEqualsPredicate,
   type FieldEqualsTrigger,
 } from "./field-equals.ts"
-export {
-  WaitForWorkflow,
-  WaitForWorkflowLayer,
-  WaitForWorkflowMatchOutcomeSchema,
-  WaitForWorkflowOutcomeSchema,
-  WaitForWorkflowPayloadSchema,
-  WaitForWorkflowTimeoutOutcomeSchema,
-  waitForWorkflowExecutionId,
-  type WaitForWorkflowOutcome,
-  type WaitForWorkflowPayload,
-} from "./wait-for.ts"
+// wait-for.ts (WaitForWorkflow) was deleted as part of the Shape C cutover
+// (tf-28b8 / #676). Wait routing is now a Shape C primitive
+// (`runtimeWaitForMatch`) backed by `RuntimeWaitCompletionTable`; public
+// surface lives under `@firegrid/runtime/tool-executor` (tool-execution/index.ts).
 export {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,

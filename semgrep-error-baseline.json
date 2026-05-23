@@ -38,12 +38,8 @@
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/workflow-engine/workflows/tool-call.ts",
-      "line": 16
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/wait-for.ts",
-      "line": 63
+      "line": 16,
+      "note": "Retained as a thin facade for host-sdk's toolkit handler (CC4 / tf-jpcg). The at-most-once semantics moved to RuntimeToolResultTable (Shape C / tf-28b8 PR #676); the Workflow surface itself is queued for deletion once host-sdk callers move to the underlying Shape C primitive."
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",

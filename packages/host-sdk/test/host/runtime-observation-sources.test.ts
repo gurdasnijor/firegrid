@@ -14,9 +14,9 @@ import {
   type AgentOutputEvent,
 } from "@firegrid/runtime/events"
 import {
-  WaitForWorkflow,
-  WaitForWorkflowLayer,
-} from "@firegrid/runtime/workflows"
+  runtimeWaitCompletionTableLayer,
+  runtimeWaitForMatch,
+} from "@firegrid/runtime/tool-executor"
 import {
   FiregridRuntimeHostWithWorkflowLive,
 } from "../../src/host/index.ts"
@@ -117,7 +117,15 @@ describe("runtime-host wait_for source registrations", () => {
     const hostId = `host_${crypto.randomUUID()}` as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
 
-    const layer = WaitForWorkflowLayer.pipe(
+    // tf-28b8 (#676): Shape C wait routing — durable completion row backs the
+    // wait, replacing WaitForWorkflowLayer / WaitForWorkflow.execute.
+    const layer = runtimeWaitCompletionTableLayer({
+      streamOptions: {
+        url: `${baseUrl}/v1/stream/${namespace}-wait-completion`,
+        contentType: "application/json",
+      },
+      txTimeoutMs: 2_000,
+    }).pipe(
       Layer.provideMerge(HostRuntimeObservationStreamsLive),
       Layer.provideMerge(workflowEngineLayer({ namespace, contextId })),
       Layer.provideMerge(hostLayer({ namespace, hostId })),
@@ -127,8 +135,8 @@ describe("runtime-host wait_for source registrations", () => {
       layer,
       Effect.gen(function* () {
         const session = yield* CurrentHostSession
-        const fiber = yield* Effect.fork(WaitForWorkflow.execute({
-          executionKey: `runtime-observation-permission:${contextId}`,
+        const fiber = yield* Effect.fork(runtimeWaitForMatch({
+          completionKey: `runtime-observation-permission:${contextId}`,
           source: {
             _tag: "AgentOutputAfter",
             contextId,
@@ -202,7 +210,15 @@ describe("runtime-host wait_for source registrations", () => {
     const hostId = `host_${crypto.randomUUID()}` as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
 
-    const layer = WaitForWorkflowLayer.pipe(
+    // tf-28b8 (#676): Shape C wait routing — durable completion row backs the
+    // wait, replacing WaitForWorkflowLayer / WaitForWorkflow.execute.
+    const layer = runtimeWaitCompletionTableLayer({
+      streamOptions: {
+        url: `${baseUrl}/v1/stream/${namespace}-wait-completion`,
+        contentType: "application/json",
+      },
+      txTimeoutMs: 2_000,
+    }).pipe(
       Layer.provideMerge(HostRuntimeObservationStreamsLive),
       Layer.provideMerge(workflowEngineLayer({ namespace, contextId })),
       Layer.provideMerge(hostLayer({ namespace, hostId })),
@@ -212,8 +228,8 @@ describe("runtime-host wait_for source registrations", () => {
       layer,
       Effect.gen(function* () {
         const controlPlane = yield* RuntimeControlPlaneTable
-        const fiber = yield* Effect.fork(WaitForWorkflow.execute({
-          executionKey: `runtime-observation-run:${contextId}`,
+        const fiber = yield* Effect.fork(runtimeWaitForMatch({
+          completionKey: `runtime-observation-run:${contextId}`,
           source: RUNTIME_RUN_SOURCE,
           trigger: [
             { path: ["contextId"], equals: contextId },

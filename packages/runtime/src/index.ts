@@ -30,21 +30,14 @@ export {
   RuntimeStartWorkflowPayload,
   ToolCallWorkflow,
   ToolCallWorkflowPayloadSchema,
-  WaitForWorkflow,
-  WaitForWorkflowLayer,
   FieldEqualsPredicateSchema,
   FieldEqualsTriggerSchema,
-  WaitForWorkflowMatchOutcomeSchema,
-  WaitForWorkflowOutcomeSchema,
-  WaitForWorkflowPayloadSchema,
-  WaitForWorkflowTimeoutOutcomeSchema,
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,
   runtimeControlRequestWorkflowExecutionId,
   runtimeControlRequestWorkflowStreamUrl,
   runtimeInputDeferredFor,
   runtimeInputDeferredName,
-  waitForWorkflowExecutionId,
   type RuntimeControlRequestDispatchOutcome,
   type RuntimeContextSessionCommand,
   type RuntimeContextSessionCommandAccepted,
@@ -56,10 +49,34 @@ export {
   type ToolCallWorkflowPayload,
   type FieldEqualsPredicate,
   type FieldEqualsTrigger,
-  type WaitForWorkflowOutcome,
-  type WaitForWorkflowPayload,
   evaluateFieldEquals,
 } from "./workflow-engine/workflows/index.ts"
+// Shape C wait routing (tf-28b8 / #676) replaces WaitForWorkflow. The
+// outcome/match/timeout schemas keep the same value shape so callers that
+// imported `WaitForWorkflow*` move to `RuntimeWait*` with no runtime change.
+export {
+  runtimeWaitForAnyCompletionKey,
+  runtimeWaitForCompletionKey,
+  runtimeWaitForMatch,
+  RuntimeWaitCompletionStore,
+  RuntimeWaitCompletionStoreLive,
+  RuntimeWaitCompletionTable,
+  RuntimeWaitMatchOutcomeSchema,
+  type RuntimeWaitOutcome,
+  RuntimeWaitOutcomeSchema,
+  type RuntimeWaitForRequest,
+  type RuntimeWaitSourcePair,
+  RuntimeWaitTimeoutOutcomeSchema,
+  runtimeWaitCompletionTableLayer,
+} from "./agent-event-pipeline/wait-routing/runtime-wait-completion.ts"
+// Shape C tool result identity (tf-28b8 / #676).
+export {
+  RuntimeToolResultTable,
+  runtimeToolResultAtMostOnce,
+  runtimeToolResultKey,
+  runtimeToolResultLookup,
+  runtimeToolResultTableLayer,
+} from "./agent-event-pipeline/tool-execution/runtime-tool-result-table.ts"
 export {
   AgentOutputAfterObservationSourceSchema,
   AgentOutputObservationSourceSchema,

@@ -14,8 +14,9 @@ import type {
   WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
 import { Context, Duration, Effect, Layer } from "effect"
-import type {
-  RuntimeObservationSource,
+import {
+  RuntimeObservationStreams,
+  type RuntimeObservationSource,
 } from "../../streams/index.ts"
 import type {
   FieldEqualsTrigger,
@@ -25,10 +26,13 @@ export {
   type FieldEqualsTrigger,
 } from "../../workflow-engine/workflows/field-equals.ts"
 import {
-  WaitForWorkflow,
-  WaitForWorkflowLayer,
-  type WaitForWorkflowOutcome,
-} from "../../workflow-engine/workflows/wait-for.ts"
+  RuntimeWaitCompletionTable,
+  runtimeWaitForAnyCompletionKey,
+  runtimeWaitForCompletionKey,
+  runtimeWaitForMatch,
+  type RuntimeWaitForRequest,
+  type RuntimeWaitOutcome,
+} from "../wait-routing/runtime-wait-completion.ts"
 import {
   ScheduledPromptWorkflow,
 } from "../../workflow-engine/workflows/scheduled-prompt.ts"
@@ -49,8 +53,9 @@ export interface RuntimeWaitForToolExecutionParams
 export interface RuntimeWaitForAnyDescriptorExecution {
   readonly channel: string
   // tf-0xe4: serializable observation source + trigger (was an in-memory
-  // `wait` Effect). wait_for_any now races these inside the durable
-  // WaitForWorkflow Activity instead of an in-memory Effect.raceAll.
+  // `wait` Effect). wait_for_any now races these under the Shape C wait
+  // primitive (durable completion row keyed by toolUseId), so an in-flight
+  // wait_for_any survives host restart by reading the recorded outcome.
   readonly source: RuntimeObservationSource
   readonly trigger: FieldEqualsTrigger
 }
@@ -127,15 +132,20 @@ export interface RuntimeAgentToolExecutionService {
   ) => Effect.Effect<ScheduleMeToolOutput, RuntimeAgentToolExecutionError>
 }
 
-const waitForTimeoutPayload = (
+// 0 means "no timeout"-shaped agent input; Shape C primitive treats undefined
+// as no timeout (matches the prior workflow shape). Preserve the historical 0
+// → 1 floor to keep duplicate-suppression tests stable. Returns the partial
+// shape so the request literal can spread it conditionally
+// (exactOptionalPropertyTypes).
+const waitTimeoutFromInput = (
   timeoutMs: number | undefined,
 ): { readonly timeoutMs?: number } =>
   timeoutMs === undefined
     ? {}
     : { timeoutMs: timeoutMs === 0 ? 1 : timeoutMs }
 
-const waitForWorkflowOutput = (
-  outcome: WaitForWorkflowOutcome,
+const waitOutcomeToOutput = (
+  outcome: RuntimeWaitOutcome,
 ): WaitForToolOutput => {
   switch (outcome._tag) {
     case "Match":
@@ -152,11 +162,33 @@ const toolExecutionFailed = (
   cause,
 })
 
-// tf-0xe4: wait_for_any over the durable WaitForWorkflow. The N descriptor
-// sources are raced inside one journaled workflow Activity (primary +
-// additionalSources), so an in-flight wait_for_any survives host restart. The
-// workflow returns the winning source's index; map it back to the channel.
+interface RuntimeAgentToolExecutionDeps {
+  readonly waitCompletionTable: RuntimeWaitCompletionTable["Type"]
+  readonly observationStreams: RuntimeObservationStreams["Type"]
+}
+
+// Provide the Shape C wait primitive's R channel from the dispatcher's
+// constructed deps. The handler's surface is `Effect<…, error, never>` — the
+// requirement is discharged here, NOT by an unsafe cast.
+const provideShapeCWaitDeps = <A, E>(
+  effect: Effect.Effect<
+    A,
+    E,
+    RuntimeObservationStreams | RuntimeWaitCompletionTable
+  >,
+  deps: RuntimeAgentToolExecutionDeps,
+): Effect.Effect<A, E, never> =>
+  effect.pipe(
+    Effect.provideService(RuntimeWaitCompletionTable, deps.waitCompletionTable),
+    Effect.provideService(RuntimeObservationStreams, deps.observationStreams),
+  )
+
+// Shape C wait_for_any per tf-28b8 (#676). The dispatch contract is unchanged:
+// race N descriptors over their typed observation sources, return the winning
+// index + the channel name. The race + at-most-once survival is now a durable
+// completion row, not a workflow execution memo.
 const waitForAny = (
+  deps: RuntimeAgentToolExecutionDeps,
   params: RuntimeWaitForAnyToolExecutionParams,
 ): Effect.Effect<WaitForAnyToolOutput, RuntimeAgentToolExecutionError> => {
   const { contextId, toolUseId, input, waits } = params
@@ -167,17 +199,17 @@ const waitForAny = (
       reason: "wait_for_any requires at least one channel",
     })
   }
-  return WaitForWorkflow.execute({
-    executionKey: `wait-any:${contextId}:${toolUseId}`,
+  const request: RuntimeWaitForRequest = {
+    completionKey: runtimeWaitForAnyCompletionKey(contextId, toolUseId),
     source: primary.source,
     trigger: primary.trigger,
     additionalSources: rest.map(descriptor => ({
       source: descriptor.source,
       trigger: descriptor.trigger,
     })),
-    ...waitForTimeoutPayload(input.timeoutMs),
-  }).pipe(
-    Effect.provide(WaitForWorkflowLayer),
+    ...waitTimeoutFromInput(input.timeoutMs),
+  }
+  return provideShapeCWaitDeps(runtimeWaitForMatch(request), deps).pipe(
     Effect.map((outcome): WaitForAnyToolOutput => {
       if (outcome._tag === "Timeout") return { timedOut: true }
       const winnerIndex = outcome.winnerIndex ?? 0
@@ -188,68 +220,75 @@ const waitForAny = (
       }
     }),
     Effect.mapError(toolExecutionFailed),
-    hideExecutionRequirements,
   )
 }
 
-const hideExecutionRequirements = <A, E, R>(
+// Erase the `WorkflowEngine.WorkflowEngine` requirement that `DurableClock` and
+// `Workflow.execute` leak into the dispatcher's outer call site: the ambient
+// workflow execution scope the host provides via `workflowRuntime.run` covers
+// these at runtime, and the public `RuntimeAgentToolExecutionService` contract
+// is `R = never`. This cast is narrow to those two Shape D bindings (sleep +
+// schedule_me), which are the only retained workflow-machinery uses on this
+// surface per tf-28b8 (#676).
+const hideWorkflowEngineRequirements = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, never> =>
   effect as Effect.Effect<A, E, never>
 
 // firegrid-host-sdk.PACKAGE_GRAPH.6
 // firegrid-workflow-driven-runtime.PHASE_6_AGENT_TOOLS.9
-export const makeRuntimeAgentToolExecutionService =
-  (): RuntimeAgentToolExecutionService => ({
-    sleep: ({ toolUseId, input }) =>
-      DurableClock.sleep({
-        name: `tool:${toolUseId}`,
-        duration: Duration.millis(input.durationMs),
-        inMemoryThreshold: Duration.zero,
-      }).pipe(
-        Effect.as<SleepToolOutput>({ slept: true }),
-        hideExecutionRequirements,
-      ),
-    waitFor: ({ contextId, toolUseId, input, source, trigger }) =>
-      WaitForWorkflow.execute({
-        executionKey: `wait:${contextId}:${toolUseId}`,
-        source,
-        trigger,
-        ...waitForTimeoutPayload(input.timeoutMs),
-      }).pipe(
-        Effect.provide(WaitForWorkflowLayer),
-        Effect.map(waitForWorkflowOutput),
-        Effect.mapError(toolExecutionFailed),
-        hideExecutionRequirements,
-      ),
-    waitForAny,
-    send: ({ input, append }) =>
-      append.pipe(
-        Effect.as<SendToolOutput>({ sent: true, channel: input.channel }),
-        Effect.mapError(toolExecutionFailed),
-      ),
-    call: ({ call }) =>
-      call.pipe(
-        Effect.mapError(toolExecutionFailed),
-      ),
-    // tf-5ose: start the durable, replay-safe ScheduledPromptWorkflow
-    // fire-and-forget (`discard: true` returns the executionId without awaiting
-    // the timer) and return {scheduled:true} immediately, so the agent's turn
-    // completes now and the self-prompt fires later. idempotencyKey = scheduleId
-    // makes a replay re-start a no-op; the workflow handler is registered on the
-    // host-engine scope (toolCallWorkflowSupportLayer) so the engine resumes it
-    // after the delay. (NOT awaited inline like the prior DurableClock.sleep,
-    // which blocked the turn until `when` and timed the edge out.)
-    schedule: ({ contextId, scheduleId, input }) =>
-      ScheduledPromptWorkflow.execute(
-        { contextId, scheduleId, when: input.when, prompt: input.prompt },
-        { discard: true },
-      ).pipe(
-        Effect.as<ScheduleMeToolOutput>({ scheduled: true, scheduleId }),
-        Effect.mapError(toolExecutionFailed),
-        hideExecutionRequirements,
-      ),
-  })
+export const makeRuntimeAgentToolExecutionService = (
+  deps: RuntimeAgentToolExecutionDeps,
+): RuntimeAgentToolExecutionService => ({
+  // sleep retains the narrow Shape D DurableClock binding: a true-future
+  // wake has no producer to resolve a completion row (tf-28b8 Probe 3 /
+  // PR #676 verdict — DurableClock is load-bearing for scheduled prompts).
+  sleep: ({ toolUseId, input }) =>
+    DurableClock.sleep({
+      name: `tool:${toolUseId}`,
+      duration: Duration.millis(input.durationMs),
+      inMemoryThreshold: Duration.zero,
+    }).pipe(
+      Effect.as<SleepToolOutput>({ slept: true }),
+      hideWorkflowEngineRequirements,
+    ),
+  // Shape C: the wait is a durable completion row keyed by toolUseId; the
+  // source is replayable + the row terminalizes the outcome (C4).
+  waitFor: ({ contextId, toolUseId, input, source, trigger }) => {
+    const request: RuntimeWaitForRequest = {
+      completionKey: runtimeWaitForCompletionKey(contextId, toolUseId),
+      source,
+      trigger,
+      ...waitTimeoutFromInput(input.timeoutMs),
+    }
+    return provideShapeCWaitDeps(runtimeWaitForMatch(request), deps).pipe(
+      Effect.map(waitOutcomeToOutput),
+      Effect.mapError(toolExecutionFailed),
+    )
+  },
+  waitForAny: params => waitForAny(deps, params),
+  send: ({ input, append }) =>
+    append.pipe(
+      Effect.as<SendToolOutput>({ sent: true, channel: input.channel }),
+      Effect.mapError(toolExecutionFailed),
+    ),
+  call: ({ call }) =>
+    call.pipe(
+      Effect.mapError(toolExecutionFailed),
+    ),
+  // tf-5ose: the scheduled-prompt workflow remains the narrow Shape D
+  // DurableClock binding per tf-28b8 (#676). discard:true returns the
+  // executionId without awaiting; the engine resumes the body after the delay.
+  schedule: ({ contextId, scheduleId, input }) =>
+    ScheduledPromptWorkflow.execute(
+      { contextId, scheduleId, when: input.when, prompt: input.prompt },
+      { discard: true },
+    ).pipe(
+      Effect.as<ScheduleMeToolOutput>({ scheduled: true, scheduleId }),
+      Effect.mapError(toolExecutionFailed),
+      hideWorkflowEngineRequirements,
+    ),
+})
 
 export class RuntimeAgentToolExecution extends Context.Tag(
   "@firegrid/runtime/RuntimeAgentToolExecution",
@@ -259,8 +298,25 @@ export class RuntimeAgentToolExecution extends Context.Tag(
   ): Layer.Layer<RuntimeAgentToolExecution> => Layer.succeed(this, service)
 }
 
-export const RuntimeAgentToolExecutionLive = RuntimeAgentToolExecution.layer(
-  makeRuntimeAgentToolExecutionService(),
+// The Live layer pulls the Shape C dependencies from Context. Hosts compose
+// `RuntimeWaitCompletionTable.layer(...)` + `RuntimeObservationStreamsLive`
+// into their layer graph; this constructor closes over them so the public
+// dispatcher methods stay `R = never` at the call site.
+// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- DurableTable.layer leaks `any` through the wait completion table; the declared Layer R channel is the intended capability boundary.
+export const RuntimeAgentToolExecutionLive: Layer.Layer<
+  RuntimeAgentToolExecution,
+  never,
+  RuntimeWaitCompletionTable | RuntimeObservationStreams
+> = Layer.effect(
+  RuntimeAgentToolExecution,
+  Effect.gen(function*() {
+    const waitCompletionTable = yield* RuntimeWaitCompletionTable
+    const observationStreams = yield* RuntimeObservationStreams
+    return makeRuntimeAgentToolExecutionService({
+      waitCompletionTable,
+      observationStreams,
+    })
+  }),
 ).pipe(
   Layer.withSpan("firegrid.runtime.agent_tool_execution.layer", {
     kind: "internal",

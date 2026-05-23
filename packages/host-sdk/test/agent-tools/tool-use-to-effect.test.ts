@@ -31,7 +31,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { AgentOutputEvent, ToolResultEvent } from "@firegrid/runtime/events"
 import { AgentToolCallPartSchema, ToolResultEventSchema } from "@firegrid/runtime/events"
 import { RuntimeObservationStreams } from "@firegrid/runtime/streams"
-import { WaitForWorkflowLayer } from "@firegrid/runtime/workflows"
+import { runtimeWaitCompletionTableLayer } from "@firegrid/runtime/tool-executor"
 import {
   RuntimeChannelRouter,
   makeRuntimeContextChannelRouter,
@@ -71,6 +71,7 @@ afterEach(async () => {
 interface Streams {
   readonly workflowUrl: string
   readonly sourceUrl: string
+  readonly waitCompletionUrl: string
 }
 
 const makeStreams = (label: string): Streams => {
@@ -79,6 +80,7 @@ const makeStreams = (label: string): Streams => {
   return {
     workflowUrl: `${baseUrl}/v1/stream/tools-${label}-workflow-${id}`,
     sourceUrl: `${baseUrl}/v1/stream/tools-${label}-source-${id}`,
+    waitCompletionUrl: `${baseUrl}/v1/stream/tools-${label}-wait-completion-${id}`,
   }
 }
 
@@ -246,7 +248,15 @@ const buildLayer = (
 ) => {
   return RunToolWorkflowLayer.pipe(
     Layer.provideMerge(RuntimeAgentToolExecutionLive),
-    Layer.provideMerge(WaitForWorkflowLayer),
+    // tf-28b8 (#676): Shape C wait routing replaces WaitForWorkflowLayer; the
+    // dispatcher's R now includes RuntimeWaitCompletionTable.
+    Layer.provideMerge(runtimeWaitCompletionTableLayer({
+      streamOptions: {
+        url: streams.waitCompletionUrl,
+        contentType: "application/json",
+      },
+      txTimeoutMs: 2_000,
+    })),
     Layer.provideMerge(TestRuntimeObservationStreamsLive),
     Layer.provideMerge(hostLayer),
     Layer.provideMerge(TestRuntimeChannelRouterLive(channels)),

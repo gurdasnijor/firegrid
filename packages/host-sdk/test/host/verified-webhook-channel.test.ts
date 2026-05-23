@@ -17,8 +17,10 @@ import {
   CallerOwnedFactStreams,
   RuntimeObservationStreams,
 } from "@firegrid/runtime/streams"
-import { RuntimeAgentToolExecutionLive } from "@firegrid/runtime/tool-executor"
-import { WaitForWorkflowLayer } from "@firegrid/runtime/workflows"
+import {
+  RuntimeAgentToolExecutionLive,
+  runtimeWaitCompletionTableLayer,
+} from "@firegrid/runtime/tool-executor"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -197,7 +199,16 @@ const runWithVerifiedWebhookLayer = <A, E>(
       effect.pipe(
         Effect.provide(
           RuntimeAgentToolExecutionLive.pipe(
-            Layer.provideMerge(WaitForWorkflowLayer),
+            // tf-28b8 (#676): Shape C wait routing replaces WaitForWorkflowLayer.
+            // The dispatcher's R now includes RuntimeWaitCompletionTable; provide
+            // a per-test DurableStream-backed table.
+            Layer.provideMerge(runtimeWaitCompletionTableLayer({
+              streamOptions: {
+                url: streamUrl("verified-webhook-wait-completion"),
+                contentType: "application/json",
+              },
+              txTimeoutMs: 2_000,
+            })),
             Layer.provideMerge(VerifiedWebhookRuntimeObservationStreamsLive),
             Layer.provideMerge(VerifiedWebhookFactCallerOwnedFactStreamsLive),
             Layer.provideMerge(VerifiedWebhookFactRouterLive),

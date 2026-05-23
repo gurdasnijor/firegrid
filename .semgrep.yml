@@ -556,6 +556,11 @@ rules:
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
+        # tf-28b8 (#676): `runtime-wait-completion.ts` IS the Shape C authority
+        # for the `firegrid.runtime.wait_completions` table family; it owns
+        # insertOrGet/upsert/delete on `.completions`. Replaces WaitForWorkflow's
+        # workflow-engine `finalResult` memo with a durable terminal-fact row.
+        - "/packages/runtime/src/agent-event-pipeline/wait-routing/**"
     message: |
       Runtime-owned DurableTable writes must go through the owning runtime
       authority module.

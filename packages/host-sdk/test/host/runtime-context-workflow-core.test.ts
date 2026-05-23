@@ -32,9 +32,9 @@ import {
   type AgentInputEvent,
 } from "@firegrid/runtime/events"
 import {
-  WaitForWorkflow,
-  WaitForWorkflowLayer,
-} from "@firegrid/runtime/workflows"
+  runtimeWaitCompletionTableLayer,
+  runtimeWaitForMatch,
+} from "@firegrid/runtime/tool-executor"
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,
@@ -416,7 +416,15 @@ describe("workflow-native runtime-context core", () => {
       },
     }
 
-    const layer = WaitForWorkflowLayer.pipe(
+    // tf-28b8 (#676): Shape C wait routing replaces WaitForWorkflow* — durable
+    // completion row keyed by completionKey, snapshot-first reads.
+    const layer = runtimeWaitCompletionTableLayer({
+      streamOptions: {
+        url: streamUrl(`${namespace}.test.wait-completion`),
+        contentType: "application/json",
+      },
+      txTimeoutMs: 2_000,
+    }).pipe(
       Layer.provideMerge(HostRuntimeObservationStreamsLive),
       Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
         streamUrl: streamUrl(`${namespace}.test.workflow`),
@@ -438,8 +446,8 @@ describe("workflow-native runtime-context core", () => {
             0,
             { _tag: "Terminated", exitCode: 0 },
           )
-          const outcome = yield* WaitForWorkflow.execute({
-            executionKey: `agent-output-initial:${contextId}`,
+          const outcome = yield* runtimeWaitForMatch({
+            completionKey: `agent-output-initial:${contextId}`,
             source: {
               _tag: "AgentOutputAfter",
               contextId,
@@ -484,7 +492,14 @@ describe("workflow-native runtime-context core", () => {
       },
     }
 
-    const layer = WaitForWorkflowLayer.pipe(
+    // tf-28b8 (#676): Shape C wait routing.
+    const layer = runtimeWaitCompletionTableLayer({
+      streamOptions: {
+        url: streamUrl(`${namespace}.test.wait-completion`),
+        contentType: "application/json",
+      },
+      txTimeoutMs: 2_000,
+    }).pipe(
       Layer.provideMerge(HostRuntimeObservationStreamsLive),
       Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
         streamUrl: streamUrl(`${namespace}.test.workflow`),
@@ -499,8 +514,8 @@ describe("workflow-native runtime-context core", () => {
     const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
-          const fiber = yield* WaitForWorkflow.execute({
-            executionKey: `agent-output-live:${contextId}`,
+          const fiber = yield* runtimeWaitForMatch({
+            completionKey: `agent-output-live:${contextId}`,
             source: {
               _tag: "AgentOutputAfter",
               contextId,
