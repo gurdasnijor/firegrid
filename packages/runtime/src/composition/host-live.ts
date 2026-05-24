@@ -115,7 +115,7 @@ import {
 import { RuntimeHostAgentToolHostLive } from "./agent-tool-host-live.ts"
 import {
   RuntimeControlRequestControlPlaneLive,
-} from "../control-plane/index.ts"
+} from "../subscribers/runtime-control/index.ts"
 import {
   RuntimeControlRequestSideEffectsLive,
 } from "../subscribers/runtime-control/index.ts"
@@ -143,7 +143,7 @@ import {
 import { FiregridLocalProcess } from "../producers/sandbox/local-process-from-env.ts"
 import {
   RuntimeControlPlaneRecorderLive,
-} from "../control-plane/index.ts"
+} from "../tables/runtime-control-plane.ts"
 import {
   makeCodecRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session-codec-adapter.ts"

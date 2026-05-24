@@ -27,7 +27,7 @@ import {
 import { Effect, Option } from "effect"
 import {
   type RuntimeContextReadService,
-} from "@firegrid/runtime/control-plane"
+} from "../../tables/runtime-control-plane.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,

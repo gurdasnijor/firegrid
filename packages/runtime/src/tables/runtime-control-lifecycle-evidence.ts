@@ -4,13 +4,11 @@ import {
   type RuntimeLifecycleRequestRow,
 } from "@firegrid/protocol/launch"
 import { Effect, Option } from "effect"
-import type { PerContextRuntimeOutputWriterService } from "../tables/per-context-output.ts"
+import type { PerContextRuntimeOutputWriterService } from "./per-context-output.ts"
 
 // tf-bffo: the durable control-request lifecycle evidence (RuntimeControlPlaneTable
-// runs query/upsert + the terminal output append) is kernel-internal durable-state
-// behavior. It lives in the runtime; host-sdk's RuntimeControlRequestSideEffects
-// composition delegates to these functions for the durable arm, while the host arm
-// (spawning the child via startRuntime, deregistering the engine) stays in host-sdk.
+// runs query/upsert + the terminal output append) is runtime-owned table
+// behavior. Runtime-control delegates here for the durable arm.
 
 export const activeActivityAttempt = (
   contextId: string,

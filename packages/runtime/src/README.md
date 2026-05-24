@@ -137,17 +137,13 @@ These are intentionally not agent event-pipeline stages:
   `subscribers/runtime-context/host-lookup.ts`).
 - `workflow-engine/`: legacy folder holding the remaining Shape D
   workflow definitions (`tool-call.ts`, `wait-for.ts`,
-  `scheduled-prompt.ts`, `runtime-control-request.ts`,
-  `runtime-ingress-transform.ts`, `runtime-context-run.ts`) plus the
+  `scheduled-prompt.ts`, `runtime-ingress-transform.ts`,
+  `runtime-context-run.ts`) plus the
   `tool-execution/runtime-tool-use-executor.ts` executor Tag, pending
   the per-bead Shape D moves into respective `subscribers/` folders
   (see `.dependency-cruiser.cjs` carve-outs `tf-up1v`, `tf-hpr0`,
   `tf-6hqx`, `tf-vfq9`). The engine substrate moved out to `engine/`
   in tf-z8wq Wave 2.
-- `control-plane/`: runtime-owned dispatcher/daemon mechanics that bridge
-  durable control request rows into runtime workflow execution. Host packages
-  provide host-bound side effects, but they do not export or own the dispatcher
-  internals.
 - `agent-tools/`: tool schemas, lowering, MCP exposure, and host-coupled live
   services.
 - `producers/codecs/agent-adapters/`: projections over codec sessions
@@ -155,8 +151,6 @@ These are intentionally not agent event-pipeline stages:
   subpath: `@firegrid/runtime/agent-adapters` (preserved across the move).
 - `verified-webhook-ingest/`: external ingress/source adapter
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
-- `authorities/`: runtime control-plane lifecycle capabilities
-  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.2`).
 - `channels/`: the durable channel Live implementations (tf-bffo). protocol
   owns the channel contracts/Tags; the runtime owns these durable Live bindings
   (reached above-box only through channels); host-sdk only COMPOSES them by

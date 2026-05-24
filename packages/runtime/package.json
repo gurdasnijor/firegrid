@@ -26,8 +26,8 @@
       "default": "./src/subscribers/tool-dispatch/index.ts"
     },
     "./control-plane": {
-      "types": "./src/control-plane/index.ts",
-      "default": "./src/control-plane/index.ts"
+      "types": "./src/subscribers/runtime-control/index.ts",
+      "default": "./src/subscribers/runtime-control/index.ts"
     },
     "./runtime-output": {
       "types": "./src/tables/runtime-output-public.ts",
@@ -136,6 +136,14 @@
     "./tables/runtime-context-input-facts": {
       "types": "./src/tables/runtime-context-input-facts.ts",
       "default": "./src/tables/runtime-context-input-facts.ts"
+    },
+    "./tables/runtime-control-plane": {
+      "types": "./src/tables/runtime-control-plane.ts",
+      "default": "./src/tables/runtime-control-plane.ts"
+    },
+    "./tables/runtime-control-lifecycle-evidence": {
+      "types": "./src/tables/runtime-control-lifecycle-evidence.ts",
+      "default": "./src/tables/runtime-control-lifecycle-evidence.ts"
     },
     "./subscribers/runtime-context-session": {
       "types": "./src/subscribers/runtime-context-session/index.ts",

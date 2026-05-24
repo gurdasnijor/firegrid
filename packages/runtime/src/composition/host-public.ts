@@ -42,7 +42,7 @@ import {
 import { Duration, Effect, Layer, Option, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import type { ChannelRegistration } from "@firegrid/protocol/channels"
-import { RuntimeContextRead } from "../control-plane/index.ts"
+import { RuntimeContextRead } from "../tables/runtime-control-plane.ts"
 import {
   asRuntimeContextError,
   runtimeIngressError,

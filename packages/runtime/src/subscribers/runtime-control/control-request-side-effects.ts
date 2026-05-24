@@ -1,11 +1,13 @@
 import type { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
 import {
-  recordLifecycleTerminalEvidence,
   RuntimeContextRead,
-  RuntimeControlRequestSideEffects,
   RuntimeRunAppendAndGet,
+} from "../../tables/runtime-control-plane.ts"
+import { recordLifecycleTerminalEvidence } from "../../tables/runtime-control-lifecycle-evidence.ts"
+import {
+  RuntimeControlRequestSideEffects,
   type RuntimeControlRequestStartResult,
-} from "../../control-plane/index.ts"
+} from "./dispatcher.ts"
 import { RuntimeContextWorkflowSession } from "../runtime-context-session/handler.ts"
 import { RuntimeContextSessionWorkflowDispatch } from "../runtime-context-session-workflow/index.ts"
 import { asRuntimeContextError } from "../../runtime-errors.ts"

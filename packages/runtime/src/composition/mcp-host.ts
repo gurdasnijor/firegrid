@@ -33,7 +33,7 @@ import { NodeHttpServer } from "@effect/platform-node"
 import { ContextNotFound } from "@firegrid/protocol/launch"
 import {
   RuntimeLocalContextResolver,
-} from "../control-plane/index.ts"
+} from "../tables/runtime-control-plane.ts"
 import { RpcSerialization, RpcServer } from "@effect/rpc"
 import { Config, Effect, Layer, Logger, Option } from "effect"
 // The MCP HTTP server lifetime is Effect-owned via Layer.scopedDiscard

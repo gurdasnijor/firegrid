@@ -16,7 +16,7 @@ import {
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
 import { Clock, Context, Effect, Layer, Option, Stream } from "effect"
-import { authorityNowIso } from "./time.ts"
+import { authorityNowIso } from "./runtime-control-plane-time.ts"
 
 type RuntimeControlRequestRow =
   | RuntimeContextRequestRow
@@ -83,8 +83,8 @@ export interface RuntimeRunAppendAndGetService {
    * Latest `runs.started` row's `activityAttempt` per `contextId`. Wave D-A
    * Shape (b) Q2 directive: the Shape C subscriber resolves the in-flight
    * attempt for an event by reading the durable runs table through this
-   * typed authority service, never by extracting `RuntimeControlPlaneTable`
-   * directly (which is forbidden outside `tables/` + `authorities/`).
+   * typed table service, never by extracting `RuntimeControlPlaneTable`
+   * directly (which is forbidden outside `tables/`).
    *
    * Returns `Option.none()` when no `runs.started` row exists for the
    * contextId yet; the subscriber drops the event in that case (the
@@ -102,9 +102,9 @@ export interface RuntimeRunAppendAndGetService {
    * `recordFailed` on start error). The Shape C subscriber is the sole
    * production writer of terminal rows post-D-A.
    *
-   * Authority-side `Stream.runHead` keeps `RuntimeControlPlaneTable`
-   * confined to `authorities/`; callers in host-sdk consume the typed
-   * result without yielding the table service directly.
+   * Table-side `Stream.runHead` keeps `RuntimeControlPlaneTable`
+   * confined to `tables/`; callers consume the typed result without
+   * yielding the table service directly.
    *
    * Returns `Option.none()` only if the underlying runs stream ends
    * before a terminal row arrives — a substrate-level error condition

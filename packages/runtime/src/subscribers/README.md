@@ -103,7 +103,7 @@ Wave 2 moves:
 - `workflow-engine/tool-execution/runtime-tool-use-executor.ts` → `subscribers/tool-dispatch/runtime-tool-use-executor.ts` ✅ done (tf-up1v)
 - `workflow-engine/workflows/wait-for.ts` → `subscribers/wait-router/`
 - `workflow-engine/workflows/scheduled-prompt.ts` → `subscribers/scheduled-prompt/`
-- `workflow-engine/workflows/runtime-control-request.ts` → `subscribers/runtime-control/`
+- `workflow-engine/workflows/runtime-control-request.ts` → `subscribers/runtime-control/` ✅ done
 
 Reserved public subpaths (Wave 2 export targets):
 

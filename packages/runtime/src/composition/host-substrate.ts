@@ -6,7 +6,7 @@
 import { Layer } from "effect"
 import {
   RuntimeControlPlaneRecorderLive,
-} from "../control-plane/index.ts"
+} from "../tables/runtime-control-plane.ts"
 import {
   type CurrentHostSession,
   type RuntimeControlPlaneTable,

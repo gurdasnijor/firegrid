@@ -11,4 +11,5 @@ prompt-now, etc.). The workflow body owns one load-bearing capability:
   execution boundary; a non-workflow subscriber cannot guarantee single-writer
   ownership of the controlled RuntimeContext.
 
-Wave 2 moves `workflow-engine/workflows/runtime-control-request.ts` here.
+The runtime-control workflow definitions, dispatcher, side effects, and
+lifecycle evidence helpers live here.
