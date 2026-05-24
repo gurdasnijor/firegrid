@@ -117,11 +117,14 @@ const makeHostEnv = (runId: string): TinyFiregridHostEnv => ({
 })
 
 describe("agent-coordination-readiness smoke (tf-1r0o readiness checklist)", () => {
-  // Step 1 (YELLOW): runtime-bin doesn't exist yet. CC6 will land
-  // `packages/runtime/src/bin/{run,host,acp}.ts`. The readiness sim
-  // composes the host in-process exactly as the runtime-bin would once
-  // it ships — `agentCoordinationReadinessHost` is the closest stand-in.
-  it.skip("step 1 — host composed in-process (runtime-bin YELLOW; awaiting CC6 packages/runtime/src/bin/{run,host,acp}.ts)", () => {})
+  // Step 1 (GREEN, documented): runtime-bin landed on this stack
+  // (`packages/runtime/src/bin/{run,host}.ts` per CC6 commit `c0b51fc64`)
+  // and was validated by CC6's local smoke (`pnpm firegrid -- run -- node
+  // -e ...` exited 0). This sim composes the same `FiregridLocalHostLive`
+  // topology in-process for test ergonomics; converting this `it.skip`
+  // into a subprocess assertion of the bin entry from inside vitest is a
+  // separate follow-up scope (see FINDING.md "Follow-up").
+  it.skip("step 1 — runtime-bin entry exists at packages/runtime/src/bin/{run,host}.ts (CC6 c0b51fc64); sim composes the same topology in-process", () => {})
 
   it("step 2 — planner created and started through router targets", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
