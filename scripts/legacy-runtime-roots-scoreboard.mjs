@@ -58,8 +58,7 @@ const parkAllowlist = {
   // runtime-context-run, runtime-ingress-transform) and
   // the tool-execution executor Tag remain under `workflow-engine/`
   // pending the per-bead Shape D moves into `subscribers/` folders
-  // (`tf-up1v` executor; `tf-hpr0` wait-for; `tf-6hqx` scheduled-prompt;
-  // `tf-vfq9` tool-call). Wave 1 §workflow-placement bullet of the
+  // (`tf-up1v` executor; `tf-vfq9` tool-call). Wave 1 §workflow-placement bullet of the
   // target-tree doc.
   "packages/runtime/src/workflow-engine/index.ts": {
     owner: "rearch-shape-c",
@@ -85,16 +84,10 @@ const parkAllowlist = {
       owner: "rearch-shape-c",
       wave: "D-input",
     },
-  "packages/runtime/src/workflow-engine/workflows/scheduled-prompt.ts": {
-    owner: "rearch-shape-c",
-    wave: "D",
-  },
   // Tool-dispatch source relocation wave: `ToolCallWorkflow` physically
   // moved to `subscribers/tool-dispatch/workflow.ts`. Entry removed.
-  "packages/runtime/src/workflow-engine/workflows/wait-for.ts": {
-    owner: "rearch-shape-c",
-    wave: "D-D",
-  },
+  // Wait-router and scheduled-prompt workflow bodies moved to their
+  // Shape D subscriber folders. Entries removed.
 
   // -- packages/runtime/src/streams/ -----------------------------------
   // Wave D-D: route-based observation through the channel router replaces

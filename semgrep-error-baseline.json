@@ -23,17 +23,17 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/runtime/src/subscribers/scheduled-prompt/workflow.ts",
+      "line": 37
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/subscribers/tool-dispatch/workflow.ts",
       "line": 33
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/scheduled-prompt.ts",
-      "line": 37
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/wait-for.ts",
+      "path": "packages/runtime/src/subscribers/wait-router/workflow.ts",
       "line": 63
     },
     {

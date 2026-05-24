@@ -31,7 +31,7 @@
 import { WorkflowEngine } from "@effect/workflow"
 import { Context, Effect, Layer } from "effect"
 import type { ToolResultEvent } from "../../events/contract.ts"
-import { ScheduledPromptWorkflowLayer } from "../../workflow-engine/workflows/scheduled-prompt.ts"
+import { ScheduledPromptWorkflowLayer } from "../scheduled-prompt/workflow.ts"
 import {
   RuntimeToolCallWorkflowLayer,
   ToolCallWorkflow,

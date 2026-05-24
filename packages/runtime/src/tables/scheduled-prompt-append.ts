@@ -8,9 +8,9 @@ import {
 } from "@firegrid/protocol/runtime-ingress"
 import { Effect } from "effect"
 
-// tf-5ose: producer-owned append for the durable scheduled-prompt timer
-// (ScheduledPromptWorkflow). Lives under producers/ingress-writers/ so the
-// RuntimeControlPlaneTable access stays out of the workflow body
+// tf-5ose: table-owned append for the durable scheduled-prompt timer
+// (ScheduledPromptWorkflow). Lives under tables/ so the Shape D subscriber
+// can depend on it without importing producers/
 // (firegrid-runtime-no-table-service-yield-outside-providers).
 // Idempotent on the intent key (`scheduleId`), so a replay/restart of the firing
 // workflow appends the self-prompt exactly once.

@@ -13,7 +13,7 @@ import {
   WaitForWorkflow,
   WaitForWorkflowLayer,
   waitForWorkflowExecutionId,
-} from "../../../src/workflow-engine/workflows/index.ts"
+} from "../../../src/subscribers/wait-router/workflow.ts"
 
 const runtimeObservationStreams = RuntimeObservationStreams.of({
   agentOutput: Stream.empty,

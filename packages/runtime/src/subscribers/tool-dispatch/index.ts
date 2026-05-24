@@ -40,7 +40,7 @@ export {
 } from "./workflow.ts"
 export {
   ScheduledPromptWorkflowLayer,
-} from "../../workflow-engine/workflows/scheduled-prompt.ts"
+} from "../scheduled-prompt/workflow.ts"
 
 // Wave D-B: runtime-owned tool-dispatch facade (Shape D — Activity
 // memoization). Host-sdk consumes the `ToolDispatch` Tag and
