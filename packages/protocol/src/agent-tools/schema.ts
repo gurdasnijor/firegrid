@@ -112,7 +112,7 @@ export const WaitForToolInputSchema = Schema.Struct({
   identifier: "firegrid.agentTool.waitFor.input",
   title: "Wait-for tool input",
   description:
-    "Wait until a host-declared channel emits a matching row, optionally bounded by a timeout. To observe a child session, use channel 'session.agent_output' with match.sessionId set to the child sessionId and match.afterSequence set to the last seen sequence, or -1 from the beginning.",
+    "Wait until a host-declared channel emits a matching row, optionally bounded by a timeout. Match values must be scalar; use dotted keys such as 'event.status' for nested row fields. To observe a child session, use channel 'session.agent_output' with match.sessionId set to the child sessionId and match.afterSequence set to the last seen sequence, or -1 from the beginning.",
   examples: [
     {
       channel: "session.agent_output",

@@ -156,7 +156,7 @@ const waitQueryToTrigger = (
   while (index < entries.length) {
     const [key, value] = entries[index]!
     if (isFieldEqualsScalar(value)) {
-      trigger.push({ path: [key], equals: value })
+      trigger.push({ path: key.split(".").filter(segment => segment.length > 0), equals: value })
     } else {
       failures.push({ key, value })
     }
