@@ -1,16 +1,17 @@
 #!/usr/bin/env tsx
 import path from "node:path"
-import { stat } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import { initRun } from "./init.ts"
-import { ensureRunDir, experimentRoot, makeRunId, readText, resolveRunDir, writeJson } from "./files.ts"
+import { ensureRunDir, experimentRoot, makeRunId, readJson, readText, resolveRunDir, writeJson } from "./files.ts"
 import { compileFinding } from "./finding.ts"
 import { runExperiment } from "./run.ts"
+import { parseScenarioIds, resolveScenarios } from "./scenarios.ts"
 import { scoreRun, writeScoreMarkdown } from "./score.ts"
 import type { ExperimentArm, ParticipantRuntime } from "./types.ts"
 
 const usage = `Usage:
   pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts init
-  pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts run [--arms single,central] [--task PATH]
+  pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts run [--scenarios solo-baseline,parallel-slices] [--arms single,central]
   pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts score --run-dir PATH
   pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts finding --run-dir PATH
 `
@@ -53,25 +54,53 @@ const run = async (): Promise<void> => {
   if (command === "run") {
     const runId = argValue(args, "--run-id") ?? makeRunId()
     const runDir = await ensureRunDir(runId)
-    const taskPath = argValue(args, "--task") ?? path.join(runDir, "task.md")
-    await stat(taskPath).catch(async () => {
-      const { defaultTaskPacket } = await import("./task.ts")
-      await import("node:fs/promises").then(fs => fs.writeFile(taskPath, defaultTaskPacket, "utf8"))
-    })
+    const taskOverridePath = argValue(args, "--task")
+    const scenarios = resolveScenarios(parseScenarioIds(argValue(args, "--scenarios")))
+    const arms = parseArms(argValue(args, "--arms"))
     await writeJson(path.join(runDir, "manifest.json"), {
+      "agent-coordination-patterns-experiment.SCENARIOS.2": true,
       "agent-coordination-patterns-experiment.EXECUTION.1": true,
       runId,
-      taskPath,
-      arms: parseArms(argValue(args, "--arms")),
+      scenarios: scenarios.map(scenario => ({
+        id: scenario.id,
+        name: scenario.name,
+        axis: scenario.axis,
+        hypothesis: scenario.hypothesis,
+        expectedDivergence: scenario.expectedDivergence,
+      })),
+      arms,
       createdAt: new Date().toISOString(),
     })
-    await runExperiment({
+    const summaries = []
+    for (const scenario of scenarios) {
+      const scenarioDir = path.join(runDir, "scenarios", scenario.id)
+      await mkdir(scenarioDir, { recursive: true })
+      const taskPath = path.join(scenarioDir, "task.md")
+      const taskPacket = taskOverridePath === undefined
+        ? scenario.taskPacket
+        : await readText(taskOverridePath)
+      await writeFile(taskPath, taskPacket, "utf8")
+      await writeJson(path.join(scenarioDir, "scenario.json"), {
+        "agent-coordination-patterns-experiment.SCENARIOS.3": true,
+        ...scenario,
+        taskPath,
+      })
+      await runExperiment({
+        runId,
+        runDir,
+        scenario,
+        scenarioDir,
+        taskPath,
+        arms,
+        runtime: runtimeFromArgs(args),
+        timeoutMs: Number(argValue(args, "--timeout-ms") ?? "300000"),
+      })
+      summaries.push(await readJson(path.join(scenarioDir, "scenario-summary.json")))
+    }
+    await writeJson(path.join(runDir, "run-summary.json"), {
+      "agent-coordination-patterns-experiment.ARTIFACTS.4": true,
       runId,
-      runDir,
-      taskPath,
-      arms: parseArms(argValue(args, "--arms")),
-      runtime: runtimeFromArgs(args),
-      timeoutMs: Number(argValue(args, "--timeout-ms") ?? "300000"),
+      scenarios: summaries,
     })
     console.log(runDir)
     return

@@ -37,9 +37,16 @@ Then run the live arms:
 
 ```bash
 pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts run \
-  --arms single,central,choreography \
-  --task .firegrid/agent-coordination-patterns/latest/task.md
+  --scenarios solo-baseline,parallel-slices,review-revision \
+  --arms single,central,choreography
 ```
+
+Use `--scenarios all` to include the event-driven stress scenarios:
+
+- `shared-board`: delayed questions/findings on `coordination.*`.
+- `ambiguous-debug`: incident rows for `agent_silent` and `unknown-channel`
+  triage.
+- `webhook-burst`: bursty inbound webhook-like rows with duplicate delivery.
 
 Score and compile:
 
@@ -70,14 +77,9 @@ pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts run \
 
 ## Next Implementation Step
 
-Add a board-aware host path that registers:
+Run the full matrix with real participant runtimes and compare:
 
-- `coordination.work`
-- `coordination.claims`
-- `coordination.findings`
-- `coordination.questions`
-- `coordination.reviews`
-- `coordination.final`
-
-Once those are host-declared channels, enable the choreography arm. Until then,
-the scaffold refuses to fake choreography through local-only state.
+- completion status and wall-clock duration;
+- trace spans, error spans, and tool-call spans;
+- `agent_silent` and `unknown-channel` counts;
+- board rows, claim rows, duplicate work, and final artifact quality.

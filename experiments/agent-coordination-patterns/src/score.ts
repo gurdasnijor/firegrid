@@ -52,16 +52,22 @@ const scoreTrace = async (tracePath: string): Promise<TraceScore> => {
   }
 }
 
-export const scoreRun = async (runDir: string): Promise<ReadonlyArray<ArmScore>> => {
-  const armsDir = path.join(runDir, "arms")
-  const arms = await readdir(armsDir).catch(() => [])
+const scoreArms = async (
+  options: {
+    readonly runDir: string
+    readonly scenarioId?: string
+    readonly armsDir: string
+  },
+): Promise<ReadonlyArray<ArmScore>> => {
+  const arms = await readdir(options.armsDir).catch(() => [])
   const scores: Array<ArmScore> = []
   for (const arm of arms) {
-    const armDir = path.join(armsDir, arm)
+    const armDir = path.join(options.armsDir, arm)
     const summary = await readJson<ArmSummary>(path.join(armDir, "summary.json"))
       .catch(() => undefined)
     const trace = await scoreTrace(path.join(armDir, "trace.jsonl"))
     const score: ArmScore = {
+      ...(options.scenarioId === undefined ? {} : { scenarioId: options.scenarioId }),
       arm,
       ...(summary === undefined ? {} : { summary }),
       trace,
@@ -69,8 +75,30 @@ export const scoreRun = async (runDir: string): Promise<ReadonlyArray<ArmScore>>
     scores.push(score)
     await writeJson(path.join(armDir, "score.json"), score)
   }
+  return scores
+}
+
+export const scoreRun = async (runDir: string): Promise<ReadonlyArray<ArmScore>> => {
+  const scenariosDir = path.join(runDir, "scenarios")
+  const scenarioIds = await readdir(scenariosDir).catch(() => [])
+  const scores = scenarioIds.length === 0
+    ? await scoreArms({
+      runDir,
+      armsDir: path.join(runDir, "arms"),
+    })
+    : (
+      await Promise.all(scenarioIds.map(scenarioId =>
+        scoreArms({
+          runDir,
+          scenarioId,
+          armsDir: path.join(scenariosDir, scenarioId, "arms"),
+        })
+      ))
+    ).flat()
+
   await writeJson(path.join(runDir, "scores.json"), {
     "agent-coordination-patterns-experiment.ARTIFACTS.2": true,
+    "agent-coordination-patterns-experiment.ARTIFACTS.4": true,
     scores,
   })
   return scores
@@ -81,15 +109,15 @@ export const writeScoreMarkdown = async (
   scores: ReadonlyArray<ArmScore>,
 ): Promise<void> => {
   const rows = scores.map(score =>
-    `| ${score.arm} | ${score.summary?.status ?? "unknown"} | ${score.trace?.spans ?? 0} | ${score.trace?.errorSpans ?? 0} | ${score.trace?.toolsCallSpans ?? 0} | ${score.trace?.agentSilentErrors ?? 0} | ${score.trace?.unknownChannelErrors ?? 0} |`,
+    `| ${score.scenarioId ?? "ad-hoc"} | ${score.arm} | ${score.summary?.status ?? "unknown"} | ${score.trace?.spans ?? 0} | ${score.trace?.errorSpans ?? 0} | ${score.trace?.toolsCallSpans ?? 0} | ${score.trace?.agentSilentErrors ?? 0} | ${score.trace?.unknownChannelErrors ?? 0} |`,
   )
   await writeFile(
     path.join(runDir, "SCORE.md"),
     [
       "# Agent Coordination Pattern Scores",
       "",
-      "| Arm | Status | Spans | Errors | Tool Calls | agent_silent | unknown-channel |",
-      "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+      "| Scenario | Arm | Status | Spans | Errors | Tool Calls | agent_silent | unknown-channel |",
+      "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
       ...rows,
       "",
     ].join("\n"),
