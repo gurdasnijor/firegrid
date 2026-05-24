@@ -7,6 +7,7 @@ import {
   SessionSelfLifecycleChannel,
   SessionSelfLifecycleChannelTarget,
   SessionSelfLifecycleEventSchema,
+  SessionAgentOutputChannel,
   type ChannelRegistration,
   type IngressChannel,
   type SessionSelfLifecycleEvent,
@@ -14,8 +15,10 @@ import {
 import { Context, Effect, Layer, Stream } from "effect"
 import {
   RuntimeChannelRouter,
-  makeRuntimeContextChannelRouter,
-} from "../router/live.ts"
+  makeRuntimeChannelRouter,
+  runtimeRoutesFromChannels,
+} from "../router.ts"
+import { sessionAgentOutputObservationRoute } from "../session-agent-output-route.ts"
 
 // Relocated from the deleted host-sdk path
 // `host-sdk/src/host/channels/session-self/index.ts` (Class D
@@ -86,17 +89,26 @@ export const SessionSelfChannelsLive = (
   | SessionSelfLifecycleChannel
   | RuntimeChannelRouter,
   never,
-  RuntimeControlPlaneTable
+  RuntimeControlPlaneTable | SessionAgentOutputChannel
 > => Layer.unwrapEffect(
-  Effect.map(makeSessionSelfChannelsEffect, ([lifecycle]) =>
-    Layer.mergeAll(
-      Layer.succeed(SessionSelfLifecycleChannel, lifecycle),
-      Layer.succeed(
-        RuntimeChannelRouter,
-        makeRuntimeContextChannelRouter([
-          ...mcpChannels,
-          lifecycle,
-        ]),
+  Effect.map(
+    Effect.all({
+      channels: makeSessionSelfChannelsEffect,
+      sessionAgentOutput: SessionAgentOutputChannel,
+    }),
+    ({ channels: [lifecycle], sessionAgentOutput }) =>
+      Layer.mergeAll(
+        Layer.succeed(SessionSelfLifecycleChannel, lifecycle),
+        Layer.succeed(
+          RuntimeChannelRouter,
+          makeRuntimeChannelRouter([
+            ...runtimeRoutesFromChannels([
+              ...mcpChannels,
+              lifecycle,
+            ]),
+            sessionAgentOutputObservationRoute(sessionAgentOutput),
+          ]),
+        ),
       ),
-    )),
+  ),
 )
