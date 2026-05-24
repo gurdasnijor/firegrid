@@ -2,10 +2,8 @@ import { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
 import {
   sessionContextIdForExternalKey,
 } from "@firegrid/protocol/session-facade"
-import {
-  FiregridLocalHostLive,
-  FiregridLocalProcessFromEnv,
-} from "@firegrid/host-sdk"
+import { FiregridLocalHostLive } from "@firegrid/runtime/composition/host-live"
+import { FiregridLocalProcessFromEnv } from "@firegrid/runtime/producers/sandbox/local-process-from-env"
 import { Chunk, Effect, Layer, Stream } from "effect"
 import type { Scope } from "effect"
 import type { TinyFiregridHostEnv } from "../../../types.ts"

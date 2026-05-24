@@ -18,22 +18,22 @@ import {
   type HostStreamPrefix,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
-import { encodeRuntimeAgentOutputEnvelope } from "../../src/agent-event-pipeline/events/index.ts"
+import { encodeRuntimeAgentOutputEnvelope } from "../../src/events/index.ts"
 import {
   makeRuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 import {
   initialRuntimeContextEventState,
   makePerContextRuntimeContextStateStore,
-} from "../../src/workflow-engine/runtime-context-state.ts"
+} from "../../src/tables/runtime-context-state.ts"
 import {
   transitionInputEvent,
   transitionOutputEvent,
-} from "../../src/workflow-engine/workflows/runtime-context.ts"
+} from "../../src/transforms/runtime-context-transition.ts"
 import type {
   AgentInputEvent,
   RuntimeAgentOutputObservation,
-} from "../../src/agent-event-pipeline/events/index.ts"
+} from "../../src/events/index.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

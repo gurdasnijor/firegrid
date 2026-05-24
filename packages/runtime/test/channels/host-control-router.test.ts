@@ -7,8 +7,15 @@ import {
   HostPermissionRespondChannelTarget,
   HostPromptChannelTarget,
   HostSessionsStartChannelTarget,
+  makeIngressChannel,
+  SessionAgentOutputChannel,
+  SessionAgentOutputChannelTarget,
+  type SessionAgentOutputChannelService,
   SessionPromptChannelTarget,
 } from "@firegrid/protocol/channels"
+import {
+  RuntimeAgentOutputObservationSchema,
+} from "@firegrid/protocol/session-facade"
 import {
   RuntimeControlPlaneTable,
   local,
@@ -17,7 +24,7 @@ import {
   runtimeControlPlaneStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
-import { Effect, Layer, ParseResult } from "effect"
+import { Effect, Layer, ParseResult, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   ChannelRouteInvocationFailed,
@@ -50,6 +57,23 @@ const controlPlaneLayer = (namespace: string) =>
     },
   })
 
+// Wave C (#702 mapping): adding `session.agent_output / wait_for` to the
+// host-plane router introduced `SessionAgentOutputChannel` as a service
+// requirement on `RuntimeHostControlChannelsLive`. Existing host-control
+// router tests don't exercise the agent-output route; stub the channel with
+// an empty per-session stream so the Layer composes. Tests focused on the
+// new route live in `host-control-router-session-agent-output.test.ts`.
+const stubSessionAgentOutputChannel: Layer.Layer<SessionAgentOutputChannel> =
+  Layer.succeed(SessionAgentOutputChannel, {
+    forContext: (_sessionId) =>
+      makeIngressChannel({
+        target: SessionAgentOutputChannelTarget,
+        schema: RuntimeAgentOutputObservationSchema,
+        sourceClass: "static-source",
+        stream: Stream.empty,
+      }),
+  } satisfies SessionAgentOutputChannelService)
+
 const runWithRouter = <A, E>(
   namespace: string,
   effect: Effect.Effect<A, E, HostPlaneChannelRouter | RuntimeControlPlaneTable>,
@@ -59,6 +83,7 @@ const runWithRouter = <A, E>(
       effect.pipe(
         Effect.provide(
           RuntimeHostControlChannelsLive.pipe(
+            Layer.provide(stubSessionAgentOutputChannel),
             Layer.provideMerge(controlPlaneLayer(namespace)),
           ),
         ),

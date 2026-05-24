@@ -7,7 +7,7 @@ import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
   type WorkflowEngineTableService,
-} from "@firegrid/runtime/workflow-engine"
+} from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 import { type Duration, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
 import { DurableTable } from "effect-durable-operators"
 

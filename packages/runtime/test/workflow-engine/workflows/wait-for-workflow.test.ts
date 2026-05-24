@@ -5,22 +5,21 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeObservationStreams,
   type RuntimeObservationStreamsService,
-} from "../../../src/streams/index.ts"
+} from "../../../src/channels/observation-streams/index.ts"
 import {
   DurableStreamsWorkflowEngine,
-} from "../../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
+} from "../../../src/engine/durable-streams-workflow-engine.ts"
 import {
   WaitForWorkflow,
   WaitForWorkflowLayer,
   waitForWorkflowExecutionId,
-} from "../../../src/workflow-engine/workflows/index.ts"
+} from "../../../src/subscribers/wait-router/workflow.ts"
 
 const runtimeObservationStreams = RuntimeObservationStreams.of({
   agentOutput: Stream.empty,
   agentOutputAfter: () => Stream.empty,
   initialAgentOutputAfter: () => Effect.succeed(Option.none()),
   agentOutputForContext: () => Stream.empty,
-  runtimeRun: Stream.empty,
   callerFact: stream =>
     stream === "facts"
       ? Stream.fromIterable([
@@ -146,7 +145,6 @@ describe("WaitForWorkflow durable wait_for_any restart", () => {
     agentOutputAfter: () => Stream.empty,
     initialAgentOutputAfter: () => Effect.succeed(Option.none()),
     agentOutputForContext: () => Stream.empty,
-    runtimeRun: Stream.empty,
     callerFact: () => Stream.empty,
   }
 

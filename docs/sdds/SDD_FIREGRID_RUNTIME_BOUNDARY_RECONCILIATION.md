@@ -12,6 +12,41 @@ Related specs:
 - `effect-durable-operators`
 - `firegrid-session-fact-client-surfaces`
 
+## Shape C Cutover Target Layout (2026-05-22)
+
+The active end-state for `packages/runtime/src/` is pinned at
+`docs/architecture/2026-05-22-runtime-physical-target-tree.md`. The classification
+tables in this SDD describe the pre-cutover tree; the target tree below is
+authoritative for new dispatch decisions, and the
+`scripts/runtime-public-surface-check.mjs` guard enforces that each surface
+exists and is documented:
+
+| Folder | Role | Logical position |
+|---|---|---|
+| `events/` | event vocabulary; pure schemas, no I/O, no `Effect`. | 1 |
+| `tables/` | `DurableTable`-backed state of record. | 2 |
+| `producers/` | Shape A live-boundary appenders (`sandbox/`, `codecs/`, `ingress-writers/`). | 3 |
+| `transforms/` | pure row/event transforms; no `Effect`. | 4 |
+| `channels/` | wire-edge capability boundary (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
+| `subscribers/` | keyed subscribers — Shape B/C/D recorded in folder READMEs (`projections/`, `runtime-context/`, `runtime-context-session/`, `tool-dispatch/`, `wait-router/`, `scheduled-prompt/`, `runtime-control/`). | 6 |
+| `composition/` | runtime-local layer-graph wiring + topology checks. | 7 |
+| `bin/` | runtime-owned daemon/process entrypoints (`firegrid run`, `firegrid start`, `firegrid acp`); outside pipeline order and allowed to compose public client + runtime host surfaces. | — |
+| `_archive/` | time-boxed holding pen for wrong-shape code pending deletion. | — |
+
+Folder names are semantic. The pipeline order `events < tables <
+producers / transforms / channels < subscribers < composition` is a docs and
+lint convention; numeric prefixes (`1-events/`, `2-tables/`, …) are forbidden
+at the runtime root and the public-surface guard rejects them. The host-sdk
+import gate (Semgrep rules `firegrid-host-sdk-no-runtime-kernel-import`,
+`firegrid-host-sdk-no-runtime-archive-import`,
+`firegrid-no-numbered-runtime-subpath`) blocks host-sdk imports of the
+runtime `kernel/` barrel, the `_archive/` holding pen, and any numeric
+runtime subpath.
+
+The classification tables below remain accurate for the pre-cutover tree.
+When a folder in those tables is moved or deleted as part of the cutover,
+its target landing is one of the surfaces above.
+
 ## Problem
 
 `SDD_FIREGRID_RUNTIME_AGENT_EVENT_PIPELINE.md` defines the first clean runtime
@@ -246,7 +281,7 @@ packages/runtime/src/
   workflow-engine/
   agent-tools/
   agent-adapters/
-  streams/
+  channels/observation-streams/
   source-registration/
   verified-webhook-ingest/
 ```
@@ -260,7 +295,7 @@ The exact folder names can change, but the boundary is fixed:
 - host namespace composes live host topology and command entrypoints;
 - source-registration owns provider/source registration layers for `wait_for`
   visibility without host-only observation glue;
-- streams owns substrate-neutral runtime observation source schemas and stream
+- channels/observation-streams owns substrate-neutral runtime observation source schemas and stream
   capability tags consumed by wait routers and future channel registries;
 - waits, workflow-engine, tools, adapters, streams, source registration, and
   verified ingest are adjacent bounded contexts, not subfolders of the agent
@@ -474,7 +509,8 @@ This inventory is the review checklist for the post-`#250` tree.
 | `sources/` | Live process/resource acquisition | Mostly target; env policy leaks to app consumers. | Imports runtime errors from `host/`. | Yes, via `host/` |
 | `codecs/` | Scoped protocol session providers and wire normalization | Target after Effect-native session layer refactor; event barrel compatibility should drop. | Imported by `events/index.ts`. | Yes, with `events/` |
 | `host/` | Host topology and command entrypoints | Mixed; source of most cycles. | Owns shared runtime errors today. | Yes |
-| `streams/` | Runtime observation source schemas and stream capability tags | Target substrate-neutral surface; not owned by durable wait tools. | Provides typed observation source selection for wait routers and future channel registry consumers. | No |
+| `channels/observation-streams/` | Runtime observation source schemas and stream capability tags | Target channel-tier observation surface; not owned by durable wait tools. | Provides typed observation source selection for wait routers and future channel registry consumers. | No |
+| `subscribers/keyed-dispatch/` | Shape C subscriber-runtime dispatch primitive (per-key serialization + cross-key concurrency over a tail source) | Target substrate-neutral helper. Generic over key/event; imposes no `WorkflowEngine` requirement on the subscriber's `R`. Production manifestation of tf-4fy3 Outcome B evidence (`packages/tiny-firegrid/src/simulations/per-key-subscriber-push-restart/`). | Imported by Shape C handlers (e.g. RuntimeContext) to drive per-event materializations from a keyed-event source. | No |
 | `channels/` | Public channel router capabilities | Target public surface for route metadata and dispatch composition; route providers stay in authority/provider modules. | Exposes runtime-owned router tags without exposing DurableTable route bodies. | No |
 | `kernel/` | Runtime-context host-kernel services | Target internal host-kernel surface; host-sdk composes it but does not own workflow engine lifecycle, runtime-context helpers, or durable input dispatch state. | Owns runtime-context workflow runtime helpers below the SDK boundary. | No |
 | `waits/` | Durable coordination operator | Mixed; wait row authority belongs with wait bounded context. | Owns row schema/source registry/router. | No |

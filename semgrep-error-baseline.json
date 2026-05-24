@@ -1,62 +1,45 @@
 {
+  "version": 1,
   "findings": [
     {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 204,
-      "note": "C4 admissible bridge exception: per-sequence DurableDeferred input mailbox is the workflow-engine bridge (tf-5cn1); RFC-conforming deletion targets tf-vrz6/tf-w6qj. docs/cannon/architecture/runtime-design-constraints.md \"Runtime Input Mailbox\"."
-    },
-    {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 212,
-      "note": "C4 admissible bridge exception: per-sequence DurableDeferred input mailbox is the workflow-engine bridge (tf-5cn1); RFC-conforming deletion targets tf-vrz6/tf-w6qj. docs/cannon/architecture/runtime-design-constraints.md \"Runtime Input Mailbox\"."
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/runtime/src/subscribers/runtime-context-session-workflow/workflow.ts",
+      "line": 84
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 900
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts",
+      "path": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
       "line": 50
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts",
+      "path": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
       "line": 59
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts",
+      "path": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
       "line": 68
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/scheduled-prompt.ts",
+      "path": "packages/runtime/src/subscribers/scheduled-prompt/workflow.ts",
       "line": 37
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/tool-call.ts",
-      "line": 16
+      "path": "packages/runtime/src/subscribers/tool-dispatch/workflow.ts",
+      "line": 33
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/wait-for.ts",
+      "path": "packages/runtime/src/subscribers/wait-router/workflow.ts",
       "line": 63
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/prototypes/target-topology/subscribers/shape-d/tool-call-workflow.ts",
-      "line": 25,
-      "note": "Shape D classification proof artifact: tf-1r0o target-topology prototype demonstrates the per-tool-call Workflow.make shape being classified as Shape D (operation-shaped, deletion target). Not production; lives under src/prototypes/."
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/input-suspend-crash-recovery/workflow.ts",
-      "line": 108
+      "line": 25
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
@@ -65,8 +48,8 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/host.ts",
-      "line": 596
+      "path": "packages/tiny-firegrid/src/simulations/input-suspend-crash-recovery/workflow.ts",
+      "line": 108
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
@@ -76,34 +59,67 @@
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
-      "line": 129
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
       "line": 83
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/phase0-wave-2b-stream-zip-restart-replay/host.ts",
-      "line": 575
+      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
+      "line": 129
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/tiny-firegrid/src/simulations/runtime-context-session-workflow/workflow.ts",
+      "line": 249
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/host.ts",
-      "line": 84
+      "line": 82
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/shape-d-workflow-admission/resources.ts",
-      "line": 191,
-      "note": "Shape D admission proof artifact: tf-28b8 exercises the per-tool-call Workflow.make wrapper to classify it as Shape D (operation-shaped, deletion target)."
+      "line": 191
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/shape-d-workflow-admission/resources.ts",
-      "line": 212,
-      "note": "Shape D admission proof artifact: tf-28b8 exercises a second Workflow.make wrapper for the alternate-shape contrast within the same admission classification proof."
+      "line": 212
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
+      "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
+      "line": 486
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
+      "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
+      "line": 542
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
+      "path": "packages/runtime/src/subscribers/runtime-context-session-workflow/workflow.ts",
+      "line": 141
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
+      "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
+      "line": 195
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
+      "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
+      "line": 519
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
+      "path": "packages/runtime/src/composition/host-public.ts",
+      "line": 99
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
+      "path": "packages/runtime/src/composition/host-public.ts",
+      "line": 106
     }
   ]
 }

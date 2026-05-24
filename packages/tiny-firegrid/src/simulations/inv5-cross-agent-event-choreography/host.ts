@@ -28,15 +28,14 @@ import { HttpRouter, HttpServer } from "@effect/platform"
 import type { ServeError } from "@effect/platform/HttpServerError"
 import { NodeHttpServer } from "@effect/platform-node"
 import { RpcSerialization, RpcServer } from "@effect/rpc"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import { type FiregridHost, FiregridRuntimeHostLive } from "@firegrid/runtime/composition/host-live"
+import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/producers/sandbox"
 import {
   ensurePathInput,
   FiregridMcpServerLayer,
-  FiregridRuntimeHostLive,
-  RuntimeEnvResolverPolicy,
-  durableStreamUrl,
-  type FiregridHost,
-} from "@firegrid/host-sdk"
-import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
+} from "@firegrid/runtime/producers/codecs/mcp"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/channels/observation-streams"
 import {
   Deferred,
   Effect,

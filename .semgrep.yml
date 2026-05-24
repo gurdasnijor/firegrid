@@ -552,7 +552,8 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
@@ -577,8 +578,8 @@ rules:
         functions from host/pipeline composition.
     paths:
       include:
-        - "/packages/runtime/src/agent-event-pipeline/subscribers/**/*.ts"
-        - "/packages/runtime/src/agent-event-pipeline/transforms/**/*.ts"
+        - "/packages/runtime/src/subscribers/**/*.ts"
+        - "/packages/runtime/src/transforms/**/*.ts"
         - "/semgrep-tests/**/*.ts"
       exclude:
         - "**/*.test.ts"
@@ -714,8 +715,10 @@ rules:
         owning authority module. Layer.succeed/effect elsewhere creates a hidden
         second writer/reader authority.
       fix-hint: |
-        Move the provider to packages/runtime/src/authorities/** or packages/runtime/src/agent-event-pipeline/authorities/** or compose the
-        existing authority provider layer.
+        Move the provider to packages/runtime/src/authorities/**,
+        packages/runtime/src/producers/ingress-writers/**, or
+        packages/runtime/src/tables/**, or compose the existing authority
+        provider layer.
     paths:
       include:
         - "/packages/runtime/src/**/*.ts"
@@ -726,7 +729,8 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
     message: |
@@ -750,8 +754,8 @@ rules:
         Stream parameter for pure transform code.
     paths:
       include:
-        - "/packages/runtime/src/agent-event-pipeline/subscribers/**/*.ts"
-        - "/packages/runtime/src/agent-event-pipeline/transforms/**/*.ts"
+        - "/packages/runtime/src/subscribers/**/*.ts"
+        - "/packages/runtime/src/transforms/**/*.ts"
         - "/semgrep-tests/**/*.ts"
       exclude:
         - "**/*.test.ts"
@@ -787,7 +791,8 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/kernel/**"
@@ -800,7 +805,10 @@ rules:
         # per-context output authority, it is provider internals — it owns the
         # RuntimeContextStateStore capability and reads outputs by O(1) point
         # `get` (no scan), never handing a table handle to the workflow body.
-        - "/packages/runtime/src/workflow-engine/runtime-context-state.ts"
+        # Wave A Shape C cutover physically moved this provider from
+        # `workflow-engine/` to the semantic `tables/` folder; the allowlist
+        # follows the file.
+        - "/packages/runtime/src/tables/runtime-context-state.ts"
     message: |
       Runtime-owned DurableTable service yielded outside provider internals or
       explicit host composition.
@@ -988,15 +996,22 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
+        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
         - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
         - "/packages/runtime/src/durable-tools/internal/table.ts"
-        # tf-aseo: workflow-owned durable loop-state provider internals. It holds
-        # the per-context table services privately (cached, reused) and exposes
-        # only the RuntimeContextStateStore capability tag to the workflow body.
-        - "/packages/runtime/src/workflow-engine/runtime-context-state.ts"
+        # tf-aseo + #692 Wave A: workflow-owned durable loop-state provider
+        # was physically moved from `workflow-engine/runtime-context-state.ts`
+        # into the semantic `tables/` folder during the Shape C cutover.
+        # The broader `tables/**` exclusion below covers the moved file and
+        # any future runtime-owned DurableTable authority modules — under
+        # the new tree, tables/ is the canonical authority location (the
+        # original rule intent "outside authorities" was tied to the legacy
+        # authorities/ path; tables/ now plays that role per #689 +
+        # docs/architecture/2026-05-22-runtime-physical-target-tree.md).
+        - "/packages/runtime/src/tables/**"
     message: |
       Runtime production component accepts a runtime-owned DurableTable service.
       Use Effect capability tags instead.
@@ -1321,13 +1336,13 @@ rules:
     paths:
       # RuntimeContext input/tool/permission/child-session durable-progress
       # surfaces. workflow-engine/workflows holds the input-wait body and child
-      # spawn; agent-event-pipeline/control-plane/channels hold tool, permission,
+      # spawn; control-plane/channels hold tool, permission,
       # and routed waits. workflow-engine/internal is intentionally OUT of scope:
       # its DurableDeferred clock-wakeup is an engine primitive, not a
       # RuntimeContext wait kind C4 governs.
       include:
         - "/packages/runtime/src/workflow-engine/workflows/**/*.ts"
-        - "/packages/runtime/src/agent-event-pipeline/**/*.ts"
+        - "/packages/runtime/src/{producers,subscribers,tables,transforms,events}/**/*.ts"
         - "/packages/runtime/src/control-plane/**/*.ts"
         - "/packages/runtime/src/channels/**/*.ts"
         - "/semgrep-tests/**/*.ts"
@@ -1420,3 +1435,536 @@ rules:
       runtime-produced RouteCompletionReceipt or observe the durable terminal
       fact).
     pattern-regex: '_tag:\s*["'']Done["'']'
+
+  # ===========================================================================
+  # tf-1r0o cutover: shape-aware drift guards for the Shape C RuntimeContext
+  # subscriber landing zone and the transforms purity rule. These extend the
+  # tf-zchu cannon enforcement (above) to the production target paths named in
+  # docs/architecture/2026-05-22-runtime-physical-target-tree.md.
+  # ===========================================================================
+
+  - id: firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      cannon: docs/cannon/architecture/runtime-pipeline-type-boundaries.md
+      constraint: C2
+      category: runtime-architecture
+      rationale: |
+        Shape C subscribers are keyed stateful per-event handlers; their `R`
+        channel may name a state-store tag and the narrow live/channel tags
+        they dispatch through, but it MUST NOT name workflow execution
+        machinery (`WorkflowEngine.WorkflowEngine` / `WorkflowEngine.WorkflowInstance`).
+        Calling `Activity.make` / `Workflow.suspend` / `Workflow.execute`
+        inside a Shape C handler grows the workflow tags into `R`, which
+        either turns the subscriber into a Shape D body (parked, replaying,
+        C2 violation) or implicitly assumes a workflow runtime the host
+        composition is not obligated to provide. A subscriber that genuinely
+        needs Activity machinery lives in `subscribers/tool-dispatch/`
+        or under a justified `workflow-engine/workflows/` landing, not here.
+      fix-hint: |
+        Make the wait a durable completion keyed by domain identity
+        (tool:<contextId>:<toolUseId>, permission:<permissionRequestId>,
+        input identity, child contextId), resolved first-valid-terminal-wins.
+        Run side effects through narrow capability tags
+        (RuntimeToolUseExecutor, AgentSession, EgressChannel). If the work
+        genuinely earns workflow machinery, move the file to
+        subscribers/tool-dispatch/ (Shape D) and surface the
+        machinery justification in the SDD per the constraint-doc gate.
+    paths:
+      include:
+        - "/packages/runtime/src/subscribers/runtime-context/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Shape C RuntimeContext subscriber names workflow execution machinery
+      (Activity.make / Workflow.suspend / Workflow.execute / WorkflowEngine.*).
+      Shape C `R` must not include WorkflowEngine.WorkflowEngine or
+      WorkflowEngine.WorkflowInstance. Either model the wait as a durable
+      completion keyed by domain identity, or move the file to a Shape D
+      landing (subscribers/tool-dispatch/ or a justified workflow-engine/workflows/).
+    pattern-either:
+      - pattern-regex: '\bActivity\.make\s*\('
+      - pattern-regex: '\bWorkflow\.suspend\s*\('
+      - pattern-regex: '\bWorkflow\.execute\s*\('
+      - pattern-regex: '\bWorkflowEngine\.WorkflowEngine\b'
+      - pattern-regex: '\bWorkflowEngine\.WorkflowInstance\b'
+
+  # ------------------------------------------------------------------
+  # Shape C cutover: host-sdk runtime-import gate.
+  #
+  # Source: docs/architecture/2026-05-22-runtime-physical-target-tree.md,
+  # docs/architecture/host-sdk-runtime-boundary.md.
+  #
+  # Host-sdk MUST import runtime only through narrow semantic subpaths
+  # (for example `@firegrid/runtime/tables/runtime-context-state`,
+  # `@firegrid/runtime/subscribers/runtime-context-session`). The runtime
+  # `kernel` barrel and the `_archive/` holding pen are runtime-internal.
+  #
+  # The 22 existing kernel-barrel sites in host-sdk are recorded as legacy
+  # debt in semgrep-error-baseline.json; new host-sdk kernel-barrel imports
+  # are blocked. `_archive/` imports from host-sdk are zero-baseline.
+  # ------------------------------------------------------------------
+
+  - id: firegrid-host-sdk-no-runtime-kernel-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.kernel-barrel
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import @firegrid/runtime/kernel. The kernel barrel is
+      a runtime-internal mixed barrel; cross-boundary imports use a narrow
+      semantic subpath aligned with the target tree (e.g.
+      `@firegrid/runtime/tables/runtime-context-state`,
+      `@firegrid/runtime/subscribers/runtime-context-session`).
+      See docs/architecture/2026-05-22-runtime-physical-target-tree.md
+      "Public Package Subpaths".
+      Existing kernel-barrel sites are baselined as legacy debt; do not add
+      new ones.
+    pattern-regex: 'from\s+"@firegrid/runtime/kernel"'
+
+  - id: firegrid-host-sdk-no-runtime-archive-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.archive
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import @firegrid/runtime/_archive/*. The archive is a
+      time-boxed holding pen for wrong-shape code pending deletion; target
+      code never imports it. Zero-baseline.
+    pattern-regex: 'from\s+"@firegrid/runtime/_archive'
+
+  - id: firegrid-host-sdk-no-runtime-workflow-engine-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.workflow-engine
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+      rationale: |
+        The `@firegrid/runtime/workflow-engine` subpath is a Wave D legacy
+        root (`packages/runtime/src/workflow-engine/`) that holds the
+        long-lived parked-body RuntimeContext workflow and per-sequence
+        input mailbox machinery. It is bridge-only — Shape D consumers
+        will move under `subscribers/{tool-dispatch,wait-router,
+        scheduled-prompt,runtime-control}/`. Existing host-sdk imports are
+        baselined as Wave D deletion targets; this rule blocks new ones so
+        preservation is visible in CI per
+        `docs/architecture/2026-05-22-shape-c-cutover-roadmap.md` §"Wave
+        D"/§"Wave E".
+      fix-hint: |
+        Replace the workflow-engine import with the target-tree Shape D
+        subscriber subpath that owns the symbol once it lands
+        (`@firegrid/runtime/subscribers/...`), or model the wait as a
+        durable completion keyed by domain identity per
+        `docs/cannon/architecture/runtime-design-constraints.md` §C4. Do
+        not deepen the legacy-root surface to keep a cutover moving.
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+        - "/semgrep-tests/wave-a-runtime-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import `@firegrid/runtime/workflow-engine` (incl.
+      any subpath). The workflow-engine legacy root is a Wave D bridge
+      surface scheduled for deletion under
+      `docs/architecture/2026-05-22-shape-c-cutover-roadmap.md` §"Wave
+      D"/§"Wave E"; Shape D consumers move under
+      `@firegrid/runtime/subscribers/...`. Existing sites are baselined as
+      Wave D deletion targets; do not add new ones.
+    pattern-regex: 'from\s+"@firegrid/runtime/workflow-engine[/"]'
+
+  - id: firegrid-host-sdk-no-runtime-streams-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.streams
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+      rationale: |
+        The `@firegrid/runtime/streams` subpath is a Wave D-D legacy root
+        (`packages/runtime/src/streams/`) holding
+        `RuntimeObservationStreams`, `CallerOwnedFactStreams`, and the
+        `RuntimeObservationSource` schema family. Wave D-D's route-based
+        observation proof (PR #716) shows the channel router +
+        `SessionAgentOutputChannel`/`SessionLifecycleChannel` routes
+        replace these sources for wait/child-output observation. Existing
+        host-sdk imports are baselined as D-D deletion targets; this rule
+        blocks new ones so preservation is visible in CI.
+      fix-hint: |
+        Replace the streams import with route-based observation through
+        the channel router (`RuntimeChannelRouter` + the relevant target
+        from `packages/runtime/src/channels/routes/`) per
+        `docs/cannon/architecture/runtime-design-constraints.md` §C6 and
+        the Wave D-D migration plan in PR #716's FINDING.md. Do not add
+        a new source-specific stream primitive to keep a cutover moving.
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+        - "/semgrep-tests/wave-a-runtime-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import `@firegrid/runtime/streams` (incl. any
+      subpath). The streams legacy root is a Wave D-D bridge surface
+      scheduled for deletion under
+      `docs/architecture/2026-05-22-shape-c-cutover-roadmap.md` §"Wave
+      D"/§"Wave E"; observation moves to route-based dispatch through the
+      channel router. Existing sites are baselined as D-D deletion
+      targets; do not add new ones.
+    pattern-regex: 'from\s+"@firegrid/runtime/streams[/"]'
+
+  - id: firegrid-no-numbered-runtime-subpath
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.semantic-tree.no-numbered-paths
+      category: package-boundary
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+    paths:
+      include:
+        - "/packages/**/*.ts"
+        - "/apps/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      Numbered runtime subpaths are not part of the target tree. Folder names
+      are semantic; the pipeline order is a docs/lint convention, not a path
+      prefix. Use semantic subpaths such as `@firegrid/runtime/tables/...`,
+      `@firegrid/runtime/subscribers/...`, etc.
+      Zero-baseline.
+    pattern-regex: 'from\s+"@firegrid/runtime/[1-7]-'
+
+  # ------------------------------------------------------------------
+  # Wave C host-sdk boundary guards.
+  #
+  # Source: docs/architecture/host-sdk-runtime-boundary.md
+  #   Cannon §3 (no host-sdk @effect/workflow imports)
+  #   Cannon §6 (no host-sdk @firegrid/runtime root barrel imports)
+  #
+  # Wave C cuts host-sdk over to the runtime root assembled in #699. These
+  # two rules close the only hard bans the boundary doc names that the
+  # existing guards do NOT statically catch:
+  #
+  # - `@effect/workflow` direct imports: the depcruise rule
+  #   `host-sdk-no-workflow-or-durable-substrate-scan` includes
+  #   `node_modules/.../@effect/workflow/` in its `to.path` regex, but
+  #   `options.includeOnly: "^packages/.*/src"` filters external node_modules
+  #   modules out of the dependency list before the regex sees them, making
+  #   the @effect/workflow clause a no-op. Verified empirically: depcruise
+  #   does not list @effect/workflow as a dependency of host-sdk source files
+  #   that import it. This Semgrep rule closes that gap at the source-text
+  #   level.
+  # - `@firegrid/runtime` root barrel: the boundary doc lists
+  #   `@firegrid/host-sdk -/-> @firegrid/runtime$` as a guard but no rule
+  #   exists. Zero current host-sdk hits, so zero-baseline.
+  #
+  # The four existing host-sdk @effect/workflow residue files (the ones the
+  # boundary doc Cannon §3 names) are recorded in semgrep-error-baseline.json
+  # as Wave C/D deletion targets. New imports block.
+  # ------------------------------------------------------------------
+
+  - id: firegrid-host-sdk-no-effect-workflow-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.effect-workflow
+      category: package-boundary
+      doc: docs/architecture/host-sdk-runtime-boundary.md
+      rationale: |
+        Cannon §3 (host-sdk-runtime-boundary.md): the only sanctioned home for
+        `Workflow.make` / `Activity.make` / `DurableDeferred` / `DurableClock`
+        is a runtime-owned Shape D Layer with a justified workflow-machinery
+        rationale (runtime-design-constraints.md §SDD Gate). New host-sdk
+        `@effect/workflow` imports are bridge residue, not patterns to copy.
+        Existing residue sites are baselined as Wave C/D deletion targets;
+        this rule blocks new ones.
+      fix-hint: |
+        Move the workflow-shaped piece into a runtime-owned Shape D Layer
+        under `packages/runtime/src/subscribers/{tool-dispatch|wait-router|
+        scheduled-prompt|runtime-control}/`, where the workflow-machinery
+        justification lives. host-sdk composes the resulting Layer/Tag, not
+        the workflow execution.
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+        - "/semgrep-tests/wave-c-host-sdk-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import `@effect/workflow`. Workflow machinery
+      (`Workflow.make` / `Activity.make` / `DurableDeferred` / `DurableClock`)
+      is owned by runtime Shape D Layers with a justified workflow-machinery
+      rationale (runtime-design-constraints.md §SDD Gate;
+      host-sdk-runtime-boundary.md Cannon §3). Existing residue sites are
+      baselined as Wave C/D deletion targets; do not add new ones.
+    pattern-regex: 'from\s+"@effect/workflow'
+
+  - id: firegrid-host-sdk-no-runtime-root-barrel-import
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.host-sdk-boundary.root-barrel
+      category: package-boundary
+      doc: docs/architecture/host-sdk-runtime-boundary.md
+      rationale: |
+        Cannon §6 (host-sdk-runtime-boundary.md): the `@firegrid/runtime`
+        root barrel widens the cross-boundary surface beyond what the
+        host-sdk / runtime boundary admits. Sanctioned host-sdk imports go
+        through narrow semantic subpaths
+        (`@firegrid/runtime/tables/...`, `@firegrid/runtime/subscribers/...`,
+        `@firegrid/runtime/composition/...`, etc.). Zero-baseline.
+      fix-hint: |
+        Replace the root-barrel import with the specific semantic subpath
+        that owns the symbol (see
+        docs/architecture/2026-05-22-runtime-physical-target-tree.md
+        "Public Package Subpaths").
+    paths:
+      include:
+        - "/packages/host-sdk/src/**/*.ts"
+        - "/semgrep-tests/wave-c-host-sdk-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      host-sdk must not import the `@firegrid/runtime` root barrel.
+      Cross-boundary imports use narrow semantic subpaths
+      (`@firegrid/runtime/tables/...`, `@firegrid/runtime/subscribers/...`,
+      `@firegrid/runtime/composition/...`, etc.). See
+      docs/architecture/host-sdk-runtime-boundary.md Cannon §6.
+      Zero-baseline.
+    pattern-regex: 'from\s+"@firegrid/runtime"'
+
+  # ------------------------------------------------------------------
+  # Wave A runtime semantic-tree boundary guards (tf-r1mv).
+  #
+  # Source: docs/architecture/2026-05-22-runtime-physical-target-tree.md,
+  # docs/cannon/architecture/runtime-pipeline-type-boundaries.md,
+  # docs/architecture/host-sdk-runtime-boundary.md.
+  #
+  # Static-invariant import-boundary rules for the new semantic runtime
+  # folders. Each rule is intentionally narrow and additive; existing rules
+  # (tf-zchu Shape C subscriber, #689 host-sdk kernel/_archive/numbered)
+  # are unchanged. No baselines are broadened by these rules.
+  # ------------------------------------------------------------------
+
+  - id: firegrid-transforms-purity-import-boundary
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.transforms.purity
+      category: runtime-architecture
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+      rationale: |
+        `transforms/` is the pure-function tier of the runtime pipeline. The
+        binding contract is `packages/runtime/src/transforms/README.md`
+        §"May import" / §"Must not import". The invariant is *no effectful
+        runtime or capability use* — not "no `effect` package imports". The
+        bare `effect` package ships both pure data/schema helpers (Schema,
+        Either, Option, Match, Predicate, Array, ...) and effectful runtime
+        machinery (Effect, Layer, Context/Context.Tag, Stream, Scope). The
+        pure helpers stay allowed; the runtime machinery is banned. The
+        workflow substrate (`@effect/workflow` and the
+        Activity/Workflow/DurableDeferred/DurableClock identifiers) is
+        banned outright — these are I/O capability tags. Reaching up into
+        `tables/`, `channels/`, `producers/`, `subscribers/`, or
+        `composition/` is a structure violation (lower-tier importing
+        higher-tier). Reaching back into the legacy
+        `events/` (the pre-cutover event-vocab home)
+        defeats the Wave A semantic move — the new `events/` folder is the
+        canonical event-vocabulary home. Other `@effect/<sub>` packages
+        (`@effect/ai`, `@effect/platform`, etc.) are NOT silently blocked
+        here — review them at PR time against the README §"May import"
+        list. Preferred fix when a transform needs a symbol from an
+        `@effect/<sub>` helper is to add a re-export module under
+        `packages/runtime/src/events/` and import the transform from there.
+      fix-hint: |
+        Move impure work into the caller. A transform is `(state, event) ->
+        (state, actions)`; if you need to read durable state, the caller
+        provides the state value; if you need to dispatch an effect, return an
+        action record the caller consumes. If you need a legacy event-vocab
+        symbol from `events/`, add a re-export under
+        `packages/runtime/src/events/` first and import from `../events/*`.
+    paths:
+      include:
+        - "/packages/runtime/src/transforms/**/*.ts"
+        - "/semgrep-tests/wave-a-runtime-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      `transforms/` is pure (symbol-level). Do not import the effectful
+      runtime tags `Effect`/`Layer`/`Context`/`Stream`/`Scope` from "effect",
+      do not import `@effect/workflow`, do not name `Activity.*`/
+      `Workflow.*`/`DurableDeferred.*`/`DurableClock.*`, and do not return
+      `Effect.Effect<...>` from exports. Pure helpers like `Schema`/
+      `Option`/`Either`/`Match`/`Predicate`/`Array` from "effect" remain
+      allowed; other `@effect/<sub>` packages (e.g. `@effect/ai`,
+      `@effect/platform`) are not blocked here — review at PR time against
+      `packages/runtime/src/transforms/README.md` §"May import". Folder-
+      path bans (`../tables/`, `../subscribers/`, `../agent-event-pipeline/`,
+      etc.) live in `.dependency-cruiser.cjs` under
+      `runtime-transforms-no-higher-tier-import`.
+    pattern-either:
+      - pattern-regex: '(?s)import\s+(?:type\s+)?\{[^}]*\bEffect\b[^}]*\}\s*from\s*"effect"'
+      - pattern-regex: '(?s)import\s+(?:type\s+)?\{[^}]*\bLayer\b[^}]*\}\s*from\s*"effect"'
+      - pattern-regex: '(?s)import\s+(?:type\s+)?\{[^}]*\bContext\b[^}]*\}\s*from\s*"effect"'
+      - pattern-regex: '(?s)import\s+(?:type\s+)?\{[^}]*\bStream\b[^}]*\}\s*from\s*"effect"'
+      - pattern-regex: '(?s)import\s+(?:type\s+)?\{[^}]*\bScope\b[^}]*\}\s*from\s*"effect"'
+      - pattern-regex: 'from\s+"@effect/workflow'
+      - pattern-regex: '\bActivity\.[A-Za-z_$][A-Za-z0-9_$]*\s*\('
+      - pattern-regex: '\bWorkflow\.[A-Za-z_$][A-Za-z0-9_$]*\s*\('
+      - pattern-regex: '\bDurableDeferred\.[A-Za-z_$][A-Za-z0-9_$]*\s*\('
+      - pattern-regex: '\bDurableClock\.[A-Za-z_$][A-Za-z0-9_$]*\s*\('
+      - pattern-regex: ':\s*Effect\.Effect\s*<'
+
+  # NOTE: The path-based folder-direction rules
+  #   - firegrid-events-no-higher-tier-import
+  #   - firegrid-tables-no-higher-tier-import
+  #   - firegrid-subscribers-no-producers-import
+  #   - firegrid-shape-c-runtime-context-no-producers-import
+  # live in .dependency-cruiser.cjs (dep-cruiser is path-graph aware and the
+  # right tool for folder-direction enforcement). See
+  #   runtime-events-no-higher-tier-import
+  #   runtime-tables-no-higher-tier-import
+  #   runtime-transforms-no-higher-tier-import
+  #   runtime-producers-channels-no-higher-tier-import
+  #   runtime-subscribers-no-composition-import
+  #   runtime-shape-c-runtime-context-no-producers-import
+  # Semgrep keeps the symbol-shape rules below (Effect/Layer/Context/Stream/
+  # Scope identifier bans, Activity/Workflow/DurableDeferred/DurableClock
+  # namespace bans, return-type Effect.Effect<>, @effect/workflow package).
+
+  - id: firegrid-shape-c-runtime-context-no-workflow-machinery
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.runtime-context.no-workflow-machinery
+      category: runtime-architecture
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+      rationale: |
+        Shape C subscribers under `subscribers/runtime-context/` and
+        `subscribers/runtime-context-session/` are keyed stateful per-event
+        handlers. Their `R` channel may name a state-store tag and narrow
+        live/channel tags, but it must not name workflow execution machinery.
+        This rule covers the new semantic-tree paths and adds
+        `DurableDeferred.*` / `DurableClock.*` bans on top of the existing
+        tf-zchu rule (which scopes to the old `agent-event-pipeline/`
+        subscriber path and covers Activity/Workflow/WorkflowEngine).
+      fix-hint: |
+        Model the wait as a durable completion keyed by domain identity
+        (tool:<contextId>:<toolUseId>, permission:<permissionRequestId>,
+        input identity, child contextId). Run side effects through narrow
+        capability tags (state store, session-command sink, channel router).
+        DurableClock/DurableDeferred belong in Shape D folders
+        (`subscribers/scheduled-prompt/`, `subscribers/tool-dispatch/` etc.).
+    paths:
+      include:
+        - "/packages/runtime/src/subscribers/runtime-context/**/*.ts"
+        - "/packages/runtime/src/subscribers/runtime-context-session/**/*.ts"
+        - "/semgrep-tests/wave-a-runtime-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Shape C `subscribers/runtime-context/` and
+      `subscribers/runtime-context-session/` must not import `@effect/workflow`
+      or name `WorkflowEngine.*` / `Activity.make` / `Workflow.suspend|execute`
+      / `DurableDeferred.*` / `DurableClock.*`. Shape D folders own that
+      machinery with documented justification.
+    pattern-either:
+      - pattern-regex: 'from\s+"@effect/workflow'
+      - pattern-regex: '\bWorkflowEngine\.WorkflowEngine\b'
+      - pattern-regex: '\bWorkflowEngine\.WorkflowInstance\b'
+      - pattern-regex: '\bActivity\.make\s*\('
+      - pattern-regex: '\bWorkflow\.suspend\s*\('
+      - pattern-regex: '\bWorkflow\.execute\s*\('
+      - pattern-regex: '\bDurableDeferred\.[A-Za-z_$][A-Za-z0-9_$]*\s*\('
+      - pattern-regex: '\bDurableClock\.[A-Za-z_$][A-Za-z0-9_$]*\s*\('
+
+  - id: firegrid-composition-no-legacy-imports
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: shape-c.composition.no-legacy
+      category: runtime-architecture
+      doc: docs/architecture/2026-05-22-runtime-physical-target-tree.md
+      rationale: |
+        `composition/` is runtime-local topology wiring (Layer.mergeAll +
+        topology checks). It must not import the deleted/quarantined legacy
+        body driver (`RuntimeContextWorkflowNative` / `RuntimeContextWorkflowNativeLayer` /
+        `executeRuntimeContextWorkflow` / `RuntimeContextWorkflowRuntime`), the
+        legacy per-sequence input mailbox (`runtime-input-deferred`), the
+        runtime kernel barrel (`@firegrid/runtime/kernel`), or `_archive/`.
+      fix-hint: |
+        Compose the runtime layer graph from semantic-tree exports only
+        (tables/, producers/, subscribers/, channels/). Shape D consumers
+        (`subscribers/tool-dispatch/`, `subscribers/wait-router/`, etc.) are
+        the only places workflow machinery may surface, and composition
+        depends on their resulting Effect Tags / Layers, not on workflow
+        execution directly.
+    paths:
+      include:
+        - "/packages/runtime/src/composition/**/*.ts"
+        - "/semgrep-tests/wave-a-runtime-boundary.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      `composition/` must not import legacy body-driver symbols
+      (`RuntimeContextWorkflowNative`, `RuntimeContextWorkflowNativeLayer`,
+      `executeRuntimeContextWorkflow`, `RuntimeContextWorkflowRuntime`),
+      `runtime-input-deferred`, `@firegrid/runtime/kernel`, or
+      `@firegrid/runtime/_archive`. Compose target-tree exports only.
+    pattern-either:
+      - pattern-regex: '\bRuntimeContextWorkflowNative\b'
+      - pattern-regex: '\bRuntimeContextWorkflowNativeLayer\b'
+      - pattern-regex: '\bexecuteRuntimeContextWorkflow\b'
+      - pattern-regex: '\bRuntimeContextWorkflowRuntime\b'
+      - pattern-regex: 'from\s+"[^"]*runtime-input-deferred'
+      - pattern-regex: 'from\s+"@firegrid/runtime/kernel'
+      - pattern-regex: 'from\s+"@firegrid/runtime/_archive'
+
+

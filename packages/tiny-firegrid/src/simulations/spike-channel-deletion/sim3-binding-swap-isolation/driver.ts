@@ -14,10 +14,7 @@ import {
   type RuntimeEventRow,
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/launch"
-import {
-  SessionPermissionAutoApproveLayer,
-  SessionPermissionChannelLive,
-} from "@firegrid/host-sdk"
+import { SessionPermissionAutoApproveLayer, SessionPermissionChannelLive } from "@firegrid/runtime/channels/session-permission/live"
 import { encodeRuntimeAgentOutputEnvelope } from "@firegrid/runtime/events"
 import { Effect } from "effect"
 import { sim3RuntimeEnv, type Sim3RuntimeEnv } from "./host.ts"

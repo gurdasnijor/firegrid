@@ -8,6 +8,11 @@ export {
   type SessionAgentOutputRouteInput,
 } from "./session-agent-output-route.ts"
 export {
+  SessionLifecycleRouteInputSchema,
+  sessionLifecycleTerminalRoute,
+  type SessionLifecycleRouteInput,
+} from "./session-lifecycle-route.ts"
+export {
   submitSessionPermissionResponse,
 } from "./session-permission.ts"
 export {
@@ -15,4 +20,5 @@ export {
   sessionLogChannelFromCollection,
 } from "./session-log.ts"
 export * from "./router.ts"
+export type { ChannelMetadata } from "./router/live.ts"
 export * from "./host-control.ts"

@@ -6,6 +6,13 @@ import process from "node:process"
 // firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.1-.5
 // firegrid-runtime-boundary-reconciliation.ROLE_MODEL.4-.6
 // firegrid-runtime-boundary-reconciliation.STATIC_ENFORCEMENT.1-.3
+//
+// Shape C cutover (2026-05-22):
+// `events/`, `tables/`, `producers/`, `transforms/`, `channels/`,
+// `subscribers/`, `composition/`, and `_archive/` are the semantic target
+// surfaces from `docs/architecture/2026-05-22-runtime-physical-target-tree.md`.
+// The guard requires them to exist, requires each to ship a README, and
+// forbids any numeric `^N-` prefix at the runtime root.
 
 const runtimeSrc = "packages/runtime/src"
 const runtimeReadmePath = join(runtimeSrc, "README.md")
@@ -25,17 +32,29 @@ const staleRuntimeExportSubpaths = new Set([
   "./providers/sandboxes",
 ])
 
+// Semantic target surfaces from
+// docs/architecture/2026-05-22-runtime-physical-target-tree.md. The guard
+// REQUIRES each of these to exist as a directory at the runtime root and to
+// carry a README.md.
+const requiredTargetSurfaces = [
+  "events",
+  "tables",
+  "producers",
+  "transforms",
+  "channels",
+  "subscribers",
+  "composition",
+  "_archive",
+]
+
 const staleRuntimeSourcePaths = [
   "packages/runtime/src/agent-codecs",
   "packages/runtime/src/agent-io",
   "packages/runtime/src/host/authority-context.ts",
   "packages/runtime/src/authorities/registry.ts",
   "packages/runtime/src/codecs",
-  "packages/runtime/src/events",
   "packages/runtime/src/pipeline",
   "packages/runtime/src/sources",
-  "packages/runtime/src/subscribers",
-  "packages/runtime/src/transforms",
 ]
 
 const failures = []
@@ -46,6 +65,14 @@ const runtimeRootEntries = readdirSync(runtimeSrc, { withFileTypes: true })
 
 for (const entry of runtimeRootEntries) {
   if (entry.isDirectory()) {
+    // Numeric-prefix dirs are forbidden at the runtime root: the target tree
+    // is semantic, not numbered (docs/architecture/2026-05-22-runtime-physical-target-tree.md).
+    if (/^[0-9]+-/.test(entry.name)) {
+      failures.push(
+        `${entry.name}/: numeric-prefix folder names are forbidden at the runtime root; use semantic dir names per docs/architecture/2026-05-22-runtime-physical-target-tree.md`,
+      )
+      continue
+    }
     const documentedInReadme =
       runtimeReadme.includes(`\`${entry.name}/\``) ||
       runtimeReadme.includes(`./${entry.name}/`) ||
@@ -69,6 +96,25 @@ for (const entry of runtimeRootEntries) {
   if (entry.isFile() && !allowedRuntimeRootFiles.has(entry.name)) {
     failures.push(
       `${runtimeSrc}/${entry.name}: top-level runtime source file is not part of the public-surface allowlist`,
+    )
+  }
+}
+
+for (const surface of requiredTargetSurfaces) {
+  const dirPath = join(runtimeSrc, surface)
+  if (!existsSync(dirPath)) {
+    failures.push(
+      `${dirPath}: required semantic target surface is missing (docs/architecture/2026-05-22-runtime-physical-target-tree.md)`,
+    )
+    continue
+  }
+  // _archive/ ships a DEPRECATED.md instead of README.md per the target-tree
+  // doc's Archive Rule; every other target surface ships a README.md.
+  const readmeName = surface === "_archive" ? "DEPRECATED.md" : "README.md"
+  const readmePath = join(dirPath, readmeName)
+  if (!existsSync(readmePath)) {
+    failures.push(
+      `${readmePath}: required target surface is missing ${readmeName}`,
     )
   }
 }

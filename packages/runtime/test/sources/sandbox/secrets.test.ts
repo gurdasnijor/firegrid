@@ -6,7 +6,7 @@ import {
   resolveMcpServerHeaders,
   RuntimeEnvResolverPolicy,
   resolveSpawnEnvVars,
-} from "../../../src/agent-event-pipeline/sources/sandbox/secrets.ts"
+} from "../../../src/producers/sandbox/secrets.ts"
 
 const policyLayer = (
   authorized: ReadonlyArray<readonly [string, string]>,

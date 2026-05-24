@@ -8,7 +8,7 @@ package is organized and how new code should fit it.
 
 `@firegrid/runtime` is the host-side runtime package. It owns runtime host
 composition, local agent process execution, codec sessions, durable runtime
-output and ingress authorities, workflow-engine integration,
+output and ingress authorities, durable workflow-engine substrate,
 runtime agent tools, runtime agent adapters, observation streams, and adjacent
 host-only adapters such as verified webhook ingest.
 
@@ -25,9 +25,10 @@ callers. Prefer explicit subpaths in new code:
 
 | Import path | Role |
 | --- | --- |
-| `@firegrid/runtime/runtime-host` | Runtime host layers, config-derived host layers, `startRuntime`, ingress helpers, app source registration, and local-process env policy. |
-| `@firegrid/runtime/workflow-engine` | Firegrid-backed `@effect/workflow` engine adapter and its durable state row types. |
-| `@firegrid/runtime/workflows` | Runtime-owned workflow definitions, payload schemas, outcome schemas, and execution-id helpers. |
+| `@firegrid/runtime/composition/host-live` | Runtime host layers and config-derived host layers. |
+| `@firegrid/runtime/composition/host-public` | `startRuntime`, ingress helpers, and public host facade helpers. |
+| `@firegrid/runtime/engine/durable-streams-workflow-engine` | Firegrid-backed `@effect/workflow` engine adapter and durable state row types for engine tests and tiny-firegrid simulations. |
+| `@firegrid/runtime/subscribers/{tool-dispatch,wait-router,scheduled-prompt,runtime-control}` | Runtime-owned Shape D workflow definitions, payload schemas, outcome schemas, and execution-id helpers. |
 | `@firegrid/runtime/events` | Normalized runtime agent event contracts and envelope helpers. |
 | `@firegrid/runtime/codecs` | Scoped codec session contracts and concrete ACP / stdio JSONL session layers. |
 | `@firegrid/runtime/agent-tools` | Firegrid agent tool schemas as Effect AI tools, MCP projection, host-coupled tool services, and tool-use lowering. |
@@ -42,24 +43,29 @@ docs-only metadata, compatibility aliases, or tests.
 
 | Folder | Responsibility |
 | --- | --- |
-| `src/agent-event-pipeline/` | Agent runtime event pipeline bounded context. |
-| `src/agent-event-pipeline/sources/` | Live process, byte stream, and sandbox edges. |
-| `src/agent-event-pipeline/codecs/` | Protocol wire/session normalization into `AgentSession`. |
-| `src/agent-event-pipeline/events/` | Normalized agent input/output events, envelope helpers, and stage contracts. |
-| `src/agent-event-pipeline/transforms/` | Pure stream and row-shaping functions shared by pipeline components. |
-| `src/agent-event-pipeline/authorities/` | Runtime output durable capability providers. |
-| `src/agent-event-pipeline/subscribers/` | Historical subscriber boundary; runtime-context routing now lives in the host workflow/session owner. |
+| `src/events/` | Normalized agent input/output events, envelope helpers, and stage contracts (pipeline layer 1). |
+| `src/tables/` | Durable runtime state and event-table bindings (pipeline layer 2). |
+| `src/producers/sandbox/` | Live process, byte stream, and sandbox edges (Shape A producers). |
+| `src/producers/codecs/` | Protocol wire/session normalization into `AgentSession` (Shape A producers). |
+| `src/producers/ingress-writers/` | Append authorities bridging live boundaries into durable rows. |
+| `src/transforms/` | Pure stream/row-shaping reducers, decoders, trigger evaluation. |
+| `src/channels/` | Runtime channel implementations, route projections, host-plane router. |
+| `src/subscribers/runtime-context/` | Shape C per-event RuntimeContext handler. |
+| `src/subscribers/runtime-context-session/` | Shape C codec-session command sink. |
+| `src/subscribers/tool-dispatch/` | Shape D tool-dispatch workflow + executor capability. |
+| `src/subscribers/wait-router/`, `scheduled-prompt/`, `runtime-control/`, `projections/` | Shape D/B subscriber landing zones. |
+| `src/composition/` | Runtime-local Layer composition and topology checks. |
 | `src/authorities/` | Runtime control-plane authorities for contexts and runs. |
-| `src/host/` | Runtime host topology, command entrypoints, config-derived layers, host-owned table wiring, and host-coupled tool services. |
-| `src/workflow-engine/` | Firegrid durable-table adapter for `@effect/workflow`. |
-| `src/agent-tools/` | Runtime tool catalog, MCP host projection, scheduled input workflow, and tool lowering. |
-| `src/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping. |
+| `src/engine/` | Firegrid durable-table adapter for `@effect/workflow` (leaf-tier substrate). |
+| `src/producers/codecs/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping (Shape A codec-adjacent). |
 | `src/verified-webhook-ingest/` | Adjacent verified webhook fact ingest adapter. |
 
-`agent-event-pipeline/` is the only folder that should grow stage-like runtime
-event pipeline code. Host, workflow engine, tools, adapters, source
-registration, verified ingest, and control-plane authorities are adjacent
-bounded contexts, not pipeline stages.
+Layer order is `events < tables < producers/transforms/channels < subscribers < composition`. See
+[`docs/architecture/2026-05-22-runtime-physical-target-tree.md`](../../docs/architecture/2026-05-22-runtime-physical-target-tree.md)
+for the canonical map. The legacy `src/agent-event-pipeline/`, `src/kernel/`,
+`src/streams/`, `src/runtime-keyed-subscriber/`, and `src/workflow-engine/`
+roots were retired by cleanup waves that physically moved their files into the
+folders above or deleted dead compatibility shims.
 
 ## Event Pipeline Shape
 
@@ -132,7 +138,7 @@ Runtime-owned durable writes are grouped by authority provider:
 
 | Durable family | Authority/provider |
 | --- | --- |
-| Runtime output events and logs | `RuntimeAgentOutputEventsLayer` and read-side output tags in `agent-event-pipeline/authorities/runtime-output-journal.ts`. |
+| Runtime output events and logs | `RuntimeAgentOutputEventsLayer` and read-side output tags in `tables/runtime-output.ts`. |
 | Runtime contexts and run events | `RuntimeControlPlaneRecorderLive` in `src/authorities/`. |
 
 Authority modules expose concrete write capabilities and concrete read
@@ -181,9 +187,12 @@ It imports shared protocol schemas, exposes Effect AI tools/toolkits, projects
 them to MCP when needed, and lowers codec `ToolUse` events to effects. It is a
 tool boundary, not an agent event-pipeline subscriber.
 
-`src/agent-adapters/` owns projections over codec sessions, such as language
-model adapter surfaces and ACP mapping. Adapters do not own durable runtime
-rows or pipeline lifecycle.
+`src/producers/codecs/agent-adapters/` owns projections over codec sessions,
+such as language model adapter surfaces and ACP mapping. Adapters do not own
+durable runtime rows or pipeline lifecycle. (Re-homed under
+`producers/codecs/` per the runtime physical target tree — the contract is
+Shape A codec-bound; legacy public subpath `@firegrid/runtime/agent-adapters`
+is preserved.)
 
 ## Verified Webhook Ingest
 

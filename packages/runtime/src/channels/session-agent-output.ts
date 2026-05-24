@@ -2,7 +2,10 @@ import {
   type HostStreamPrefix,
   RuntimeOutputTable,
 } from "@firegrid/protocol/launch"
-import { RuntimeAgentOutputObservationSchema } from "@firegrid/protocol/session-facade"
+import {
+  RuntimeAgentOutputObservationSchema,
+  runtimeAgentOutputObservationFromRow,
+} from "@firegrid/protocol/session-facade"
 import {
   makeIngressChannel,
   SessionAgentOutputChannelTarget,
@@ -10,8 +13,7 @@ import {
 } from "@firegrid/protocol/channels"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { Effect, Stream } from "effect"
-import { runtimeAgentOutputObservationFromRow } from "../agent-event-pipeline/events/index.ts"
-import { runtimeContextOutputTableLayer } from "./output-table-layer.ts"
+import { runtimeContextOutputTableLayer } from "../tables/output-table-layer.ts"
 
 // tf-bffo: the durable SessionAgentOutput channel implementation lives in the
 // runtime (the privileged durable core). host-sdk only COMPOSES it — it resolves

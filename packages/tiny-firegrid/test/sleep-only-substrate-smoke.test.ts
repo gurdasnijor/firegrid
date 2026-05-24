@@ -5,11 +5,13 @@ import {
   FiregridLive,
   local,
 } from "@firegrid/client-sdk/firegrid"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
 import {
   FiregridRuntimeContextMcpBaseUrl,
+} from "@firegrid/runtime/composition/runtime-context-mcp-base-url"
+import {
   runtimeContextMcpPath,
-  type FiregridHost,
-} from "@firegrid/host-sdk"
+} from "@firegrid/runtime/producers/codecs/mcp"
 import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
 import { Effect, Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"

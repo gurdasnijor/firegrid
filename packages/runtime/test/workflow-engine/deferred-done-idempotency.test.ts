@@ -9,7 +9,7 @@
  * invariant regresses, restart replay can lose exactly-once resolution.
  *
  * See the implementation at
- * packages/runtime/src/workflow-engine/internal/engine-runtime.ts:252-266.
+ * packages/runtime/src/engine/internal/engine-runtime.ts:252-266.
  *
  * Harness mirrors DurableStreamsWorkflowEngine.test.ts: a real local
  * @durable-streams server, fresh per-test stream URLs, async `it` +
@@ -25,7 +25,7 @@ import {
   type WorkflowEngineDurableStateOptions,
   WorkflowEngineTable,
   type WorkflowEngineTableService,
-} from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
+} from "../../src/engine/durable-streams-workflow-engine.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

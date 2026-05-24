@@ -1,9 +1,7 @@
 import type {
   Firegrid,
 } from "@firegrid/client-sdk/firegrid"
-import type {
-  FiregridHost,
-} from "@firegrid/host-sdk"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
 import type { Effect, Layer } from "effect"
 
 export interface TinyFiregridStopSignal {

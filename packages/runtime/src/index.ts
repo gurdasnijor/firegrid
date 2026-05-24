@@ -20,46 +20,55 @@ export {
   RuntimeControlRequestClaimedOutcomeSchema,
   RuntimeControlRequestDispatchOutcomeSchema,
   RuntimeControlRequestDoneOutcomeSchema,
-  RuntimeContextWorkflowNative,
-  RuntimeContextWorkflowNativeLayer,
-  RuntimeContextWorkflowPayload,
-  RuntimeContextWorkflowSession,
   RuntimeLifecycleWorkflow,
   RuntimeLifecycleWorkflowPayload,
   RuntimeStartWorkflow,
   RuntimeStartWorkflowPayload,
-  ToolCallWorkflow,
-  ToolCallWorkflowPayloadSchema,
+  runtimeControlRequestWorkflowExecutionId,
+  runtimeControlRequestWorkflowStreamUrl,
+  type RuntimeControlRequestDispatchOutcome,
+} from "./subscribers/runtime-control/workflows.ts"
+export {
   WaitForWorkflow,
   WaitForWorkflowLayer,
-  FieldEqualsPredicateSchema,
-  FieldEqualsTriggerSchema,
   WaitForWorkflowMatchOutcomeSchema,
   WaitForWorkflowOutcomeSchema,
   WaitForWorkflowPayloadSchema,
   WaitForWorkflowTimeoutOutcomeSchema,
-  readRuntimeContext,
-  runtimeContextWorkflowExecutionId,
-  runtimeControlRequestWorkflowExecutionId,
-  runtimeControlRequestWorkflowStreamUrl,
-  runtimeInputDeferredFor,
-  runtimeInputDeferredName,
   waitForWorkflowExecutionId,
-  type RuntimeControlRequestDispatchOutcome,
+  type WaitForWorkflowOutcome,
+  type WaitForWorkflowPayload,
+} from "./subscribers/wait-router/workflow.ts"
+export {
+  FieldEqualsPredicateSchema,
+  FieldEqualsTriggerSchema,
+  evaluateFieldEquals,
+  type FieldEqualsPredicate,
+  type FieldEqualsTrigger,
+} from "./transforms/field-equals.ts"
+export {
+  type RuntimeExitEvidence,
+} from "./tables/runtime-context-state.ts"
+// Post-#727 / tf-up1v cleanup wave: ToolCallWorkflow + payload schema
+// physically moved to `subscribers/tool-dispatch/workflow.ts`. The runtime
+// root barrel re-exports them directly from the tree-aligned subscribers
+// subpath; the workflow-engine substrate path no longer defines them.
+export {
+  ToolCallWorkflow,
+  ToolCallWorkflowPayloadSchema,
+  type ToolCallWorkflowPayload,
+} from "./subscribers/tool-dispatch/workflow.ts"
+// Wave 2 (Shape C): the codec-session command sink contract is owned by the
+// subscriber target folder. The runtime root barrel re-exports it directly
+// from the public subscriber subpath; the workflow-engine substrate path no
+// longer defines it.
+export {
+  RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
   type RuntimeContextSessionCommandAccepted,
   type RuntimeContextSessionStartedEvidence,
-  type RuntimeContextWorkflowExecutionEnv,
   type RuntimeContextWorkflowSessionService,
-  type RuntimeExitEvidence,
-  type StartRuntimeResult,
-  type ToolCallWorkflowPayload,
-  type FieldEqualsPredicate,
-  type FieldEqualsTrigger,
-  type WaitForWorkflowOutcome,
-  type WaitForWorkflowPayload,
-  evaluateFieldEquals,
-} from "./workflow-engine/workflows/index.ts"
+} from "./subscribers/runtime-context-session/index.ts"
 export {
   AgentOutputAfterObservationSourceSchema,
   AgentOutputObservationSourceSchema,
@@ -71,8 +80,7 @@ export {
   RuntimeObservationStreams,
   RuntimeObservationStreamsLive,
   type RuntimeObservationStreamsService,
-  RuntimeRunObservationSourceSchema,
-} from "./streams/index.ts"
+} from "./channels/observation-streams/index.ts"
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
 export {
@@ -81,14 +89,14 @@ export {
   resolveMcpServerHeaders,
   resolveSpawnEnvVars,
   type EnvLookup,
-} from "./agent-event-pipeline/sources/sandbox/secrets.ts"
+} from "./producers/sandbox/secrets.ts"
 // firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.1
 export {
   effectAi,
   EffectAiSandboxProvider,
   type EffectAiSandboxConfig,
   type EffectAiSandboxProviderHelper,
-} from "./agent-event-pipeline/sources/sandbox/effect-ai.ts"
+} from "./producers/sandbox/effect-ai.ts"
 export {
   AcpCapabilities,
   AcpSessionLive,
@@ -96,7 +104,7 @@ export {
   type AcpSessionOptions,
   StdioJsonlCapabilities,
   StdioJsonlSessionLive,
-} from "./agent-event-pipeline/codecs/index.ts"
+} from "./producers/codecs/index.ts"
 export {
   RuntimeAgentOutputEnvelopeSchema,
   decodeRuntimeAgentOutputEnvelope,
@@ -104,7 +112,7 @@ export {
   runtimeAgentOutputObservationFromRow,
   type RuntimeAgentOutputEnvelope,
   type RuntimeAgentOutputObservation,
-} from "./agent-event-pipeline/events/output.ts"
+} from "./events/output.ts"
 export {
   AdapterCancelled,
   AgentAdapter,
@@ -123,7 +131,7 @@ export {
   type AgentAdapterRegistryService,
   type AgentAdapterService,
   type AgentTurn,
-} from "./agent-adapters/index.ts"
+} from "./producers/codecs/agent-adapters/index.ts"
 export {
   ingestVerifiedWebhook,
   LinearWebhookFactSchema,

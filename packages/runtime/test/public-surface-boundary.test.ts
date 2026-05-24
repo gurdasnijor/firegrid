@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import * as RuntimeRoot from "../src/index.ts"
-import * as ControlPlane from "../src/control-plane/index.ts"
-import * as RuntimeOutput from "../src/agent-event-pipeline/authorities/runtime-output-public.ts"
+import * as ControlPlane from "../src/subscribers/runtime-control/index.ts"
+import * as RuntimeOutput from "../src/tables/runtime-output-public.ts"
 
 // tf-bffo boundary enforcement: "channels are the only doorway".
 //

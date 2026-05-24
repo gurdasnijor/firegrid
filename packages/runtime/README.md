@@ -20,18 +20,19 @@ For the stable operational map of the runtime package, see
 ```ts
 import {
   FiregridRuntimeHostLive,
-  FiregridRuntimeHostFromConfig,
-  startRuntime,
-} from "@firegrid/runtime/runtime-host"
+} from "@firegrid/runtime/composition/host-live"
+import { startRuntime } from "@firegrid/runtime/composition/host-public"
 
-import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 ```
 
 | Subpath | Purpose |
 | --- | --- |
-| `@firegrid/runtime/runtime-host` | Runtime host Layer, config, `startRuntime`, and ingress helpers. |
-| `@firegrid/runtime/workflow-engine` | Durable `@effect/workflow` engine backed by Firegrid tables. |
-| `@firegrid/runtime/workflows` | Runtime-owned workflow definitions such as `WaitForWorkflow` and runtime-context workflows. |
+| `@firegrid/runtime/composition/host-live` | Runtime host Layer composition. |
+| `@firegrid/runtime/composition/host-public` | `startRuntime`, ingress helpers, and public host facade helpers. |
+| `@firegrid/runtime/engine/durable-streams-workflow-engine` | Low-level durable `@effect/workflow` engine substrate for engine tests and tiny-firegrid simulations. |
+| `@firegrid/runtime/subscribers/wait-router` | Runtime-owned wait workflow definitions. |
+| `@firegrid/runtime/subscribers/runtime-control` | Runtime-control workflow definitions and dispatcher surfaces. |
 
 ## Runtime Host
 
@@ -41,8 +42,8 @@ provider. Provide it once per host process.
 ```ts
 import {
   FiregridRuntimeHostLive,
-  startRuntime,
-} from "@firegrid/runtime/runtime-host"
+} from "@firegrid/runtime/composition/host-live"
+import { startRuntime } from "@firegrid/runtime/composition/host-public"
 import { Effect } from "effect"
 
 const HostLive = FiregridRuntimeHostLive({

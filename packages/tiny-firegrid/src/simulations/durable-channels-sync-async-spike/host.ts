@@ -1,9 +1,6 @@
-import {
-  FiregridLocalHostLive,
-  FiregridLocalProcessFromEnv,
-  durableStreamUrl,
-  type FiregridHost,
-} from "@firegrid/host-sdk"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import { type FiregridHost, FiregridLocalHostLive } from "@firegrid/runtime/composition/host-live"
+import { FiregridLocalProcessFromEnv } from "@firegrid/runtime/producers/sandbox/local-process-from-env"
 import {
   makeBidirectionalChannel,
 } from "@firegrid/protocol/channels"
@@ -18,7 +15,7 @@ import type {
 } from "@firegrid/protocol/session-facade"
 import {
   CallerOwnedFactStreams,
-} from "@firegrid/runtime/streams"
+} from "@firegrid/runtime/channels/observation-streams"
 import {
   Effect,
   Layer,

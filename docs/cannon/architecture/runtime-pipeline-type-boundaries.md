@@ -40,7 +40,7 @@ visible in type signatures.
 | Typed output observation | `RuntimeAgentOutputAfterEvents` (`initial` / `after` / `forContext`) | `packages/runtime/src/agent-event-pipeline/authorities/runtime-output-journal.ts` |
 | Live agent boundary | `AgentSession` (`send`, `outputs`) | `packages/runtime/src/agent-event-pipeline/codecs/contract.ts` |
 | Live byte boundary | `AgentByteStream` | `packages/runtime/src/agent-event-pipeline/sources/byte-stream.ts` |
-| RuntimeContext state store | `RuntimeContextStateStore` (`load` / `save` / `nextOutput`) | `packages/runtime/src/workflow-engine/runtime-context-state.ts` |
+| RuntimeContext state store | `RuntimeContextStateStore` (`load` / `save` / `nextOutput`) | `packages/runtime/src/tables/runtime-context-state.ts` |
 | Pure RuntimeContext transitions | `transitionInputEvent`, `transitionOutputEvent` | `packages/runtime/src/workflow-engine/workflows/runtime-context.ts` |
 | Pure wait trigger | `evaluateFieldEquals`, `FieldEqualsTrigger` | `packages/runtime/src/workflow-engine/workflows/field-equals.ts` |
 | Pure input decode | `agentInputEventFromRuntimeIngressRow` | `packages/runtime/src/workflow-engine/workflows/runtime-ingress-transform.ts` |

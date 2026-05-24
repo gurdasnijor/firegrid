@@ -2,8 +2,8 @@ import { Activity, Workflow } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Effect, Layer, Schema, Tracer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
-import { withActivityContract } from "../../src/workflow-engine/internal/contract-activity.ts"
+import { DurableStreamsWorkflowEngine } from "../../src/engine/durable-streams-workflow-engine.ts"
+import { withActivityContract } from "../../src/engine/internal/contract-activity.ts"
 
 // tf-vw29: prove the Activity.make span-attribute hook lands
 // firegrid.seam.kind / firegrid.contract.id on the vendored `activity.name`

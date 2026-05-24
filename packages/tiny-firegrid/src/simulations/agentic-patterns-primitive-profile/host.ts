@@ -1,5 +1,5 @@
 import type { ServeError } from "@effect/platform/HttpServerError"
-import type { FiregridHost } from "@firegrid/host-sdk"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
 import type { Layer } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import type { TinyFiregridHostEnv } from "../../types.ts"

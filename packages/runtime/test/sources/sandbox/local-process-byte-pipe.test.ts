@@ -6,8 +6,8 @@
 import { NodeContext } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { SandboxProvider } from "../../../src/agent-event-pipeline/sources/sandbox/SandboxProvider.ts"
-import { LocalProcessSandboxProvider } from "../../../src/agent-event-pipeline/sources/sandbox/local-process.ts"
+import { SandboxProvider } from "../../../src/producers/sandbox/SandboxProvider.ts"
+import { LocalProcessSandboxProvider } from "../../../src/producers/sandbox/local-process.ts"
 
 const Live = LocalProcessSandboxProvider.layer().pipe(
   Layer.provide(NodeContext.layer),

@@ -1,8 +1,6 @@
-import {
-  durableStreamUrl,
-  type FiregridHost,
-} from "@firegrid/host-sdk"
-import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/channels/observation-streams"
 import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
@@ -11,7 +9,7 @@ import {
   type WorkflowClockWakeupRow,
   type WorkflowDeferredRow,
   type WorkflowExecutionRow,
-} from "@firegrid/runtime/workflow-engine"
+} from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 import { Cause, Clock, Duration, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
 import {
   DurableTable,

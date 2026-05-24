@@ -1,10 +1,8 @@
 import { Activity, Workflow } from "@effect/workflow"
 import { Prompt } from "@effect/ai"
-import {
-  durableStreamUrl,
-  type FiregridHost,
-} from "@firegrid/host-sdk"
-import { toolResult } from "@firegrid/host-sdk/agent-tools/bindings"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
+import { toolResult } from "@firegrid/runtime/subscribers/tool-dispatch"
 import {
   RuntimeToolUseExecutor,
 } from "@firegrid/runtime/tool-executor"
@@ -17,7 +15,7 @@ import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
   type WorkflowActivityRow,
-} from "@firegrid/runtime/workflow-engine"
+} from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 import {
   Cause,
   Clock,

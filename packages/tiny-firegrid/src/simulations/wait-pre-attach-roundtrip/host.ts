@@ -1,12 +1,11 @@
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import { FiregridLocalHostLive } from "@firegrid/runtime/composition/host-live"
+import { FiregridEnvBindingsFromEnv, FiregridLocalProcessFromEnv } from "@firegrid/runtime/producers/sandbox/local-process-from-env"
 import {
-  durableStreamUrl,
   ensurePathInput,
-  FiregridEnvBindingsFromEnv,
-  FiregridLocalHostLive,
-  FiregridLocalProcessFromEnv,
   FiregridMcpServerLayer,
-} from "@firegrid/host-sdk"
-import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
+} from "@firegrid/runtime/producers/codecs/mcp"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/channels/observation-streams"
 import { Effect, Layer, Schema, Stream } from "effect"
 import {
   DurableTable,

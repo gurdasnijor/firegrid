@@ -1,11 +1,10 @@
+import { type FiregridHost, FiregridLocalHostLive } from "@firegrid/runtime/composition/host-live"
+import { FiregridLocalProcessFromEnv } from "@firegrid/runtime/producers/sandbox/local-process-from-env"
+import { AcpStdioEdgeLive } from "@firegrid/runtime/producers/codecs/acp/stdio-edge"
 import {
-  AcpStdioEdgeLive,
   ensurePathInput,
-  FiregridLocalHostLive,
-  FiregridLocalProcessFromEnv,
   FiregridMcpServerLayer,
-  type FiregridHost,
-} from "@firegrid/host-sdk"
+} from "@firegrid/runtime/producers/codecs/mcp"
 import { local } from "@firegrid/protocol/launch"
 import { Layer } from "effect"
 import type { TinyFiregridHostEnv } from "../../types.ts"

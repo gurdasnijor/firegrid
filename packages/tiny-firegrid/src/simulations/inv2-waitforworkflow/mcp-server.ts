@@ -24,11 +24,9 @@ import { McpServer, Tool, Toolkit } from "@effect/ai"
 import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
 import type { WorkflowEngine } from "@effect/workflow"
-import {
-  durableStreamUrl,
-} from "@firegrid/host-sdk"
-import type { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
-import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import type { CallerOwnedFactStreams } from "@firegrid/runtime/channels/observation-streams"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 import { Effect, Layer, Logger, Schema } from "effect"
 // durable-lint-allow-control-plane: NodeHttpServer.layer listener factory.
 import { createServer } from "node:http"

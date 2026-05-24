@@ -1,4 +1,4 @@
-import type { FiregridHost } from "@firegrid/host-sdk"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
 import { durableStreamUrl } from "@firegrid/protocol/launch"
 import {
   ChannelRouteVerbNotSupported,

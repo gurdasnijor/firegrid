@@ -123,12 +123,12 @@ categorize_unmodeled() {
         if (path ~ /^packages\/[^\/]+\/src\/index\.ts$/ ||
             path ~ /^packages\/protocol\/src\/operations\/index\.ts$/ ||
             path ~ /^packages\/protocol\/src\/session-facade\/index\.ts$/ ||
-            path ~ /^packages\/runtime\/src\/agent-adapters\/index\.ts$/ ||
+            path ~ /^packages\/runtime\/src\/producers\/codecs\/agent-adapters\/index\.ts$/ ||
             path ~ /^packages\/host-sdk\/src\/host\/types\.ts$/ ||
             path ~ /^packages\/runtime\/src\/agent-event-pipeline\/sources\/byte-stream\.ts$/) {
           return "coverage_tool_artifacts"
         }
-        if (path ~ /^packages\/runtime\/src\/agent-adapters\// ||
+        if (path ~ /^packages\/runtime\/src\/producers\/codecs\/agent-adapters\// ||
             path ~ /^packages\/client-sdk\/src\// ||
             path ~ /^packages\/protocol\/src\/session-facade\//) {
           return "future_config_targets"
