@@ -7,6 +7,7 @@ import {
   type RuntimeControlRequestStartResult,
 } from "../../control-plane/index.ts"
 import { RuntimeContextWorkflowSession } from "../runtime-context-session/handler.ts"
+import { RuntimeContextSessionWorkflowDispatch } from "../runtime-context-session-workflow/index.ts"
 import { asRuntimeContextError } from "../../runtime-errors.ts"
 import { Effect, Layer, Option, type Scope } from "effect"
 import { PerContextRuntimeOutputWriter } from "../../producers/ingress-writers/per-context-output.ts"
@@ -42,6 +43,7 @@ export const RuntimeControlRequestSideEffectsLive = Layer.scoped(
       | PerContextRuntimeOutputWriter
       | RuntimeContextRead
       | RuntimeContextWorkflowSession
+      | RuntimeContextSessionWorkflowDispatch
       | RuntimeControlPlaneTable
       | RuntimeRunAppendAndGet
       | Scope.Scope
@@ -74,7 +76,7 @@ const startRuntimeContext = (
   RuntimeControlRequestStartResult,
   unknown,
   | RuntimeContextRead
-  | RuntimeContextWorkflowSession
+  | RuntimeContextSessionWorkflowDispatch
   | RuntimeRunAppendAndGet
 > =>
   Effect.gen(function*() {
@@ -91,19 +93,29 @@ const startRuntimeContext = (
     const runs = yield* RuntimeRunAppendAndGet
     const attempt = yield* runs.allocateActivityAttempt(context)
     yield* runs.recordStarted(context, attempt)
-    const session = yield* RuntimeContextWorkflowSession
-    // If `startOrAttach` fails (e.g. sandbox.openBytePipe could not
-    // spawn the agent), write `runs.failed` before propagating so the
-    // durable run lifecycle row chain matches the legacy body's
-    // failure-path contract (cf. retired
-    // `workflow-engine/workflows/runtime-context-run.ts:117-118`).
-    yield* session.startOrAttach(context, attempt).pipe(
+    // PR #738 Zed agent_silent fix: dispatch RuntimeContextSessionWorkflow
+    // INSTEAD of calling session.startOrAttach directly. The workflow is the
+    // sole admission boundary for `(contextId, attempt)`; its
+    // `idempotencyKey: contextId:attempt` collapses any concurrent
+    // dispatches; its body is the only call site for the codec's underlying
+    // startOrAttach (Activity-memoized → exactly-once). The pre-cutover
+    // direct `session.startOrAttach` here raced with the Shape C subscriber's
+    // implicit `getOrStart → startOrAttach` chain and spawned 2 agent
+    // processes on the same `(contextId, attempt)`.
+    //
+    // We dispatch fire-and-forget (the workflow body runs as long as the
+    // session is alive); termination is observed via `runs.waitTerminal`
+    // below — the Shape C subscriber writes `runs.exited|failed` on
+    // Terminated output transition, same as pre-cutover.
+    const sessionWorkflow = yield* RuntimeContextSessionWorkflowDispatch
+    yield* sessionWorkflow.dispatch({ contextId: context.contextId, activityAttempt: attempt }).pipe(
       Effect.tapError((cause) =>
         runs.recordFailed(
           context,
           attempt,
           cause instanceof Error ? cause.message : String(cause),
         )),
+      Effect.fork,
     )
     const terminalOpt = yield* runs.waitTerminal(contextId, attempt)
     if (Option.isNone(terminalOpt)) {

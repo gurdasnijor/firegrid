@@ -154,6 +154,15 @@ import {
 import { HostWorkflowEngineLive } from "./host-workflow-engine.ts"
 import { RuntimeContextInputFactsLive } from "../tables/runtime-context-input-facts.ts"
 import { RuntimeContextSubscriberLive } from "../subscribers/runtime-context/index.ts"
+// PR #738 Shape D production lane: RuntimeContextSessionWorkflow owns the
+// codec session lifecycle per (contextId, attempt). See
+// `packages/runtime/src/subscribers/runtime-context-session-workflow/README.md`
+// for the SDD Gate justification.
+import {
+  RcswProcessedTable,
+  RuntimeContextSessionWorkflowDispatchLive,
+  RuntimeContextSessionWorkflowLayer,
+} from "../subscribers/runtime-context-session-workflow/index.ts"
 import {
   type RuntimeChannelRouter,
 } from "../channels/router/live.ts"
@@ -373,6 +382,19 @@ export type FiregridHost =
   | RuntimeOutputTable
   | RuntimeChannelRouter
 
+// PR #738: workflow-owned per-intent processed-markers table. Namespace-scoped
+// like RuntimeControlPlaneTable; the RuntimeContextSessionWorkflow body
+// queries/writes via the durable-table contract (no other writer in
+// production).
+const rcswProcessedTableLayer = (options: RuntimeHostTopologyOptions) =>
+  RcswProcessedTable.layer({
+    streamOptions: {
+      url: `${options.durableStreamsBaseUrl.replace(/\/+$/, "")}/${options.namespace}.firegrid.rcsw.processed`,
+      contentType: "application/json",
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
+    },
+  })
+
 export const FiregridRuntimeHostLive = (
   options: RuntimeHostTopologyOptions,
   envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
@@ -393,9 +415,19 @@ export const FiregridRuntimeHostLive = (
   }).pipe(
     Layer.provideMerge(RuntimeControlRequestSideEffectsLive),
   )
+  // PR #738 RCSW dispatch + workflow bundle. The Dispatch service is the
+  // ambient seam the Shape C subscriber + control-side-effect call; the
+  // workflow Layer registers the body handler with the host's
+  // WorkflowEngine (must be `Layer.provide`d the engine, which the wider
+  // pipe surfaces below).
+  const rcswBundle = RuntimeContextSessionWorkflowDispatchLive.pipe(
+    Layer.provideMerge(RuntimeContextSessionWorkflowLayer),
+    Layer.provideMerge(rcswProcessedTableLayer(options)),
+  )
   return controlPlane.pipe(
     Layer.provideMerge(runtimeContextSubscriberHostBundle),
     Layer.provideMerge(ToolDispatchLive),
+    Layer.provideMerge(rcswBundle),
     Layer.provideMerge(hostPublic),
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),

@@ -47,6 +47,13 @@ import {
   handleRuntimeContextEvent,
   type RuntimeContextTargetEvent,
 } from "../../../src/subscribers/runtime-context/handler.ts"
+// PR #738: handler now delegates Input/PermissionResponse dispatch to the
+// RuntimeContextSessionWorkflow via this Dispatch service. Tests that exercise
+// the Input branch use a recording Dispatch; tests on Output/ToolResult provide
+// a no-op stub (those paths don't call resume).
+import {
+  RuntimeContextSessionWorkflowDispatch,
+} from "../../../src/subscribers/runtime-context-session-workflow/index.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -200,6 +207,42 @@ const makeRecordingRuns = (): Effect.Effect<RecordingRuns> =>
     return { exited, layer }
   })
 
+interface RecordingDispatch {
+  readonly resumes: Ref.Ref<ReadonlyArray<{
+    readonly contextId: string
+    readonly activityAttempt: number
+  }>>
+  readonly layer: Layer.Layer<RuntimeContextSessionWorkflowDispatch>
+}
+
+const makeRecordingDispatch = (): Effect.Effect<RecordingDispatch> =>
+  Effect.gen(function*() {
+    const resumes = yield* Ref.make<ReadonlyArray<{
+      readonly contextId: string
+      readonly activityAttempt: number
+    }>>([])
+    const layer = Layer.succeed(
+      RuntimeContextSessionWorkflowDispatch,
+      RuntimeContextSessionWorkflowDispatch.of({
+        dispatch: () => Effect.die("dispatch() not exercised by these tests"),
+        resume: ({ contextId, activityAttempt }) =>
+          Ref.update(resumes, (rs) => [...rs, { contextId, activityAttempt }]),
+      }),
+    )
+    return { resumes, layer }
+  })
+
+// No-op Dispatch — used by tests on Output/ToolResult paths that don't reach
+// the workflow seam. (handle() still RESOLVES the Dispatch Tag eagerly in
+// every code path that loads state; non-Input branches just never call it.)
+const noopDispatchLayer = Layer.succeed(
+  RuntimeContextSessionWorkflowDispatch,
+  RuntimeContextSessionWorkflowDispatch.of({
+    dispatch: () => Effect.die("dispatch() not exercised by these tests"),
+    resume: () => Effect.void,
+  }),
+)
+
 const stateStoreLayer = (): Layer.Layer<RuntimeContextStateStore, never, Scope.Scope> => {
   if (baseUrl === undefined) throw new Error("server not started")
   const prefix: HostStreamPrefix = makeHostStreamPrefix({
@@ -257,17 +300,24 @@ const toolUseOutputObservation = (
 }
 
 describe("Shape C handleRuntimeContextEvent", () => {
-  it("dispatches a prompt input through the session-command seam and advances the durable cursor", async () => {
+  // PR #738: post-Shape-D-cutover assertion. The handler no longer calls
+  // session.send for Input events; it issues a `RuntimeContextSessionWorkflow`
+  // resume wakeup. The actual session.send happens inside the workflow body
+  // (Activity-memoized, sole admission boundary). State cursor advancement on
+  // the durable row is unchanged.
+  it("issues a workflow-resume wakeup on an Input event and advances the durable cursor", async () => {
     await run(Effect.gen(function*() {
       const context = contextFor("ctx-input")
       const session = yield* makeRecordingSession()
       const executor = yield* makeRecordingExecutor()
       const runs = yield* makeRecordingRuns()
+      const dispatch = yield* makeRecordingDispatch()
       const baseLayer = Layer.mergeAll(
         stateStoreLayer(),
         session.layer,
         executor.layer,
         runs.layer,
+        dispatch.layer,
       )
 
       const row = promptRowForInput("ctx-input", "hello", 0)
@@ -277,13 +327,17 @@ describe("Shape C handleRuntimeContextEvent", () => {
         Effect.provide(baseLayer),
       )
 
+      // The session-command seam is NOT exercised by the subscriber for Input
+      // events post-cutover; the workflow body is the sole caller.
       const sent = yield* Ref.get(session.sent)
-      expect(sent).toHaveLength(1)
-      expect(sent[0]?.command.event._tag).toBe("Prompt")
-      expect(sent[0]?.command.commandId).toBe(`runtime-input-ctx-input-${row.inputId}`)
-      expect(sent[0]?.activityAttempt).toBe(ATTEMPT)
+      expect(sent).toHaveLength(0)
+      // The subscriber MUST issue one workflow-resume wakeup with the
+      // current (contextId, activityAttempt).
+      const resumes = yield* Ref.get(dispatch.resumes)
+      expect(resumes).toEqual([{ contextId: "ctx-input", activityAttempt: ATTEMPT }])
 
-      // The cursor on the durable row must have advanced to the input's seq.
+      // Durable cursor still advances — state machine remains Shape C's
+      // responsibility; only the side-effect of dispatch changed.
       const store = yield* Effect.provide(
         Effect.flatMap(RuntimeContextStateStore, s => s.load(context, ATTEMPT)),
         baseLayer,
@@ -293,35 +347,40 @@ describe("Shape C handleRuntimeContextEvent", () => {
     }))
   })
 
-  it("is idempotent across a reload: a second invocation is a no-op", async () => {
+  it("is idempotent across a reload: a second Input invocation issues no second resume", async () => {
     await run(Effect.gen(function*() {
       const context = contextFor("ctx-idem")
       const session = yield* makeRecordingSession()
       const executor = yield* makeRecordingExecutor()
       const runs = yield* makeRecordingRuns()
+      const dispatch = yield* makeRecordingDispatch()
       const baseLayer = Layer.mergeAll(
         stateStoreLayer(),
         session.layer,
         executor.layer,
         runs.layer,
+        dispatch.layer,
       )
 
       const row = promptRowForInput("ctx-idem", "once", 0)
       const event: RuntimeContextTargetEvent = { _tag: "Input", event: row }
 
-      // First invocation: state advances, send dispatched.
+      // First invocation: state advances, resume dispatched.
       yield* handleRuntimeContextEvent(context, ATTEMPT, event).pipe(
         Effect.provide(baseLayer),
       )
       // Second invocation: handler reloads from the durable row, sees the
-      // event has already been processed (seq <= lastProcessedInputSequence),
-      // and returns without dispatching or mutating.
+      // event has already been processed, and returns without re-dispatching
+      // (idempotency contract preserved — the workflow body's own per-intent
+      // processed-marker table is the downstream backstop).
       yield* handleRuntimeContextEvent(context, ATTEMPT, event).pipe(
         Effect.provide(baseLayer),
       )
 
       const sent = yield* Ref.get(session.sent)
-      expect(sent).toHaveLength(1)
+      expect(sent).toHaveLength(0)
+      const resumes = yield* Ref.get(dispatch.resumes)
+      expect(resumes).toHaveLength(1)
       const store = yield* Effect.provide(
         Effect.flatMap(RuntimeContextStateStore, s => s.load(context, ATTEMPT)),
         baseLayer,
@@ -341,6 +400,10 @@ describe("Shape C handleRuntimeContextEvent", () => {
         session.layer,
         executor.layer,
         runs.layer,
+        // Output/ToolUse path doesn't reach the workflow seam, but
+        // handleRuntimeContextEvent eagerly resolves the Dispatch Tag
+        // before the branch; provide a no-op.
+        noopDispatchLayer,
       )
 
       const observation = toolUseOutputObservation("ctx-tool", 1, "tu-1", "echo")
