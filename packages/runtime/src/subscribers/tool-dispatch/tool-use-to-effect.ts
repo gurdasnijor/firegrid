@@ -74,6 +74,8 @@ import {
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
 import {
+  Clock,
+  Duration,
   Effect,
   ParseResult,
   Schema,
@@ -93,6 +95,9 @@ import type {
 } from "../../channels/index.ts"
 import type {
   ChannelDirection,
+} from "@firegrid/protocol/channels"
+import {
+  SessionAgentOutputChannelTarget,
 } from "@firegrid/protocol/channels"
 import type { ChannelRouteDescriptor } from "@firegrid/protocol/channels/router"
 import { AgentToolHost } from "./tool-host.ts"
@@ -193,6 +198,72 @@ const unknownChannelInvalid = (
   name,
   reason: `Unknown channel '${channel}': ${String(cause)}`,
 })
+
+const matchScalar = (
+  match: WaitForToolInput["match"],
+  key: string,
+): unknown => match === undefined ? undefined : match[key]
+
+const waitForSessionAgentOutputRoutePayload = (
+  toolUseId: string,
+  input: WaitForToolInput,
+): Effect.Effect<
+  { readonly sessionId: string; readonly afterSequence: number },
+  ToolError
+> => {
+  const sessionId = matchScalar(input.match, "sessionId")
+  if (typeof sessionId !== "string" || sessionId.length === 0) {
+    return Effect.fail({
+      _tag: "ToolInvalidInput",
+      toolUseId,
+      name: "wait_for",
+      reason:
+        "wait_for channel 'session.agent_output' requires match.sessionId.",
+    })
+  }
+
+  const afterSequence = matchScalar(input.match, "afterSequence") ?? -1
+  if (
+    typeof afterSequence !== "number" ||
+    !Number.isInteger(afterSequence) ||
+    afterSequence < -1
+  ) {
+    return Effect.fail({
+      _tag: "ToolInvalidInput",
+      toolUseId,
+      name: "wait_for",
+      reason:
+        "wait_for channel 'session.agent_output' requires match.afterSequence to be an integer >= -1 when provided.",
+    })
+  }
+
+  return Effect.succeed({ sessionId, afterSequence })
+}
+
+const runSessionAgentOutputWaitForTool = (
+  toolUseId: string,
+  input: WaitForToolInput,
+): Effect.Effect<WaitForToolOutput, ToolError, RuntimeChannelRouter> =>
+  Effect.gen(function* () {
+    const router = yield* RuntimeChannelRouter
+    const payload = yield* waitForSessionAgentOutputRoutePayload(toolUseId, input)
+    const wait = router.dispatch({
+      target: SessionAgentOutputChannelTarget,
+      verb: "wait_for",
+      payload,
+    }).pipe(
+      Effect.map((event): WaitForToolOutput => ({ matched: true, event })),
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, "wait_for", cause)),
+    )
+    if (input.timeoutMs === undefined) return yield* wait
+    return yield* Effect.raceFirst(
+      wait,
+      Clock.sleep(Duration.millis(input.timeoutMs)).pipe(
+        Effect.as<WaitForToolOutput>({ matched: false, timedOut: true }),
+      ),
+    )
+  })
 
 const requireChannelDirection = <Direction extends ChannelDirection>(
   toolUseId: string,
@@ -302,6 +373,10 @@ const runWaitForTool = (
   ToolError,
   RuntimeAgentToolExecution | RuntimeChannelRouter
 > => {
+  if (input.channel === String(SessionAgentOutputChannelTarget)) {
+    return runSessionAgentOutputWaitForTool(toolUseId, input)
+  }
+
   // `match` is typed `Record<string, unknown>` because schema-level
   // scalar refinement would prevent codecs from publishing the JSON shape
   // unchanged. We enforce scalar-only predicates here because the downstream
