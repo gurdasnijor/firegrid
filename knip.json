@@ -75,6 +75,16 @@
         "src/**/*.ts",
         "test/**/*.ts"
       ]
+    },
+    "experiments/agent-coordination-patterns": {
+      "entry": [
+        "src/run.ts",
+        "src/score.ts",
+        "src/finding.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
     }
   },
   "ignore": [

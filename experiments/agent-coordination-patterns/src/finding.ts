@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises"
 import path from "node:path"
-import { readJson } from "./files.ts"
+import { experimentRoot, readJson, resolveRunDir } from "./files.ts"
 import type { ArmScore } from "./types.ts"
 import type { ExperimentScenario } from "./types.ts"
 
@@ -92,4 +92,11 @@ export const compileFinding = async (runDir: string): Promise<void> => {
     ].join("\n"),
     "utf8",
   )
+}
+
+export const compileLatestFinding = async (): Promise<string> => {
+  // agent-coordination-patterns-experiment.EXECUTION.8
+  const runDir = await resolveRunDir(path.join(experimentRoot, "latest"))
+  await compileFinding(runDir)
+  return path.join(runDir, "FINDING.md")
 }

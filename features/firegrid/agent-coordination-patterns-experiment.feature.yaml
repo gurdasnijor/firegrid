@@ -47,6 +47,8 @@ components:
       5: Permission or unavailable-tool failures are recorded as experiment evidence instead of being hidden by driver-side fallback behavior.
       6: Participant output collection waits until a terminal output event or the arm timeout; a temporary quiet window is not treated as task completion.
       7: Participant start lifecycles run concurrently with final-artifact waiting so experiment completion is determined by the public channel artifact, not by process teardown.
+      8: Experiment code separates Firegrid host composition, Firegrid client interaction, and measurement artifacts without defining an experiment-specific CLI, command router, or package export surface.
+      9: The headline experiment path bootstraps one Firegrid conductor session per arm; the conductor launches participants and coordinates the arm through normal Firegrid tools instead of driver-created worker sessions.
 
 constraints:
   NO_PRIVATE_COORDINATION:
