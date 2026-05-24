@@ -19,7 +19,7 @@ export const boardChannels = [
 
 export type CoordinationBoardChannel = typeof boardChannels[number]
 
-const CoordinationBoardPayloadSchema = Schema.Struct({
+const CoordinationBoardObjectPayloadSchema = Schema.Struct({
   rowId: Schema.optional(Schema.String),
   runId: Schema.optional(Schema.String),
   arm: Schema.optional(Schema.String),
@@ -35,6 +35,11 @@ const CoordinationBoardPayloadSchema = Schema.Struct({
   createdAt: Schema.optional(Schema.String),
   payload: Schema.optional(Schema.Unknown),
 })
+
+const CoordinationBoardPayloadSchema = Schema.Union(
+  CoordinationBoardObjectPayloadSchema,
+  Schema.String,
+)
 
 const CoordinationBoardRowSchema = Schema.Struct({
   rowId: Schema.String.pipe(DurableTable.primaryKey),
@@ -54,6 +59,9 @@ const CoordinationBoardRowSchema = Schema.Struct({
 })
 
 export type CoordinationBoardPayload = Schema.Schema.Type<
+  typeof CoordinationBoardObjectPayloadSchema
+>
+type CoordinationBoardPayloadInput = Schema.Schema.Type<
   typeof CoordinationBoardPayloadSchema
 >
 export type CoordinationBoardRow = Schema.Schema.Type<
@@ -94,17 +102,22 @@ const boardTableEffect = <A>(
 const boardRows = (
   tableLayer: ReturnType<typeof CoordinationBoardTable.layer>,
   channel: CoordinationBoardChannel,
+  liveRows: Stream.Stream<CoordinationBoardRow>,
 ): Stream.Stream<CoordinationBoardRow, DurableTableError, never> =>
-  Stream.unwrap(
-    boardTableEffect(
-      tableLayer,
-      table =>
-        Effect.succeed(
-          table.rows.rows().pipe(
-            Stream.filter(row => row.channel === channel),
+  Stream.merge(
+    Stream.unwrap(
+      boardTableEffect(
+        tableLayer,
+        table =>
+          Effect.succeed(
+            table.rows.rows().pipe(
+              Stream.filter(row => row.channel === channel),
+            ),
           ),
-        ),
+      ),
     ),
+    // agent-coordination-patterns-experiment.BOARD.7
+    liveRows.pipe(Stream.filter(row => row.channel === channel)),
   )
 
 const materializeBoardRow = (
@@ -119,9 +132,10 @@ const materializeBoardRow = (
   return {
     rowId: payload.rowId ??
       `${options.runId}:${options.arm}:${options.channel}:${crypto.randomUUID()}`,
-    runId: payload.runId ?? options.runId,
-    arm: payload.arm ?? options.arm,
-    channel: payload.channel ?? options.channel,
+    // agent-coordination-patterns-experiment.BOARD.6
+    runId: options.runId,
+    arm: options.arm,
+    channel: options.channel,
     kind: payload.kind ?? "message",
     ...(payload.workId === undefined ? {} : { workId: payload.workId }),
     ...(payload.claimId === undefined ? {} : { claimId: payload.claimId }),
@@ -137,6 +151,22 @@ const materializeBoardRow = (
     createdAt: payload.createdAt ?? now,
     ...(payload.payload === undefined ? {} : { payload: payload.payload }),
   }
+}
+
+const decodeCoordinationBoardPayload = Schema.decodeUnknown(
+  CoordinationBoardObjectPayloadSchema,
+)
+
+const normalizeCoordinationBoardPayload = (
+  payload: CoordinationBoardPayloadInput,
+): Effect.Effect<CoordinationBoardPayload, unknown> => {
+  if (typeof payload !== "string") return decodeCoordinationBoardPayload(payload)
+  return Effect.try({
+    try: () => JSON.parse(payload) as unknown,
+    catch: error => error,
+  }).pipe(
+    Effect.flatMap(decodeCoordinationBoardPayload),
+  )
 }
 
 export interface CoordinationBoardHost {
@@ -161,6 +191,16 @@ export const makeCoordinationBoardHost = (options: {
     }),
   )
   const recordedRows: Array<CoordinationBoardRow> = []
+  const listeners = new Set<(row: CoordinationBoardRow) => void>()
+  const liveRows = Stream.async<CoordinationBoardRow>((emit) => {
+    const listener = (row: CoordinationBoardRow) => {
+      void emit.single(row)
+    }
+    listeners.add(listener)
+    return Effect.sync(() => {
+      listeners.delete(listener)
+    })
+  })
   const append = (
     channel: CoordinationBoardChannel,
     payload: CoordinationBoardPayload,
@@ -169,7 +209,15 @@ export const makeCoordinationBoardHost = (options: {
     recordedRows.push(row)
     return boardTableEffect(
       tableLayer,
-      table => table.rows.insert(row).pipe(Effect.as(row)),
+      table =>
+        table.rows.insert(row).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              listeners.forEach(listener => listener(row))
+            })
+          ),
+          Effect.as(row),
+        ),
     )
   }
   const registrations = boardChannels.map(channel =>
@@ -177,8 +225,13 @@ export const makeCoordinationBoardHost = (options: {
       target: channel,
       schema: CoordinationBoardPayloadSchema,
       sourceClasses: ["static-source", "predicate-eligible"],
-      stream: boardRows(tableLayer, channel),
-      append: payload => append(channel, payload).pipe(Effect.asVoid),
+      stream: boardRows(tableLayer, channel, liveRows),
+      append: payload =>
+        // agent-coordination-patterns-experiment.BOARD.5
+        normalizeCoordinationBoardPayload(payload).pipe(
+          Effect.flatMap(normalized => append(channel, normalized)),
+          Effect.asVoid,
+        ),
     })
   )
 

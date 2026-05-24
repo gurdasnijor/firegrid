@@ -10,30 +10,43 @@ components:
       2: Each run records the selected scenarios and runs every selected arm against every selected scenario.
       3: Scenario artifacts include the scenario id, hypothesis, task packet, and expected divergence signal.
       4: Event-driven scenarios inject inbound signals onto real Firegrid coordination channels while participant sessions are running.
+      5: Scenario task packets are self-contained or refer only to data injected through Firegrid channels; they do not require participant filesystem, shell, or repository access.
+      6: Default scenario final artifacts are deliberately bounded so the experiment measures coordination behavior rather than long-form drafting latency.
+      7: Event-driven task packets name the inbound work identifiers agents should wait for so current scalar-match channel waits can collect deterministic evidence.
   ARMS:
     requirements:
       1: Every arm runs the same task packet and records the task packet in its artifact directory.
       2: The single-agent arm starts exactly one participant session for the task.
       3: The central-orchestrator arm requires the manager participant to delegate with session_new, session_prompt, and wait_for over session.agent_output rather than driver-created worker sessions.
       4: The choreography arm requires peer participants to discover and coordinate through durable board channels rather than central driver assignment.
+      5: The single-agent arm may read inbound board rows needed by the task but writes only coordination.final; additional board chatter would contaminate the coordination-overhead baseline.
+      6: The central-orchestrator arm creates at least two child sessions with distinct assignments before publishing its final artifact.
+      7: The choreography arm publishes durable claim and finding or review rows before publishing a final artifact.
   BOARD:
     requirements:
       1: The experiment board declares typed coordination channels for work, claims, findings, questions, reviews, and final artifacts.
       2: Claim rows include run id, arm, work id, claim id, claimant session id, observed cursor, status, and timestamp.
       3: Winning claims are derived from durable append order rather than from model prose.
       4: The driver injects board events and waits for final artifacts through Firegrid's public client channel facade over the registered board channels, not by writing durable board tables directly.
+      5: Board channels normalize JSON-object strings from agent tool calls into typed board rows while preserving typed object appends from client code.
+      6: The board host stamps run id, arm, and channel from the active experiment context; agent payloads cannot override those routing fields.
+      7: Board channel waits observe both durable row replay and same-process live appends so active waits do not miss rows written through another channel binding materialization.
   ARTIFACTS:
     requirements:
       1: Each arm writes session output, execution metadata, trace path, prompt, and summary artifacts.
       2: The scorer reads Firegrid-native artifacts such as trace JSONL, tool-call spans, permission spans, session output, and board rows.
       3: The finding compiler produces a Markdown report that separates generic coordination conclusions from Firegrid-specific implementation findings.
       4: Score and finding outputs group rows by scenario and arm so divergence is visible without inspecting per-arm directories.
+      5: "Score and finding outputs expose coordination shape metrics: session count, output count, board row count, per-channel board counts, span count, tool-call count, and trace error count."
   EXECUTION:
     requirements:
       1: The live harness composes a real Firegrid host and drives participant sessions through Firegrid's public client/session surfaces rather than tiny-firegrid-specific runner APIs.
       2: Fixture or simulation runners may be added for regression coverage, but the headline experiment path uses real participant runtimes.
       3: CLI subprocess runs may be used as external smoke tests, but the primary experiment runner does not shell out to the Firegrid CLI.
       4: An arm only completes successfully after a `coordination.final` row is observed through `Firegrid.channels.waitFor`; missing final artifacts are reported as arm failures.
+      5: Permission or unavailable-tool failures are recorded as experiment evidence instead of being hidden by driver-side fallback behavior.
+      6: Participant output collection waits until a terminal output event or the arm timeout; a temporary quiet window is not treated as task completion.
+      7: Participant start lifecycles run concurrently with final-artifact waiting so experiment completion is determined by the public channel artifact, not by process teardown.
 
 constraints:
   NO_PRIVATE_COORDINATION:

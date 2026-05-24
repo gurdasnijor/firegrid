@@ -20,6 +20,8 @@ should run through Firegrid's public session/tool/trace surfaces.
   `coordination.questions`, `coordination.reviews`, and `coordination.final`.
 - Treats `coordination.final` as the completion contract for each arm; an arm
   that produces prose but no final board artifact is marked failed.
+- Uses self-contained task packets for the default scenarios, so participants
+  do not need shell, filesystem, or repository access to complete the task.
 - Writes per-arm execution metadata, prompt, session output, board rows, trace
   path, and summary JSON.
 - Scores trace artifacts for basic correctness and overhead signals.

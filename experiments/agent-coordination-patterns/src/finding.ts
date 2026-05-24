@@ -31,7 +31,11 @@ export const compileFinding = async (runDir: string): Promise<void> => {
       .map(scenario => [scenario.id, scenario]),
   )
   const rows = scoresPayload.scores.map(score =>
-    `| ${scenarioLabel(scenarioById.get(score.scenarioId ?? ""), score.scenarioId)} | ${score.arm} | ${score.summary?.status ?? "unknown"} | ${score.summary?.durationMs ?? 0} | ${score.trace?.spans ?? 0} | ${score.trace?.errorSpans ?? 0} | ${score.trace?.toolsCallSpans ?? 0} |`,
+    // agent-coordination-patterns-experiment.ARTIFACTS.5
+    `| ${scenarioLabel(scenarioById.get(score.scenarioId ?? ""), score.scenarioId)} | ${score.arm} | ${score.summary?.status ?? "unknown"} | ${score.summary?.durationMs ?? 0} | ${score.summary?.sessionCount ?? 0} | ${score.summary?.outputCount ?? 0} | ${score.board?.rows ?? 0} | ${score.trace?.spans ?? 0} | ${score.trace?.errorSpans ?? 0} | ${score.trace?.clientClosedSpans ?? 0} | ${score.trace?.toolsCallSpans ?? 0} |`,
+  )
+  const boardRows = scoresPayload.scores.map(score =>
+    `| ${scenarioLabel(scenarioById.get(score.scenarioId ?? ""), score.scenarioId)} | ${score.arm} | ${Object.entries(score.board?.byChannel ?? {}).map(([channel, count]) => `${channel}:${count}`).join(", ") || "none"} |`,
   )
   const blocked = scoresPayload.scores.filter(score => score.summary?.status === "blocked")
   await writeFile(
@@ -57,9 +61,15 @@ export const compileFinding = async (runDir: string): Promise<void> => {
       "",
       "## Arm Summary",
       "",
-      "| Scenario | Arm | Status | Duration ms | Spans | Trace errors | Tool-call spans |",
-      "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+      "| Scenario | Arm | Status | Duration ms | Sessions | Outputs | Board rows | Spans | Trace errors | Client closed | Tool-call spans |",
+      "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
       ...rows,
+      "",
+      "## Board Rows By Channel",
+      "",
+      "| Scenario | Arm | Channels |",
+      "| --- | --- | --- |",
+      ...boardRows,
       "",
       "## Initial Interpretation",
       "",
