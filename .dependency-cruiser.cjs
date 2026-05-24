@@ -409,8 +409,11 @@ module.exports = {
       name: "runtime-no-client-sdk-or-cli",
       severity: "error",
       comment:
-        "The runtime package must not import the browser/app-facing client-sdk package or the CLI package.",
-      from: { path: "^packages/runtime/src" },
+        "The runtime package must not import the browser/app-facing client-sdk package or the CLI package. Carve-out: `runtime/src/bin/**` is the runtime-owned process composition tier introduced by the Shape C cutover (formerly @firegrid/cli's responsibility). It sits above runtime substrate AND above client-sdk, composing both into the firegrid run/start/acp binaries; the thin @firegrid/cli launcher subprocesses into it. This is a binary boundary, not a substrate-import.",
+      from: {
+        path: "^packages/runtime/src",
+        pathNot: "^packages/runtime/src/bin/",
+      },
       to: { path: "^packages/(client-sdk|cli)/src" },
     },
     {

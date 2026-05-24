@@ -984,6 +984,64 @@ export default tseslint.config(
     },
   },
   {
+    // Shape C cutover binary boundary: `packages/runtime/src/bin/**` is the
+    // runtime-owned process composition tier (formerly @firegrid/cli's
+    // responsibility). It sits ABOVE both runtime substrate AND client-sdk,
+    // composing both into the firegrid run/start/acp binaries. The thin
+    // @firegrid/cli launcher subprocesses into it. Override the
+    // runtime-wide no-restricted-imports block so the bin entries may:
+    //   - reach the public `@firegrid/client-sdk/firegrid` facade for
+    //     sessions.createOrLoad (the same dispatch path public clients use);
+    //   - reach the local-dev `@durable-streams/server` fallback for
+    //     `firegrid run` when DURABLE_STREAMS_BASE_URL is absent (tf-yxdd
+    //     disposition (a)).
+    // host-sdk / cli / lab / types restrictions still apply.
+    files: ["packages/runtime/src/bin/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            restrictedInternalPackage(
+              "@firegrid/host-sdk",
+              "firegrid-host-sdk.PACKAGE_GRAPH.2: runtime must not import host-sdk. Runtime owns the narrow RuntimeToolUseExecutor capability tag; host-sdk provides the live layer (firegrid-host-sdk.TOOL_EXECUTOR_SEAM).",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/cli",
+              "firegrid-host-sdk.PACKAGE_GRAPH.5: no package may import the CLI binding.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/lab",
+              "Runtime must not depend on the lab app.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/types",
+              "Runtime owns its lifecycle/config types only; do not introduce a shared types package.",
+            ),
+          ],
+          patterns: [
+            ...legacyDurableAgentSubstrateImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
+            {
+              group: [
+                "apps/*",
+                "apps/*/*",
+                "../apps/*",
+                "../apps/*/*",
+                "../../apps/*",
+                "../../apps/*/*",
+                "../../../apps/*",
+                "../../../apps/*/*",
+              ],
+              message:
+                "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: reusable packages must not import workspace apps.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // firegrid-host-sdk.PACKAGE_GRAPH.4 / .5: host-sdk is a sibling
     // projection over @firegrid/protocol and may compose @firegrid/runtime,
     // but must not import the client-sdk session plane or the CLI binding.

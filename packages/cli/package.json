@@ -32,15 +32,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@durable-streams/server": "^0.3.1",
-    "@effect/cli": "^0.75.1",
-    "@effect/platform": "^0.96.1",
-    "@effect/platform-node": "^0.106.0",
-    "@firegrid/client-sdk": "workspace:*",
-    "@firegrid/host-sdk": "workspace:*",
-    "@firegrid/observability": "workspace:*",
-    "@firegrid/protocol": "workspace:*",
-    "effect": "^3.21.2"
+    "tsx": "^4.20.4"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

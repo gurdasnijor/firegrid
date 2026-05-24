@@ -105,7 +105,7 @@ import {
   type HostId,
   type HostSessionId,
 } from "@firegrid/protocol/launch"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { RuntimeHostConfig } from "./runtime-host-config.ts"
 import {
@@ -399,6 +399,39 @@ const localHostIdForNamespace = (namespace: string): HostId => {
   const sanitized = namespace.replaceAll(".", "_")
   return Schema.decodeUnknownSync(HostIdSegmentSchema)(`${sanitized}-host`)
 }
+
+// firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+//
+// `RuntimeHostTopologyFromConfig` is the env-derived `RuntimeHostTopologyOptions`
+// shape that `firegrid:host` consumes. Host identity is NOT an env knob:
+// `FiregridLocalHostLive` derives the host id deterministically from the
+// namespace. Multi-host topologies bypass this Config entirely and supply
+// `hostId` at the programmatic composition boundary via
+// `FiregridRuntimeHostLive`.
+export const RuntimeHostTopologyFromConfig = Config.all({
+  durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
+  namespace: Config.string("FIREGRID_RUNTIME_NAMESPACE"),
+  input: Config.boolean("FIREGRID_RUNTIME_INPUT_ENABLED").pipe(
+    Config.withDefault(false),
+  ),
+  token: Config.option(Config.redacted("FIREGRID_DURABLE_STREAMS_TOKEN")),
+}).pipe(
+  Config.map(({ durableStreamsBaseUrl, namespace, input, token }) => {
+    const headers = Option.match(token, {
+      onNone: () => undefined,
+      onSome: (redacted) => ({
+        Authorization: () => `Bearer ${Redacted.value(redacted)}`,
+      }) satisfies DurableTableHeaders,
+    })
+    return {
+      durableStreamsBaseUrl,
+      namespace,
+      input,
+      ...(headers !== undefined ? { headers } : {}),
+    }
+  }),
+)
 
 export const FiregridLocalHostLive = (
   options: {
