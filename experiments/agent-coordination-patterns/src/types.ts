@@ -1,3 +1,5 @@
+import type { RuntimeAgentOutputObservation } from "@firegrid/client-sdk/firegrid"
+
 export type ExperimentArm = "single" | "central" | "choreography"
 
 export interface ParticipantRuntime {
@@ -18,11 +20,20 @@ export interface RunOptions {
 
 export interface ArmCommandArtifact {
   readonly arm: ExperimentArm
-  readonly command: ReadonlyArray<string>
-  readonly cwd: string
+  readonly runner: "client-host"
+  readonly durableStreamsBaseUrl: string
+  readonly namespace: string
   readonly tracePath: string
   readonly promptPath: string
   readonly startedAt: string
+}
+
+export interface ArmSessionArtifact {
+  readonly role: string
+  readonly sessionId: string
+  readonly contextId: string
+  readonly outputCount: number
+  readonly outputs: ReadonlyArray<RuntimeAgentOutputObservation>
 }
 
 export interface ArmSummary {
@@ -30,10 +41,10 @@ export interface ArmSummary {
   readonly status: "completed" | "failed" | "blocked"
   readonly startedAt: string
   readonly finishedAt: string
-  readonly exitCode?: number
-  readonly signal?: string
   readonly durationMs: number
   readonly reason?: string
+  readonly sessionCount?: number
+  readonly outputCount?: number
 }
 
 export interface TraceScore {

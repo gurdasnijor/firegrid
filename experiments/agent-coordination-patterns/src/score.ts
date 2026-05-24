@@ -14,7 +14,7 @@ const parseTraceLine = (line: string): unknown | undefined => {
 const textOf = (value: unknown): string =>
   JSON.stringify(value)
 
-export const scoreTrace = async (tracePath: string): Promise<TraceScore> => {
+const scoreTrace = async (tracePath: string): Promise<TraceScore> => {
   const text = await readFile(tracePath, "utf8").catch(() => "")
   const lines = text.split(/\r?\n/u).filter(Boolean)
   let errorSpans = 0
