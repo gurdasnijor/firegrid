@@ -167,7 +167,7 @@ substrate's actual contract.
 |---|---|---|
 | Identity-keyed input dedup | `RuntimeContextEventState.processedInputIds` (new field) | Replaces `lastProcessedInputSequence`; current sequence-keyed gate at `subscribers/runtime-context/handler.ts:103-120` rewrites |
 | Input source | `RuntimeContextInputFacts.forContext(contextId)` | Already exists (`tables/runtime-context-input-facts.ts`); no new file |
-| Loop body | `runKeyedDispatch({source, handle})` | Already exists (`runtime-keyed-subscriber/keyed-dispatch.ts`); composition site lands in `composition/host-live.ts` |
+| Loop body | `runKeyedDispatch({source, handle})` | Already exists (`subscribers/keyed-dispatch/keyed-dispatch.ts`); composition site lands in `composition/host-live.ts` |
 | Handler | `handleRuntimeContextEvent` | Already exists (`subscribers/runtime-context/handler.ts`); inputs branch rewrites |
 | Body (deletes) | `workflow-engine/workflows/runtime-context.ts:686-706` | `Workflow.make` + `Layer.scopedDiscard` block |
 | Body driver (deletes) | `host/internal/runtime-context-host-start.ts` | Whole file (10 PARK entries) |
@@ -196,7 +196,7 @@ Import-baseline shrinkage expected post-D-A under Shape (b):
 - `packages/runtime/src/tables/runtime-context-input-facts.ts:18-37`
   (`RuntimeContextInputFactsLive` — the typed source; explicitly drops
   sequence allocator)
-- `packages/runtime/src/runtime-keyed-subscriber/keyed-dispatch.ts:15-25`
+- `packages/runtime/src/subscribers/keyed-dispatch/keyed-dispatch.ts:15-25`
   (`runKeyedDispatch` invariants — Shape-neutral loop primitive)
 - CC2 dispatch inventory (2026-05-23) — Wave D-A deletion bundle + Shape
   (a)/(b) decision matrix.

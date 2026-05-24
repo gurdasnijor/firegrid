@@ -9,7 +9,7 @@
 //   })
 //
 // `runKeyedDispatch` is the production primitive at
-// `packages/runtime/src/runtime-keyed-subscriber/keyed-dispatch.ts`. It owns
+// `packages/runtime/src/subscribers/keyed-dispatch/keyed-dispatch.ts`. It owns
 // per-key FIFO via a per-key mutex and cross-key concurrency via the bounded
 // `Stream.mapEffect`. No `WorkflowEngine` requirement is added — Shape C
 // purity per `keyed-dispatch.ts:18-25`.
@@ -20,7 +20,7 @@
 // `shape-c-non-recursive-start/probe.test.ts` driver pattern.
 
 import { Stream, type Effect } from "effect"
-import { runKeyedDispatch } from "@firegrid/runtime/runtime-keyed-subscriber"
+import { runKeyedDispatch } from "@firegrid/runtime/subscribers/keyed-dispatch"
 import {
   inputFactsForContext,
   outputsForContext,

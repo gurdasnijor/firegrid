@@ -18,7 +18,7 @@ splits land when a new entry point or dispatch axis needs an explicit seam.
 Reserved public subpath: `@firegrid/runtime/subscribers/runtime-context`. The
 subpath is reserved, not yet wired in `package.json` exports — host-sdk
 consumers do not depend on the handler directly today (composition wires it
-into `runtime-keyed-subscriber` dispatch).
+into `subscribers/keyed-dispatch`).
 
 Import boundary (Shape C, per
 `docs/architecture/2026-05-22-runtime-physical-target-tree.md`):
@@ -31,5 +31,5 @@ Import boundary (Shape C, per
   `agentInputEventFromRuntimeIngressRow`
 - `subscribers/runtime-context-session` — session-command sink tag
 
-The fact-matrix dispatch primitive (`runtime-keyed-subscriber/`) wires this
+The fact-matrix dispatch primitive (`subscribers/keyed-dispatch/`) wires this
 handler to its keyed event source.

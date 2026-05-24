@@ -1,4 +1,4 @@
-// runtime-keyed-subscriber: the minimal subscriber-runtime helper for Shape C
+// subscribers/keyed-dispatch: the minimal subscriber-runtime helper for Shape C
 // keyed handlers. Drives per-event handler materializations from a tail source
 // with in-key serialization (via a per-key mutex) and cross-key concurrency.
 //
@@ -9,8 +9,9 @@
 // source and supply the keyed handler.
 //
 // This module is internal infrastructure, exported via the
-// `@firegrid/runtime/runtime-keyed-subscriber` subpath. It is NOT part of the
-// broad `@firegrid/runtime` public surface.
+// `@firegrid/runtime/subscribers/keyed-dispatch` subpath. The previous
+// `@firegrid/runtime/runtime-keyed-subscriber` subpath is a compatibility
+// alias to this file until external simulations fully retarget.
 
 export {
   makePerKeyMutex,

@@ -16,7 +16,7 @@ import {
   makePerKeyMutex,
   runKeyedDispatch,
   type KeyedEvent,
-} from "../../src/runtime-keyed-subscriber/index.ts"
+} from "../../../src/subscribers/keyed-dispatch/index.ts"
 
 interface ConcurrencyObservation {
   readonly activePerKey: Record<string, number>

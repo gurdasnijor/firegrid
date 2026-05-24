@@ -40,6 +40,7 @@ Current subscriber folders:
 
 | Folder | Shape | Notes |
 |---|---|---|
+| `keyed-dispatch/` | C infrastructure | per-key serialization helper for Shape C subscribers |
 | `projections/` | B | read-only consumers |
 | `runtime-context/` | C | stateful per-event RuntimeContext handler |
 | `runtime-context-session/` | C | codec-session command-sink (`RuntimeContextWorkflowSession`) |
@@ -104,12 +105,14 @@ Wave 2 moves:
 - `workflow-engine/workflows/wait-for.ts` → `subscribers/wait-router/` ✅ done
 - `workflow-engine/workflows/scheduled-prompt.ts` → `subscribers/scheduled-prompt/` ✅ done
 - `workflow-engine/workflows/runtime-control-request.ts` → `subscribers/runtime-control/` ✅ done
+- `runtime-keyed-subscriber/` → `subscribers/keyed-dispatch/` ✅ done
 
 Reserved public subpaths (Wave 2 export targets):
 
 ```text
 @firegrid/runtime/subscribers/runtime-context
 @firegrid/runtime/subscribers/runtime-context-session
+@firegrid/runtime/subscribers/keyed-dispatch
 ```
 
 `runtime-context-session/index.ts` already ships as the Wave 1 forward-target
