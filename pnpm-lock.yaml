@@ -57,6 +57,37 @@ importers:
         specifier: ^8.59.2
         version: 8.59.2(eslint@10.3.0(jiti@2.7.0))(typescript@5.9.3)
 
+  experiments/agent-coordination-patterns:
+    dependencies:
+      '@durable-streams/server':
+        specifier: ^0.3.1
+        version: 0.3.1(@tanstack/db@0.6.6(typescript@5.9.3))
+      '@firegrid/client-sdk':
+        specifier: workspace:*
+        version: link:../../packages/client-sdk
+      '@firegrid/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
+      '@firegrid/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@firegrid/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
+      effect-durable-operators:
+        specifier: workspace:*
+        version: link:../../packages/effect-durable-operators
+    devDependencies:
+      tsx:
+        specifier: ^4.20.4
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/cli:
     dependencies:
       tsx:

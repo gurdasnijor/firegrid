@@ -11,17 +11,19 @@ should run through Firegrid's public session/tool/trace surfaces.
 
 - Creates a run directory under `.firegrid/agent-coordination-patterns/runs/`.
 - Records the shared task packet.
-- Runs the live single-agent and central-orchestrator arms through
-  `pnpm firegrid -- run`.
-- Writes per-arm command metadata, prompt, stdout, stderr, trace path, and
-  summary JSON.
+- Composes a real `FiregridLocalHostLive` in-process for each arm and drives
+  sessions through `@firegrid/client-sdk`.
+- Registers the choreography board as real Firegrid MCP channels:
+  `coordination.work`, `coordination.claims`, `coordination.findings`,
+  `coordination.questions`, `coordination.reviews`, and `coordination.final`.
+- Writes per-arm execution metadata, prompt, session output, board rows, trace
+  path, and summary JSON.
 - Scores trace artifacts for basic correctness and overhead signals.
 - Compiles a Markdown finding from the recorded artifacts.
 
-The choreography arm is specified but gated until the typed board channels are
-registered in the Firegrid host. That is deliberate:
-`agent-coordination-patterns-experiment.NO_PRIVATE_COORDINATION.1` forbids
-silently replacing durable channel coordination with a private file board.
+The prompt templates are the experimental treatment. They tell each arm what
+coordination pattern to use; they do not replace Firegrid session, channel, or
+client execution.
 
 ## Run
 
@@ -31,11 +33,11 @@ From the repo root:
 pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts init
 ```
 
-Then run the currently executable live arms:
+Then run the live arms:
 
 ```bash
 pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts run \
-  --arms single,central \
+  --arms single,central,choreography \
   --task .firegrid/agent-coordination-patterns/latest/task.md
 ```
 

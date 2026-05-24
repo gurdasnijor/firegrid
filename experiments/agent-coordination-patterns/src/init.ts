@@ -1,6 +1,6 @@
 import path from "node:path"
 import { writeFile } from "node:fs/promises"
-import { boardChannelStatus } from "./board.ts"
+import { boardChannels } from "./board.ts"
 import { ensureRunDir, makeRunId, writeJson } from "./files.ts"
 import { defaultTaskPacket } from "./task.ts"
 
@@ -14,7 +14,11 @@ export const initRun = async (): Promise<void> => {
     runId,
     taskPath,
     createdAt: new Date().toISOString(),
-    board: boardChannelStatus,
+    board: {
+      "agent-coordination-patterns-experiment.BOARD.1": true,
+      status: "registered-by-live-harness",
+      channels: boardChannels,
+    },
   })
   console.log(runDir)
 }

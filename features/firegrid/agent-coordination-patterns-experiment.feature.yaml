@@ -17,13 +17,14 @@ components:
       3: Winning claims are derived from durable append order rather than from model prose.
   ARTIFACTS:
     requirements:
-      1: Each arm writes stdout, stderr, command metadata, trace path, prompt, and summary artifacts.
+      1: Each arm writes session output, execution metadata, trace path, prompt, and summary artifacts.
       2: The scorer reads Firegrid-native artifacts such as trace JSONL, tool-call spans, permission spans, session output, and board rows.
       3: The finding compiler produces a Markdown report that separates generic coordination conclusions from Firegrid-specific implementation findings.
   EXECUTION:
     requirements:
-      1: The live harness uses Firegrid's public CLI/client/session surfaces rather than tiny-firegrid-specific runner APIs.
+      1: The live harness composes a real Firegrid host and drives participant sessions through Firegrid's public client/session surfaces rather than tiny-firegrid-specific runner APIs.
       2: Fixture or simulation runners may be added for regression coverage, but the headline experiment path uses real participant runtimes.
+      3: CLI subprocess runs may be used as external smoke tests, but the primary experiment runner does not shell out to the Firegrid CLI.
 
 constraints:
   NO_PRIVATE_COORDINATION:
