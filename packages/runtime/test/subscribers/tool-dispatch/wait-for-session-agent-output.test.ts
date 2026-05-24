@@ -2,6 +2,8 @@ import { Prompt, Response } from "@effect/ai"
 import {
   makeIngressChannel,
   SessionAgentOutputChannelTarget,
+  SessionSelfLifecycleChannelTarget,
+  SessionSelfLifecycleEventSchema,
   type SessionAgentOutputChannelService,
 } from "@firegrid/protocol/channels"
 import { FiregridRuntimeObservationSourceNames } from "@firegrid/protocol/observations"
@@ -14,6 +16,7 @@ import { describe, expect, it } from "vitest"
 import {
   RuntimeChannelRouter,
   makeRuntimeChannelRouter,
+  runtimeRouteFromChannel,
   sessionAgentOutputObservationRoute,
 } from "../../../src/channels/index.ts"
 import {
@@ -125,6 +128,71 @@ describe("agent wait_for over session.agent_output", () => {
         contextId: "ctx-child",
         sequence: 0,
         _tag: "TextChunk",
+      },
+    })
+  })
+
+  it("firegrid-agent-body-plan.WAIT_FOR_CHANNEL.3 waits on registered runtime route streams with dotted scalar matches", async () => {
+    const lifecycle = makeIngressChannel({
+      target: SessionSelfLifecycleChannelTarget,
+      schema: SessionSelfLifecycleEventSchema,
+      sourceClass: "static-source",
+      stream: Stream.fromIterable([
+        {
+          channel: "session.self.lifecycle" as const,
+          event: {
+            runEventId: {
+              contextId: "ctx-child",
+              activityAttempt: 1,
+              status: "exited" as const,
+            },
+            contextId: "ctx-child",
+            activityAttempt: 1,
+            status: "exited" as const,
+            at: "2026-05-24T00:00:00.000Z",
+            provider: "local-process" as const,
+            exitCode: 0,
+          },
+        },
+      ]),
+    })
+    const result = await Effect.runPromise(
+      toolUseToEffect(
+        { contextId: "ctx-parent" },
+        {
+          _tag: "ToolUse",
+          part: Prompt.toolCallPart({
+            id: "tool-wait-lifecycle",
+            name: "wait_for",
+            params: {
+              channel: "session.self.lifecycle",
+              match: { "event.status": "exited" },
+              timeoutMs: 1_000,
+            },
+            providerExecuted: false,
+          }),
+        },
+      ).pipe(
+        Effect.provide(Layer.mergeAll(
+          Layer.succeed(
+            RuntimeChannelRouter,
+            makeRuntimeChannelRouter([runtimeRouteFromChannel(lifecycle)]),
+          ),
+          unusedToolDeps,
+        )),
+      ),
+    )
+
+    expect(result.part.isFailure).toBe(false)
+    expect(result.part.result).toMatchObject({
+      matched: true,
+      event: {
+        channel: "session.self.lifecycle",
+        event: {
+          contextId: "ctx-child",
+          status: "exited",
+          exitCode: 0,
+        },
       },
     })
   })
