@@ -1,8 +1,8 @@
 # agent-coordination-readiness — readiness smoke (PR #738 / #703 stack)
 
-**Verdict: GREEN on the load-bearing assertion (step 5).** Steps 1 and 3 are
-documented YELLOW; the remaining checklist steps are GREEN through real
-production primitives.
+**Verdict: GREEN on the load-bearing assertion (step 5).** Step 3 is
+documented YELLOW (surrogate, see below); the remaining checklist steps
+are GREEN through real production primitives.
 
 ## Scope
 
@@ -14,21 +14,23 @@ production primitives.
   via `sessionAgentOutputObservationRoute(sessionAgentOutput)` in
   `packages/runtime/src/channels/host-control-routes.ts:113`.
 - Does NOT prove: in-session `session_new` agent-tool execution. The child
-  spawn here is an OUTER-DRIVER surrogate. CC6 will fix
-  `RuntimeAgentToolExecutionLive` in runtime composition; the matching
-  second smoke (planner emits `session_new`, runtime executes it) belongs
-  with that PR.
-- Does NOT prove: runtime-bin binary surface. The host is composed
-  in-process via `FiregridLocalHostLive`, which is the same `FiregridRuntimeHostLive`
-  the runtime-bin will compose once CC6 lands.
+  spawn here is an OUTER-DRIVER surrogate. CC6 landed the runtime composition
+  fix (`RuntimeAgentToolExecutionLive` + `HostRuntimeObservationStreamsLive`,
+  commit `91ed12b77`); the matching second smoke (planner emits `session_new`,
+  runtime executes it) is now unblocked and is the next sidecar PR.
+- Does NOT exercise the runtime-bin entry as a subprocess. The host is
+  composed in-process via `FiregridLocalHostLive` — the same Layer graph
+  that `packages/runtime/src/bin/run.ts` composes (landed by CC6 in
+  commit `c0b51fc64`). The runtime-bin entry itself was validated by a
+  separate CC6 local smoke (`pnpm firegrid -- run -- node -e ...` exited 0).
 
 ## Readiness matrix
 
 | # | Step | Status | Evidence |
 |---|------|--------|----------|
-| 1 | Host composed in-process | YELLOW | `agentCoordinationReadinessHost` mirrors what `packages/runtime/src/bin/{run,host,acp}.ts` will compose. Bin surfaces don't exist yet (CC6). `it.skip` with disclosure. |
+| 1 | Runtime-owned host bring-up | GREEN | `packages/runtime/src/bin/{run,host}.ts` exists on stack head (CC6 `c0b51fc64`); CC6's local smoke `pnpm firegrid -- run -- node -e ...` exited 0. This sim composes the same `FiregridLocalHostLive` topology in-process; a subprocess-shaped assertion of the bin entry from inside vitest is a separate follow-up scope. `it.skip` with disclosure. |
 | 2 | Planner createOrLoad + start | GREEN | Public `firegrid.sessions.createOrLoad` → `host.sessions.create_or_load` router target → planner handle. |
-| 3 | Child session spawn | YELLOW (GREEN-surrogate) | Same router target as planner-emitted `session_new`, driven from outer driver. Real `session_new` tool-call path blocked on CC6. |
+| 3 | Child session spawn | YELLOW (GREEN-surrogate) | Same router target as planner-emitted `session_new`, driven from outer driver. Real `session_new` tool-call path now unblocked by CC6 `91ed12b77`; follow-up smoke pending. |
 | 4 | Child agent emits TextChunk | GREEN | Deterministic `stdio-jsonl` fixture agent (`node -e <inline script>`) emits one JSONL `text` event; codec translates to `TextChunk`. |
 | 5a | Observation via `handle.wait.forAgentOutput` | GREEN | Public client method returns the `TextChunk` observation. |
 | 5b | Observation via `HostPlaneChannelRouter.dispatch` | GREEN (LOAD-BEARING) | Direct router-mediated `wait_for` on `session.agent_output` returns the SAME `sequence` as 5a. |
@@ -90,13 +92,22 @@ repaired.
 
 ## Follow-up
 
-A second smoke must land WITH CC6 (`RuntimeAgentToolExecutionLive` fix in
-runtime composition) that drives `session_new` through real agent-tool
-execution: a planner subprocess emits a `tool_use` JSONL line for
-`session_new`, the runtime executes the tool, and the child session
-materializes through the same `host.sessions.create_or_load` router target.
-The observation half (step 5) stays identical; what changes is the SPAWN
-provenance — planner-emitted vs outer-driver-emitted.
+CC6 landed the runtime composition fix (`91ed12b77`) that provides
+`RuntimeAgentToolExecutionLive` + `HostRuntimeObservationStreamsLive` in
+the runtime-context subscriber bundle. The follow-up second smoke is now
+unblocked:
+
+- a planner subprocess emits a `tool_use` JSONL line for `session_new`,
+  the runtime executes the tool, the child session materializes through
+  the same `host.sessions.create_or_load` router target. Step 5 stays
+  identical; what changes is the SPAWN provenance — planner-emitted vs
+  outer-driver-emitted.
+
+Optional second follow-up (separate scope decision): a vitest assertion
+that subprocess-launches `pnpm firegrid -- run -- node -e ...` and asserts
+exit 0, converting step 1 from "documented GREEN" to "executable GREEN"
+inside this sim's harness. CC6 already ran this externally; the question
+is whether to re-prove it from inside the readiness suite.
 
 ## What this is NOT
 
