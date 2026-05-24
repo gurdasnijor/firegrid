@@ -26,6 +26,7 @@ the surfaces below exists and is documented here:
 | [`channels/`](./channels/README.md) | wire-edge capability boundary (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
 | [`subscribers/`](./subscribers/README.md) | keyed subscribers — Shape B/C/D recorded in folder READMEs. | 6 |
 | [`composition/`](./composition/README.md) | runtime-local layer-graph wiring + topology checks. | 7 |
+| [`bin/`](./bin/) | runtime-owned daemon/process entrypoints (`firegrid run`, `firegrid start`, `firegrid acp`); outside pipeline order and may compose public client + runtime host surfaces. | — |
 | [`_archive/`](./_archive/DEPRECATED.md) | time-boxed holding pen for wrong-shape code pending deletion. | — |
 
 Folder names are semantic. Numeric prefixes are forbidden at the runtime
@@ -131,7 +132,7 @@ These are intentionally not agent event-pipeline stages:
   through `@firegrid/runtime/composition/host-workflow-engine`'s
   `HostWorkflowEngineLive` Layer. The legacy `kernel/` folder retired in
   the tf-z8wq Wave 2 mechanical move (`RuntimeHostConfig` →
-  `composition/runtime-host-config.ts`;
+  `channels/runtime-host-config.ts`;
   `requireLocalRuntimeContextWithHostSession` →
   `subscribers/runtime-context/host-lookup.ts`).
 - `workflow-engine/`: legacy folder holding the remaining Shape D

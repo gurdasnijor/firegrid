@@ -26,6 +26,7 @@
  * because it depends on `@effect/platform` `HttpServer.addressFormatted`.
  */
 
+import { HttpServer } from "@effect/platform"
 import type { HttpRouter } from "@effect/platform"
 import { Context, Effect, Layer, Option, Ref } from "effect"
 
@@ -45,8 +46,11 @@ export const runtimeContextMcpPath = (
   path: HttpRouter.PathInput,
 ): HttpRouter.PathInput => {
   if (path === "*") return "/runtime-context/:contextId"
-  const normalized = ensurePathInput(path).replace(/\/+$/, "")
-  return `${normalized}/runtime-context/:contextId` as HttpRouter.PathInput
+  const basePath = ensurePathInput(path)
+  const route = basePath.endsWith("/")
+    ? `${basePath.slice(0, -1)}/runtime-context/:contextId`
+    : `${basePath}/runtime-context/:contextId`
+  return route as HttpRouter.PathInput
 }
 
 /**
@@ -60,7 +64,7 @@ export interface FiregridRuntimeContextMcpBase {
   readonly basePath: HttpRouter.PathInput
 }
 
-export interface FiregridRuntimeContextMcpBaseUrlService {
+interface FiregridRuntimeContextMcpBaseUrlService {
   /**
    * The host's bound runtime-context MCP base, or `None` when no MCP
    * listener is mounted in this host. A `None` here with an MCP-marked
@@ -96,13 +100,40 @@ export class FiregridRuntimeContextMcpBaseUrl extends Context.Tag(
  */
 export const FiregridRuntimeContextMcpBaseUrlLive = Layer.effect(
   FiregridRuntimeContextMcpBaseUrl,
-  Effect.gen(function* () {
-    const ref = yield* Ref.make(
-      Option.none<FiregridRuntimeContextMcpBase>(),
-    )
-    return {
+  Ref.make(Option.none<FiregridRuntimeContextMcpBase>()).pipe(
+    Effect.map(ref => ({
       get: Ref.get(ref),
-      publish: (base) => Ref.set(ref, Option.some(base)),
-    }
-  }),
+      publish: (base: FiregridRuntimeContextMcpBase) =>
+        Ref.set(ref, Option.some(base)),
+    })),
+  ),
 )
+
+/**
+ * Scoped publish step for `FiregridMcpServerLayer`. Reads the bound
+ * `HttpServer` address (resolving the OS-chosen port when `port:0`) and
+ * publishes it into the same single-purpose Tag consumed by the codec
+ * session adapter.
+ */
+export const publishRuntimeContextMcpBase = (
+  basePath: HttpRouter.PathInput,
+): Effect.Effect<
+  void,
+  never,
+  HttpServer.HttpServer | FiregridRuntimeContextMcpBaseUrl
+> =>
+  Effect.gen(function* () {
+    const address = yield* HttpServer.addressFormattedWith((addr) =>
+      Effect.succeed(addr),
+    )
+    const service = yield* FiregridRuntimeContextMcpBaseUrl
+    yield* service.publish({ address, basePath }).pipe(
+      Effect.withSpan("firegrid.mcp.publish_runtime_context_base", {
+        kind: "server",
+        attributes: {
+          "firegrid.mcp.bound_address": address,
+          "firegrid.mcp.path": String(basePath),
+        },
+      }),
+    )
+  })

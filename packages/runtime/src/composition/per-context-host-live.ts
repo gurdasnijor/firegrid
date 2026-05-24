@@ -9,16 +9,16 @@ import {
   makePerContextRuntimeAgentOutputAfterEvents,
   makePerContextRuntimeOutputWriter,
   PerContextRuntimeOutputWriter,
-} from "../producers/ingress-writers/per-context-output.ts"
+} from "../tables/per-context-output.ts"
 import { RuntimeAgentOutputAfterEvents } from "../tables/runtime-output-public.ts"
 import {
   makePerContextRuntimeContextStateStore,
   RuntimeContextStateStore,
 } from "../tables/runtime-context-state.ts"
-import { RuntimeHostConfig } from "./runtime-host-config.ts"
+import { RuntimeHostConfig } from "../channels/runtime-host-config.ts"
 
 // tf-bffo: the durable per-context RuntimeOutputTable wiring lives in
-// runtime/producers/ingress-writers/per-context-output.ts. Composition
+// runtime/tables/per-context-output.ts. Composition
 // only RESOLVES the host config + CurrentHostSession and delegates to
 // the runtime factories. Composition owns no durable-state wiring here.
 

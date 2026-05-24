@@ -147,13 +147,9 @@ const eventAlreadyProcessed = (
 
 // Build a deterministic commandId for an outgoing session command. Matches the
 // shape the wrong-shape body used so the host-sdk live session adapter sees
-// stable ids across the cutover (input rows by inputId; tool results by
-// toolUseId).
-const commandIdForInputRow = (
-  contextId: string,
-  row: RuntimeIngressInputRow,
-): string => `runtime-input-${contextId}-${row.inputId}`
-
+// stable ids across the cutover. (Input commandId now lives inline in the
+// RuntimeContextSessionWorkflow body since the workflow owns input dispatch
+// post-#738; ToolResult is the only direct session.send call left here.)
 const commandIdForToolResult = (
   contextId: string,
   activityAttempt: number,

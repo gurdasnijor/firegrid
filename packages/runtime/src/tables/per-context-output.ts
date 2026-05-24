@@ -12,9 +12,9 @@ import {
   encodeRuntimeAgentOutputEnvelope,
   runtimeAgentOutputObservationFromRow,
   type AgentOutputEvent,
-} from "../../events/index.ts"
-import { runtimeContextOutputTableLayerForContext as perContextRuntimeOutputTableLayer } from "../../channels/output-table-layer.ts"
-import type { RuntimeAgentOutputAfterEvents } from "../../tables/runtime-output-public.ts"
+} from "../events/index.ts"
+import { runtimeContextOutputTableLayerForContext as perContextRuntimeOutputTableLayer } from "./output-table-layer.ts"
+import type { RuntimeAgentOutputAfterEvents } from "./runtime-output-public.ts"
 
 // Runtime-side capability Tag wrapping `PerContextRuntimeOutputWriterService`.
 // Hosts provide the Live for this Tag (host-sdk's
@@ -29,7 +29,7 @@ import type { RuntimeAgentOutputAfterEvents } from "../../tables/runtime-output-
 // Live retargets to this Tag in the tf-z8wq-follow runtime-session move
 // (see `subscribers/runtime-context-session/README.md`).
 export class PerContextRuntimeOutputWriter extends Context.Tag(
-  "@firegrid/runtime/producers/PerContextRuntimeOutputWriter",
+  "@firegrid/runtime/tables/PerContextRuntimeOutputWriter",
 )<PerContextRuntimeOutputWriter, PerContextRuntimeOutputWriterService>() {}
 
 // tf-bffo: the durable per-context RuntimeOutputTable wiring lives in the runtime
@@ -37,7 +37,7 @@ export class PerContextRuntimeOutputWriter extends Context.Tag(
 // host-sdk only COMPOSES these factories into Layers by injecting RuntimeHostConfig
 // + CurrentHostSession — it no longer owns the durable-state wiring.
 
-export interface PerContextRuntimeOutputConfig {
+interface PerContextRuntimeOutputConfig {
   readonly durableStreamsBaseUrl: string
   readonly headers?: DurableTableHeaders
 }

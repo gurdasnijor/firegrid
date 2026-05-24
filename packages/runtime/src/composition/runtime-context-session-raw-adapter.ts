@@ -5,14 +5,14 @@ import {
   makeRawRuntimeContextByteSession,
   prepareRawRuntimeContextInput,
   type RuntimeRawByteSession,
-} from "../../producers/codecs/session-byte-stream-adapter.ts"
+} from "../producers/codecs/session-byte-stream-adapter.ts"
 import {
   Effect,
   Scope,
 } from "effect"
 import {
   type RuntimeContextWorkflowSessionService,
-} from "./handler.ts"
+} from "../subscribers/runtime-context-session/handler.ts"
 import {
   makeRuntimeContextSessionAdapterService,
   makeRuntimeContextSessionCommandSender,
@@ -21,7 +21,7 @@ import {
   runtimeContextSessionOwnerSessionId,
   scopedRuntimeContextWorkflowSessionLayer,
   type RuntimeContextSessionAdapterRequirements,
-} from "./adapter-common.ts"
+} from "./runtime-context-session-adapter-common.ts"
 
 const ownerSessionIdFor = (
   context: RuntimeContext,

@@ -13,7 +13,7 @@ import {
 } from "@firegrid/protocol/channels"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { Effect, Stream } from "effect"
-import { runtimeContextOutputTableLayer } from "./output-table-layer.ts"
+import { runtimeContextOutputTableLayer } from "../tables/output-table-layer.ts"
 
 // tf-bffo: the durable SessionAgentOutput channel implementation lives in the
 // runtime (the privileged durable core). host-sdk only COMPOSES it — it resolves

@@ -33,7 +33,7 @@ import { NodeHttpServer } from "@effect/platform-node"
 import { ContextNotFound } from "@firegrid/protocol/launch"
 import {
   RuntimeLocalContextResolver,
-} from "../../../control-plane/index.ts"
+} from "../control-plane/index.ts"
 import { RpcSerialization, RpcServer } from "@effect/rpc"
 import { Config, Effect, Layer, Logger, Option } from "effect"
 // The MCP HTTP server lifetime is Effect-owned via Layer.scopedDiscard
@@ -49,13 +49,13 @@ import {
   FiregridAgentToolkitLayer,
   FiregridPrimitiveProfileToolkit,
   FiregridPrimitiveProfileToolkitLayer,
-} from "../../../subscribers/tool-dispatch/index.ts"
+} from "../subscribers/tool-dispatch/index.ts"
 import {
   enrichRuntimeContextMcpToolsListWithChannelMetadata,
-} from "./channel-metadata.ts"
+} from "./mcp-channel-metadata.ts"
 import {
   publishRuntimeContextMcpBase,
-} from "./base-url.ts"
+} from "./runtime-context-mcp-base-url.ts"
 
 const runtimeContextMcpRouterMaxParamLength = 4096
 

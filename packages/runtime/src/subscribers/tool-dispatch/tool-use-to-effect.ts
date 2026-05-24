@@ -86,8 +86,8 @@ import {
   RuntimeAgentToolExecution,
   type FieldEqualsTrigger,
   type RuntimeAgentToolExecutionError,
-} from "./index.ts"
-import type { RuntimeObservationSource } from "../../streams/index.ts"
+  type RuntimeObservationSource,
+} from "./runtime-agent-tool-execution.ts"
 import type {
   RuntimeChannelRoute,
 } from "../../channels/index.ts"

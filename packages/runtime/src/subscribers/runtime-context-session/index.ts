@@ -24,26 +24,3 @@ export {
   type RuntimeContextSessionStartedEvidence,
   type RuntimeContextWorkflowSessionService,
 } from "./handler.ts"
-
-// Wave (runtime-session move): the raw + codec adapters that build the
-// runtime-context session Live (previously host-sdk-resident at
-// `packages/host-sdk/src/host/runtime-context-session/`) now live here.
-// The two `makeXxxRuntimeContextWorkflowSessionService` factories return
-// `RuntimeContextWorkflowSessionService` values; the two `…Live` Layers
-// bind them to the `RuntimeContextWorkflowSession` Tag. Host-sdk
-// composes them rather than owning the codec/byte-stream wiring itself.
-export {
-  makeRawRuntimeContextWorkflowSessionService,
-  RawRuntimeContextWorkflowSessionLive,
-} from "./raw-adapter.ts"
-export {
-  makeCodecRuntimeContextWorkflowSessionService,
-  CodecRuntimeContextWorkflowSessionLive,
-} from "./codec-adapter.ts"
-export {
-  FiregridRuntimeContextMcpBaseUrl,
-  FiregridRuntimeContextMcpBaseUrlLive,
-  type FiregridRuntimeContextMcpBase,
-  type FiregridRuntimeContextMcpBaseUrlService,
-  runtimeContextMcpPath,
-} from "./host-mcp-base-url.ts"

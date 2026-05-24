@@ -1,4 +1,4 @@
-import { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
+import type { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
 import {
   recordLifecycleTerminalEvidence,
   RuntimeContextRead,
@@ -10,7 +10,7 @@ import { RuntimeContextWorkflowSession } from "../runtime-context-session/handle
 import { RuntimeContextSessionWorkflowDispatch } from "../runtime-context-session-workflow/index.ts"
 import { asRuntimeContextError } from "../../runtime-errors.ts"
 import { Effect, Layer, Option, type Scope } from "effect"
-import { PerContextRuntimeOutputWriter } from "../../producers/ingress-writers/per-context-output.ts"
+import { PerContextRuntimeOutputWriter } from "../../tables/per-context-output.ts"
 
 // Wave D-A Shape (b) cutover (PR #714):
 //

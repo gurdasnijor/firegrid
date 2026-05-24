@@ -48,7 +48,7 @@ import {
 
 // ── Workflow contract ──────────────────────────────────────────────────────
 
-export const RuntimeContextSessionWorkflowPayloadSchema = Schema.Struct({
+const RuntimeContextSessionWorkflowPayloadSchema = Schema.Struct({
   contextId: Schema.String,
   activityAttempt: Schema.Number,
 }).annotations({
@@ -56,11 +56,11 @@ export const RuntimeContextSessionWorkflowPayloadSchema = Schema.Struct({
   title: "RuntimeContextSessionWorkflow payload",
 })
 
-export type RuntimeContextSessionWorkflowPayload = Schema.Schema.Type<
+type RuntimeContextSessionWorkflowPayload = Schema.Schema.Type<
   typeof RuntimeContextSessionWorkflowPayloadSchema
 >
 
-export const RuntimeContextSessionWorkflowSuccessSchema = Schema.Struct({
+const RuntimeContextSessionWorkflowSuccessSchema = Schema.Struct({
   contextId: Schema.String,
   activityAttempt: Schema.Number,
   intentsProcessed: Schema.Number,
@@ -76,7 +76,7 @@ export type RuntimeContextSessionWorkflowSuccess = Schema.Schema.Type<
   typeof RuntimeContextSessionWorkflowSuccessSchema
 >
 
-export const sessionWorkflowKey = (
+const sessionWorkflowKey = (
   contextId: string,
   activityAttempt: number,
 ): string => `${contextId}:${activityAttempt}`
@@ -109,15 +109,28 @@ export class RcswProcessedTable extends DurableTable("firegrid.rcsw.processed", 
   rows: ProcessedIntentRowSchema,
 }) {}
 
+const now = (): string => new Date().toISOString()
+
 const markerKeyFor = (
   contextId: string,
   activityAttempt: number,
   intentId: string,
 ): string => `${contextId}:${activityAttempt}:${intentId}`
 
-// ── Body ───────────────────────────────────────────────────────────────────
+const markIntentProcessed = (
+  processed: RcswProcessedTable["Type"],
+  payload: RuntimeContextSessionWorkflowPayload,
+  intentId: string,
+) =>
+  processed.rows.insertOrGet({
+    markerKey: markerKeyFor(payload.contextId, payload.activityAttempt, intentId),
+    contextId: payload.contextId,
+    activityAttempt: payload.activityAttempt,
+    intentId,
+    processedAt: now(),
+  }).pipe(Effect.orDie)
 
-const now = (): string => new Date().toISOString()
+// ── Body ───────────────────────────────────────────────────────────────────
 
 const sessionBody = (payload: RuntimeContextSessionWorkflowPayload) =>
   Effect.gen(function*() {
@@ -212,8 +225,7 @@ const sessionBody = (payload: RuntimeContextSessionWorkflowPayload) =>
         // caller wanting to re-check terminal). On wake, the body re-runs
         // from the top: spawn Activity is memoized; cursor is re-derived
         // from the processed-markers table.
-        yield* Workflow.suspend(instance)
-        return yield* Effect.never
+        return yield* Workflow.suspend(instance)
       }
 
       const nextIntent = unprocessed[0]!
@@ -232,13 +244,7 @@ const sessionBody = (payload: RuntimeContextSessionWorkflowPayload) =>
             cause: String(decoded.left),
           }),
         )
-        yield* processed.rows.insertOrGet({
-          markerKey: markerKeyFor(payload.contextId, payload.activityAttempt, nextIntent.intentId),
-          contextId: payload.contextId,
-          activityAttempt: payload.activityAttempt,
-          intentId: nextIntent.intentId,
-          processedAt: now(),
-        }).pipe(Effect.orDie)
+        yield* markIntentProcessed(processed, payload, nextIntent.intentId)
         intentsProcessed += 1
         continue
       }
@@ -262,13 +268,7 @@ const sessionBody = (payload: RuntimeContextSessionWorkflowPayload) =>
           }),
         ),
       })
-      yield* processed.rows.insertOrGet({
-        markerKey: markerKeyFor(payload.contextId, payload.activityAttempt, nextIntent.intentId),
-        contextId: payload.contextId,
-        activityAttempt: payload.activityAttempt,
-        intentId: nextIntent.intentId,
-        processedAt: now(),
-      }).pipe(Effect.orDie)
+      yield* markIntentProcessed(processed, payload, nextIntent.intentId)
       intentsProcessed += 1
     }
   }).pipe(

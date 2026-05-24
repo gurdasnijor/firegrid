@@ -35,11 +35,16 @@ const hostLiveImportSection = (() => {
 })()
 
 describe("composition/host-live", () => {
-  it("exposes RuntimeHostLive as the runtime root Layer (and nothing else)", () => {
-    // The composition file is Layer wiring only: it should export a single
-    // `RuntimeHostLive` value. If a new export sneaks in here, behavior is
-    // leaking into the composition boundary.
-    expect(Object.keys(HostLive)).toEqual(["RuntimeHostLive"])
+  it("exposes only the canonical runtime host composition surface", () => {
+    // The composition file is Layer wiring only. Its public surface is the
+    // canonical host composition/root set; behavior must not leak in here.
+    expect(Object.keys(HostLive).sort()).toEqual([
+      "FiregridLocalHostLive",
+      "FiregridRuntimeHostLive",
+      "FiregridRuntimeHostWithWorkflowLive",
+      "RuntimeHostLive",
+      "RuntimeHostTopologyFromConfig",
+    ].sort())
     expect(Layer.isLayer(RuntimeHostLive)).toBe(true)
   })
 
@@ -55,7 +60,7 @@ describe("composition/host-live", () => {
     // carve-outs (engine substrate residing under `workflow-engine/` and
     // the host-config Tag residing under `kernel/`) shrank to deletion:
     // the substrate is at `engine/` and the host-config is at
-    // `composition/runtime-host-config.ts`. There are no allowed
+    // `channels/runtime-host-config.ts`. There are no allowed
     // narrow-file imports from legacy roots from `host-live.ts` anymore.
     const forbiddenSubstrings = [
       "../workflow-engine/",

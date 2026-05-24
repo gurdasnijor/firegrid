@@ -18,8 +18,8 @@
       "default": "./src/channels/index.ts"
     },
     "./per-context-output": {
-      "types": "./src/producers/ingress-writers/per-context-output.ts",
-      "default": "./src/producers/ingress-writers/per-context-output.ts"
+      "types": "./src/tables/per-context-output.ts",
+      "default": "./src/tables/per-context-output.ts"
     },
     "./tool-executor": {
       "types": "./src/subscribers/tool-dispatch/index.ts",
@@ -170,8 +170,12 @@
       "default": "./src/composition/host-workflow-engine.ts"
     },
     "./composition/runtime-host-config": {
-      "types": "./src/composition/runtime-host-config.ts",
-      "default": "./src/composition/runtime-host-config.ts"
+      "types": "./src/channels/runtime-host-config.ts",
+      "default": "./src/channels/runtime-host-config.ts"
+    },
+    "./channels/runtime-host-config": {
+      "types": "./src/channels/runtime-host-config.ts",
+      "default": "./src/channels/runtime-host-config.ts"
     },
     "./composition/sync-run": {
       "types": "./src/composition/sync-run.ts",
@@ -182,12 +186,20 @@
       "default": "./src/transforms/index.ts"
     },
     "./producers/codecs/mcp": {
-      "types": "./src/producers/codecs/mcp/host.ts",
-      "default": "./src/producers/codecs/mcp/host.ts"
+      "types": "./src/composition/mcp-host.ts",
+      "default": "./src/composition/mcp-host.ts"
+    },
+    "./composition/mcp-host": {
+      "types": "./src/composition/mcp-host.ts",
+      "default": "./src/composition/mcp-host.ts"
+    },
+    "./composition/runtime-context-mcp-base-url": {
+      "types": "./src/composition/runtime-context-mcp-base-url.ts",
+      "default": "./src/composition/runtime-context-mcp-base-url.ts"
     },
     "./producers/codecs/mcp/base-url": {
-      "types": "./src/producers/codecs/mcp/base-url.ts",
-      "default": "./src/producers/codecs/mcp/base-url.ts"
+      "types": "./src/composition/runtime-context-mcp-base-url.ts",
+      "default": "./src/composition/runtime-context-mcp-base-url.ts"
     },
     "./producers/codecs/acp/stdio-edge": {
       "types": "./src/producers/codecs/acp/stdio-edge.ts",

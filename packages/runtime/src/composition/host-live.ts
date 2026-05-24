@@ -107,12 +107,12 @@ import {
 } from "@firegrid/protocol/launch"
 import { Clock, Config, Effect, Layer, Option, Redacted, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
-import { RuntimeHostConfig } from "./runtime-host-config.ts"
+import { RuntimeHostConfig } from "../channels/runtime-host-config.ts"
 import {
   type RuntimeHostTopologyOptions,
   RuntimeStartCapabilityLive,
 } from "./host-public.ts"
-import { RuntimeHostAgentToolHostLive } from "../subscribers/tool-dispatch/agent-tool-host-live.ts"
+import { RuntimeHostAgentToolHostLive } from "./agent-tool-host-live.ts"
 import {
   RuntimeControlRequestControlPlaneLive,
 } from "../control-plane/index.ts"
@@ -121,7 +121,7 @@ import {
 } from "../subscribers/runtime-control/index.ts"
 import {
   FiregridRuntimeContextMcpBaseUrlLive,
-} from "../subscribers/runtime-context-session/host-mcp-base-url.ts"
+} from "./runtime-context-mcp-base-url.ts"
 import { RuntimeContextWorkflowSession } from "../subscribers/runtime-context-session/index.ts"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
@@ -144,13 +144,12 @@ import { FiregridLocalProcess } from "../producers/sandbox/local-process-from-en
 import {
   RuntimeControlPlaneRecorderLive,
 } from "../control-plane/index.ts"
-import type { RuntimeLocalContextResolver } from "../control-plane/index.ts"
 import {
   makeCodecRuntimeContextWorkflowSessionService,
-} from "../subscribers/runtime-context-session/codec-adapter.ts"
+} from "./runtime-context-session-codec-adapter.ts"
 import {
   makeRawRuntimeContextWorkflowSessionService,
-} from "../subscribers/runtime-context-session/raw-adapter.ts"
+} from "./runtime-context-session-raw-adapter.ts"
 import { HostWorkflowEngineLive } from "./host-workflow-engine.ts"
 import { RuntimeContextInputFactsLive } from "../tables/runtime-context-input-facts.ts"
 import { RuntimeContextSubscriberLive } from "../subscribers/runtime-context/index.ts"
@@ -377,7 +376,6 @@ export type FiregridHost =
   | RuntimeStartCapability
   | SessionAgentOutputChannel
   | CurrentHostSession
-  | RuntimeLocalContextResolver
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
   | RuntimeChannelRouter

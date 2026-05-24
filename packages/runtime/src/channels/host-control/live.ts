@@ -25,7 +25,7 @@ import {
   type HostPlaneChannelRouter,
 } from "../index.ts"
 import { Effect, Layer } from "effect"
-import { RuntimeHostConfig } from "../../composition/runtime-host-config.ts"
+import { RuntimeHostConfig } from "../runtime-host-config.ts"
 import { SessionAgentOutputChannelLive } from "../session-agent-output/live.ts"
 
 // Relocated from the deleted host-sdk path

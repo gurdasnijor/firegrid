@@ -117,6 +117,15 @@ interface SessionRecording {
   readonly layer: Layer.Layer<RuntimeContextWorkflowSession>
 }
 
+interface RegressionRunResult {
+  readonly spawns: ReadonlyArray<{ readonly contextId: string; readonly attempt: number }>
+  readonly sends: ReadonlyArray<{
+    readonly contextId: string
+    readonly attempt: number
+    readonly command: RuntimeContextSessionCommand
+  }>
+}
+
 // Recording RuntimeContextWorkflowSession stand-in. Its startOrAttach +
 // send are the production-shape primitives the workflow's spawn / send
 // Activities call. This is NOT a "bypass" — the workflow body still
@@ -186,9 +195,26 @@ describe("RuntimeContextSessionWorkflow regression (PR #738)", () => {
         Effect.scoped(makeRecordingSession()),
       )
 
-      const ran = await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function*() {
+      type RegressionLayerRequirements =
+        | RuntimeControlPlaneTable
+        | RuntimeContextInsert
+        | RuntimeRunAppendAndGet
+        | RuntimeContextSessionWorkflowDispatch
+
+      const workflowBundle = RuntimeContextSessionWorkflowDispatchLive.pipe(
+        Layer.provideMerge(RuntimeContextSessionWorkflowLayer),
+        Layer.provideMerge(recording.layer),
+        Layer.provideMerge(processedTableLayer(processedUrl)),
+      )
+
+      const testLayer = RuntimeControlPlaneRecorderLive.pipe(
+        Layer.provideMerge(workflowBundle),
+        Layer.provideMerge(currentHostSessionLayer()),
+        Layer.provideMerge(engineLayer(engineUrl)),
+        Layer.provideMerge(controlPlaneLayer(controlUrl)),
+      ) as unknown as Layer.Layer<RegressionLayerRequirements, unknown, never>
+
+      const program = Effect.gen(function*() {
             const control = yield* RuntimeControlPlaneTable
             const contextInsert = yield* RuntimeContextInsert
             const runs = yield* RuntimeRunAppendAndGet
@@ -247,23 +273,10 @@ describe("RuntimeContextSessionWorkflow regression (PR #738)", () => {
               spawns: yield* Ref.get(recording.spawns),
               sends: yield* Ref.get(recording.sends),
             }
-          }).pipe(
-            Effect.provide(
-              Layer.mergeAll(
-                RuntimeContextSessionWorkflowDispatchLive,
-                RuntimeContextSessionWorkflowLayer,
-                recording.layer,
-                RuntimeControlPlaneRecorderLive,
-              ).pipe(
-                Layer.provideMerge(processedTableLayer(processedUrl)),
-                Layer.provideMerge(currentHostSessionLayer()),
-                Layer.provideMerge(engineLayer(engineUrl)),
-                Layer.provideMerge(controlPlaneLayer(controlUrl)),
-              ),
-            ),
-          ),
-        ),
-      )
+          }) as unknown as Effect.Effect<RegressionRunResult, unknown, RegressionLayerRequirements>
+
+      const provided = Effect.provide(program, testLayer)
+      const ran = await Effect.runPromise(Effect.scoped(provided))
 
       // === Acceptance: race 2 (dual-spawn) fixed. ===
       expect(ran.spawns.length).toBe(1)

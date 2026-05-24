@@ -6,7 +6,7 @@ import {
 import { runtimeAgentOutputObservationFromRow } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { Effect, Option, Stream } from "effect"
-import { runtimeContextOutputTableLayerForContext } from "./output-table-layer.ts"
+import { runtimeContextOutputTableLayerForContext } from "../tables/output-table-layer.ts"
 
 // tf-bffo: the durable host-control reads (context/run/output snapshot + the
 // session-lifecycle run stream) are kernel-internal durable-state behavior and

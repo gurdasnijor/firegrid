@@ -28,7 +28,7 @@ import {
   hostOwnedStreamUrl,
 } from "@firegrid/protocol/launch"
 import { Context, Effect, Exit, Layer, Scope } from "effect"
-import { RuntimeHostConfig } from "./runtime-host-config.ts"
+import { RuntimeHostConfig } from "../channels/runtime-host-config.ts"
 import {
   mapRuntimeContextError,
   type RuntimeContextError,

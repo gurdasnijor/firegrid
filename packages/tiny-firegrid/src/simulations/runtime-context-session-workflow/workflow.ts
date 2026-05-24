@@ -95,12 +95,12 @@ const now = (): string => new Date().toISOString()
 //   - the FIRST send carries the EARLIEST appended input (probe A),
 //   - no send fires before its corresponding input is consumed (probe C).
 
-export interface RecordingSession {
+interface RecordingSession {
   readonly key: string
   readonly spawnedAt: string
 }
 
-export interface RecordingSend {
+interface RecordingSend {
   readonly key: string
   readonly inputId: string
   readonly value: string
@@ -236,11 +236,6 @@ const RcswPayloadSchema = Schema.Struct({
   expectedInputs: Schema.Number,
 })
 
-export interface RcswSuccess {
-  readonly key: string
-  readonly inputsConsumed: number
-}
-
 const RcswSuccessSchema = Schema.Struct({
   key: Schema.String,
   inputsConsumed: Schema.Number,
@@ -332,7 +327,7 @@ export interface KernelServices {
 }
 
 // Record-and-write (no arm yet) — models a crash between write and arm.
-export const kernelRecordAndWrite = (
+const kernelRecordAndWrite = (
   services: KernelServices,
   executionId: string,
   payload: RcswPayload,
@@ -413,18 +408,11 @@ const kernelTableLayerFor = (url: string) =>
 const engineLayerFor = (url: string) =>
   DurableStreamsWorkflowEngine.layer({ streamUrl: url })
 
-type RcswGenerationCtx =
-  | WorkflowEngine.WorkflowEngine
-  | WorkflowEngineTable
-  | RcswInputTable
-  | RcswKernelTable
-  | RecordingSessionAdapter
-
 export const runRcswGeneration = <A>(
   urls: GenerationUrls,
   recording: Layer.Layer<RecordingSessionAdapter>,
   program: (services: KernelServices) => Effect.Effect<A, unknown, WorkflowEngine.WorkflowEngine | RecordingSessionAdapter>,
-): Effect.Effect<A, unknown, RecordingSessionAdapter> => {
+): Effect.Effect<A, unknown> => {
   const inputLayer = inputTableLayerFor(urls.inputStreamUrl)
   const kernelLayer = kernelTableLayerFor(urls.kernelStreamUrl)
   const workflowLayer = RuntimeContextSessionWorkflow.toLayer((payload) =>
@@ -447,7 +435,7 @@ export const runRcswGeneration = <A>(
       const factTable = yield* RcswKernelTable
       return yield* program({ engineTable, inputTable, factTable })
     }).pipe(
-      Effect.provide(generationLayer as Layer.Layer<RcswGenerationCtx, unknown, RecordingSessionAdapter>),
+      Effect.provide(generationLayer),
     ),
   )
 }

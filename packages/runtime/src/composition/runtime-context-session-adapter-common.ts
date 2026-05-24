@@ -3,28 +3,28 @@ import {
   asRuntimeContextError,
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "../../runtime-errors.ts"
+} from "../runtime-errors.ts"
 import type {
   AgentByteStream,
   RuntimeEnvResolverPolicy,
   SandboxProvider,
   SandboxProviderError,
-} from "../../producers/sandbox/index.ts"
+} from "../producers/sandbox/index.ts"
 import {
   commandForContext,
   SandboxProvider as SandboxProviderTag,
   SandboxStdinEmissionClaim,
-} from "../../producers/sandbox/index.ts"
+} from "../producers/sandbox/index.ts"
 import { Effect, Layer, Ref, type Context, type Scope } from "effect"
-import { PerContextRuntimeOutputWriter } from "../../producers/ingress-writers/per-context-output.ts"
-import type { FiregridRuntimeContextMcpBaseUrl } from "./host-mcp-base-url.ts"
+import { PerContextRuntimeOutputWriter } from "../tables/per-context-output.ts"
+import type { FiregridRuntimeContextMcpBaseUrl } from "./runtime-context-mcp-base-url.ts"
 import {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
   type RuntimeContextSessionCommandAccepted,
   type RuntimeContextSessionStartedEvidence,
   type RuntimeContextWorkflowSessionService,
-} from "./handler.ts"
+} from "../subscribers/runtime-context-session/handler.ts"
 
 type RuntimeContextSessionOwnerKind = "raw" | "codec"
 
@@ -154,11 +154,11 @@ const getRuntimeContextSessionOrFail = <Session>(options: {
     const key = runtimeContextSessionKey(options.context, options.activityAttempt)
     const session = (yield* Ref.get(options.sessions)).get(key)
     if (session === undefined) {
-      return yield* Effect.fail(asRuntimeContextError(
+      return yield* asRuntimeContextError(
         `runtime-context.${options.ownerKind}-session.attach`,
         `${options.ownerKind} runtime session did not attach`,
         options.context.contextId,
-      ))
+      )
     }
     return session
   })

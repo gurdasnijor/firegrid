@@ -2,7 +2,7 @@ import { CurrentHostSession } from "@firegrid/protocol/launch"
 import { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
 import { sessionAgentOutputChannel } from "../session-agent-output.ts"
 import { Effect, Layer } from "effect"
-import { RuntimeHostConfig } from "../../composition/runtime-host-config.ts"
+import { RuntimeHostConfig } from "../runtime-host-config.ts"
 
 // tf-bffo: Live binding for `SessionAgentOutputChannel`. Resolves the host
 // topology config + `CurrentHostSession` and delegates to the runtime
@@ -14,7 +14,7 @@ import { RuntimeHostConfig } from "../../composition/runtime-host-config.ts"
 // `sessionAgentOutputChannel` already lives at
 // `runtime/src/channels/session-agent-output.ts`; this Live wires it
 // against `RuntimeHostConfig` from the canonical
-// `runtime/composition/runtime-host-config` Tag.
+// `runtime/channels/runtime-host-config` Tag.
 export const SessionAgentOutputChannelLive: Layer.Layer<
   SessionAgentOutputChannel,
   never,

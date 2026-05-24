@@ -224,7 +224,7 @@ const makeRecordingDispatch = (): Effect.Effect<RecordingDispatch> =>
     const layer = Layer.succeed(
       RuntimeContextSessionWorkflowDispatch,
       RuntimeContextSessionWorkflowDispatch.of({
-        dispatch: () => Effect.die("dispatch() not exercised by these tests"),
+        dispatch: () => Effect.fail("dispatch() not exercised by these tests"),
         resume: ({ contextId, activityAttempt }) =>
           Ref.update(resumes, (rs) => [...rs, { contextId, activityAttempt }]),
       }),
@@ -238,7 +238,7 @@ const makeRecordingDispatch = (): Effect.Effect<RecordingDispatch> =>
 const noopDispatchLayer = Layer.succeed(
   RuntimeContextSessionWorkflowDispatch,
   RuntimeContextSessionWorkflowDispatch.of({
-    dispatch: () => Effect.die("dispatch() not exercised by these tests"),
+    dispatch: () => Effect.fail("dispatch() not exercised by these tests"),
     resume: () => Effect.void,
   }),
 )

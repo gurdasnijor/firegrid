@@ -8,7 +8,7 @@ import {
 import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
 import {
   FiregridRuntimeContextMcpBaseUrl,
-} from "@firegrid/runtime/producers/codecs/mcp/base-url"
+} from "@firegrid/runtime/composition/runtime-context-mcp-base-url"
 import {
   runtimeContextMcpPath,
 } from "@firegrid/runtime/producers/codecs/mcp"

@@ -1,7 +1,9 @@
 import {
   RuntimeAgentToolExecution,
+} from "./runtime-agent-tool-execution.ts"
+import {
   RuntimeToolUseExecutor,
-} from "./index.ts"
+} from "./runtime-tool-use-executor.ts"
 import { RuntimeObservationStreams } from "../../streams/index.ts"
 import { Context, Effect, Layer } from "effect"
 import { RuntimeChannelRouter } from "../../channels/index.ts"

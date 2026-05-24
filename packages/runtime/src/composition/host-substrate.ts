@@ -12,7 +12,7 @@ import {
   type RuntimeControlPlaneTable,
   type RuntimeOutputTable,
 } from "@firegrid/protocol/launch"
-import { type RuntimeHostConfig } from "./runtime-host-config.ts"
+import { type RuntimeHostConfig } from "../channels/runtime-host-config.ts"
 import {
   type RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEventsLayer,

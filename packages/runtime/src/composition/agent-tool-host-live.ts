@@ -1,18 +1,20 @@
 // Relocated from deleted `host-sdk/src/host/agent-tool-host-live.ts`
 // (Class F3 host composition: `RuntimeHostAgentToolHostLive` provides
 // the `AgentToolHost` Tag from `runtime/subscribers/tool-dispatch/tool-host.ts`).
-// Canonical home is alongside the other tool-dispatch consumers so the
-// host composition can install it via `Layer.provide` from
-// `runtime/composition/host-live.ts`. No host-sdk source edits.
+// Canonical home is composition because this host-scoped Layer wires tool
+// host behavior from lower runtime tiers. No host-sdk source edits.
 //
 // Import retargets vs the deleted source:
-//   `./config.ts`                        → `../../composition/runtime-host-config.ts`
-//   `./commands.ts`                      → `../../composition/host-public.ts`
-//   `./runtime-substrate.ts`             → `../../composition/host-substrate.ts`
-//   `./channel.ts`                       → `../../channels/router/live.ts`
-//   `../agent-tools/execution/tool-host.ts`     → `./tool-host.ts` (sibling, #735)
-//   `../agent-tools/bindings/tool-error.ts`     → `./bindings/tool-error.ts` (sibling, #735)
-//   `@firegrid/runtime/runtime-output`   → `../../tables/runtime-output-public.ts` (already canonical)
+//   `./config.ts`                        → `../channels/runtime-host-config.ts`
+//   `./commands.ts`                      → `./host-public.ts`
+//   `./runtime-substrate.ts`             → `./host-substrate.ts`
+//   `./channel.ts`                       → `../channels/router/live.ts`
+//   `../agent-tools/execution/tool-host.ts`
+//     → `../subscribers/tool-dispatch/tool-host.ts`
+//   `../agent-tools/bindings/tool-error.ts`
+//     → `../subscribers/tool-dispatch/bindings/tool-error.ts`
+//   `@firegrid/runtime/runtime-output`
+//     → `../tables/runtime-output-public.ts` (already canonical)
 
 import { Prompt } from "@effect/ai"
 import {
@@ -24,41 +26,41 @@ import {
   runtimeControlPlaneStreamUrl,
   type HostSessionRow,
 } from "@firegrid/protocol/launch"
-import { RuntimeHostConfig } from "../../composition/runtime-host-config.ts"
+import { RuntimeHostConfig } from "../channels/runtime-host-config.ts"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
 import {
   SandboxProvider,
   type SandboxCommand,
   type SandboxProviderService,
-} from "../../producers/sandbox/index.ts"
+} from "../producers/sandbox/index.ts"
 import { Clock, type Context, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import {
   AgentToolHost,
   type AgentToolHostService,
-} from "./tool-host.ts"
-import { toolExecutionFailed } from "./bindings/tool-error.ts"
+} from "../subscribers/tool-dispatch/tool-host.ts"
+import { toolExecutionFailed } from "../subscribers/tool-dispatch/bindings/tool-error.ts"
 import {
   RuntimeContextInsert,
   type RuntimeContextInsertService,
   RuntimeContextRead,
   type RuntimeContextReadService,
-} from "../../control-plane/index.ts"
+} from "../control-plane/index.ts"
 import {
   appendRuntimeIngress,
-} from "../../composition/host-public.ts"
+} from "./host-public.ts"
 import {
   requireLocalRuntimeContextWithHostSession,
-} from "../runtime-context/host-lookup.ts"
-import type { HostRuntimeContextExecutionEnv } from "../../composition/host-substrate.ts"
+} from "../subscribers/runtime-context/host-lookup.ts"
+import type { HostRuntimeContextExecutionEnv } from "./host-substrate.ts"
 import {
   RuntimeAgentOutputAfterEvents,
   type RuntimeAgentOutputObservation,
-} from "../../tables/runtime-output-public.ts"
+} from "../tables/runtime-output-public.ts"
 import type {
   ApprovalCallPermissionRequest,
   ApprovalCallRequest,
 } from "@firegrid/protocol/agent-tools"
-import type { RuntimeChannelRouter } from "../../channels/router/live.ts"
+import type { RuntimeChannelRouter } from "../channels/router/live.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.3
 // Host-coupled AgentToolHost live behavior lives here instead of the host

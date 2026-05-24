@@ -8,12 +8,11 @@ import {
   type KernelServices,
   type RcswPayload,
   type RecordingState,
-  recordingSessionAdapterLayer,
   RecordingSessionAdapter,
+  recordingSessionAdapterLayer,
   runRcswGeneration,
   RuntimeContextSessionWorkflow,
 } from "./workflow.ts"
-import { WorkflowEngine } from "@effect/workflow"
 
 export interface RcswProbeResult {
   readonly probe: string

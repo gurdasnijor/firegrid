@@ -1,45 +1,10 @@
 import { McpSchema, McpServer } from "@effect/ai"
-import type {
-  ChannelSourceClass,
-  ChannelTarget,
-} from "@firegrid/protocol/channels"
 import type { ChannelRouteMetadata } from "@firegrid/protocol/channels/router"
-import { Effect, JSONSchema, type Schema } from "effect"
-import { RuntimeChannelRouter } from "../../../channels/index.ts"
-
-/**
- * Legacy MCP-extension flattened metadata shape that predates
- * `ChannelRouteMetadata`. Used ONLY by the MCP `tools/list`
- * `x-firegrid-channels` extension payload below; `ChannelRouteMetadata` from
- * `@firegrid/protocol/channels/router` is the canonical router metadata for
- * new consumers. Inlined here (moved from `host-sdk/src/host/channel.ts`)
- * so the MCP codec is self-contained.
- */
-type ChannelMetadata =
-  | {
-    readonly target: ChannelTarget
-    readonly direction: "ingress"
-    readonly schema: Schema.Schema.Any
-    readonly sourceClass?: ChannelSourceClass
-  }
-  | {
-    readonly target: ChannelTarget
-    readonly direction: "egress"
-    readonly schema: Schema.Schema.Any
-  }
-  | {
-    readonly target: ChannelTarget
-    readonly direction: "bidirectional"
-    readonly directions: readonly ["ingress", "egress"]
-    readonly schema: Schema.Schema.Any
-    readonly sourceClasses: ReadonlyArray<ChannelSourceClass>
-  }
-  | {
-    readonly target: ChannelTarget
-    readonly direction: "call"
-    readonly requestSchema: Schema.Schema.Any
-    readonly responseSchema: Schema.Schema.Any
-  }
+import { Effect, JSONSchema } from "effect"
+import {
+  RuntimeChannelRouter,
+  type ChannelMetadata,
+} from "../channels/index.ts"
 
 const channelInventoryExtensionKey = "x-firegrid-channels"
 const waitForToolName = "wait_for"

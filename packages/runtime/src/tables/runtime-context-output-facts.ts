@@ -8,7 +8,7 @@
 //
 // This file is a thin re-export shim during the Wave A→2 physical move.
 // The Live binding still lives in
-// `producers/ingress-writers/per-context-output.ts` until the
+// `tables/per-context-output.ts` until the
 // physical move lands; this façade lets `subscribers/runtime-context/`
 // reach the per-context observation source through a tree-aligned path
 // (per `runtime-subscribers-no-legacy-tree-import` boundary rule —
