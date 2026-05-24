@@ -1,6 +1,6 @@
 import path from "node:path"
 import { writeFile } from "node:fs/promises"
-import { boardChannels } from "./board.ts"
+import { boardChannels } from "./app/coordination-board.ts"
 import { ensureRunDir, makeRunId, writeJson } from "./files.ts"
 import { defaultTaskPacket } from "./task.ts"
 

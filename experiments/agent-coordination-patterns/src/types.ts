@@ -1,16 +1,14 @@
 import type { RuntimeAgentOutputObservation } from "@firegrid/client-sdk/firegrid"
+import type {
+  CoordinationBoardChannel,
+  CoordinationBoardRow,
+} from "./app/coordination-board.ts"
 
 export type ExperimentArm = "single" | "central" | "choreography"
 
 export interface InboundSignal {
   readonly atMs: number
-  readonly channel:
-    | "coordination.work"
-    | "coordination.claims"
-    | "coordination.findings"
-    | "coordination.questions"
-    | "coordination.reviews"
-    | "coordination.final"
+  readonly channel: CoordinationBoardChannel
   readonly kind: string
   readonly title: string
   readonly body: string
@@ -75,11 +73,13 @@ export interface ArmSummary {
   readonly reason?: string
   readonly sessionCount?: number
   readonly outputCount?: number
+  readonly finalArtifact?: CoordinationBoardRow
 }
 
 export interface TraceScore {
   readonly spans: number
   readonly errorSpans: number
+  readonly clientClosedSpans: number
   readonly agentSilentErrors: number
   readonly unknownChannelErrors: number
   readonly toolsCallSpans: number
@@ -87,9 +87,15 @@ export interface TraceScore {
   readonly sessionAgentOutputSpans: number
 }
 
+export interface BoardScore {
+  readonly rows: number
+  readonly byChannel: Readonly<Record<string, number>>
+}
+
 export interface ArmScore {
   readonly scenarioId?: string
   readonly arm: string
   readonly summary?: ArmSummary
   readonly trace?: TraceScore
+  readonly board?: BoardScore
 }

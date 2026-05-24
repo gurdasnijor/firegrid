@@ -4,10 +4,14 @@ const task = (lines: ReadonlyArray<string>): string =>
   [
     "# Agent Coordination Patterns Task Packet",
     "",
+    "This packet is self-contained. Do not inspect the repository, shell, or filesystem.",
+    "Use only the Firegrid session and coordination-channel tools exposed to you.",
+    "",
     ...lines,
     "",
     "Output contract:",
-    "- Produce one concise final artifact.",
+    // agent-coordination-patterns-experiment.SCENARIOS.6
+    "- Produce one concise final artifact with body under 1,200 characters.",
     "- State which evidence you inspected.",
     "- State the implementation or design recommendation.",
     "- State open questions.",
@@ -15,7 +19,27 @@ const task = (lines: ReadonlyArray<string>): string =>
     "",
   ].join("\n")
 
+const harnessMaterials = [
+  "Provided materials:",
+  "",
+  "Experiment goal:",
+  "Firegrid should act as the workbench for comparing three coordination patterns: one participant, a central orchestrator, and peer choreography.",
+  "",
+  "Current harness shape:",
+  "- The driver composes a real Firegrid host in-process.",
+  "- Participants are launched through the public Firegrid client/session surface.",
+  "- The shared board is exposed as channels: coordination.work, coordination.claims, coordination.findings, coordination.questions, coordination.reviews, and coordination.final.",
+  "- The driver injects inbound events through Firegrid.channels.send and waits for the final artifact through Firegrid.channels.waitFor.",
+  "- A run is incomplete unless a coordination.final row is published.",
+  "",
+  "Known measurement risks:",
+  "- If the task packet asks for repository or shell access, agents may burn time on unavailable tools instead of exercising Firegrid coordination.",
+  "- If final artifacts are optional prose instead of channel rows, the scorer cannot reliably compare arms.",
+  "- Choreography should be judged by durable board behavior, not by hidden driver state.",
+] as const
+
 // agent-coordination-patterns-experiment.SCENARIOS.1
+// agent-coordination-patterns-experiment.SCENARIOS.5
 export const experimentScenarios = [
   {
     id: "solo-baseline",
@@ -28,9 +52,10 @@ export const experimentScenarios = [
     taskPacket: task([
       "Scenario: Solo Baseline",
       "",
+      ...harnessMaterials,
+      "",
       "Task:",
-      "- Inspect the experiment harness README and feature spec.",
-      "- Identify one small documentation or workflow improvement.",
+      "- Identify one small documentation or workflow improvement using only the provided materials.",
       "- Return the exact change you would make and why it is enough.",
     ]),
     inboundSignals: [],
@@ -45,6 +70,8 @@ export const experimentScenarios = [
       "central should show more session/tool activity but may beat single on duration or breadth; choreography should only help if peer discovery overhead stays low.",
     taskPacket: task([
       "Scenario: Parallel Independent Slices",
+      "",
+      ...harnessMaterials,
       "",
       "Task:",
       "- Evaluate three independent surfaces of this experiment setup:",
@@ -67,6 +94,8 @@ export const experimentScenarios = [
     taskPacket: task([
       "Scenario: Review And Revision",
       "",
+      ...harnessMaterials,
+      "",
       "Task:",
       "- Draft a small improvement plan for the experiment harness.",
       "- Review the plan for failure modes or measurement bias.",
@@ -85,6 +114,8 @@ export const experimentScenarios = [
       "choreography should produce coordination.* board rows and avoid duplicate work; central may still win if board overhead is high.",
     taskPacket: task([
       "Scenario: Shared Board Coordination",
+      "",
+      ...harnessMaterials,
       "",
       "Task:",
       "- Use the coordination board channels to discover work, claim work, publish findings, ask questions, review peer findings, and produce a final artifact.",
@@ -125,6 +156,7 @@ export const experimentScenarios = [
       "",
       "Task:",
       "- A Firegrid run intermittently reports either agent_silent or unknown-channel.",
+      "- Inbound evidence rows will arrive on coordination.work / coordination.findings. Wait for the listed workIds before finalizing: debug-agent-silent, debug-unknown-channel, debug-trace-evidence.",
       "- Build a triage plan that distinguishes transport, routing, permission, and prompt-design causes.",
       "- Return the smallest next diagnostic and the evidence that would confirm or reject each cause.",
     ]),
@@ -171,6 +203,9 @@ export const experimentScenarios = [
       "",
       "Task:",
       "- Watch coordination.work for inbound webhook incidents.",
+      // agent-coordination-patterns-experiment.SCENARIOS.7
+      "- Wait for these inbound workIds on coordination.work before finalizing: linear:TF-101:a, linear:TF-102:a, linear:TF-101:duplicate, github:check:failed.",
+      "- Use scalar matches such as match.workId for those waits; do not guess payload timestamps.",
       "- Group duplicate incidents by external entity.",
       "- Triage severity and publish findings.",
       "- The final artifact must list the deduped incident groups and which evidence rows supported each group.",

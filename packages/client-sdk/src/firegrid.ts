@@ -42,8 +42,16 @@ import {
 import {
   makeIngressChannel,
   SessionAgentOutputChannelTarget,
+  type BidirectionalChannel,
+  type CallableChannel,
+  type ChannelRegistration,
+  type EgressChannel,
   type IngressChannel,
 } from "@firegrid/protocol/channels"
+import {
+  channelRouteMetadata,
+  type ChannelRouteMetadata,
+} from "@firegrid/protocol/channels/router"
 import {
   runtimeAgentOutputObservationFromRow,
   runtimePermissionRequestObservationFromAgentOutput,
@@ -100,6 +108,7 @@ export interface ClientOptions {
   readonly contentType?: string
   readonly headers?: DurableTableHeaders
   readonly txTimeoutMs?: number
+  readonly channels?: ReadonlyArray<ChannelRegistration>
   /**
    * Upper bound (ms) for the reflected-context wait that dependent writes
    * (`firegrid.prompt`, `firegrid.sessions.prompt`, `session.prompt`,
@@ -138,13 +147,66 @@ export class FiregridConfigError extends Schema.TaggedError<FiregridConfigError>
   },
 ) {}
 
+export class FiregridChannelError extends Schema.TaggedError<FiregridChannelError>()(
+  "FiregridChannelError",
+  {
+    target: Schema.String,
+    verb: Schema.Literal("send", "wait_for", "call"),
+    cause: Schema.Unknown,
+  },
+) {}
+
 export type PromptInputError = LaunchInputError
 
 export type FiregridError =
   | PreloadError
   | LaunchInputError
   | AppendError
+  | FiregridChannelError
   | FiregridConfigError
+
+export type FiregridChannelMatch = Record<string, string | number | boolean>
+
+export type FiregridChannelWaitOutput =
+  | { readonly matched: true; readonly event: unknown }
+  | { readonly matched: false; readonly timedOut: true }
+
+export type FiregridChannelWaitAnyInput = {
+  readonly target: string
+  readonly match?: FiregridChannelMatch
+}
+
+export type FiregridChannelWaitAnyOutput =
+  | {
+    readonly matched: true
+    readonly winnerIndex: number
+    readonly target: string
+    readonly event: unknown
+  }
+  | { readonly matched: false; readonly timedOut: true }
+
+export interface FiregridChannelsClient {
+  readonly metadata: ReadonlyArray<ChannelRouteMetadata>
+  readonly send: (
+    target: string,
+    payload: unknown,
+  ) => Effect.Effect<unknown, FiregridChannelError>
+  readonly waitFor: (
+    target: string,
+    options?: {
+      readonly match?: FiregridChannelMatch
+      readonly timeoutMs?: number
+    },
+  ) => Effect.Effect<FiregridChannelWaitOutput, FiregridChannelError>
+  readonly waitForAny: (
+    inputs: ReadonlyArray<FiregridChannelWaitAnyInput>,
+    options?: { readonly timeoutMs?: number },
+  ) => Effect.Effect<FiregridChannelWaitAnyOutput, FiregridChannelError>
+  readonly call: (
+    target: string,
+    request: unknown,
+  ) => Effect.Effect<unknown, FiregridChannelError>
+}
 
 export interface RuntimeContextSnapshot {
   readonly contextId: string
@@ -250,6 +312,7 @@ export interface FiregridService {
   ) => Effect.Effect<RuntimeInputIntentRow, PromptInputError | AppendError>
   readonly sessions: FiregridSessionsClient
   readonly permissions: FiregridPermissionsClient
+  readonly channels: FiregridChannelsClient
   readonly open: (contextId: string) => RuntimeContextHandle
   readonly watchContexts: (
     predicate?: (context: RuntimeContext) => boolean,
@@ -485,6 +548,228 @@ const decodeSessionAgentOutputWaitInput = (
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
+const channelError = (
+  target: string,
+  verb: FiregridChannelError["verb"],
+  cause: unknown,
+) => new FiregridChannelError({ target, verb, cause })
+
+const channelByTarget = (
+  channels: ReadonlyArray<ChannelRegistration>,
+  target: string,
+): Effect.Effect<ChannelRegistration, FiregridChannelError> =>
+  Effect.fromNullable(
+    channels.find(channel => String(channel.target) === target),
+  ).pipe(
+    Effect.mapError(() =>
+      channelError(target, "wait_for", new Error(`unknown channel: ${target}`))),
+  )
+
+const decodeChannelPayload = (
+  target: string,
+  verb: FiregridChannelError["verb"],
+  schema: Schema.Schema.Any,
+  payload: unknown,
+): Effect.Effect<unknown, FiregridChannelError> =>
+  (Schema.decodeUnknown(schema, { onExcessProperty: "error" })(payload) as Effect.Effect<
+    unknown,
+    unknown,
+    never
+  >).pipe(
+    Effect.mapError(cause => channelError(target, verb, cause)),
+  )
+
+const readPath = (
+  row: unknown,
+  path: ReadonlyArray<string>,
+): unknown =>
+  path.reduce<unknown>((cursor, segment) =>
+    typeof cursor === "object" && cursor !== null
+      ? (cursor as Record<string, unknown>)[segment]
+      : undefined,
+    row,
+  )
+
+const matchesChannelRow = (
+  row: unknown,
+  match: FiregridChannelMatch | undefined,
+): boolean => {
+  if (match === undefined) return true
+  return Object.entries(match).every(([key, value]) =>
+    readPath(row, key.split(".").filter(segment => segment.length > 0)) ===
+      value)
+}
+
+const channelWait = (
+  target: string,
+  stream: Stream.Stream<unknown, unknown, never>,
+  options: {
+    readonly match?: FiregridChannelMatch
+    readonly timeoutMs?: number
+  } = {},
+): Effect.Effect<FiregridChannelWaitOutput, FiregridChannelError> => {
+  const wait = stream.pipe(
+    Stream.filter(row => matchesChannelRow(row, options.match)),
+    Stream.runHead,
+    Effect.map(Option.match({
+      onNone: (): FiregridChannelWaitOutput => ({
+        matched: false,
+        timedOut: true,
+      }),
+      onSome: event => ({ matched: true, event }) as const,
+    })),
+    Effect.mapError(cause => channelError(target, "wait_for", cause)),
+  )
+  if (options.timeoutMs === undefined) return wait
+  return Effect.raceFirst(
+    wait,
+    Clock.sleep(Duration.millis(options.timeoutMs)).pipe(
+      Effect.as<FiregridChannelWaitOutput>({
+        matched: false,
+        timedOut: true,
+      }),
+    ),
+  )
+}
+
+const makeChannelsClient = (
+  channels: ReadonlyArray<ChannelRegistration>,
+): FiregridChannelsClient => {
+  const requireChannel = (
+    target: string,
+    verb: FiregridChannelError["verb"],
+  ): Effect.Effect<ChannelRegistration, FiregridChannelError> =>
+    channelByTarget(channels, target).pipe(
+      Effect.mapError(error => channelError(target, verb, error.cause)),
+    )
+
+  const send = (
+    target: string,
+    payload: unknown,
+  ): Effect.Effect<unknown, FiregridChannelError> =>
+    Effect.gen(function*() {
+      const channel = yield* requireChannel(target, "send")
+      if (channel.direction !== "egress" && channel.direction !== "bidirectional") {
+        return yield* channelError(
+          target,
+          "send",
+          new Error(`channel is ${channel.direction}`),
+        )
+      }
+      const decoded = yield* decodeChannelPayload(
+        target,
+        "send",
+        channel.schema,
+        payload,
+      )
+      const appendable = channel as EgressChannel | BidirectionalChannel
+      return yield* appendable.binding.append(decoded).pipe(
+        Effect.mapError(cause => channelError(target, "send", cause)),
+      )
+    })
+
+  const waitFor = (
+    target: string,
+    options: {
+      readonly match?: FiregridChannelMatch
+      readonly timeoutMs?: number
+    } = {},
+  ): Effect.Effect<FiregridChannelWaitOutput, FiregridChannelError> =>
+    Effect.gen(function*() {
+      const channel = yield* requireChannel(target, "wait_for")
+      if (channel.direction !== "ingress" && channel.direction !== "bidirectional") {
+        return yield* channelError(
+          target,
+          "wait_for",
+          new Error(`channel is ${channel.direction}`),
+        )
+      }
+      const waitable = channel as IngressChannel | BidirectionalChannel
+      return yield* channelWait(target, waitable.binding.stream, options)
+    })
+
+  const waitForAny = (
+    inputs: ReadonlyArray<FiregridChannelWaitAnyInput>,
+    options: { readonly timeoutMs?: number } = {},
+  ): Effect.Effect<FiregridChannelWaitAnyOutput, FiregridChannelError> => {
+    if (inputs.length === 0) {
+      return Effect.fail(
+        channelError(
+          "wait_for_any",
+          "wait_for",
+          new Error("at least one channel is required"),
+        ),
+      )
+    }
+    const waits = inputs.map((input, winnerIndex) =>
+      waitFor(
+        input.target,
+        input.match === undefined ? {} : { match: input.match },
+      ).pipe(
+        Effect.flatMap(result =>
+          result.matched
+            ? Effect.succeed<FiregridChannelWaitAnyOutput>({
+              matched: true,
+              winnerIndex,
+              target: input.target,
+              event: result.event,
+            })
+            : Effect.never,
+        ),
+      ),
+    )
+    const wait = Effect.raceAll(waits)
+    if (options.timeoutMs === undefined) return wait
+    return Effect.raceFirst(
+      wait,
+      Clock.sleep(Duration.millis(options.timeoutMs)).pipe(
+        Effect.as<FiregridChannelWaitAnyOutput>({
+          matched: false,
+          timedOut: true,
+        }),
+      ),
+    )
+  }
+
+  const call = (
+    target: string,
+    request: unknown,
+  ): Effect.Effect<unknown, FiregridChannelError> =>
+    Effect.gen(function*() {
+      const channel = yield* requireChannel(target, "call")
+      if (channel.direction !== "call") {
+        return yield* channelError(
+          target,
+          "call",
+          new Error(`channel is ${channel.direction}`),
+        )
+      }
+      const callable = channel as CallableChannel
+      const decoded = yield* decodeChannelPayload(
+        target,
+        "call",
+        callable.requestSchema,
+        request,
+      )
+      const response: unknown = yield* (callable.binding.call(decoded) as Effect.Effect<
+        unknown,
+        unknown,
+        never
+      >).pipe(
+        Effect.mapError(cause => channelError(target, "call", cause)),
+      )
+      return response
+    })
+
+  return {
+    metadata: channels.map(channelRouteMetadata),
+    send,
+    waitFor,
+    waitForAny,
+    call,
+  }
+}
+
 const snapshotFromJournal = (
   contextId: string,
   inputs: {
@@ -518,7 +803,10 @@ const snapshotFromJournal = (
   }
 }
 
-const make = (config: ResolvedConfig) =>
+const make = (
+  config: ResolvedConfig,
+  channels: ReadonlyArray<ChannelRegistration>,
+) =>
   Effect.gen(function* () {
     const control = yield* RuntimeControlPlaneTable
     // tf-35f4 Sim 2: createOrLoad now dispatches via the protocol-owned
@@ -1082,6 +1370,7 @@ const make = (config: ResolvedConfig) =>
             new AppendError({ contextId: decoded.contextId, cause })))
         }),
       },
+      channels: makeChannelsClient(channels),
       open,
       watchContexts,
     })
@@ -1114,7 +1403,7 @@ export const FiregridControlPlaneTableLive = Layer.unwrapEffect(
 const firegridServiceLayer = Layer.scoped(
   Firegrid,
   Effect.flatMap(FiregridConfig, (cfg) =>
-    Effect.flatMap(resolveConfig(cfg), make)),
+    Effect.flatMap(resolveConfig(cfg), config => make(config, cfg.channels ?? []))),
 )
 
 /**

@@ -18,10 +18,15 @@ import {
   FiregridLocalProcessFromEnv,
 } from "@firegrid/runtime/producers/sandbox/local-process-from-env"
 import { FiregridOtelLive } from "@firegrid/observability/node"
-import { Clock, Duration, Effect, Fiber, Layer, Scope } from "effect"
+import { Clock, Duration, Effect, Fiber, Layer, Ref, Scope } from "effect"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { makeCoordinationBoardHost, type CoordinationBoardHost } from "./board.ts"
+import {
+  makeCoordinationBoardHost,
+  type CoordinationBoardHost,
+  type CoordinationBoardPayload,
+  type CoordinationBoardRow,
+} from "./app/coordination-board.ts"
 import { readText, writeJson } from "./files.ts"
 import { promptForArm } from "./prompts.ts"
 import type {
@@ -33,6 +38,15 @@ import type {
   ParticipantRuntime,
   RunOptions,
 } from "./types.ts"
+
+interface StartedArmSession {
+  readonly role: string
+  readonly sessionId: string
+  readonly contextId: string
+  readonly outputs: Ref.Ref<ReadonlyArray<RuntimeAgentOutputObservation>>
+  readonly outputFiber: Fiber.RuntimeFiber<void, unknown>
+  readonly startFiber: Fiber.RuntimeFiber<unknown, unknown>
+}
 
 const repoRoot = process.cwd()
 
@@ -52,12 +66,14 @@ const runtimeIntent = (runtime: ParticipantRuntime) =>
 const clientLayer = (
   durableStreamsBaseUrl: string,
   namespace: string,
+  board: CoordinationBoardHost,
 ) =>
   FiregridStandaloneLive.pipe(
     Layer.provide(
       Layer.succeed(FiregridConfig, {
         durableStreamsBaseUrl,
         namespace,
+        channels: board.registrations,
       }),
     ),
   )
@@ -121,9 +137,9 @@ const outputText = (output: RuntimeAgentOutputObservation): string => {
 const collectSessionOutputs = (
   session: FiregridSessionHandle,
   timeoutMs: number,
-): Effect.Effect<ReadonlyArray<RuntimeAgentOutputObservation>, unknown, Firegrid> =>
+  outputs: Ref.Ref<ReadonlyArray<RuntimeAgentOutputObservation>>,
+): Effect.Effect<void, unknown, Firegrid> =>
   Effect.gen(function*() {
-    const outputs: Array<RuntimeAgentOutputObservation> = []
     const deadline = (yield* Clock.currentTimeMillis) + timeoutMs
     let afterSequence: number | undefined
     while ((yield* Clock.currentTimeMillis) < deadline) {
@@ -133,13 +149,13 @@ const collectSessionOutputs = (
         ...(afterSequence === undefined ? {} : { afterSequence }),
         timeoutMs: remaining,
       })
-      if (!next.matched) break
-      outputs.push(next.output)
+      // agent-coordination-patterns-experiment.EXECUTION.6
+      if (!next.matched) continue
+      yield* Ref.update(outputs, current => [...current, next.output])
       afterSequence = next.output.sequence
       const tag = outputTag(next.output)
       if (tag === "TurnComplete" || tag === "Terminated") break
     }
-    return outputs
   })
 
 const createParticipant = (
@@ -149,7 +165,7 @@ const createParticipant = (
     readonly prompt: string
     readonly options: RunOptions
   },
-): Effect.Effect<ArmSessionArtifact, unknown, Firegrid | Scope.Scope> =>
+): Effect.Effect<StartedArmSession, unknown, Firegrid | Scope.Scope> =>
   Effect.gen(function*() {
     const firegrid = yield* Firegrid
     const session = yield* firegrid.sessions.createOrLoad({
@@ -169,14 +185,21 @@ const createParticipant = (
       idempotencyKey:
         `${input.options.runId}:${input.options.scenario.id}:${input.arm}:${input.role}:initial-prompt`,
     })
-    yield* session.start()
-    const outputs = yield* collectSessionOutputs(session, input.options.timeoutMs)
+    // agent-coordination-patterns-experiment.EXECUTION.7
+    const startFiber = yield* session.start().pipe(Effect.forkScoped)
+    const outputs = yield* Ref.make<ReadonlyArray<RuntimeAgentOutputObservation>>([])
+    const outputFiber = yield* collectSessionOutputs(
+      session,
+      input.options.timeoutMs,
+      outputs,
+    ).pipe(Effect.forkScoped)
     return {
       role: input.role,
       sessionId: session.sessionId,
       contextId: session.contextId,
-      outputCount: outputs.length,
       outputs,
+      outputFiber,
+      startFiber,
     }
   })
 
@@ -184,10 +207,9 @@ const runParticipantPlan = (
   arm: ExperimentArm,
   options: RunOptions,
   task: string,
-  board: CoordinationBoardHost,
-): Effect.Effect<ReadonlyArray<ArmSessionArtifact>, unknown, Firegrid | Scope.Scope> =>
+): Effect.Effect<ReadonlyArray<StartedArmSession>, unknown, Firegrid | Scope.Scope> =>
   Effect.gen(function*() {
-    yield* Effect.forkScoped(injectInboundSignals(options, board))
+    yield* Effect.forkScoped(injectInboundSignals(options))
     switch (arm) {
       case "single":
         return [
@@ -208,7 +230,8 @@ const runParticipantPlan = (
           }),
         ]
       case "choreography": {
-        yield* board.append("coordination.work", {
+        const firegrid = yield* Firegrid
+        yield* firegrid.channels.send("coordination.work", {
           kind: "task",
           workId: `${options.runId}:${options.scenario.id}:primary-task`,
           title: "Shared experiment task",
@@ -233,37 +256,67 @@ const runParticipantPlan = (
 
 const injectInboundSignal = (
   options: RunOptions,
-  board: CoordinationBoardHost,
   signal: InboundSignal,
-): Effect.Effect<void, unknown> =>
+): Effect.Effect<void, unknown, Firegrid> =>
   // agent-coordination-patterns-experiment.SCENARIOS.4
-  Effect.sleep(Duration.millis(signal.atMs)).pipe(
-    Effect.flatMap(() =>
-      board.append(signal.channel, {
+  Effect.gen(function*() {
+    const firegrid = yield* Firegrid
+    yield* Effect.sleep(Duration.millis(signal.atMs))
+    yield* firegrid.channels.send(
+      signal.channel,
+      {
         kind: signal.kind,
-        workId: signal.workId,
         title: signal.title,
         body: signal.body,
         status: signal.status ?? "open",
+        ...(signal.workId === undefined ? {} : { workId: signal.workId }),
         payload: {
           scenarioId: options.scenario.id,
           atMs: signal.atMs,
         },
-      })
-    ),
-    Effect.asVoid,
-  )
+      } satisfies CoordinationBoardPayload,
+    )
+  }).pipe(Effect.asVoid)
 
 const injectInboundSignals = (
   options: RunOptions,
-  board: CoordinationBoardHost,
-): Effect.Effect<void, unknown> =>
+): Effect.Effect<void, unknown, Firegrid> =>
   Effect.all(
     options.scenario.inboundSignals.map(signal =>
-      injectInboundSignal(options, board, signal)
+      injectInboundSignal(options, signal)
     ),
     { concurrency: "unbounded" },
   ).pipe(Effect.asVoid)
+
+const waitForFinalArtifact = (
+  arm: ExperimentArm,
+  options: RunOptions,
+): Effect.Effect<CoordinationBoardRow | undefined, unknown, Firegrid> =>
+  Effect.gen(function*() {
+    const firegrid = yield* Firegrid
+    const final = yield* firegrid.channels.waitFor("coordination.final", {
+      match: {
+        runId: options.runId,
+        arm,
+      },
+      timeoutMs: options.timeoutMs,
+    })
+    return final.matched ? final.event as CoordinationBoardRow : undefined
+  })
+
+const snapshotSessionArtifact = (
+  session: StartedArmSession,
+): Effect.Effect<ArmSessionArtifact> =>
+  Effect.gen(function*() {
+    const outputs = yield* Ref.get(session.outputs)
+    return {
+      role: session.role,
+      sessionId: session.sessionId,
+      contextId: session.contextId,
+      outputCount: outputs.length,
+      outputs,
+    }
+  })
 
 const runArmEffect = (
   arm: ExperimentArm,
@@ -312,8 +365,26 @@ const runArmEffect = (
           }),
         ).pipe(Effect.forkScoped)
 
-        const run = runParticipantPlan(arm, options, task, board).pipe(
-          Effect.provide(clientLayer(durableStreamsBaseUrl, namespace)),
+        const run = Effect.gen(function*() {
+          const activeSessions = yield* runParticipantPlan(arm, options, task)
+          const finalArtifact = yield* waitForFinalArtifact(arm, options)
+          yield* Effect.sleep(Duration.millis(500))
+          const sessions = yield* Effect.all(
+            activeSessions.map(snapshotSessionArtifact),
+          )
+          yield* Effect.forEach(
+            activeSessions,
+            session => Fiber.interrupt(session.outputFiber),
+            { discard: true },
+          )
+          yield* Effect.forEach(
+            activeSessions,
+            session => Fiber.interrupt(session.startFiber),
+            { discard: true },
+          )
+          return { sessions, finalArtifact }
+        }).pipe(
+          Effect.provide(clientLayer(durableStreamsBaseUrl, namespace, board)),
         )
         const either = yield* run.pipe(
           Effect.timeoutFail({
@@ -339,7 +410,7 @@ const runArmEffect = (
           } satisfies ArmSummary
         }
 
-        const sessions = either.right
+        const { sessions, finalArtifact } = either.right
         const text = sessions.flatMap(session =>
           session.outputs.map(outputText).filter(part => part.length > 0)
         ).join("")
@@ -352,8 +423,25 @@ const runArmEffect = (
               path.join(path.dirname(paths.promptPath), "board-rows.json"),
               board.recordedRows(),
             ),
+            writeJson(
+              path.join(path.dirname(paths.promptPath), "final-artifact.json"),
+              finalArtifact ?? null,
+            ),
           ])
         )
+        if (finalArtifact === undefined) {
+          return {
+            arm,
+            scenarioId: options.scenario.id,
+            status: "failed",
+            startedAt: commandArtifact.startedAt,
+            finishedAt: new Date().toISOString(),
+            durationMs: 0,
+            reason: "missing coordination.final artifact",
+            sessionCount: sessions.length,
+            outputCount: sessions.reduce((sum, session) => sum + session.outputCount, 0),
+          } satisfies ArmSummary
+        }
         return {
           arm,
           scenarioId: options.scenario.id,
@@ -363,6 +451,7 @@ const runArmEffect = (
           durationMs: 0,
           sessionCount: sessions.length,
           outputCount: sessions.reduce((sum, session) => sum + session.outputCount, 0),
+          finalArtifact,
         } satisfies ArmSummary
       }).pipe(
         Effect.provide(
