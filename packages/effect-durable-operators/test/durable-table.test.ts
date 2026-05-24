@@ -1028,7 +1028,7 @@ describe("DurableTable", () => {
     )
   })
 
-  it("effect-durable-operators.TABLE.17 effect-durable-operators.TABLE.18 supports decoded composite primary keys across get query and subscribe", async () => {
+  it("effect-durable-operators.TABLE.16 effect-durable-operators.TABLE.17 effect-durable-operators.TABLE.18 supports decoded composite primary keys across get query and subscribe", async () => {
     const url = server.url("table-composite-key")
 
     const CompositeKey = Schema.transform(
@@ -1113,11 +1113,24 @@ describe("DurableTable", () => {
           }
 
           // Distinct composite key must miss.
-          const other = yield* table.checkpoints.get({
+          const otherKey = {
             subscriberId: "sub-a",
             ingressId: "ing-2",
-          })
+          }
+          const other = yield* table.checkpoints.get(otherKey)
           expect(Option.isNone(other)).toBe(true)
+
+          yield* table.checkpoints.upsert({
+            key: otherKey,
+            claimedAt: "2026-05-12T00:00:01.000Z",
+          })
+          const afterDistinctInsert = yield* table.checkpoints.query(
+            (coll) => coll.toArray,
+          )
+          expect(afterDistinctInsert).toHaveLength(2)
+          expect(afterDistinctInsert.map(row => row.key)).toEqual(
+            expect.arrayContaining([key, otherKey]),
+          )
         })
 
         yield* program.pipe(
