@@ -173,7 +173,7 @@ describe("schema projection metadata", () => {
     expect(FiregridAgentToolOperations.waitFor.description).toContain(
       "host-declared channel",
     )
-    expect(FiregridAgentToolOperations.waitFor.examples).toHaveLength(1)
+    expect(FiregridAgentToolOperations.waitFor.examples).toHaveLength(2)
   })
 
   it("firegrid-schema-projection-contract.SCHEMA_CATALOG.3 compatibility-exports existing schemas as catalog entries", () => {
