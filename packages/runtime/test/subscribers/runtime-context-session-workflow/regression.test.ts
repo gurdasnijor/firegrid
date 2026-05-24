@@ -47,7 +47,7 @@ import {
   type HostSessionId,
 } from "@firegrid/protocol/launch"
 import { makeRuntimeInputIntentRow } from "@firegrid/protocol/runtime-ingress"
-import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 import {
   RuntimeContextInsert,
   RuntimeControlPlaneRecorderLive,

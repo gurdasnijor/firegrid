@@ -70,9 +70,8 @@ that previously pointed back at `workflow-engine/runtime-context-state.ts` was
 replaced by the physical move in Wave A of the Shape C cutover. The public
 subpath `@firegrid/runtime/tables/runtime-context-state` is unchanged.
 
-In-tree legacy re-exports through `@firegrid/runtime/kernel` and
-`@firegrid/runtime/workflow-engine` remain available to existing host-sdk
-callers until they migrate to the semantic subpath; new code MUST import from
+The legacy `@firegrid/runtime/kernel` and `@firegrid/runtime/workflow-engine`
+re-export paths are gone. New code MUST import state-store symbols from
 `@firegrid/runtime/tables/runtime-context-state` directly.
 
 `runtime-context-input-facts.ts` is a Wave A clean-room placement: the

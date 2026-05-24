@@ -15,7 +15,7 @@ import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
   type WorkflowActivityRow,
-} from "@firegrid/runtime/workflow-engine"
+} from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 import {
   Cause,
   Clock,

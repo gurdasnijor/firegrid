@@ -45,13 +45,9 @@
       "types": "./src/verified-webhook-ingest/index.ts",
       "default": "./src/verified-webhook-ingest/index.ts"
     },
-    "./workflow-engine": {
-      "types": "./src/workflow-engine/index.ts",
-      "default": "./src/workflow-engine/index.ts"
-    },
-    "./workflows": {
-      "types": "./src/workflow-engine/workflows/index.ts",
-      "default": "./src/workflow-engine/workflows/index.ts"
+    "./engine/durable-streams-workflow-engine": {
+      "types": "./src/engine/durable-streams-workflow-engine.ts",
+      "default": "./src/engine/durable-streams-workflow-engine.ts"
     },
     "./events": {
       "types": "./src/events/index.ts",

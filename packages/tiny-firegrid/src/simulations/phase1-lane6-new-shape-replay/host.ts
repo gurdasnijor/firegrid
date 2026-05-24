@@ -9,7 +9,7 @@ import {
   type WorkflowClockWakeupRow,
   type WorkflowDeferredRow,
   type WorkflowExecutionRow,
-} from "@firegrid/runtime/workflow-engine"
+} from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 import { Cause, Clock, Duration, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
 import {
   DurableTable,

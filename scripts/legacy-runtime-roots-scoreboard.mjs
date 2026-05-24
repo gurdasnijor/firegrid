@@ -3,11 +3,10 @@
 // Source: docs/architecture/2026-05-22-shape-c-cutover-roadmap.md §"Wave D"
 // /§"Wave E"; docs/architecture/2026-05-22-runtime-physical-target-tree.md.
 //
-// The remaining legacy runtime roots (`kernel/`, `workflow-engine/`)
-// are bridge surfaces scheduled for deletion. Every preserved file under
-// them must have an explicit PARK entry below naming the owner and the
-// deletion wave. The script always prints the per-root line counts
-// (preservation visible) and FAILS when:
+// The legacy runtime roots (`kernel/`, `workflow-engine/`) are bridge surfaces
+// scheduled for deletion. Every preserved file under them must have an explicit
+// PARK entry below naming the owner and the deletion wave. The script always
+// prints the per-root line counts (preservation visible) and FAILS when:
 //
 //   - a `.ts` file exists in a legacy root but has no PARK entry; OR
 //   - a PARK entry names a file that no longer exists on disk.
@@ -53,36 +52,16 @@ const parkAllowlist = {
   // (`DurableStreamsWorkflowEngine.ts` + `internal/{engine-runtime,table,
   // codec,contract-activity}.ts`) moved to `engine/`. Entries removed.
   //
-  // Shape D workflows (tool-call, wait-for, scheduled-prompt,
-  // runtime-context-run, runtime-ingress-transform) and
-  // the tool-execution executor Tag remain under `workflow-engine/`
-  // pending the per-bead Shape D moves into `subscribers/` folders
-  // (`tf-up1v` executor; `tf-vfq9` tool-call). Wave 1 §workflow-placement bullet of the
-  // target-tree doc.
-  "packages/runtime/src/workflow-engine/index.ts": {
-    owner: "rearch-shape-c",
-    wave: "E",
-  },
+  // Shape D workflow definitions and run/transform helpers have now moved to
+  // `subscribers/`, `engine/`, or disappeared as dead compatibility shims.
+  // `workflow-engine/` is expected to be absent.
   // Body+kernel deletion wave: per-sequence DurableDeferred input mailbox
   // (`runtime-input-deferred.ts`) deleted; entry removed.
   // Tool-dispatch source relocation wave: workflow-engine/tool-execution/
   // directory deleted; `RuntimeToolUseExecutor` physically moved to
   // `subscribers/tool-dispatch/runtime-tool-use-executor.ts`. Entry removed.
-  "packages/runtime/src/workflow-engine/workflows/index.ts": {
-    owner: "rearch-shape-c",
-    wave: "E",
-  },
-  "packages/runtime/src/workflow-engine/workflows/runtime-context-run.ts": {
-    owner: "rearch-shape-c",
-    wave: "D-input",
-  },
   // Body+kernel deletion wave: workflow body
   // (`workflows/runtime-context.ts`) deleted; entry removed.
-  "packages/runtime/src/workflow-engine/workflows/runtime-ingress-transform.ts":
-    {
-      owner: "rearch-shape-c",
-      wave: "D-input",
-    },
   // Tool-dispatch source relocation wave: `ToolCallWorkflow` physically
   // moved to `subscribers/tool-dispatch/workflow.ts`. Entry removed.
   // Wait-router and scheduled-prompt workflow bodies moved to their
