@@ -28,7 +28,7 @@ are GREEN through real production primitives.
 
 | # | Step | Status | Evidence |
 |---|------|--------|----------|
-| 1 | Runtime-owned host bring-up | GREEN | `packages/runtime/src/bin/{run,host}.ts` exists on stack head (CC6 `c0b51fc64`); CC6's local smoke `pnpm firegrid -- run -- node -e ...` exited 0. This sim composes the same `FiregridLocalHostLive` topology in-process; a subprocess-shaped assertion of the bin entry from inside vitest is a separate follow-up scope. `it.skip` with disclosure. |
+| 1 | Runtime-owned host bring-up | GREEN (documented; executable assertion blocked on a bin-shutdown hang on this stack — see "Step 1 bin-shutdown hang") | `packages/runtime/src/bin/{run,host}.ts` exists on stack head (CC6 `c0b51fc64`). This sim composes the same `FiregridLocalHostLive` topology in-process. An executable subprocess assertion was attempted and reverted (`it.skip`); see disclosure below. |
 | 2 | Planner createOrLoad + start | GREEN | Public `firegrid.sessions.createOrLoad` → `host.sessions.create_or_load` router target → planner handle. |
 | 3 | Child session spawn | YELLOW (GREEN-surrogate) | Same router target as planner-emitted `session_new`, driven from outer driver. Real `session_new` tool-call path now unblocked by CC6 `91ed12b77`; follow-up smoke pending. |
 | 4 | Child agent emits TextChunk | GREEN | Deterministic `stdio-jsonl` fixture agent (`node -e <inline script>`) emits one JSONL `text` event; codec translates to `TextChunk`. |
@@ -53,6 +53,38 @@ Typecheck:
 ```
 pnpm --filter @firegrid/tiny-firegrid typecheck
 ```
+
+## Step 1 bin-shutdown hang (reverted executable assertion)
+
+An executable subprocess assertion for step 1 was attempted in
+`smoke.test.ts`. The assertion spawned the exact invocation CC6 ran
+locally:
+
+```
+pnpm firegrid -- run -- node -e 'process.stdout.write(JSON.stringify({hello:"firegrid"})+"\n"); process.exit(0)'
+```
+
+The agent (`node -e`) child exits 0 as designed. The parent `firegrid
+run` daemon does NOT exit. Reproduced manually from the worktree root
+with stderr:
+
+```
+firegrid:run: launched context ctx_ext_...
+firegrid:run: context ctx_ext_... exited (attempt 1, exitCode 0)
+[hangs; SIGTERM at 30s → exit 143]
+```
+
+Per the readiness-sim review instructions ("if the subprocess assertion
+flakes or hangs, revert only that assertion, keep Step 1 documented
+GREEN, and open the PR with the deterministic client/router smoke. Report
+the exact hang/failure"), the assertion was reverted to `it.skip`. Step 1
+remains documented GREEN against CC6 `c0b51fc64` (bin entry exists; the
+topology this sim composes in-process IS the bin entry's composition).
+
+The bin-shutdown gap is a #738 follow-up — likely a missing
+`shutdown-on-terminal` path in `packages/runtime/src/bin/run.ts` (the
+runtime should observe the launched context's `exited` event and tear
+itself down). It is NOT in scope for the readiness sim PR.
 
 ## Routing around a stale host-sdk barrel
 
@@ -103,11 +135,12 @@ unblocked:
   identical; what changes is the SPAWN provenance — planner-emitted vs
   outer-driver-emitted.
 
-Optional second follow-up (separate scope decision): a vitest assertion
-that subprocess-launches `pnpm firegrid -- run -- node -e ...` and asserts
-exit 0, converting step 1 from "documented GREEN" to "executable GREEN"
-inside this sim's harness. CC6 already ran this externally; the question
-is whether to re-prove it from inside the readiness suite.
+Second follow-up (NOW BLOCKING the executable flip of step 1): land a
+shutdown-on-terminal path in `packages/runtime/src/bin/run.ts` so the
+parent daemon tears down on the launched context's `exited` event. Once
+the daemon exits 0 after the agent exits 0, restore the subprocess
+assertion in `smoke.test.ts` step 1 (the reverted block has the exact
+shape preserved in this FINDING.md for fast restore).
 
 ## What this is NOT
 
