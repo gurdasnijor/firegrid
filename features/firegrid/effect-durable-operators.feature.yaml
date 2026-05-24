@@ -31,7 +31,7 @@ components:
       13: DurableTable v0 does not expose persistentType, Type, per-collection wire-type overrides, or required actions configuration for standard collection writes.
       14: DurableTable consumers do not use package-owned manual durable stream append helpers for generated table writes.
       15: DurableTable generated writes construct State Protocol change events through @durable-streams/state createStateSchema collection helpers rather than package-owned change-event constructors.
-      16: DurableTable.primaryKey wraps the underlying field schema with a Schema transform whose encoded representation is a string, while preserving the package-owned primary-key annotation so DurableTable can discover the key field through AST inspection.
+      16: DurableTable.primaryKey preserves the underlying field schema and adds only the package-owned primary-key annotation so DurableTable can discover the key field through AST inspection.
       17: DurableTable composite primary keys are declared as Schema.transform schemas; the DurableTable runtime does not concatenate or split key parts with package-local separator strings.
       18: DurableTable encodes primary-key values via the primary-key field schema (Schema.encodeSync) for insert, upsert, delete, and get paths; the package contains no string-coercion key helper.
       19: DurableTable.layer acquisition ensures the backing durable stream exists before preload; callers do not pre-create the stream out of band, and acquisition is idempotent against an already-existing stream with compatible configuration.

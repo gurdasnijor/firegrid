@@ -178,6 +178,7 @@ type CompiledCollection = {
   readonly durableType: string
   readonly primaryKey: string
   readonly schema: StructSchema
+  readonly storeSchema: StructSchema
   // Returns the schema-encoded primary-key value as-is. Callers that need
   // the durable-wire string form route through `requireString`, which
   // raises a typed DurableTableError on non-string values.
@@ -207,9 +208,8 @@ type TableActionMap = TableStreamDB["actions"]
 const reservedFacadeProperties = new Set(["awaitTxId"])
 
 /**
- * `primaryKey` wraps the underlying field schema with a `Schema.transform`
- * whose encoded form is a string, then attaches the package-owned annotation
- * used for AST-level primary-key discovery.
+ * `primaryKey` attaches the package-owned annotation used for AST-level
+ * primary-key discovery. The field schema itself owns encode/decode behavior.
  *
  * - The pipeable form is the primary path: `Schema.String.pipe(primaryKey)`.
  * - For non-string-decoded primary keys, the user composes a Schema.transform
@@ -218,25 +218,10 @@ const reservedFacadeProperties = new Set(["awaitTxId"])
  */
 const primaryKey = <S extends Schema.Schema.Any>(
   schema: S,
-): Schema.transform<typeof Schema.String, S> &
-  PrimaryKeyField<Schema.Schema.Type<S>> => {
-  // The transform threads the inner schema's encoded representation through
-  // a `Schema.String` outer schema. For inner schemas whose encoded form is
-  // already string (Schema.String, branded strings, or user-supplied
-  // composite-key Schema.transform / Schema.transformOrFail), the threading
-  // is identity. Non-string encoded forms fall through to `requireString` at
-  // the action boundary, which raises a typed DurableTableError with the
-  // durable type + field name.
-  const transformed = Schema.transform(Schema.String, schema, {
-    strict: false,
-    decode: (_fromA: string, fromI: string): unknown => fromI,
-    encode: (toI: unknown, _toA: unknown): string => toI as string,
-  })
-  return transformed.annotations({
+): S & PrimaryKeyField<Schema.Schema.Type<S>> =>
+  schema.annotations({
     [primaryKeyAnnotationId]: true,
-  }) as Schema.transform<typeof Schema.String, S> &
-    PrimaryKeyField<Schema.Schema.Type<S>>
-}
+  }) as S & PrimaryKeyField<Schema.Schema.Type<S>>
 
 const raise = (message: string): never => {
   throw new Error(message)
@@ -295,12 +280,17 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
     // promise contexts without needing Effect or per-call schema resolution.
     const encodeFn = Schema.encodeSync(fieldSchema)
     const decodeFn = Schema.decodeSync(fieldSchema)
+    const storeSchema = Schema.Struct({
+      ...schema.fields,
+      [primaryKeyName]: Schema.String,
+    })
 
     return {
       collectionKey,
       durableType: `${namespace}.${collectionKey}`,
       primaryKey: primaryKeyName,
       schema,
+      storeSchema,
       // Primary-key values are encoded through the field schema as-is.
       // Non-string encoded values are rejected by `requireString` at the
       // action boundary; the package contains no String(...) coercion fallback.
@@ -323,7 +313,7 @@ const makeStateDefinition = (
           type: collection.durableType,
           primaryKey: collection.primaryKey,
           schema: Schema.standardSchemaV1(
-            collection.schema as unknown as Schema.Schema<object, unknown, never>,
+            collection.storeSchema as unknown as Schema.Schema<object, unknown, never>,
           ),
         },
       ],
@@ -371,9 +361,13 @@ const makeActionDefinitions = (
             coll.insert(encoded)
           },
           mutationFn: async (params: unknown) => {
-            const { encoded } = encodeRowForStore(collection, params as object)
+            const { encoded, encodedKey } = encodeRowForStore(
+              collection,
+              params as object,
+            )
             const txid = crypto.randomUUID()
             const event = helpers.insert({
+              key: encodedKey,
               value: encoded,
               headers: { txid },
             })
@@ -399,9 +393,13 @@ const makeActionDefinitions = (
             }
           },
           mutationFn: async (params: unknown) => {
-            const { encoded } = encodeRowForStore(collection, params as object)
+            const { encoded, encodedKey } = encodeRowForStore(
+              collection,
+              params as object,
+            )
             const txid = crypto.randomUUID()
             const event = helpers.upsert({
+              key: encodedKey,
               value: encoded,
               headers: { txid },
             })
@@ -785,6 +783,7 @@ const makeFacade = <Row extends object, Key>(options: {
         })
         const txid = crypto.randomUUID()
         const event = helper.insert({
+          key: encodedKey,
           value: encoded,
           headers: { txid },
         })
