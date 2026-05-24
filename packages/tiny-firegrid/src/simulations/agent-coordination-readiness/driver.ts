@@ -145,13 +145,10 @@ export const runAgentCoordinationReadinessSmokeViaClient = (
         observedViaClient = result.output
         break
       }
-      // Terminal classes: stop walking before exhausting the budget.
-      if (
-        result.output._tag === "Terminated" ||
-        result.output._tag === "TurnComplete"
-      ) {
-        break
-      }
+      // Do not stop on terminal rows. In the live codec path, process-exit
+      // evidence can race the stdout JSONL observation on CI. The assertion is
+      // that the TextChunk is observable through the public wait surface, so
+      // keep walking the cursor until it appears or the bounded budget expires.
     }
     if (observedViaClient === undefined) {
       return yield* Effect.fail(

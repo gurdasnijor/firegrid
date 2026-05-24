@@ -78,7 +78,7 @@ export {
   RuntimeObservationStreams,
   RuntimeObservationStreamsLive,
   type RuntimeObservationStreamsService,
-} from "./streams/index.ts"
+} from "./channels/observation-streams/index.ts"
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
 export {

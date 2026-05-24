@@ -109,10 +109,10 @@ These are intentionally not agent event-pipeline stages:
 
 - `host/`: runtime host topology and command entrypoints
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.3`).
-- `streams/`: substrate-neutral runtime observation source schemas and
-  observation stream capability tags. Consumers such as wait routers and
-  future channel registries use this folder for typed stream selection without
-  depending on workflow ownership.
+- `channels/observation-streams/`: substrate-neutral runtime observation
+  source schemas and observation stream capability tags. Consumers such as
+  wait routers and future channel registries use this folder for typed stream
+  selection without depending on workflow ownership.
 - `subscribers/keyed-dispatch/`: the Shape C subscriber-runtime dispatch
   primitive. A generic per-key event router: tails a keyed-event source,
   serializes same-key handlers via a per-key mutex, runs different keys

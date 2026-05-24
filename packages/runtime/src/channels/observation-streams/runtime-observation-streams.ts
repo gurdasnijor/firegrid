@@ -4,7 +4,7 @@ import {
   RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEvents,
   type RuntimeAgentOutputObservation,
-} from "../tables/runtime-output.ts"
+} from "../../tables/runtime-output.ts"
 import type { RuntimeObservationSource } from "./sources.ts"
 
 export interface RuntimeObservationStreamsService {

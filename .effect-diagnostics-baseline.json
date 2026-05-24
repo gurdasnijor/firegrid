@@ -585,7 +585,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/streams/sources.ts",
+      "file": "packages/runtime/src/channels/observation-streams/sources.ts",
       "line": 13,
       "column": 51,
       "severity": "message",
@@ -594,7 +594,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/streams/sources.ts",
+      "file": "packages/runtime/src/channels/observation-streams/sources.ts",
       "line": 17,
       "column": 56,
       "severity": "message",
@@ -603,7 +603,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/streams/sources.ts",
+      "file": "packages/runtime/src/channels/observation-streams/sources.ts",
       "line": 32,
       "column": 50,
       "severity": "message",

@@ -28,7 +28,7 @@ import { local } from "@firegrid/client-sdk/firegrid"
 const fixtureAgentScript = [
   "process.stdout.write(",
   "  JSON.stringify({ type: 'text', text: 'readiness-hello', messageId: 'readiness-msg-1' }) + '\\n',",
-  "  () => setImmediate(() => process.exit(0)),",
+  "  () => setTimeout(() => process.exit(0), 25),",
   ")",
 ].join("\n")
 

@@ -281,7 +281,7 @@ describe("shape-d-tool-dispatch-mcp-entry: negative guards", () => {
       "RuntimeAgentOutputAfterEvents",
       // Wrong-tree paths #684 used
       "wait-routing/",
-      "@firegrid/runtime/streams",
+      "@firegrid/runtime/channels/observation-streams",
       // Workflow-engine internals that would indicate the bridge was kept
       "WorkflowEngineTable",
     ]

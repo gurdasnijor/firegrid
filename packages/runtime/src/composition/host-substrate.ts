@@ -22,7 +22,7 @@ import {
 } from "../tables/runtime-context-state.ts"
 import {
   RuntimeObservationStreamsLive,
-} from "../streams/index.ts"
+} from "../channels/observation-streams/index.ts"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
   RuntimeContextStateStoreLive,

@@ -13,7 +13,7 @@ import { durableStreamUrl } from "@firegrid/protocol/launch"
 import { RuntimeContextChannelRouterLive } from "@firegrid/runtime/channels/router/live"
 import { type FiregridHost, FiregridRuntimeHostLive } from "@firegrid/runtime/composition/host-live"
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/producers/sandbox"
-import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/channels/observation-streams"
 import { Context, Effect, Layer, Schema, Stream } from "effect"
 import {
   DurableTable,

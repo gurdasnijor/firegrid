@@ -17,6 +17,8 @@ Channel capability bindings and wire-edge dispatch. Target layout:
 - `routes/` — typed channel registrations projected to router routes
 - `router.ts` — `HostPlaneChannelRouter` / `RuntimeChannelRouter`; schema
   parsing, direction/verb checks, route invocation
+- `observation-streams/` — typed observation-source capability tags used by
+  wait/router subscribers
 
 Channels are typed semantic capabilities. A channel folder defines an
 `IngressChannel`, `EgressChannel`, `CallableChannel`, or
