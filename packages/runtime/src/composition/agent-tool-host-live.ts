@@ -21,6 +21,7 @@ import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
   local,
+  makeRuntimeStartRequestRow,
   makeRuntimeLifecycleRequestRow,
   normalizeRuntimeIntent,
   runtimeControlPlaneStreamUrl,
@@ -216,9 +217,22 @@ const runtimeHostAgentToolHostService = (captured: {
   }) =>
     Effect.gen(function* () {
       const childContextId = childContextIdForToolUse(parentContextId, toolUseId)
+      const parentContext = yield* requireLocalContextWithHostCapabilities(
+        captured,
+        parentContextId,
+      )
+      const childConfig = parentContext.runtime.config.agent === agentKind
+        ? {
+          ...parentContext.runtime.config,
+          ...(spawnOptions?.cwd === undefined ? {} : { cwd: spawnOptions.cwd }),
+        }
+        : {
+          argv: [agentKind],
+          ...(spawnOptions?.cwd === undefined ? {} : { cwd: spawnOptions.cwd }),
+        }
       const intent = normalizeRuntimeIntent(local.jsonl({
-        argv: [agentKind],
-        ...(spawnOptions?.cwd === undefined ? {} : { cwd: spawnOptions.cwd }),
+        ...childConfig,
+        agent: agentKind,
       }))
       // firegrid-factory-aligned-agent-tools.SESSION.1
       // firegrid-factory-aligned-agent-tools.SESSION.6
@@ -238,16 +252,18 @@ const runtimeHostAgentToolHostService = (captured: {
         idempotencyKey: inputId,
       })
       yield* requireLocalContextWithHostCapabilities(captured, childContextId)
-      // Wave D-B: child-context start is implicit. The host-scope Shape C
-      // subscriber (`RuntimeContextSubscriberLive`, see
-      // `@firegrid/runtime/composition/host-live`) forks a per-key fiber for
-      // the child contextId as soon as its initial input fact lands
-      // (written above by `appendIngressWithHostCapabilities`). Reporting
-      // "created" stays honest under the new shape: the child's process
-      // spawn is observed by the subscriber, not invoked from this gen;
-      // durable run/lifecycle evidence remains the source of truth for
-      // confirmed running/failed transitions (cf. the retired legacy
-      // child-context body driver removed in this PR).
+      // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.3
+      //
+      // Child session creation must also enqueue the durable start request.
+      // The RCSW cutover made runtime-control the sole admission boundary
+      // for starting a RuntimeContext; an input fact alone only wakes an
+      // already-started attempt.
+      yield* captured.controlTable.startRequests.insertOrGet(
+        makeRuntimeStartRequestRow({
+          contextId: childContextId,
+          requestedBy: `agent-tool:${parentContextId}`,
+        }),
+      )
       return {
         childContextId,
         status: "created" as const,
