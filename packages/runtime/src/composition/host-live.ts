@@ -128,8 +128,12 @@ import {
   PerContextRuntimeOutputWriterLive,
   RuntimeContextStateStoreLive,
 } from "./per-context-host-live.ts"
+import { HostRuntimeObservationStreamsLive } from "./host-substrate.ts"
 import { RuntimeToolUseExecutorLive as runtimeToolUseExecutorLayer } from "../subscribers/tool-dispatch/runtime-tool-use-executor-live.ts"
-import { ToolDispatchLive } from "../subscribers/tool-dispatch/index.ts"
+import {
+  RuntimeAgentToolExecutionLive,
+  ToolDispatchLive,
+} from "../subscribers/tool-dispatch/index.ts"
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
@@ -215,9 +219,26 @@ const localProcessSandboxProviderLayer = (
 // Wave D-A (PR #714): host-scope bundle that satisfies
 // `RuntimeContextSubscriberLive`'s R channel — the Shape C loop body's
 // per-context state store + tool executor live alongside `RuntimeHostLive`.
+//
+// `RuntimeToolUseExecutorLive` (`runtimeToolUseExecutorLayer`) captures
+// `RuntimeAgentToolExecution` at Layer-build time via `Effect.context<…>()`;
+// the canonical Live for that Tag (`RuntimeAgentToolExecutionLive`) must
+// therefore be UNDER the executor in the same bundle so the capture
+// succeeds. Without it, `Layer.build(FiregridRuntimeHostLive)` fails with
+// `Service not found: @firegrid/runtime/RuntimeAgentToolExecution` and no
+// `firegrid run` invocation can start. The old host-sdk composition had
+// the same gap; this restoration lands at the canonical runtime home
+// (Class F3 follow-up).
 const runtimeContextSubscriberHostBundle = RuntimeHostLive.pipe(
   Layer.provideMerge(RuntimeContextStateStoreLive),
   Layer.provideMerge(runtimeToolUseExecutorLayer),
+  Layer.provideMerge(RuntimeAgentToolExecutionLive),
+  // `RuntimeToolUseExecutorLive` also captures `RuntimeObservationStreams`
+  // at Layer-build time. The canonical Live (`RuntimeObservationStreamsLive`)
+  // requires `RuntimeAgentOutputEvents` + the per-context after-events seam,
+  // which `HostRuntimeObservationStreamsLive` composes from the host
+  // observation substrate. Same provideMerge ordering rationale as above.
+  Layer.provideMerge(HostRuntimeObservationStreamsLive),
 )
 
 const RuntimeContextWorkflowSessionLive = Layer.scoped(
