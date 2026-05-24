@@ -3,7 +3,7 @@
 // Source: docs/architecture/2026-05-22-shape-c-cutover-roadmap.md §"Wave D"
 // /§"Wave E"; docs/architecture/2026-05-22-runtime-physical-target-tree.md.
 //
-// The three legacy runtime roots (`kernel/`, `workflow-engine/`, `streams/`)
+// The remaining legacy runtime roots (`kernel/`, `workflow-engine/`)
 // are bridge surfaces scheduled for deletion. Every preserved file under
 // them must have an explicit PARK entry below naming the owner and the
 // deletion wave. The script always prints the per-root line counts
@@ -33,7 +33,6 @@ const repoRoot = resolve(here, "..")
 const legacyRoots = [
   "packages/runtime/src/kernel",
   "packages/runtime/src/workflow-engine",
-  "packages/runtime/src/streams",
 ]
 
 // Explicit PARK allowlist. Every preserved `.ts` file under a legacy root
@@ -89,24 +88,6 @@ const parkAllowlist = {
   // Wait-router and scheduled-prompt workflow bodies moved to their
   // Shape D subscriber folders. Entries removed.
 
-  // -- packages/runtime/src/streams/ -----------------------------------
-  // Wave D-D: route-based observation through the channel router replaces
-  // the `RuntimeObservationStreams` / `CallerOwnedFactStreams` Tag family
-  // for wait/child-output. The verified-webhook adapter is the named
-  // PARK blocker on the final `CallerOwnedFactStreams` deletion (see
-  // PR #716 FINDING.md).
-  "packages/runtime/src/streams/index.ts": {
-    owner: "rearch-shape-c",
-    wave: "D-D",
-  },
-  "packages/runtime/src/streams/runtime-observation-streams.ts": {
-    owner: "rearch-shape-c",
-    wave: "D-D",
-  },
-  "packages/runtime/src/streams/sources.ts": {
-    owner: "rearch-shape-c",
-    wave: "D-D",
-  },
 }
 
 const failures = []

@@ -1,6 +1,6 @@
 import { durableStreamUrl } from "@firegrid/protocol/launch"
 import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
-import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/channels/observation-streams"
 import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,

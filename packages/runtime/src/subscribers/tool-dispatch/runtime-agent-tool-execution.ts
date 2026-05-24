@@ -16,8 +16,8 @@ import type {
 import { Context, Duration, Effect, Layer } from "effect"
 import type {
   RuntimeObservationSource,
-} from "../../streams/index.ts"
-export type { RuntimeObservationSource } from "../../streams/index.ts"
+} from "../../channels/observation-streams/index.ts"
+export type { RuntimeObservationSource } from "../../channels/observation-streams/index.ts"
 import type {
   FieldEqualsTrigger,
 } from "../../transforms/field-equals.ts"

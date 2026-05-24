@@ -25,7 +25,7 @@ import {
   DurableDeferred,
   Workflow,
 } from "@effect/workflow"
-import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/channels/observation-streams"
 import { Duration, Effect, Option, Schema, Stream } from "effect"
 
 const FieldEqualsScalarSchema = Schema.Union(

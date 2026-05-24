@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeObservationStreams,
   type RuntimeObservationStreamsService,
-} from "../../../src/streams/index.ts"
+} from "../../../src/channels/observation-streams/index.ts"
 import {
   DurableStreamsWorkflowEngine,
 } from "../../../src/engine/durable-streams-workflow-engine.ts"

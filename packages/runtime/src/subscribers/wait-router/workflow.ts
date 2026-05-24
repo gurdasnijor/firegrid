@@ -11,7 +11,7 @@ import {
   RuntimeObservationSourceSchema,
   RuntimeObservationStreams,
   type RuntimeObservationSource,
-} from "../../streams/index.ts"
+} from "../../channels/observation-streams/index.ts"
 
 // tf-0xe4: one (source, trigger) pair the workflow races. wait_for is one pair;
 // wait_for_any is the primary `source`/`trigger` plus `additionalSources`.

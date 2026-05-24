@@ -10,7 +10,7 @@ import {
 } from "@firegrid/protocol/verified-webhook"
 import {
   CallerOwnedFactStreams,
-} from "../../streams/index.ts"
+} from "../observation-streams/index.ts"
 import {
   VerifiedWebhookFactTable,
   type VerifiedWebhookFactTableService,
@@ -20,7 +20,7 @@ import { Effect, Layer, Schema, Stream } from "effect"
 // Relocated from the deleted host-sdk path
 // `host-sdk/src/host/channels/verified-webhook/index.ts` (Class D
 // channel-Lives relocation). Note: `CallerOwnedFactStreams` still lives
-// at `runtime/streams/`; its retirement is the Wave-D-D
+// at `channels/observation-streams/`; its retirement is the Wave-D-D
 // `verified-webhook router-route` lane (PR #716 PARK) and is out of
 // scope for this relocation.
 

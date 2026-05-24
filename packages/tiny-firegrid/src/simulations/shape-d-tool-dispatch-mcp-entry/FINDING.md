@@ -61,7 +61,7 @@ deletions below requires D-A first:
    `RuntimeWaitCompletionTable` / `RuntimeWaitCompletionStore` /
    `runtimeWaitForMatch`; no `RuntimeObservationStreams` / `callerFact`
    / `RuntimeAgentOutputAfterEvents`; no `wait-routing/` path; no
-   `@firegrid/runtime/streams` import; no `WorkflowEngineTable` leak.
+   `@firegrid/runtime/channels/observation-streams` import; no `WorkflowEngineTable` leak.
 8. **Facade `R` channel is exactly `{ WorkflowEngine }`** — compile-
    time assertion. Adding `RuntimeContextWorkflowRuntime`,
    `AgentToolHost`, or any other host-bound capability would fail

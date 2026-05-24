@@ -281,7 +281,7 @@ packages/runtime/src/
   workflow-engine/
   agent-tools/
   agent-adapters/
-  streams/
+  channels/observation-streams/
   source-registration/
   verified-webhook-ingest/
 ```
@@ -295,7 +295,7 @@ The exact folder names can change, but the boundary is fixed:
 - host namespace composes live host topology and command entrypoints;
 - source-registration owns provider/source registration layers for `wait_for`
   visibility without host-only observation glue;
-- streams owns substrate-neutral runtime observation source schemas and stream
+- channels/observation-streams owns substrate-neutral runtime observation source schemas and stream
   capability tags consumed by wait routers and future channel registries;
 - waits, workflow-engine, tools, adapters, streams, source registration, and
   verified ingest are adjacent bounded contexts, not subfolders of the agent
@@ -509,7 +509,7 @@ This inventory is the review checklist for the post-`#250` tree.
 | `sources/` | Live process/resource acquisition | Mostly target; env policy leaks to app consumers. | Imports runtime errors from `host/`. | Yes, via `host/` |
 | `codecs/` | Scoped protocol session providers and wire normalization | Target after Effect-native session layer refactor; event barrel compatibility should drop. | Imported by `events/index.ts`. | Yes, with `events/` |
 | `host/` | Host topology and command entrypoints | Mixed; source of most cycles. | Owns shared runtime errors today. | Yes |
-| `streams/` | Runtime observation source schemas and stream capability tags | Target substrate-neutral surface; not owned by durable wait tools. | Provides typed observation source selection for wait routers and future channel registry consumers. | No |
+| `channels/observation-streams/` | Runtime observation source schemas and stream capability tags | Target channel-tier observation surface; not owned by durable wait tools. | Provides typed observation source selection for wait routers and future channel registry consumers. | No |
 | `subscribers/keyed-dispatch/` | Shape C subscriber-runtime dispatch primitive (per-key serialization + cross-key concurrency over a tail source) | Target substrate-neutral helper. Generic over key/event; imposes no `WorkflowEngine` requirement on the subscriber's `R`. Production manifestation of tf-4fy3 Outcome B evidence (`packages/tiny-firegrid/src/simulations/per-key-subscriber-push-restart/`). | Imported by Shape C handlers (e.g. RuntimeContext) to drive per-event materializations from a keyed-event source. | No |
 | `channels/` | Public channel router capabilities | Target public surface for route metadata and dispatch composition; route providers stay in authority/provider modules. | Exposes runtime-owned router tags without exposing DurableTable route bodies. | No |
 | `kernel/` | Runtime-context host-kernel services | Target internal host-kernel surface; host-sdk composes it but does not own workflow engine lifecycle, runtime-context helpers, or durable input dispatch state. | Owns runtime-context workflow runtime helpers below the SDK boundary. | No |

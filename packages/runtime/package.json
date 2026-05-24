@@ -34,8 +34,8 @@
       "default": "./src/tables/runtime-output-public.ts"
     },
     "./streams": {
-      "types": "./src/streams/index.ts",
-      "default": "./src/streams/index.ts"
+      "types": "./src/channels/observation-streams/index.ts",
+      "default": "./src/channels/observation-streams/index.ts"
     },
     "./runtime-keyed-subscriber": {
       "types": "./src/subscribers/keyed-dispatch/index.ts",
@@ -76,6 +76,10 @@
     "./channels/router/live": {
       "types": "./src/channels/router/live.ts",
       "default": "./src/channels/router/live.ts"
+    },
+    "./channels/observation-streams": {
+      "types": "./src/channels/observation-streams/index.ts",
+      "default": "./src/channels/observation-streams/index.ts"
     },
     "./channels/session-self/live": {
       "types": "./src/channels/session-self/live.ts",

@@ -15,7 +15,7 @@ import type {
 } from "@firegrid/protocol/session-facade"
 import {
   CallerOwnedFactStreams,
-} from "@firegrid/runtime/streams"
+} from "@firegrid/runtime/channels/observation-streams"
 import {
   Effect,
   Layer,
