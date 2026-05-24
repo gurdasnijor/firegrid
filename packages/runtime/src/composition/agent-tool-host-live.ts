@@ -44,7 +44,7 @@ import {
   type RuntimeContextInsertService,
   RuntimeContextRead,
   type RuntimeContextReadService,
-} from "../control-plane/index.ts"
+} from "../tables/runtime-control-plane.ts"
 import {
   appendRuntimeIngress,
 } from "./host-public.ts"

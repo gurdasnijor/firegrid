@@ -39,7 +39,7 @@ import { Effect, Either, Option, Schema } from "effect"
 import { DurableTable } from "effect-durable-operators"
 import {
   RuntimeContextRead,
-} from "../../control-plane/index.ts"
+} from "../../tables/runtime-control-plane.ts"
 import { ingressInputRowFromIntent } from "../../tables/runtime-context-input-facts.ts"
 import { agentInputEventFromRuntimeIngressRow } from "../../transforms/decode-ingress-row.ts"
 import {

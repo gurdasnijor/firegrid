@@ -33,7 +33,7 @@
 //     subscriber `R` channel (the dispatcher is Shape-neutral per
 //     `runtime-keyed-subscriber/keyed-dispatch.ts:18-25`).
 //   - No raw `DurableTable` service yield in `subscribers/` — table
-//     binding lives in `tables/` + `authorities/`; subscribers consume
+//     binding lives in `tables/`; subscribers consume
 //     typed source/authority capabilities (enforced by
 //     `firegrid-runtime-no-table-service-yield-outside-providers` +
 //     `firegrid-runtime-no-table-type-parameters-outside-authorities`).
@@ -50,15 +50,12 @@ import { runKeyedDispatch } from "../../runtime-keyed-subscriber/index.ts"
 import { RuntimeContextInputFacts } from "../../tables/runtime-context-input-facts.ts"
 import { RuntimeAgentOutputAfterEvents } from "../../tables/runtime-context-output-facts.ts"
 // Route through the runtime's target public subpath (`@firegrid/runtime/control-plane`,
-// physical home `../../control-plane/index.ts`) instead of reaching into the
-// legacy `authorities/` tree directly. Subscribers consume read/write capability
-// tags via the control-plane re-export surface; the bare `authorities/` path is
-// not target-shape (cf. OLA2 audit 2026-05-23 target→authorities gap).
+// physical home `../../tables/runtime-control-plane.ts`) instead of reaching into the
 import {
   RuntimeContextRead,
   RuntimeContexts,
   RuntimeRunAppendAndGet,
-} from "../../control-plane/index.ts"
+} from "../../tables/runtime-control-plane.ts"
 import {
   handleRuntimeContextEvent,
   type RuntimeContextTargetEvent,

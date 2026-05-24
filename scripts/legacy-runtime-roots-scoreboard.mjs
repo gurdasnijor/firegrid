@@ -54,8 +54,8 @@ const parkAllowlist = {
   // (`DurableStreamsWorkflowEngine.ts` + `internal/{engine-runtime,table,
   // codec,contract-activity}.ts`) moved to `engine/`. Entries removed.
   //
-  // Shape D workflows (tool-call, wait-for, scheduled-prompt, runtime-
-  // control-request, runtime-context-run, runtime-ingress-transform) and
+  // Shape D workflows (tool-call, wait-for, scheduled-prompt,
+  // runtime-context-run, runtime-ingress-transform) and
   // the tool-execution executor Tag remain under `workflow-engine/`
   // pending the per-bead Shape D moves into `subscribers/` folders
   // (`tf-up1v` executor; `tf-hpr0` wait-for; `tf-6hqx` scheduled-prompt;
@@ -80,11 +80,6 @@ const parkAllowlist = {
   },
   // Body+kernel deletion wave: workflow body
   // (`workflows/runtime-context.ts`) deleted; entry removed.
-  "packages/runtime/src/workflow-engine/workflows/runtime-control-request.ts":
-    {
-      owner: "rearch-shape-c",
-      wave: "D-control",
-    },
   "packages/runtime/src/workflow-engine/workflows/runtime-ingress-transform.ts":
     {
       owner: "rearch-shape-c",

@@ -52,7 +52,7 @@ import {
   RuntimeContextInsert,
   RuntimeControlPlaneRecorderLive,
   RuntimeRunAppendAndGet,
-} from "../../../src/control-plane/index.ts"
+} from "../../../src/tables/runtime-control-plane.ts"
 import {
   RcswProcessedTable,
   RuntimeContextSessionWorkflowDispatch,

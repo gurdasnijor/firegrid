@@ -113,7 +113,7 @@ confirmed, or name the planned consumer and keep this README current.
 ## Boundary Rules
 
 - Put wire-format parsing, encoding, and protocol session contracts here.
-- Keep durable commit behavior in `authorities/`.
+- Keep durable commit behavior in `tables/` or `producers/ingress-writers/`.
 - Keep pure cross-codec row shaping in `transforms/`.
 - Keep durable permission state outside codecs; codec permission continuations
   are live protocol promises only.

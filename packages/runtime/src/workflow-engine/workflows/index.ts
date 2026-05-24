@@ -11,7 +11,7 @@ export {
   runtimeControlRequestWorkflowExecutionId,
   runtimeControlRequestWorkflowStreamUrl,
   type RuntimeControlRequestDispatchOutcome,
-} from "./runtime-control-request.ts"
+} from "../../subscribers/runtime-control/workflows.ts"
 // Pure field-equals trigger/evaluator now lives under `transforms/field-equals.ts`
 // (Shape C cutover physical target tree). The workflow-engine path is a thin
 // re-export shim until callers migrate to `@firegrid/runtime/transforms` (or

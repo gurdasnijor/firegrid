@@ -6,7 +6,7 @@ import {
   RuntimeControlPlaneRecorderLive,
   RuntimeRuns,
   RuntimeRunAppendAndGet,
-} from "../../src/authorities/runtime-control-plane-recorder.ts"
+} from "../../src/tables/runtime-control-plane.ts"
 import {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
