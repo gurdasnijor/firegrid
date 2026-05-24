@@ -105,7 +105,7 @@ import {
   type HostId,
   type HostSessionId,
 } from "@firegrid/protocol/launch"
-import { Clock, Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Config, Effect, Layer, Option, Redacted, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { RuntimeHostConfig } from "./runtime-host-config.ts"
 import {

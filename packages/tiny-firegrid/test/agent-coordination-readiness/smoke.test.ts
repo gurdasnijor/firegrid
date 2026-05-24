@@ -6,7 +6,7 @@ import {
 } from "@firegrid/client-sdk/firegrid"
 import { type FiregridHost } from "@firegrid/runtime/composition/host-live"
 import {
-  HostPlaneChannelRouter,
+  type HostPlaneChannelRouter,
 } from "@firegrid/runtime/channels"
 import { Effect, Layer, Tracer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -18,7 +18,7 @@ import {
 } from "../../src/simulations/agent-coordination-readiness/host.ts"
 import {
   runAgentCoordinationReadinessSmoke,
-} from "../../src/simulations/agent-coordination-readiness/driver.ts"
+} from "../../src/simulations/agent-coordination-readiness/router-probe.ts"
 import type { TinyFiregridHostEnv } from "../../src/types.ts"
 
 let server: DurableStreamTestServer | undefined
@@ -251,7 +251,7 @@ describe("agent-coordination-readiness smoke (tf-1r0o readiness checklist)", () 
     // The router-mediated wait_for dispatch (step 5b) must be one of them.
     const sessionAgentOutputWaitFor = dispatchSpans.find(span =>
       span.attributes.get("firegrid.channel.target") === "session.agent_output" &&
-      span.attributes.get("firegrid.channel.verb") === "wait_for"
+      span.attributes.get("firegrid.channel.verb") === "wait_for",
     )
     expect(sessionAgentOutputWaitFor).toBeDefined()
   }, 30_000)

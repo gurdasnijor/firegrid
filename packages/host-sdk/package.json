@@ -23,11 +23,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": {
-    "@firegrid/protocol": "workspace:*",
-    "@firegrid/runtime": "workspace:*",
-    "effect": "^3.21.2"
-  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0",

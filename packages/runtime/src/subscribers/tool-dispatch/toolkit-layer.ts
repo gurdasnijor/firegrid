@@ -31,8 +31,10 @@ import {
 
 const TOOL_USE_ID_PREFIX = "mcp"
 
-export { ToolCallWorkflow } from "@firegrid/runtime/tool-executor"
-export { RuntimeToolCallWorkflowLayer as ToolCallWorkflowLayer } from "@firegrid/runtime/tool-executor"
+// `ToolCallWorkflow` + `ToolCallWorkflowLayer` are canonically exported
+// by `./index.ts` (which re-exports `RuntimeToolCallWorkflowLayer as
+// ToolCallWorkflowLayer` from `./workflow.ts`). Duplicate re-exports
+// from this module were dead and removed.
 
 type ToolCallHostEnvironment = ToolDispatch
 

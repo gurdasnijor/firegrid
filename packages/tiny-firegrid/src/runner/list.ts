@@ -29,8 +29,23 @@ const isSimulation = (
 // discovery so they don't show up in `simulate list` or get picked up as
 // runnable. Add to this set rather than relying on placeholder `index.ts`
 // files that the discovery walk would otherwise happily load.
+//
+// The shape-c / shape-d / wave-d-a entries below are probe-test-only
+// sims (their `index.ts` exports vocabulary used by the sibling
+// `test/<sim>/probe.test.ts` but has no `defineSimulation(...)` default
+// export). They were never runnable through the standard
+// `simulate:run`/`simulate:list` flow and remain probe-only by design.
+// Without this hiding the discovery walk fails on the first such
+// folder it encounters, which previously masked the consumer-retarget
+// breakage that PR #738's host-sdk deletion would have exposed and now
+// surfaces during `simulate list`.
 const hiddenFolders = new Set([
   "sim2-multi-surface-projection",
+  "shape-c-channel-router-turn",
+  "shape-c-non-recursive-start",
+  "shape-c-terminal-ordering",
+  "shape-d-tool-dispatch-mcp-entry",
+  "wave-d-a-shape-b-input-identity-dedup",
 ])
 
 const isHidden = (folder: string): boolean =>

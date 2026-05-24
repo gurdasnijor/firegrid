@@ -76,7 +76,7 @@ const schemaJson = (
   schema: Parameters<typeof JSONSchema.make>[0],
 ): JSONSchema.JsonSchema7Root => JSONSchema.make(schema)
 
-export const runtimeContextMcpChannelCatalog = (
+const runtimeContextMcpChannelCatalog = (
   metadata: ReadonlyArray<ChannelMetadata>,
 ): ReadonlyArray<RuntimeContextMcpChannelCatalogEntry> =>
   metadata.map(entry => {
@@ -185,7 +185,7 @@ const appendRuntimeContextMcpChannelCatalogDescription = (
     : `${description}\n\n${inventoryText}`
 }
 
-export const enrichRuntimeContextMcpToolWithChannelMetadata = (
+const enrichRuntimeContextMcpToolWithChannelMetadata = (
   tool: McpSchema.Tool,
   inventory: ReadonlyArray<RuntimeContextMcpChannelCatalogEntry>,
 ): void => {

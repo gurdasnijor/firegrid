@@ -1,9 +1,6 @@
-import {
-  durableStreamUrl,
-  FiregridEnvBindingsFromEnv,
-  FiregridLocalHostLive,
-  FiregridLocalProcessFromEnv,
-} from "@firegrid/host-sdk"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import { FiregridLocalHostLive } from "@firegrid/runtime/composition/host-live"
+import { FiregridEnvBindingsFromEnv, FiregridLocalProcessFromEnv } from "@firegrid/runtime/producers/sandbox/local-process-from-env"
 import {
   ensurePathInput,
   FiregridMcpServerLayer,

@@ -12,11 +12,13 @@ export {
 export { agentCoordinationReadinessHost } from "./host.ts"
 export {
   ReadinessSmokeFailure,
-  runAgentCoordinationReadinessSmoke,
   runAgentCoordinationReadinessSmokeViaClient,
   type AgentCoordinationReadinessClientResult,
-  type AgentCoordinationReadinessResult,
 } from "./driver.ts"
+export {
+  runAgentCoordinationReadinessSmoke,
+  type AgentCoordinationReadinessResult,
+} from "./router-probe.ts"
 
 /**
  * Standard runner simulation — exposes the CLIENT-ONLY readiness driver

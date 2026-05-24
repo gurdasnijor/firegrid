@@ -1,84 +1,9 @@
 {
   "findings": [
     {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 154
-    },
-    {
-      "ruleId": "firegrid-c4-no-new-durable-deferred-runtime-wait",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 162
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
-      "line": 35
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/config.ts",
-      "line": 3
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/layers.ts",
-      "line": 66
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/per-context-runtime-output.ts",
-      "line": 12
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
-      "line": 42
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/common.ts",
-      "line": 26
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/common.ts",
-      "line": 29
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-context-session/raw-adapter.ts",
-      "line": 15
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-kernel-import",
-      "path": "packages/host-sdk/src/host/runtime-substrate.ts",
-      "line": 17
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
-      "path": "packages/host-sdk/src/agent-tools/execution/runtime-tool-use-executor-live.ts",
-      "line": 6
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
-      "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
-      "line": 90
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
-      "path": "packages/host-sdk/src/host/channels/verified-webhook/index.ts",
-      "line": 13
-    },
-    {
-      "ruleId": "firegrid-host-sdk-no-runtime-streams-import",
-      "path": "packages/host-sdk/src/host/runtime-substrate.ts",
-      "line": 20
-    },
-    {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/workflow-engine/workflows/runtime-context.ts",
-      "line": 686
+      "path": "packages/runtime/src/subscribers/tool-dispatch/workflow.ts",
+      "line": 33
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
@@ -102,11 +27,6 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/subscribers/tool-dispatch/workflow.ts",
-      "line": 33
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/workflow-engine/workflows/wait-for.ts",
       "line": 63
     },
@@ -127,11 +47,6 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/host.ts",
-      "line": 596
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/wait-for-workflow.ts",
       "line": 63
     },
@@ -147,13 +62,8 @@
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/phase0-wave-2b-stream-zip-restart-replay/host.ts",
-      "line": 575
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/host.ts",
-      "line": 84
+      "line": 82
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
@@ -164,6 +74,46 @@
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/tiny-firegrid/src/simulations/shape-d-workflow-admission/resources.ts",
       "line": 212
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
+      "path": "packages/runtime/src/subscribers/tool-dispatch/agent-tool-host-live.ts",
+      "line": 484
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
+      "path": "packages/runtime/src/subscribers/tool-dispatch/agent-tool-host-live.ts",
+      "line": 540
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
+      "path": "packages/runtime/src/composition/host-public.ts",
+      "line": 99
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
+      "path": "packages/runtime/src/composition/host-public.ts",
+      "line": 106
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
+      "path": "packages/runtime/src/subscribers/tool-dispatch/agent-tool-host-live.ts",
+      "line": 193
+    },
+    {
+      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
+      "path": "packages/runtime/src/subscribers/tool-dispatch/agent-tool-host-live.ts",
+      "line": 517
+    },
+    {
+      "ruleId": "firegrid-runtime-subscribers-transforms-no-table-facades",
+      "path": "packages/runtime/src/subscribers/tool-dispatch/agent-tool-host-live.ts",
+      "line": 193
+    },
+    {
+      "ruleId": "firegrid-runtime-subscribers-transforms-no-table-facades",
+      "path": "packages/runtime/src/subscribers/tool-dispatch/agent-tool-host-live.ts",
+      "line": 517
     }
   ]
 }

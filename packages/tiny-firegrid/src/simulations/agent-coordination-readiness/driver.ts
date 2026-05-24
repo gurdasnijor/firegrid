@@ -1,11 +1,17 @@
+// `driver.ts` is the client-only driver slot. The boundary lint
+// (eslint.config.js `packages/tiny-firegrid/src/simulations/*/driver.ts`)
+// forbids @firegrid/protocol, @firegrid/runtime, and durable-operators
+// imports here — drivers consume only the public @firegrid/client-sdk
+// surface. The step-5b router-dispatch assertion (which by design
+// reaches past the client surface) lives in `./router-probe.ts` and is
+// consumed exclusively by the paired vitest smoke. `index.ts` wires the
+// client-only driver below into the standard simulation slot.
 import { Firegrid } from "@firegrid/client-sdk/firegrid"
-import {
-  SessionAgentOutputChannelTarget,
-} from "@firegrid/protocol/channels"
-import {
-  type RuntimeAgentOutputObservation,
-} from "@firegrid/protocol/session-facade"
-import { HostPlaneChannelRouter } from "@firegrid/runtime/channels"
+// `RuntimeAgentOutputObservation` is the protocol-owned shape the
+// public client method `handle.wait.forAgentOutput` returns. Re-imported
+// indirectly through client-sdk to keep this file inside the
+// `@firegrid/client-sdk`-only driver boundary.
+import { type RuntimeAgentOutputObservation } from "@firegrid/client-sdk/firegrid"
 import { Data, Effect } from "effect"
 import { readinessFixtureAgentRuntime } from "./fixture-agent.ts"
 
@@ -61,10 +67,8 @@ export interface AgentCoordinationReadinessClientResult {
   readonly clientObservationsCollected: ReadonlyArray<RuntimeAgentOutputObservation>
 }
 
-export interface AgentCoordinationReadinessResult
-  extends AgentCoordinationReadinessClientResult {
-  readonly observedViaRouter: RuntimeAgentOutputObservation
-}
+// The combined router-probe result (`AgentCoordinationReadinessResult`)
+// lives in `./router-probe.ts` alongside the function that produces it.
 
 const externalKey = (runId: string, role: "planner" | "child") => ({
   source: "tiny-firegrid.agent-coordination-readiness",
@@ -154,7 +158,7 @@ export const runAgentCoordinationReadinessSmokeViaClient = (
         new ReadinessSmokeFailure({
           step: "5a",
           message:
-            `child output never produced a TextChunk through the client ` +
+            "child output never produced a TextChunk through the client " +
             `wait surface; observed: ${collected.map(o => o._tag).join(", ")}`,
         }),
       )
@@ -170,40 +174,6 @@ export const runAgentCoordinationReadinessSmokeViaClient = (
     }
   })
 
-/**
- * Full readiness driver — R = `Firegrid | HostPlaneChannelRouter`. Adds the
- * step-5b strict assertion (direct router-mediated `wait_for` on
- * `session.agent_output`, returning the same `sequence` as 5a). Cannot
- * satisfy the standard `TinyFiregridSimulation.driver` signature because
- * the runner provides only `Firegrid`; consumed by the vitest smoke which
- * provides both layers.
- */
-export const runAgentCoordinationReadinessSmoke = (
-  runId: string,
-): Effect.Effect<
-  AgentCoordinationReadinessResult,
-  unknown,
-  Firegrid | HostPlaneChannelRouter
-> =>
-  Effect.gen(function*() {
-    const client = yield* runAgentCoordinationReadinessSmokeViaClient(runId)
-
-    // Step 5b — direct router dispatch (independent of client-sdk).
-    // Use `(TextChunk.sequence - 1)` as the EXCLUSIVE cursor so the
-    // route returns the same TextChunk row both paths observed.
-    const router = yield* HostPlaneChannelRouter
-    const routed = yield* router.dispatch({
-      verb: "wait_for",
-      target: SessionAgentOutputChannelTarget,
-      payload: {
-        sessionId: client.childSessionId,
-        afterSequence: client.observedViaClient.sequence - 1,
-      },
-    })
-    const observedViaRouter = routed as RuntimeAgentOutputObservation
-
-    return {
-      ...client,
-      observedViaRouter,
-    }
-  })
+// The combined `runAgentCoordinationReadinessSmoke` (R = `Firegrid |
+// HostPlaneChannelRouter`) lives in `./router-probe.ts` — see the
+// header note above.

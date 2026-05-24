@@ -1,4 +1,4 @@
-import type { FiregridHost } from "@firegrid/host-sdk"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
 import { Clock, Duration, Effect, Layer } from "effect"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 import {

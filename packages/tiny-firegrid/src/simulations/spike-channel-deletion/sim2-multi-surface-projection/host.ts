@@ -32,7 +32,7 @@ import {
   FiregridConfig,
   FiregridLive,
 } from "@firegrid/client-sdk/firegrid"
-import { HostSessionsCreateOrLoadChannelLive } from "@firegrid/host-sdk"
+import { HostSessionsCreateOrLoadChannelLive } from "@firegrid/runtime/channels/host-sessions-create-or-load/live"
 import { Layer } from "effect"
 
 export const SIM_ID = "tf-35f4-sim2-multi-surface-projection"

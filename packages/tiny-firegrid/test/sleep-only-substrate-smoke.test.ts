@@ -5,7 +5,7 @@ import {
   FiregridLive,
   local,
 } from "@firegrid/client-sdk/firegrid"
-import { type FiregridHost } from "@firegrid/host-sdk"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
 import {
   FiregridRuntimeContextMcpBaseUrl,
 } from "@firegrid/runtime/producers/codecs/mcp/base-url"

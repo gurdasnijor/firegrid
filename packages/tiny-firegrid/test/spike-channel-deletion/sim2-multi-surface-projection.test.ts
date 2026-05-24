@@ -30,7 +30,7 @@ import {
   runtimeControlPlaneStreamUrl,
 } from "@firegrid/protocol/launch"
 import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
-import { HostSessionsCreateOrLoadChannelLive } from "@firegrid/host-sdk"
+import { HostSessionsCreateOrLoadChannelLive } from "@firegrid/runtime/channels/host-sessions-create-or-load/live"
 import { Effect, Exit, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {

@@ -158,16 +158,6 @@ importers:
         version: 3.2.4(@types/node@22.19.17)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
 
   packages/host-sdk:
-    dependencies:
-      '@firegrid/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-      '@firegrid/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      effect:
-        specifier: ^3.21.2
-        version: 3.21.2
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -304,9 +294,6 @@ importers:
       '@effect/workflow':
         specifier: 0.18.1
         version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
-      '@firegrid/host-sdk':
-        specifier: workspace:*
-        version: link:../host-sdk
       '@firegrid/observability':
         specifier: workspace:*
         version: link:../observability
