@@ -31,13 +31,6 @@ const isSimulation = (
 // files that the discovery walk would otherwise happily load.
 const hiddenFolders = new Set([
   "sim2-multi-surface-projection",
-  // agent-coordination-readiness: smoke-only simulation. The driver requires
-  // both `Firegrid` and `HostPlaneChannelRouter` (the load-bearing step 5b
-  // asserts the router-mediated waitFor path independent of client-sdk); the
-  // runner provides only `Firegrid`, so the simulation is exercised
-  // exclusively through its vitest smoke (test/agent-coordination-readiness/
-  // smoke.test.ts) which provides both via `readinessLayer`.
-  "agent-coordination-readiness",
 ])
 
 const isHidden = (folder: string): boolean =>

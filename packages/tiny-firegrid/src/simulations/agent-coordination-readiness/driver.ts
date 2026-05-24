@@ -52,14 +52,18 @@ export class ReadinessSmokeFailure extends Data.TaggedClass(
   readonly message: string
 }> {}
 
-export interface AgentCoordinationReadinessResult {
+export interface AgentCoordinationReadinessClientResult {
   readonly plannerSessionId: string
   readonly plannerContextId: string
   readonly childSessionId: string
   readonly childContextId: string
   readonly observedViaClient: RuntimeAgentOutputObservation
-  readonly observedViaRouter: RuntimeAgentOutputObservation
   readonly clientObservationsCollected: ReadonlyArray<RuntimeAgentOutputObservation>
+}
+
+export interface AgentCoordinationReadinessResult
+  extends AgentCoordinationReadinessClientResult {
+  readonly observedViaRouter: RuntimeAgentOutputObservation
 }
 
 const externalKey = (runId: string, role: "planner" | "child") => ({
@@ -67,13 +71,16 @@ const externalKey = (runId: string, role: "planner" | "child") => ({
   id: `${runId}:${role}`,
 })
 
-export const runAgentCoordinationReadinessSmoke = (
+/**
+ * Client-only readiness driver — R = `Firegrid`. Suitable for the standard
+ * `TinyFiregridSimulation.driver` slot (the runner provides `Firegrid` and
+ * only `Firegrid`). Proves steps 2 / 3 (surrogate) / 4 / 5a / 6 of the
+ * readiness checklist; step 5b (direct `HostPlaneChannelRouter.dispatch`)
+ * requires an additional layer in scope and lives in the vitest smoke.
+ */
+export const runAgentCoordinationReadinessSmokeViaClient = (
   runId: string,
-): Effect.Effect<
-  AgentCoordinationReadinessResult,
-  unknown,
-  Firegrid | HostPlaneChannelRouter
-> =>
+): Effect.Effect<AgentCoordinationReadinessClientResult, unknown, Firegrid> =>
   Effect.gen(function*() {
     const firegrid = yield* Firegrid
 
@@ -153,6 +160,34 @@ export const runAgentCoordinationReadinessSmoke = (
       )
     }
 
+    return {
+      plannerSessionId: planner.sessionId,
+      plannerContextId: planner.contextId,
+      childSessionId: child.sessionId,
+      childContextId: child.contextId,
+      observedViaClient,
+      clientObservationsCollected: collected,
+    }
+  })
+
+/**
+ * Full readiness driver — R = `Firegrid | HostPlaneChannelRouter`. Adds the
+ * step-5b strict assertion (direct router-mediated `wait_for` on
+ * `session.agent_output`, returning the same `sequence` as 5a). Cannot
+ * satisfy the standard `TinyFiregridSimulation.driver` signature because
+ * the runner provides only `Firegrid`; consumed by the vitest smoke which
+ * provides both layers.
+ */
+export const runAgentCoordinationReadinessSmoke = (
+  runId: string,
+): Effect.Effect<
+  AgentCoordinationReadinessResult,
+  unknown,
+  Firegrid | HostPlaneChannelRouter
+> =>
+  Effect.gen(function*() {
+    const client = yield* runAgentCoordinationReadinessSmokeViaClient(runId)
+
     // Step 5b — direct router dispatch (independent of client-sdk).
     // Use `(TextChunk.sequence - 1)` as the EXCLUSIVE cursor so the
     // route returns the same TextChunk row both paths observed.
@@ -161,19 +196,14 @@ export const runAgentCoordinationReadinessSmoke = (
       verb: "wait_for",
       target: SessionAgentOutputChannelTarget,
       payload: {
-        sessionId: child.sessionId,
-        afterSequence: observedViaClient.sequence - 1,
+        sessionId: client.childSessionId,
+        afterSequence: client.observedViaClient.sequence - 1,
       },
     })
     const observedViaRouter = routed as RuntimeAgentOutputObservation
 
     return {
-      plannerSessionId: planner.sessionId,
-      plannerContextId: planner.contextId,
-      childSessionId: child.sessionId,
-      childContextId: child.contextId,
-      observedViaClient,
+      ...client,
       observedViaRouter,
-      clientObservationsCollected: collected,
     }
   })
