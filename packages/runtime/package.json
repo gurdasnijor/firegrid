@@ -38,8 +38,8 @@
       "default": "./src/streams/index.ts"
     },
     "./runtime-keyed-subscriber": {
-      "types": "./src/runtime-keyed-subscriber/index.ts",
-      "default": "./src/runtime-keyed-subscriber/index.ts"
+      "types": "./src/subscribers/keyed-dispatch/index.ts",
+      "default": "./src/subscribers/keyed-dispatch/index.ts"
     },
     "./verified-webhook-ingest": {
       "types": "./src/verified-webhook-ingest/index.ts",
@@ -148,6 +148,10 @@
     "./subscribers/runtime-context-session": {
       "types": "./src/subscribers/runtime-context-session/index.ts",
       "default": "./src/subscribers/runtime-context-session/index.ts"
+    },
+    "./subscribers/keyed-dispatch": {
+      "types": "./src/subscribers/keyed-dispatch/index.ts",
+      "default": "./src/subscribers/keyed-dispatch/index.ts"
     },
     "./subscribers/tool-dispatch": {
       "types": "./src/subscribers/tool-dispatch/index.ts",

@@ -31,7 +31,7 @@
 // directives):
 //   - No `WorkflowEngine` / `WorkflowInstance` / `Activity.make` in the
 //     subscriber `R` channel (the dispatcher is Shape-neutral per
-//     `runtime-keyed-subscriber/keyed-dispatch.ts:18-25`).
+//     `subscribers/keyed-dispatch/keyed-dispatch.ts:18-25`).
 //   - No raw `DurableTable` service yield in `subscribers/` — table
 //     binding lives in `tables/`; subscribers consume
 //     typed source/authority capabilities (enforced by
@@ -46,7 +46,7 @@
 //     row being reloaded on every handler materialization.
 
 import { Effect, Layer, Option, Stream } from "effect"
-import { runKeyedDispatch } from "../../runtime-keyed-subscriber/index.ts"
+import { runKeyedDispatch } from "../keyed-dispatch/index.ts"
 import { RuntimeContextInputFacts } from "../../tables/runtime-context-input-facts.ts"
 import { RuntimeAgentOutputAfterEvents } from "../../tables/runtime-context-output-facts.ts"
 // Route through the runtime's target public subpath (`@firegrid/runtime/control-plane`,
