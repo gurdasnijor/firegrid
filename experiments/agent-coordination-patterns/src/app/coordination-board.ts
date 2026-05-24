@@ -17,7 +17,7 @@ export const boardChannels = [
   "coordination.final",
 ] as const
 
-type CoordinationBoardChannel = typeof boardChannels[number]
+export type CoordinationBoardChannel = typeof boardChannels[number]
 
 const CoordinationBoardPayloadSchema = Schema.Struct({
   rowId: Schema.optional(Schema.String),
@@ -53,10 +53,10 @@ const CoordinationBoardRowSchema = Schema.Struct({
   payload: Schema.optional(Schema.Unknown),
 })
 
-type CoordinationBoardPayload = Schema.Schema.Type<
+export type CoordinationBoardPayload = Schema.Schema.Type<
   typeof CoordinationBoardPayloadSchema
 >
-type CoordinationBoardRow = Schema.Schema.Type<
+export type CoordinationBoardRow = Schema.Schema.Type<
   typeof CoordinationBoardRowSchema
 >
 

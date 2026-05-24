@@ -13,9 +13,13 @@ should run through Firegrid's public session/tool/trace surfaces.
 - Records the shared task packet.
 - Composes a real `FiregridLocalHostLive` in-process for each arm and drives
   sessions through `@firegrid/client-sdk`.
-- Registers the choreography board as real Firegrid MCP channels:
+- Registers the choreography board as real Firegrid channels, visible to agents
+  through MCP tools and to the experiment driver through
+  `Firegrid.channels.{send,waitFor,waitForAny}`:
   `coordination.work`, `coordination.claims`, `coordination.findings`,
   `coordination.questions`, `coordination.reviews`, and `coordination.final`.
+- Treats `coordination.final` as the completion contract for each arm; an arm
+  that produces prose but no final board artifact is marked failed.
 - Writes per-arm execution metadata, prompt, session output, board rows, trace
   path, and summary JSON.
 - Scores trace artifacts for basic correctness and overhead signals.

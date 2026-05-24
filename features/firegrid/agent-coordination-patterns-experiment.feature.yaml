@@ -21,6 +21,7 @@ components:
       1: The experiment board declares typed coordination channels for work, claims, findings, questions, reviews, and final artifacts.
       2: Claim rows include run id, arm, work id, claim id, claimant session id, observed cursor, status, and timestamp.
       3: Winning claims are derived from durable append order rather than from model prose.
+      4: The driver injects board events and waits for final artifacts through Firegrid's public client channel facade over the registered board channels, not by writing durable board tables directly.
   ARTIFACTS:
     requirements:
       1: Each arm writes session output, execution metadata, trace path, prompt, and summary artifacts.
@@ -32,6 +33,7 @@ components:
       1: The live harness composes a real Firegrid host and drives participant sessions through Firegrid's public client/session surfaces rather than tiny-firegrid-specific runner APIs.
       2: Fixture or simulation runners may be added for regression coverage, but the headline experiment path uses real participant runtimes.
       3: CLI subprocess runs may be used as external smoke tests, but the primary experiment runner does not shell out to the Firegrid CLI.
+      4: An arm only completes successfully after a `coordination.final` row is observed through `Firegrid.channels.waitFor`; missing final artifacts are reported as arm failures.
 
 constraints:
   NO_PRIVATE_COORDINATION:
