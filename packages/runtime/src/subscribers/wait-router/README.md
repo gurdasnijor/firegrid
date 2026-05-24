@@ -13,4 +13,4 @@ calls. The workflow body owns one load-bearing capability:
 No `Activity.make`-shaped side effects; matching is the pure
 `evaluateFieldEquals` transform.
 
-Wave 2 moves `workflow-engine/workflows/wait-for.ts` here.
+The workflow body lives in `workflow.ts`.

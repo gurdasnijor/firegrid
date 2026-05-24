@@ -12,4 +12,4 @@ wall-clock deadline. The workflow body owns one load-bearing capability:
 No `Activity.make`-shaped side effects; delivery itself is a single send via
 the channel router.
 
-Wave 2 moves `workflow-engine/workflows/scheduled-prompt.ts` here.
+The workflow body lives in `workflow.ts`.

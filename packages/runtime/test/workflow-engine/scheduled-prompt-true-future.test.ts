@@ -14,7 +14,7 @@ import {
 import {
   ScheduledPromptWorkflow,
   ScheduledPromptWorkflowLayer,
-} from "../../src/workflow-engine/workflows/scheduled-prompt.ts"
+} from "../../src/subscribers/scheduled-prompt/workflow.ts"
 
 // tf-sto7: true-future durable validation for `schedule_me`.
 //

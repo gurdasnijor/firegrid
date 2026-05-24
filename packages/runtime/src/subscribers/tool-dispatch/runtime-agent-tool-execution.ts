@@ -29,10 +29,10 @@ import {
   WaitForWorkflow,
   WaitForWorkflowLayer,
   type WaitForWorkflowOutcome,
-} from "../../workflow-engine/workflows/wait-for.ts"
+} from "../wait-router/workflow.ts"
 import {
   ScheduledPromptWorkflow,
-} from "../../workflow-engine/workflows/scheduled-prompt.ts"
+} from "../scheduled-prompt/workflow.ts"
 
 export interface RuntimeToolExecutionContext {
   readonly contextId: string

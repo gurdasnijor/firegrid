@@ -33,7 +33,7 @@ export {
   waitForWorkflowExecutionId,
   type WaitForWorkflowOutcome,
   type WaitForWorkflowPayload,
-} from "./wait-for.ts"
+} from "../../subscribers/wait-router/workflow.ts"
 // Body driver retired in the body+kernel deletion wave (stacked on D-B).
 // The workflow body Layer + payload, the per-sequence DurableDeferred
 // mailbox helpers, and the body's execution-env type alias no longer
