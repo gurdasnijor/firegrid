@@ -8,7 +8,7 @@ package is organized and how new code should fit it.
 
 `@firegrid/runtime` is the host-side runtime package. It owns runtime host
 composition, local agent process execution, codec sessions, durable runtime
-output and ingress authorities, workflow-engine integration,
+output and ingress authorities, durable workflow-engine substrate,
 runtime agent tools, runtime agent adapters, observation streams, and adjacent
 host-only adapters such as verified webhook ingest.
 
@@ -25,9 +25,10 @@ callers. Prefer explicit subpaths in new code:
 
 | Import path | Role |
 | --- | --- |
-| `@firegrid/runtime/runtime-host` | Runtime host layers, config-derived host layers, `startRuntime`, ingress helpers, app source registration, and local-process env policy. |
-| `@firegrid/runtime/workflow-engine` | Firegrid-backed `@effect/workflow` engine adapter and its durable state row types. |
-| `@firegrid/runtime/workflows` | Runtime-owned workflow definitions, payload schemas, outcome schemas, and execution-id helpers. |
+| `@firegrid/runtime/composition/host-live` | Runtime host layers and config-derived host layers. |
+| `@firegrid/runtime/composition/host-public` | `startRuntime`, ingress helpers, and public host facade helpers. |
+| `@firegrid/runtime/engine/durable-streams-workflow-engine` | Firegrid-backed `@effect/workflow` engine adapter and durable state row types for engine tests and tiny-firegrid simulations. |
+| `@firegrid/runtime/subscribers/{tool-dispatch,wait-router,scheduled-prompt,runtime-control}` | Runtime-owned Shape D workflow definitions, payload schemas, outcome schemas, and execution-id helpers. |
 | `@firegrid/runtime/events` | Normalized runtime agent event contracts and envelope helpers. |
 | `@firegrid/runtime/codecs` | Scoped codec session contracts and concrete ACP / stdio JSONL session layers. |
 | `@firegrid/runtime/agent-tools` | Firegrid agent tool schemas as Effect AI tools, MCP projection, host-coupled tool services, and tool-use lowering. |
@@ -55,15 +56,16 @@ docs-only metadata, compatibility aliases, or tests.
 | `src/subscribers/wait-router/`, `scheduled-prompt/`, `runtime-control/`, `projections/` | Shape D/B subscriber landing zones. |
 | `src/composition/` | Runtime-local Layer composition and topology checks. |
 | `src/authorities/` | Runtime control-plane authorities for contexts and runs. |
-| `src/workflow-engine/` | Firegrid durable-table adapter for `@effect/workflow` (legacy + Shape D workflow body home). |
+| `src/engine/` | Firegrid durable-table adapter for `@effect/workflow` (leaf-tier substrate). |
 | `src/producers/codecs/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping (Shape A codec-adjacent). |
 | `src/verified-webhook-ingest/` | Adjacent verified webhook fact ingest adapter. |
 
 Layer order is `events < tables < producers/transforms/channels < subscribers < composition`. See
 [`docs/architecture/2026-05-22-runtime-physical-target-tree.md`](../../docs/architecture/2026-05-22-runtime-physical-target-tree.md)
-for the canonical map. The legacy `src/agent-event-pipeline/` bounded context
-was retired by the cleanup wave that physically moved its files into the
-folders above.
+for the canonical map. The legacy `src/agent-event-pipeline/`, `src/kernel/`,
+`src/streams/`, `src/runtime-keyed-subscriber/`, and `src/workflow-engine/`
+roots were retired by cleanup waves that physically moved their files into the
+folders above or deleted dead compatibility shims.
 
 ## Event Pipeline Shape
 

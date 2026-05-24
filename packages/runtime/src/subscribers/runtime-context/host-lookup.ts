@@ -8,16 +8,10 @@
 // `@firegrid/runtime/subscribers/runtime-context/host-lookup` rather than
 // the retired `@firegrid/runtime/kernel` barrel.
 //
-// `readRuntimeContext` was previously re-exported from the kernel barrel
-// (sourced from `workflow-engine/workflows/runtime-context-run.ts`).
-// To avoid a new subscribers/ → workflow-engine/ carve-out for a helper
-// that is just `RuntimeContextRead.readContext` + a not-found mapping,
-// the lookup is inlined here. The other consumer of the workflows-source
-// helper (`@firegrid/runtime/workflows`) keeps the original export; this
-// is a deliberate duplication of ~10 lines to keep the import-direction
-// guard tight (subscribers/ → workflow-engine/ legacy tree imports are
-// each bead-owned in `.dependency-cruiser.cjs`; adding a new edge for a
-// trivial helper is not in scope of this slice).
+// `readRuntimeContext` was previously re-exported from the retired kernel /
+// workflow-engine barrels. The lookup is inlined here because the behavior is
+// just `RuntimeContextRead.readContext` + a typed not-found mapping; there is
+// no remaining `workflow-engine/` helper to import from.
 
 import {
   ContextNotLocal,

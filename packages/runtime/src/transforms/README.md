@@ -57,9 +57,8 @@ export const transitionInputEvent = (state, event) =>
 
 ## Scaffold status
 
-Empty. Wave 2 moves the existing pure transitions from
-`workflow-engine/workflows/runtime-context.ts`,
-`workflow-engine/workflows/runtime-ingress-transform.ts`, and
-`workflow-engine/workflows/field-equals.ts` into this folder. The
-`composition/topology-checks.ts` check enforces the purity boundary at that
-point.
+Populated. The pure transition, ingress-row decoder, output-row decoder, and
+field-equals transform live here. The former Effect-form ingress adapter under
+`workflow-engine/workflows/runtime-ingress-transform.ts` was deleted once all
+callers used the pure decoder directly; a transform export whose public type is
+`Effect.Effect<...>` remains mis-shaped.

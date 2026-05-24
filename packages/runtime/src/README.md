@@ -49,9 +49,10 @@ shrink as host-sdk callers migrate to the semantic subpaths above.
 
 This directory follows the physical target tree in
 [`docs/architecture/2026-05-22-runtime-physical-target-tree.md`](../../../docs/architecture/2026-05-22-runtime-physical-target-tree.md).
-The legacy `agent-event-pipeline/` bounded context was physically moved into
-the role-named folders below; host, kernel, waits, workflow-engine, adapters,
-and verified ingest remain adjacent bounded contexts.
+The legacy `agent-event-pipeline/`, `kernel/`, `streams/`,
+`runtime-keyed-subscriber/`, and `workflow-engine/` roots have been physically
+moved into the role-named folders below. Any remaining adjacent bounded context
+must be explicitly named here and justified by role.
 
 The agent event pipeline is:
 
@@ -127,22 +128,17 @@ These are intentionally not agent event-pipeline stages:
   (`DurableStreamsWorkflowEngine` + the row/table schemas, engine runtime,
   result codec, activity-contract span helper). Leaf-tier; imported by
   Shape D `subscribers/` and `composition/host-workflow-engine.ts` only.
-  Not a public package subpath — external consumers reach the engine
-  through `@firegrid/runtime/composition/host-workflow-engine`'s
-  `HostWorkflowEngineLive` Layer. The legacy `kernel/` folder retired in
-  the tf-z8wq Wave 2 mechanical move (`RuntimeHostConfig` →
+  Above-box consumers reach the host-scoped engine through
+  `@firegrid/runtime/composition/host-workflow-engine`'s
+  `HostWorkflowEngineLive` Layer. Low-level engine tests and tiny-firegrid
+  substrate simulations use the explicit tree-aligned workbench subpath
+  `@firegrid/runtime/engine/durable-streams-workflow-engine`; the old
+  `@firegrid/runtime/workflow-engine` subpath is gone. The legacy
+  `kernel/` folder retired in the tf-z8wq Wave 2 mechanical move
+  (`RuntimeHostConfig` →
   `channels/runtime-host-config.ts`;
   `requireLocalRuntimeContextWithHostSession` →
   `subscribers/runtime-context/host-lookup.ts`).
-- `workflow-engine/`: legacy folder holding the remaining Shape D
-  workflow definitions (`tool-call.ts`, `wait-for.ts`,
-  `scheduled-prompt.ts`, `runtime-ingress-transform.ts`,
-  `runtime-context-run.ts`) plus the
-  `tool-execution/runtime-tool-use-executor.ts` executor Tag, pending
-  the per-bead Shape D moves into respective `subscribers/` folders
-  (see `.dependency-cruiser.cjs` carve-outs `tf-up1v`, `tf-hpr0`,
-  `tf-6hqx`, `tf-vfq9`). The engine substrate moved out to `engine/`
-  in tf-z8wq Wave 2.
 - `agent-tools/`: tool schemas, lowering, MCP exposure, and host-coupled live
   services.
 - `producers/codecs/agent-adapters/`: projections over codec sessions

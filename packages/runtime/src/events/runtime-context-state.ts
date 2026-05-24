@@ -12,8 +12,8 @@
 //
 // `RuntimeExitEvidence` lives here because the durable state row stores it
 // (see `RuntimeContextEventStateSchema.exitEvidence` below). It used to live
-// in `workflow-engine/workflows/runtime-context-run.ts`; the legacy module
-// now re-exports it from here transitively through `tables/`.
+// in the retired workflow-engine root; canonical consumers import it from this
+// event vocabulary or from the table state-of-record surface.
 
 import { Schema } from "effect"
 import { RuntimeIngressInputRowSchema } from "@firegrid/protocol/runtime-ingress"
@@ -46,15 +46,10 @@ export const RuntimeContextEventStateSchema = Schema.Struct({
   // the silently-dropped `(undefined ?? -1) <= -1` outcome the legacy
   // cursor produced).
   processedInputIds: Schema.Array(Schema.String),
-  // PARK: `lastProcessedInputSequence` retained for the workflow body
-  // at `workflow-engine/workflows/runtime-context.ts:410,501,513,541,
-  // 547`. The body's per-sequence `awaitRuntimeInput` mailbox path
-  // (`runtime-input-deferred.ts`) is sequence-indexed; rewriting it to
-  // identity-keyed is the mailbox-retirement work in D-E. Until that
-  // body retires, the schema carries both fields: handler uses
-  // `processedInputIds`, body uses `lastProcessedInputSequence`. Grep
-  // blocker for field removal:
-  //   grep -rn "lastProcessedInputSequence" packages/runtime/src/workflow-engine/workflows/runtime-context.ts
+  // Backward-compatible durable row field: the retired workflow body used a
+  // sequence cursor, while the Shape C handler uses `processedInputIds`.
+  // Existing durable rows may still contain this number, so the state schema
+  // carries it even though new input delivery no longer depends on it.
   lastProcessedInputSequence: Schema.Number,
   lastProcessedOutputSequence: Schema.Number,
   pendingPermissionRequests: Schema.Array(Schema.String),

@@ -1,8 +1,7 @@
 // Barrel for runtime transforms/ (Shape C cutover semantic path).
 //
 // Every export here must be a pure function over schemas — no `Effect`, no
-// `Layer`, no `Context.Tag`, no I/O. Effect-form adapters live outside
-// transforms/ (currently under `workflow-engine/workflows/runtime-ingress-transform.ts`).
+// `Layer`, no `Context.Tag`, no I/O.
 
 export {
   FieldEqualsPredicateSchema,

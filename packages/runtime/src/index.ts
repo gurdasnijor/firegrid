@@ -20,33 +20,35 @@ export {
   RuntimeControlRequestClaimedOutcomeSchema,
   RuntimeControlRequestDispatchOutcomeSchema,
   RuntimeControlRequestDoneOutcomeSchema,
-  RuntimeContextWorkflowPayload,
   RuntimeLifecycleWorkflow,
   RuntimeLifecycleWorkflowPayload,
   RuntimeStartWorkflow,
   RuntimeStartWorkflowPayload,
+  runtimeControlRequestWorkflowExecutionId,
+  runtimeControlRequestWorkflowStreamUrl,
+  type RuntimeControlRequestDispatchOutcome,
+} from "./subscribers/runtime-control/workflows.ts"
+export {
   WaitForWorkflow,
   WaitForWorkflowLayer,
-  FieldEqualsPredicateSchema,
-  FieldEqualsTriggerSchema,
   WaitForWorkflowMatchOutcomeSchema,
   WaitForWorkflowOutcomeSchema,
   WaitForWorkflowPayloadSchema,
   WaitForWorkflowTimeoutOutcomeSchema,
-  readRuntimeContext,
-  runtimeContextWorkflowExecutionId,
-  runtimeControlRequestWorkflowExecutionId,
-  runtimeControlRequestWorkflowStreamUrl,
   waitForWorkflowExecutionId,
-  type RuntimeControlRequestDispatchOutcome,
-  type RuntimeExitEvidence,
-  type StartRuntimeResult,
-  type FieldEqualsPredicate,
-  type FieldEqualsTrigger,
   type WaitForWorkflowOutcome,
   type WaitForWorkflowPayload,
+} from "./subscribers/wait-router/workflow.ts"
+export {
+  FieldEqualsPredicateSchema,
+  FieldEqualsTriggerSchema,
   evaluateFieldEquals,
-} from "./workflow-engine/workflows/index.ts"
+  type FieldEqualsPredicate,
+  type FieldEqualsTrigger,
+} from "./transforms/field-equals.ts"
+export {
+  type RuntimeExitEvidence,
+} from "./tables/runtime-context-state.ts"
 // Post-#727 / tf-up1v cleanup wave: ToolCallWorkflow + payload schema
 // physically moved to `subscribers/tool-dispatch/workflow.ts`. The runtime
 // root barrel re-exports them directly from the tree-aligned subscribers

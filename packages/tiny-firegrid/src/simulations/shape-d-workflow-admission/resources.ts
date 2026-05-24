@@ -8,7 +8,7 @@ import {
   DurableStreamsWorkflowEngine,
   WorkflowEngineTable,
   type WorkflowEngineTableService,
-} from "@firegrid/runtime/workflow-engine"
+} from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 import { durableStreamUrl } from "@firegrid/protocol/launch"
 import { Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import {
