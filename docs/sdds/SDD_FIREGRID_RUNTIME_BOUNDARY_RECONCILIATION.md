@@ -30,6 +30,7 @@ exists and is documented:
 | `channels/` | wire-edge capability boundary (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
 | `subscribers/` | keyed subscribers — Shape B/C/D recorded in folder READMEs (`projections/`, `runtime-context/`, `runtime-context-session/`, `tool-dispatch/`, `wait-router/`, `scheduled-prompt/`, `runtime-control/`). | 6 |
 | `composition/` | runtime-local layer-graph wiring + topology checks. | 7 |
+| `bin/` | runtime-owned daemon/process entrypoints (`firegrid run`, `firegrid start`, `firegrid acp`); outside pipeline order and allowed to compose public client + runtime host surfaces. | — |
 | `_archive/` | time-boxed holding pen for wrong-shape code pending deletion. | — |
 
 Folder names are semantic. The pipeline order `events < tables <

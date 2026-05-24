@@ -1,4 +1,4 @@
-import type { FiregridHost } from "@firegrid/host-sdk"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
 import { Effect, Layer, Option, Stream } from "effect"
 import {
   eventKeyFor,

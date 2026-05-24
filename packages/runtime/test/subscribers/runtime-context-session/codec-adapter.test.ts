@@ -27,13 +27,13 @@ import {
 import { describe, expect, it } from "vitest"
 import {
   PerContextRuntimeOutputWriter,
-} from "../../../src/producers/ingress-writers/per-context-output.ts"
+} from "../../../src/tables/per-context-output.ts"
 import {
   CodecRuntimeContextWorkflowSessionLive,
-} from "../../../src/subscribers/runtime-context-session/codec-adapter.ts"
+} from "../../../src/composition/runtime-context-session-codec-adapter.ts"
 import {
   FiregridRuntimeContextMcpBaseUrlLive,
-} from "../../../src/subscribers/runtime-context-session/host-mcp-base-url.ts"
+} from "../../../src/composition/runtime-context-mcp-base-url.ts"
 import {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,

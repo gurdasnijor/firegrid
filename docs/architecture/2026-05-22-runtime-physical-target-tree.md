@@ -62,10 +62,13 @@ packages/runtime/src/
 │   │   └── SandboxProvider.ts        # provider contract
 │   ├── codecs/
 │   │   ├── contract.ts               # AgentSession live codec boundary
-│   │   ├── acp/
+│   │   ├── acp/                      # ACP wire-protocol translator
+│   │   │   ├── index.ts              #   outbound: decode bytes from spawned ACP agent
+│   │   │   ├── mapping.ts            #   shared ACP↔runtime mapping helpers
+│   │   │   └── stdio-edge.ts         #   inbound: translate inbound ACP stdio requests
+│   │   │                             #     into host-plane channel-router dispatches
 │   │   └── stdio-jsonl/
 │   └── ingress-writers/
-│       ├── per-context-output.ts     # AgentSession.outputs -> RuntimeOutputTable.events
 │       └── runtime-input-append.ts   # external input -> input intent rows
 │
 ├── transforms/                       # 4. HOW rows shape into facts/actions; PURE
@@ -80,6 +83,7 @@ packages/runtime/src/
 │   ├── host-control/
 │   ├── session/
 │   ├── routes/                       # channel registrations -> route projections
+│   ├── runtime-host-config.ts        # RuntimeHostConfig Tag for channel live bindings
 │   └── router.ts                     # HostPlaneChannelRouter / RuntimeChannelRouter
 │
 ├── subscribers/                      # 6. WHO reacts; Shape B / C / D
@@ -104,11 +108,14 @@ packages/runtime/src/
 │   │   └── workflow.ts
 │   └── runtime-control/              # Shape D: host-control request workflows
 │       ├── README.md
+│       ├── control-request-side-effects.ts
 │       └── workflows.ts
 │
 ├── composition/                      # 7. runtime-local topology wiring
 │   ├── README.md                     # Layer graph; topology = Layer.mergeAll
-│   ├── runtime-host-config.ts        # RuntimeHostConfig Tag (composition-input filled by host-sdk)
+│   ├── mcp-host.ts                   # host-owned localhost MCP HTTP server
+│   ├── mcp-channel-metadata.ts       # MCP tools/list channel-inventory enrichment
+│   ├── runtime-context-mcp-base-url.ts # late-bind of bound MCP address
 │   ├── host-workflow-engine.ts       # HostWorkflowEngineLive (host-scoped engine binding)
 │   ├── host-live.ts                  # runtime-owned layer graph for host-sdk to install
 │   └── topology-checks.ts            # CI: shape, ownership, cycle checks
@@ -227,7 +234,9 @@ Preferred new public subpath shape:
 @firegrid/runtime/subscribers/runtime-context-session
 @firegrid/runtime/composition/host-live
 @firegrid/runtime/composition/host-workflow-engine
-@firegrid/runtime/composition/runtime-host-config
+@firegrid/runtime/composition/mcp-host
+@firegrid/runtime/composition/runtime-context-mcp-base-url
+@firegrid/runtime/channels/runtime-host-config
 ```
 
 `engine/` is **NOT a public subpath**. The substrate is composition-private;
@@ -256,6 +265,36 @@ Kernel Retirement slice below.
 
 Channels are not subscribers. Subscribers consume channel tags through their
 `R` channel.
+
+### Wire-Protocol Codecs And Process Edges
+
+`producers/codecs/<protocol>/` houses process-owned wire-protocol translators
+whose primary job is to turn external agent subprocess bytes into runtime rows
+or host-plane dispatches:
+
+- **Outbound codec** — the runtime spawned an external agent process and
+  decodes its wire frames into runtime rows. Existing example:
+  `producers/codecs/acp/index.ts` (decodes bytes from an ACP child agent
+  into `AgentSession.outputs`).
+- **Inbound edge** — an external client (Zed for ACP, an MCP-capable LLM
+  client for ACP) sends wire frames into our process, and we translate them
+  into `HostPlaneChannelRouter.dispatch` calls. Per PR #702, public
+  clients/tools interact through the channel router only; the edge is the
+  thin wire translator that turns inbound ACP/MCP/HTTP frames into typed
+  router dispatches. Examples: `producers/codecs/acp/stdio-edge.ts`,
+  `composition/mcp-host.ts`.
+
+Host-owned listening surfaces that bind the channel router into an HTTP/MCP
+server live in `composition/` because they assemble channel metadata, host
+topology config, and server lifecycle. The MCP host is therefore
+`composition/mcp-host.ts`; the ACP stdio edge remains under
+`producers/codecs/acp/stdio-edge.ts` because it is a protocol subprocess edge.
+
+Inbound edges may NOT define their own channel registrations — they project
+public-router targets onto the inbound protocol shape. Adding a new
+publicly-routable surface still requires a channel registration under
+`channels/<family>/`. The edge translates wire frames to/from the existing
+router targets.
 
 ## Composition Boundary
 
@@ -344,7 +383,7 @@ canonical home:
 
 | Symbol | Current location | Canonical target home | Reason |
 |---|---|---|---|
-| `RuntimeHostConfig` (Tag + `RuntimeHostConfigValue` type) | `kernel/runtime-host-config.ts` | `composition/runtime-host-config.ts` | Composition-input Tag the host fills at runtime-layer build time. `composition/` is the layer-graph home; `kernel/` is not part of the target tree. |
+| `RuntimeHostConfig` (Tag + `RuntimeHostConfigValue` type) | `kernel/runtime-host-config.ts` | `channels/runtime-host-config.ts` | Host topology Tag consumed by channel Lives and installed by composition. `composition/` wires it but lower tiers must not import from `composition/`; `kernel/` is not part of the target tree. |
 | `runtimeExecutionClock` (`Clock.make()` instance) | `kernel/runtime-context-helpers.ts` | `composition/runtime-execution-clock.ts` *(or inline at the single composition call site)* | A trivial Clock instance used only when composing host effects. Composition-private. |
 | `requireLocalRuntimeContextWithHostSession` | `kernel/runtime-context-helpers.ts` | `subscribers/runtime-context/host-lookup.ts` | A `readRuntimeContext`-then-host-locality-check helper. The Shape C subscriber folder is the natural home for `RuntimeContextRead`-coupled helpers; host-sdk consumes it through a narrow target subpath (no kernel barrel). |
 | `readRuntimeContext`, `runtimeContextWorkflowExecutionId` (already re-exports) | `kernel/runtime-context-helpers.ts` (re-exports from `workflow-engine/workflows/runtime-context-run.ts`) | follow their source: `subscribers/runtime-context/lookup.ts` for `readRuntimeContext`; `transforms/runtime-context-ids.ts` for `runtimeContextWorkflowExecutionId` (pure deterministic id derivation, no Effect — fits `transforms/`) | The body-driver `runtime-context-run.ts` is deleted in #726; the surviving helper functions move to the canonical home of their behavior. |
@@ -389,7 +428,7 @@ workflow-engine/internal/contract-activity.ts   → engine/internal/contract-act
 **Composition leaves**:
 
 ```
-kernel/runtime-host-config.ts                   → composition/runtime-host-config.ts
+kernel/runtime-host-config.ts                   → channels/runtime-host-config.ts
 kernel/runtime-context-helpers.ts:runtimeExecutionClock → composition/runtime-execution-clock.ts (or inlined)
 ```
 

@@ -1,57 +1,21 @@
-import { NodeRuntime } from "@effect/platform-node"
-// firegrid-host-sdk.PACKAGE_GRAPH.5: @firegrid/cli binds over @firegrid/host-sdk
-// (+ client-sdk + protocol); it must not import @firegrid/runtime substrate.
-import {
-  ensurePathInput,
-  FiregridLocalHostLive,
-  FiregridMcpServerLayer,
-  FiregridMcpServerListenerConfig,
-  localProcessSpawnEnvFromHostEnv,
-  RuntimeHostTopologyFromConfig,
-} from "@firegrid/host-sdk"
-import { Console, Effect, Layer } from "effect"
-
-export const firegridHostProgram = Effect.never
-
-// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
-// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+// Thin subprocess launcher for the runtime-owned `firegrid:host` daemon.
+// All host composition (FiregridLocalHostLive + optional MCP listener)
+// lives in `packages/runtime/src/bin/host.ts`. This launcher only
+// forwards argv, env, stdio, exit code, and signal.
 //
-// The firegrid:host binary composes through FiregridLocalHostLive,
-// which owns CurrentHostSession internally and derives a
-// deterministic host id from the namespace. No env/disk authority knob.
-export const firegridHostLayer = Layer.unwrapEffect(
-  Effect.map(
-    Effect.all({
-      topology: RuntimeHostTopologyFromConfig,
-      mcp: FiregridMcpServerListenerConfig,
-    }),
-    ({ topology, mcp }) => {
-      const runtimeHost = FiregridLocalHostLive({
-        ...topology,
-        localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
-      })
-      if (!mcp.enabled) return runtimeHost
-      // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1
-      // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.2
-      return FiregridMcpServerLayer({
-        host: mcp.host,
-        port: mcp.port,
-        path: ensurePathInput(mcp.path),
-      }).pipe(
-        Layer.provideMerge(runtimeHost),
-      )
-    },
-  ),
+// Per Shape C cutover rule "CLI must not import @firegrid/runtime or
+// @effect/workflow": the launcher never imports runtime code into its
+// own process. The runtime bin runs in a child node process under
+// `tsx`; the CLI package therefore needs only the `tsx` dep.
+
+import { fileURLToPath } from "node:url"
+import { launchRuntimeBin } from "./launcher.ts"
+
+const runtimeBin = fileURLToPath(
+  new URL("../../../runtime/src/bin/host.ts", import.meta.url),
 )
 
+// Exported for the legacy `bin/index.ts` import shape (`runFiregridHost`).
 export const runFiregridHost = (): void => {
-  // firegrid-runtime-process.BINARIES.12
-  NodeRuntime.runMain(
-    Effect.scoped(
-      Layer.build(firegridHostLayer).pipe(
-        Effect.tap(() => Console.log("Firegrid host running. Press Ctrl-C to stop.")),
-        Effect.zipRight(firegridHostProgram),
-      ),
-    ),
-  )
+  launchRuntimeBin(runtimeBin)
 }

@@ -87,6 +87,14 @@ import {
   type RuntimeContextSessionCommand,
   RuntimeContextWorkflowSession,
 } from "../runtime-context-session/index.ts"
+// PR #738 RuntimeContextSessionWorkflow: Input/PermissionResponse dispatch is
+// a workflow wakeup instead of a direct session.send (the workflow body owns
+// codec lifecycle; subscriber stops calling startOrAttach indirectly via
+// getOrStart, which was half of the production dual-spawn race).
+import {
+  RuntimeContextSessionWorkflowDispatch,
+  type RuntimeContextSessionWorkflowDispatchService,
+} from "../runtime-context-session-workflow/index.ts"
 import { RuntimeToolUseExecutor } from "../tool-dispatch/runtime-tool-use-executor.ts"
 import {
   asRuntimeContextError,
@@ -139,13 +147,9 @@ const eventAlreadyProcessed = (
 
 // Build a deterministic commandId for an outgoing session command. Matches the
 // shape the wrong-shape body used so the host-sdk live session adapter sees
-// stable ids across the cutover (input rows by inputId; tool results by
-// toolUseId).
-const commandIdForInputRow = (
-  contextId: string,
-  row: RuntimeIngressInputRow,
-): string => `runtime-input-${contextId}-${row.inputId}`
-
+// stable ids across the cutover. (Input commandId now lives inline in the
+// RuntimeContextSessionWorkflow body since the workflow owns input dispatch
+// post-#738; ToolResult is the only direct session.send call left here.)
 const commandIdForToolResult = (
   contextId: string,
   activityAttempt: number,
@@ -156,6 +160,18 @@ const dispatchAction = (
   context: RuntimeContext,
   activityAttempt: number,
   action: RuntimeContextTransitionAction,
+  // PR #738: Input + PermissionResponse dispatch via RuntimeContextSessionWorkflow
+  // (its body owns the codec session lifecycle). Pre-cutover, these branches
+  // called `sendSessionCommand → session.send → getOrStart → startOrAttach`,
+  // racing the control-side-effect's parallel `startOrAttach` call and
+  // spawning two `claude-agent-acp` processes on the same `(contextId,
+  // attempt)`. Empirical proof + GREEN tiny-firegrid sim at
+  // `packages/tiny-firegrid/src/simulations/runtime-context-session-workflow/`.
+  // ToolResult dispatch stays on the direct session.send path: by the time
+  // a tool result fires the workflow has already spawned (tool output came
+  // from the session itself), so getOrStart finds the session in the map
+  // and never re-enters startOrAttach.
+  workflowDispatch: RuntimeContextSessionWorkflowDispatchService,
 ): Effect.Effect<
   void,
   RuntimeContextError,
@@ -164,17 +180,19 @@ const dispatchAction = (
   Match.value(action).pipe(
     Match.tagsExhaustive({
       None: () => Effect.void,
-      SendRuntimeInput: ({ row, event }) =>
-        sendSessionCommand(context, activityAttempt, {
-          _tag: "AgentInput",
-          commandId: commandIdForInputRow(context.contextId, row),
-          event,
+      SendRuntimeInput: () =>
+        // Best-effort wakeup. If the workflow execution doesn't exist yet
+        // (early input before control.start dispatches the workflow), this
+        // is a no-op — the workflow body's unprocessed-intent query picks
+        // up the intent when control eventually starts it.
+        workflowDispatch.resume({
+          contextId: context.contextId,
+          activityAttempt,
         }),
-      SendPermissionResponse: ({ row, event }) =>
-        sendSessionCommand(context, activityAttempt, {
-          _tag: "AgentInput",
-          commandId: commandIdForInputRow(context.contextId, row),
-          event,
+      SendPermissionResponse: () =>
+        workflowDispatch.resume({
+          contextId: context.contextId,
+          activityAttempt,
         }),
       RunToolUse: ({ output }) =>
         // ACP codecs are observation-only: the provider already executed the
@@ -310,6 +328,7 @@ export const handleRuntimeContextEvent = (
   RuntimeContextError,
   | RuntimeContextStateStore
   | RuntimeContextWorkflowSession
+  | RuntimeContextSessionWorkflowDispatch
   | RuntimeToolUseExecutor
   | RuntimeRunAppendAndGet
 > =>
@@ -318,7 +337,11 @@ export const handleRuntimeContextEvent = (
     // return. They carry no input/output cursor and do not mutate the
     // RuntimeContext durable row — the state cursor model belongs to
     // input/output. The session-command seam is the downstream idempotency
-    // boundary (commandId-keyed).
+    // boundary (commandId-keyed). ToolResult stays on session.send (NOT
+    // routed through the workflow) because by the time a tool result
+    // fires the workflow has already spawned the session — getOrStart
+    // finds it in the map and never re-enters startOrAttach. See PR #738
+    // commentary on dispatchAction.
     if (event._tag === "ToolResult") {
       yield* sendSessionCommand(context, activityAttempt, {
         _tag: "AgentInput",
@@ -346,7 +369,8 @@ export const handleRuntimeContextEvent = (
       return
     }
     const result = yield* reduce(context, state, event)
-    yield* dispatchAction(context, activityAttempt, result.action)
+    const workflowDispatch = yield* RuntimeContextSessionWorkflowDispatch
+    yield* dispatchAction(context, activityAttempt, result.action, workflowDispatch)
     yield* stateStore.save(context, activityAttempt, result.state).pipe(
       mapRuntimeContextError(
         "runtime-context.state.save",
@@ -370,6 +394,14 @@ export const handleRuntimeContextEvent = (
           context.contextId,
         ),
       )
+      // PR #738: wake the workflow body so it re-checks the terminal-row
+      // query and returns. The body's empty-input branch parks on
+      // Workflow.suspend; without this resume it stays parked after the
+      // agent has exited (no caller else issues a resume on Terminated).
+      yield* workflowDispatch.resume({
+        contextId: context.contextId,
+        activityAttempt,
+      })
     }
   }).pipe(
     Effect.withSpan("firegrid.runtime_context.subscriber.event.handle", {

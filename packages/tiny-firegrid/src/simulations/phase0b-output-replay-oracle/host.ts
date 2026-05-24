@@ -1,5 +1,5 @@
 import { Cause, Effect, Layer } from "effect"
-import type { FiregridHost } from "@firegrid/host-sdk"
+import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 import { runOutputReplayOracle, type OracleResult } from "./oracle.ts"
 

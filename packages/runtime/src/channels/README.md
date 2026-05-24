@@ -55,7 +55,7 @@ import { handleRuntimeContextEvent } from "../subscribers/runtime-context/handle
 Empty `host-control/`, `session/`, and `routes/` subfolders are staged as
 Wave 2 destinations. The current top-level `.ts` files (`router.ts`,
 `session-agent-output.ts`, `session-permission.ts`, `session-log.ts`,
-`host-control.ts`, `output-table-layer.ts`, `session-agent-output-route.ts`,
+`host-control.ts`, `session-agent-output-route.ts`,
 `host-control-routes.ts`) are the live pre-cutover layout. Wave 2 sorts them
 into the subfolders; the public `@firegrid/runtime/channels` barrel stays
 stable.

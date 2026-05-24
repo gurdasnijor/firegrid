@@ -23,7 +23,7 @@ folder; **keep** = already in the right place; **delete** = bridge code retired.
 | Prototype | Production target | Action |
 |---|---|---|
 | `tables/runtime-context-state-store.ts` | `packages/runtime/src/workflow-engine/runtime-context-state.ts` → re-home under `agent-event-pipeline/authorities/` | move — this is the Shape C state-of-record |
-| `tables/runtime-output-table.ts` (`*Read`/`*Write`) | `tables/runtime-output.ts` (read) + `producers/ingress-writers/per-context-output-writer` (write) | keep — already split by polarity in prod |
+| `tables/runtime-output-table.ts` (`*Read`/`*Write`) | `tables/runtime-output.ts` (read) + `tables/per-context-output.ts` (writer binding) | keep — output state and per-context writer binding are table-owned in prod |
 
 ## producers/
 

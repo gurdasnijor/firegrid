@@ -1,15 +1,14 @@
 /* eslint-disable local/no-module-durable-cache -- simulation-local route URL handoff; durable state lives in VerifiedWebhookFactTable. */
 import type { ServeError } from "@effect/platform/HttpServerError"
+import { makeIngressChannel } from "@firegrid/protocol/channels"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import { RuntimeContextChannelRouterLive } from "@firegrid/runtime/channels/router/live"
+import { VerifiedWebhookFactCallerOwnedFactStreamsLive } from "@firegrid/runtime/channels/verified-webhook/live"
+import { type FiregridHost, FiregridLocalHostLive } from "@firegrid/runtime/composition/host-live"
 import {
   ensurePathInput,
-  FiregridLocalHostLive,
   FiregridMcpServerLayer,
-  RuntimeContextChannelRouterLive,
-  VerifiedWebhookFactCallerOwnedFactStreamsLive,
-  durableStreamUrl,
-  makeIngressChannel,
-  type FiregridHost,
-} from "@firegrid/host-sdk"
+} from "@firegrid/runtime/producers/codecs/mcp"
 import {
   VerifiedWebhookFactChannel,
   VerifiedWebhookFactChannelTarget,
