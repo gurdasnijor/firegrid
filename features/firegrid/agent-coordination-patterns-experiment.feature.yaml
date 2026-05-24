@@ -4,6 +4,12 @@ feature:
   description: Run a publishable agent-coordination experiment on Firegrid's public session, channel, trace, and artifact surfaces.
 
 components:
+  SCENARIOS:
+    requirements:
+      1: The experiment defines named task scenarios that are designed to make coordination overhead and coordination benefit diverge across arms.
+      2: Each run records the selected scenarios and runs every selected arm against every selected scenario.
+      3: Scenario artifacts include the scenario id, hypothesis, task packet, and expected divergence signal.
+      4: Event-driven scenarios inject inbound signals onto real Firegrid coordination channels while participant sessions are running.
   ARMS:
     requirements:
       1: Every arm runs the same task packet and records the task packet in its artifact directory.
@@ -20,6 +26,7 @@ components:
       1: Each arm writes session output, execution metadata, trace path, prompt, and summary artifacts.
       2: The scorer reads Firegrid-native artifacts such as trace JSONL, tool-call spans, permission spans, session output, and board rows.
       3: The finding compiler produces a Markdown report that separates generic coordination conclusions from Firegrid-specific implementation findings.
+      4: Score and finding outputs group rows by scenario and arm so divergence is visible without inspecting per-arm directories.
   EXECUTION:
     requirements:
       1: The live harness composes a real Firegrid host and drives participant sessions through Firegrid's public client/session surfaces rather than tiny-firegrid-specific runner APIs.

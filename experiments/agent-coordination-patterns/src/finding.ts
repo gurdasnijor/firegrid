@@ -1,15 +1,37 @@
-import { readFile, writeFile } from "node:fs/promises"
+import { writeFile } from "node:fs/promises"
 import path from "node:path"
 import { readJson } from "./files.ts"
 import type { ArmScore } from "./types.ts"
+import type { ExperimentScenario } from "./types.ts"
+
+const scenarioLabel = (
+  scenario: ExperimentScenario | undefined,
+  scenarioId: string | undefined,
+): string => scenario === undefined
+  ? scenarioId ?? "ad-hoc"
+  : `${scenario.id} — ${scenario.name}`
 
 export const compileFinding = async (runDir: string): Promise<void> => {
   const scoresPayload = await readJson<{ readonly scores: ReadonlyArray<ArmScore> }>(
     path.join(runDir, "scores.json"),
   )
-  const task = await readFile(path.join(runDir, "task.md"), "utf8").catch(() => "")
+  const scenarioIds = [...new Set(scoresPayload.scores.flatMap(score =>
+    score.scenarioId === undefined ? [] : [score.scenarioId]
+  ))]
+  const scenarios = await Promise.all(
+    scenarioIds
+      .map(async scenarioId =>
+        readJson<ExperimentScenario>(
+          path.join(runDir, "scenarios", scenarioId, "scenario.json"),
+        ).catch(() => undefined)
+      ),
+  )
+  const scenarioById = new Map(
+    scenarios.filter((scenario): scenario is ExperimentScenario => scenario !== undefined)
+      .map(scenario => [scenario.id, scenario]),
+  )
   const rows = scoresPayload.scores.map(score =>
-    `| ${score.arm} | ${score.summary?.status ?? "unknown"} | ${score.summary?.durationMs ?? 0} | ${score.trace?.spans ?? 0} | ${score.trace?.errorSpans ?? 0} | ${score.trace?.toolsCallSpans ?? 0} |`,
+    `| ${scenarioLabel(scenarioById.get(score.scenarioId ?? ""), score.scenarioId)} | ${score.arm} | ${score.summary?.status ?? "unknown"} | ${score.summary?.durationMs ?? 0} | ${score.trace?.spans ?? 0} | ${score.trace?.errorSpans ?? 0} | ${score.trace?.toolsCallSpans ?? 0} |`,
   )
   const blocked = scoresPayload.scores.filter(score => score.summary?.status === "blocked")
   await writeFile(
@@ -19,16 +41,24 @@ export const compileFinding = async (runDir: string): Promise<void> => {
       "",
       "Status: draft generated from run artifacts",
       "",
-      "## Task Packet",
+      "## Scenario Matrix",
       "",
-      "```text",
-      task.trim(),
-      "```",
+      ...scenarios.filter((scenario): scenario is ExperimentScenario => scenario !== undefined)
+        .flatMap(scenario => [
+          `### ${scenario.id} — ${scenario.name}`,
+          "",
+          `Axis: ${scenario.axis}`,
+          "",
+          `Hypothesis: ${scenario.hypothesis}`,
+          "",
+          `Expected divergence: ${scenario.expectedDivergence}`,
+          "",
+        ]),
       "",
       "## Arm Summary",
       "",
-      "| Arm | Status | Duration ms | Spans | Trace errors | Tool-call spans |",
-      "| --- | --- | ---: | ---: | ---: | ---: |",
+      "| Scenario | Arm | Status | Duration ms | Spans | Trace errors | Tool-call spans |",
+      "| --- | --- | --- | ---: | ---: | ---: | ---: |",
       ...rows,
       "",
       "## Initial Interpretation",

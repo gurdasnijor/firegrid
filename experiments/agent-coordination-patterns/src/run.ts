@@ -29,6 +29,7 @@ import type {
   ArmSessionArtifact,
   ArmSummary,
   ExperimentArm,
+  InboundSignal,
   ParticipantRuntime,
   RunOptions,
 } from "./types.ts"
@@ -154,7 +155,8 @@ const createParticipant = (
     const session = yield* firegrid.sessions.createOrLoad({
       externalKey: {
         source: "agent-coordination-patterns",
-        id: `${input.options.runId}:${input.arm}:${input.role}`,
+        id:
+          `${input.options.runId}:${input.options.scenario.id}:${input.arm}:${input.role}`,
       },
       runtime: runtimeIntent(input.options.runtime),
       createdBy: "agent-coordination-patterns-experiment",
@@ -165,7 +167,7 @@ const createParticipant = (
     yield* session.prompt({
       payload: input.prompt,
       idempotencyKey:
-        `${input.options.runId}:${input.arm}:${input.role}:initial-prompt`,
+        `${input.options.runId}:${input.options.scenario.id}:${input.arm}:${input.role}:initial-prompt`,
     })
     yield* session.start()
     const outputs = yield* collectSessionOutputs(session, input.options.timeoutMs)
@@ -185,6 +187,7 @@ const runParticipantPlan = (
   board: CoordinationBoardHost,
 ): Effect.Effect<ReadonlyArray<ArmSessionArtifact>, unknown, Firegrid | Scope.Scope> =>
   Effect.gen(function*() {
+    yield* Effect.forkScoped(injectInboundSignals(options, board))
     switch (arm) {
       case "single":
         return [
@@ -207,25 +210,60 @@ const runParticipantPlan = (
       case "choreography": {
         yield* board.append("coordination.work", {
           kind: "task",
-          workId: `${options.runId}:primary-task`,
+          workId: `${options.runId}:${options.scenario.id}:primary-task`,
           title: "Shared experiment task",
           body: task,
           status: "open",
         })
         const roles = ["planner", "builder", "reviewer"] as const
-        const results: Array<ArmSessionArtifact> = []
-        for (const role of roles) {
-          results.push(yield* createParticipant({
-            arm,
-            role,
-            prompt: promptForArm(arm, task),
-            options,
-          }))
-        }
-        return results
+        return yield* Effect.all(
+          roles.map(role =>
+            createParticipant({
+              arm,
+              role,
+              prompt: promptForArm(arm, task),
+              options,
+            })
+          ),
+          { concurrency: "unbounded" },
+        )
       }
     }
   })
+
+const injectInboundSignal = (
+  options: RunOptions,
+  board: CoordinationBoardHost,
+  signal: InboundSignal,
+): Effect.Effect<void, unknown> =>
+  // agent-coordination-patterns-experiment.SCENARIOS.4
+  Effect.sleep(Duration.millis(signal.atMs)).pipe(
+    Effect.flatMap(() =>
+      board.append(signal.channel, {
+        kind: signal.kind,
+        workId: signal.workId,
+        title: signal.title,
+        body: signal.body,
+        status: signal.status ?? "open",
+        payload: {
+          scenarioId: options.scenario.id,
+          atMs: signal.atMs,
+        },
+      })
+    ),
+    Effect.asVoid,
+  )
+
+const injectInboundSignals = (
+  options: RunOptions,
+  board: CoordinationBoardHost,
+): Effect.Effect<void, unknown> =>
+  Effect.all(
+    options.scenario.inboundSignals.map(signal =>
+      injectInboundSignal(options, board, signal)
+    ),
+    { concurrency: "unbounded" },
+  ).pipe(Effect.asVoid)
 
 const runArmEffect = (
   arm: ExperimentArm,
@@ -241,7 +279,8 @@ const runArmEffect = (
   Effect.scoped(
     withDurableStreams((durableStreamsBaseUrl) =>
       Effect.gen(function*() {
-        const namespace = `agent-coordination.${sanitizeNamespaceSegment(options.runId)}.${arm}`
+        const namespace =
+          `agent-coordination.${sanitizeNamespaceSegment(options.runId)}.${sanitizeNamespaceSegment(options.scenario.id)}.${arm}`
         const board = makeCoordinationBoardHost({
           baseUrl: durableStreamsBaseUrl,
           namespace,
@@ -249,6 +288,7 @@ const runArmEffect = (
           arm,
         })
         const commandArtifact: ArmCommandArtifact = {
+          scenarioId: options.scenario.id,
           arm,
           runner: "client-host",
           durableStreamsBaseUrl,
@@ -290,6 +330,7 @@ const runArmEffect = (
           )
           return {
             arm,
+            scenarioId: options.scenario.id,
             status: "failed" as const,
             startedAt: commandArtifact.startedAt,
             finishedAt: new Date().toISOString(),
@@ -315,6 +356,7 @@ const runArmEffect = (
         )
         return {
           arm,
+          scenarioId: options.scenario.id,
           status: "completed",
           startedAt: commandArtifact.startedAt,
           finishedAt: new Date().toISOString(),
@@ -329,6 +371,7 @@ const runArmEffect = (
               serviceName: "agent-coordination-patterns-experiment",
               attributes: {
                 "firegrid.experiment": "agent-coordination-patterns",
+                "firegrid.experiment.scenario": options.scenario.id,
                 "firegrid.experiment.arm": arm,
                 "firegrid.run.id": options.runId,
               },
@@ -342,6 +385,7 @@ const runArmEffect = (
     Effect.catchAll((cause) =>
       Effect.succeed({
         arm,
+        scenarioId: options.scenario.id,
         status: "failed" as const,
         startedAt: new Date().toISOString(),
         finishedAt: new Date().toISOString(),
@@ -355,7 +399,7 @@ const runArm = async (
   arm: ExperimentArm,
   options: RunOptions,
 ): Promise<ArmSummary> => {
-  const armDir = path.join(options.runDir, "arms", arm)
+  const armDir = path.join(options.scenarioDir, "arms", arm)
   await mkdir(armDir, { recursive: true })
   const startedMs = Date.now()
   const promptPath = path.join(armDir, "prompt.md")
@@ -387,11 +431,12 @@ export const runExperiment = async (options: RunOptions): Promise<void> => {
   for (const arm of options.arms) {
     summaries.push(await runArm(arm, options))
   }
-  await writeJson(path.join(options.runDir, "run-summary.json"), {
+  await writeJson(path.join(options.scenarioDir, "scenario-summary.json"), {
     "agent-coordination-patterns-experiment.ARTIFACTS.1": true,
     "agent-coordination-patterns-experiment.EXECUTION.1": true,
     "agent-coordination-patterns-experiment.EXECUTION.3": true,
     runId: options.runId,
+    scenario: options.scenario,
     taskPath: options.taskPath,
     arms: summaries,
   })
