@@ -77,8 +77,10 @@ import {
   Clock,
   Duration,
   Effect,
+  Option,
   ParseResult,
   Schema,
+  Stream,
 } from "effect"
 import {
   type AgentInputEvent,
@@ -86,6 +88,7 @@ import {
 } from "../../events/index.ts"
 import {
   RuntimeAgentToolExecution,
+  evaluateFieldEquals,
   type FieldEqualsTrigger,
   type RuntimeAgentToolExecutionError,
   type RuntimeObservationSource,
@@ -265,6 +268,39 @@ const runSessionAgentOutputWaitForTool = (
     )
   })
 
+const runRouteStreamWaitForTool = (
+  toolUseId: string,
+  input: WaitForToolInput,
+  trigger: FieldEqualsTrigger,
+  route: RuntimeChannelRoute,
+): Effect.Effect<WaitForToolOutput, ToolError> => {
+  if (route.stream === undefined) {
+    return Effect.fail({
+      _tag: "ToolInvalidInput",
+      toolUseId,
+      name: "wait_for",
+      reason: `channel '${input.channel}' does not expose a waitable stream route`,
+    })
+  }
+  const wait = route.stream.pipe(
+    Stream.filter(row => evaluateFieldEquals(trigger, row)),
+    Stream.runHead,
+    Effect.flatMap(Option.match({
+      onNone: () => Effect.never,
+      onSome: event => Effect.succeed<WaitForToolOutput>({ matched: true, event }),
+    })),
+    Effect.mapError(cause =>
+      toolExecutionFailed(toolUseId, "wait_for", cause)),
+  )
+  if (input.timeoutMs === undefined) return wait
+  return Effect.raceFirst(
+    wait,
+    Clock.sleep(Duration.millis(input.timeoutMs)).pipe(
+      Effect.as<WaitForToolOutput>({ matched: false, timedOut: true }),
+    ),
+  )
+}
+
 const requireChannelDirection = <Direction extends ChannelDirection>(
   toolUseId: string,
   name: string,
@@ -414,6 +450,22 @@ const runWaitForTool = (
         name: "wait_for",
         reason: `wait_for requires an ingress channel: ${input.channel}`,
       })
+    }
+    const route = yield* runtimeChannelRoute(input.channel).pipe(
+      Effect.mapError((): ToolError => ({
+        _tag: "ToolInvalidInput",
+        toolUseId,
+        name: "wait_for",
+        reason: `unknown channel: ${input.channel}`,
+      })),
+    )
+    if (route.stream !== undefined) {
+      return yield* runRouteStreamWaitForTool(
+        toolUseId,
+        input,
+        adapted.trigger,
+        route,
+      )
     }
     const execution = yield* RuntimeAgentToolExecution
     const source: RuntimeObservationSource = {
