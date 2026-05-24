@@ -24,7 +24,7 @@ import {
   FiregridMcpServerLayer,
   FiregridMcpServerListenerConfig,
 } from "@firegrid/runtime/producers/codecs/mcp"
-import { Console, Effect, Layer } from "effect"
+import { Cause, Console, Effect, Exit, Layer } from "effect"
 
 export const firegridHostProgram = Effect.never
 
@@ -53,6 +53,24 @@ export const firegridHostLayer = Layer.unwrapEffect(
   ),
 )
 
+// Same daemon-fiber teardown concern as `runtime/bin/run.ts`: when the
+// host process terminates (only path is signal-driven for this bin),
+// `FiregridLocalHostLive`'s reconciler / subscriber daemons are
+// reparented to the global scope via `Effect.forkDaemon`, so the
+// default teardown's "set process.exitCode and let the event loop
+// drain" never returns. Force-exit after recording the code.
+function teardown<E, A>(
+  exit: Exit.Exit<E, A>,
+  onExit: (code: number) => void,
+): void {
+  const code = Exit.match(exit, {
+    onSuccess: () => Number(globalThis.process.exitCode ?? 0),
+    onFailure: (cause) => Cause.isInterruptedOnly(cause) ? 0 : 1,
+  })
+  onExit(code)
+  globalThis.process.exit(code)
+}
+
 export const runFiregridHost = (): void => {
   // firegrid-runtime-process.BINARIES.12
   NodeRuntime.runMain(
@@ -62,6 +80,7 @@ export const runFiregridHost = (): void => {
         Effect.zipRight(firegridHostProgram),
       ),
     ),
+    { teardown },
   )
 }
 

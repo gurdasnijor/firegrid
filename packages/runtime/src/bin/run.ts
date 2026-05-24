@@ -964,14 +964,34 @@ const program = cli(globalThis.process.argv).pipe(
     )),
 )
 
+// `NodeRuntime.runMain`'s default teardown sets `process.exitCode` and
+// returns; it relies on the node event loop draining naturally. The
+// runtime host composition installs daemon fibers (e.g. the control-
+// request reconciler under `FiregridRuntimeHostLive`) that reparent
+// themselves to the global scope via `Effect.forkDaemon`, so even after
+// the program Effect completes those fibers keep file descriptors /
+// timers alive and the event loop never drains. The end-user sees
+// `firegrid:run: context … exited (attempt 1, exitCode 0)` followed by
+// an indefinite hang (the OLA2 readiness sim reproducibly observes the
+// parent only exiting after a 30s subprocess SIGTERM, exit 143).
+//
+// `firegrid run` is a SYNCHRONOUS one-shot CLI: when the agent's
+// runtime turn terminates, the process MUST terminate too. Force-exit
+// after invoking the framework's onExit (which records the code) so
+// daemon fibers cannot strand the parent. For `firegrid start` / `acp`
+// the program effect is `Effect.never` / `edge.closed`; teardown only
+// fires on signal-driven interrupt, where the explicit exit is still
+// the right behavior (signal already requested termination).
 function teardown<E, A>(
   exit: Exit.Exit<E, A>,
   onExit: (code: number) => void,
 ): void {
-  Exit.match(exit, {
-    onSuccess: () => onExit(Number(globalThis.process.exitCode ?? 0)),
-    onFailure: (cause) => onExit(Cause.isInterruptedOnly(cause) ? 0 : 1),
+  const code = Exit.match(exit, {
+    onSuccess: () => Number(globalThis.process.exitCode ?? 0),
+    onFailure: (cause) => Cause.isInterruptedOnly(cause) ? 0 : 1,
   })
+  onExit(code)
+  globalThis.process.exit(code)
 }
 
 // Localized final-boundary cast (firegrid-host-sdk.PACKAGE_GRAPH.5 review
