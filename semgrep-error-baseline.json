@@ -89,12 +89,12 @@
     {
       "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
       "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
-      "line": 486
+      "line": 502
     },
     {
       "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
       "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
-      "line": 542
+      "line": 558
     },
     {
       "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
@@ -104,12 +104,12 @@
     {
       "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
       "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
-      "line": 195
+      "line": 196
     },
     {
       "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
       "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
-      "line": 519
+      "line": 535
     },
     {
       "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
