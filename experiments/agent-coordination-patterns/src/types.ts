@@ -33,6 +33,15 @@ export interface ParticipantRuntime {
   readonly secretEnv: ReadonlyArray<string>
 }
 
+export interface ExperimentRunPlan {
+  readonly runId?: string
+  readonly scenarioIds?: ReadonlyArray<string>
+  readonly arms?: ReadonlyArray<ExperimentArm>
+  readonly runtime?: ParticipantRuntime
+  readonly timeoutMs?: number
+  readonly taskOverridePath?: string
+}
+
 export interface RunOptions {
   readonly runId: string
   readonly runDir: string
@@ -47,11 +56,12 @@ export interface RunOptions {
 export interface ArmCommandArtifact {
   readonly scenarioId: string
   readonly arm: ExperimentArm
-  readonly runner: "client-host"
+  readonly runner: "firegrid-conductor"
   readonly durableStreamsBaseUrl: string
   readonly namespace: string
   readonly tracePath: string
   readonly promptPath: string
+  readonly runtimeContextAcpPermissionPolicy: "allow"
   readonly startedAt: string
 }
 

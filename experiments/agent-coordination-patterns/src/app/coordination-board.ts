@@ -8,7 +8,7 @@ import {
   type DurableTableService,
 } from "effect-durable-operators"
 
-export const boardChannels = [
+const boardChannels = [
   "coordination.work",
   "coordination.claims",
   "coordination.findings",

@@ -22,6 +22,9 @@ should run through Firegrid's public session/tool/trace surfaces.
   that produces prose but no final board artifact is marked failed.
 - Uses self-contained task packets for the default scenarios, so participants
   do not need shell, filesystem, or repository access to complete the task.
+- Sets the host's runtime ACP session permission policy to `allow` so
+  conductor-created child sessions can use the declared Firegrid coordination
+  tools without a separate human permission UI.
 - Writes per-arm execution metadata, prompt, session output, board rows, trace
   path, and summary JSON.
 - Scores trace artifacts for basic correctness and overhead signals.
@@ -31,23 +34,71 @@ The prompt templates are the experimental treatment. They tell each arm what
 coordination pattern to use; they do not replace Firegrid session, channel, or
 client execution.
 
+## Firegrid Surface Map
+
+The harness is split like a small Firegrid application:
+
+- `src/app/coordination-board.ts` is experiment-specific application code. It
+  declares the shared board channels and their row schema.
+- `src/host.ts` is the host composition. It composes `FiregridLocalHostLive`,
+  the MCP server layer, the local process provider, and the experiment board
+  channels. It does not import the Firegrid client.
+- `src/client.ts` is the client-side driver. It imports
+  `@firegrid/client-sdk`, creates one conductor session per arm, sends the
+  arm prompt, and waits for board/session output through public client
+  methods. It does not create worker sessions directly and it does not import
+  runtime host composition.
+- `src/run.ts` owns experiment concerns: scenario selection, durable-streams
+  test-server lifecycle, per-arm traces, and artifact files.
+- `src/score.ts` and `src/finding.ts` read the artifacts and compile the
+  report. They are measurement code, not Firegrid control surfaces.
+
+The conductor is a normal Firegrid agent session with normal Firegrid tools.
+It launches participants with `session_new`, prompts them with
+`session_prompt`, observes them with `wait_for` on `session.agent_output`, and
+publishes the arm result with `send` to `coordination.final`. The bootstrap code
+only starts that conductor and records artifacts.
+
 ## Run
 
 From the repo root:
 
 ```bash
-pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts init
+pnpm exec tsx --eval '
+  import {
+    defaultParticipantRuntime,
+    runExperimentMatrix,
+  } from "./experiments/agent-coordination-patterns/src/run.ts"
+
+  void runExperimentMatrix({
+    scenarioIds: ["solo-baseline", "parallel-slices", "review-revision"],
+    arms: ["single", "central", "choreography"],
+    runtime: defaultParticipantRuntime,
+    timeoutMs: 300_000,
+  }).then(console.log)
+'
 ```
 
-Then run the live arms:
+That code is intentionally just normal TypeScript. It imports the experiment
+plan runner; the Firegrid host and client boundaries remain in `src/host.ts`
+and `src/client.ts`. The run itself is conducted inside Firegrid by the
+conductor session.
 
-```bash
-pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts run \
-  --scenarios solo-baseline,parallel-slices,review-revision \
-  --arms single,central,choreography
+```ts
+import {
+  defaultParticipantRuntime,
+  runExperimentMatrix,
+} from "./src/run.ts"
+
+await runExperimentMatrix({
+  scenarioIds: ["solo-baseline", "parallel-slices", "review-revision"],
+  arms: ["single", "central", "choreography"],
+  runtime: defaultParticipantRuntime,
+  timeoutMs: 300_000,
+})
 ```
 
-Use `--scenarios all` to include the event-driven stress scenarios:
+Include the event-driven stress scenarios by passing their scenario ids:
 
 - `shared-board`: delayed questions/findings on `coordination.*`.
 - `ambiguous-debug`: incident rows for `agent_silent` and `unknown-channel`
@@ -57,11 +108,15 @@ Use `--scenarios all` to include the event-driven stress scenarios:
 Score and compile:
 
 ```bash
-pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts score \
-  --run-dir .firegrid/agent-coordination-patterns/latest
+pnpm exec tsx --eval '
+  import { scoreLatestRun } from "./experiments/agent-coordination-patterns/src/score.ts"
+  void scoreLatestRun().then(console.log)
+'
 
-pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts finding \
-  --run-dir .firegrid/agent-coordination-patterns/latest
+pnpm exec tsx --eval '
+  import { compileLatestFinding } from "./experiments/agent-coordination-patterns/src/finding.ts"
+  void compileLatestFinding().then(console.log)
+'
 ```
 
 ## Environment
@@ -69,16 +124,24 @@ pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts finding \
 The default runtime is `claude-acp`:
 
 ```bash
-ANTHROPIC_API_KEY=... pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts run --arms single,central
+ANTHROPIC_API_KEY=... pnpm exec tsx --eval '
+  import { runExperimentMatrix } from "./experiments/agent-coordination-patterns/src/run.ts"
+  void runExperimentMatrix().then(console.log)
+'
 ```
 
-You can override the participant command:
+Override the participant runtime in the typed plan:
 
-```bash
-pnpm exec tsx experiments/agent-coordination-patterns/src/index.ts run \
-  --agent codex-acp \
-  --agent-protocol acp \
-  --agent-command "npx -y @zed-industries/codex-acp@0.14.0"
+```ts
+await runExperimentMatrix({
+  arms: ["single", "central"],
+  runtime: {
+    agent: "codex-acp",
+    agentProtocol: "acp",
+    command: ["npx", "-y", "@zed-industries/codex-acp@0.14.0"],
+    secretEnv: [],
+  },
+})
 ```
 
 ## Next Implementation Step

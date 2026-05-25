@@ -13,7 +13,7 @@ importers:
         version: 0.42.2
       '@durable-streams/server':
         specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.6.6(typescript@5.9.3))
+        version: 0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))
       '@effect/eslint-plugin':
         specifier: ^0.3.2
         version: 0.3.2
@@ -61,7 +61,7 @@ importers:
     dependencies:
       '@durable-streams/server':
         specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.6.6(typescript@5.9.3))
+        version: 0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))
       '@firegrid/client-sdk':
         specifier: workspace:*
         version: link:../../packages/client-sdk
@@ -80,13 +80,6 @@ importers:
       effect-durable-operators:
         specifier: workspace:*
         version: link:../../packages/effect-durable-operators
-    devDependencies:
-      tsx:
-        specifier: ^4.20.4
-        version: 4.21.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/cli:
     dependencies:
@@ -251,7 +244,7 @@ importers:
         version: 0.21.0(zod@4.4.3)
       '@durable-streams/server':
         specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.6.6(typescript@5.9.3))
+        version: 0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))
       '@effect/ai':
         specifier: ^0.35.0
         version: 0.35.0(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
@@ -346,7 +339,7 @@ importers:
         version: 0.21.0(zod@4.4.3)
       '@durable-streams/server':
         specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.6.6(typescript@5.9.3))
+        version: 0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))
       '@firegrid/client-sdk':
         specifier: workspace:*
         version: link:../client-sdk
@@ -364,10 +357,10 @@ importers:
         version: 0.2.3
       '@durable-streams/state':
         specifier: ^0.2.5
-        version: 0.2.5(@tanstack/db@0.6.6(typescript@5.9.3))
+        version: 0.2.5(@tanstack/db@0.6.7(typescript@5.9.3))
       '@tanstack/react-db':
         specifier: latest
-        version: 0.1.84(react@19.2.6)(typescript@5.9.3)
+        version: 0.1.85(react@19.2.6)(typescript@5.9.3)
       '@tanstack/react-router':
         specifier: ^1.139.14
         version: 1.170.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1822,8 +1815,8 @@ packages:
     peerDependencies:
       typescript: '>=4.7'
 
-  '@tanstack/db@0.6.6':
-    resolution: {integrity: sha512-v1Mphjtwy/6m3ixhNFackRp8XYgdJYGFUUBQ80d0lsipk0MYKHIoePpHGSum95nerLDcP/8+fu5qj0Vrvmskqw==}
+  '@tanstack/db@0.6.7':
+    resolution: {integrity: sha512-nCwOhNXogu3JHdkNPXX6+B8aL0F4wVe0CwLvNS7ccCQ6m9147L8qJewL4IZVyACQDsLGs5MKg91x+VUiD+MplQ==}
     peerDependencies:
       typescript: '>=4.7'
 
@@ -1844,8 +1837,8 @@ packages:
     peerDependencies:
       react: '>=16.8.0'
 
-  '@tanstack/react-db@0.1.84':
-    resolution: {integrity: sha512-2BrOdAX2hZTS2Z6nZZ0HySf+oSL+IIq6y2Yfh5np1d/J7omPkb8Q77OCO4o4efDMYAnK6LTXYHtWP8X2a7bBeQ==}
+  '@tanstack/react-db@0.1.85':
+    resolution: {integrity: sha512-OaZCTiCxAag8opGF0As8iRSrbFfGg/ggLWuXYdvMufoNHnDYsc/n2sULgGhFT1U1/1Q4zbkayz445NlDhC/5vg==}
     peerDependencies:
       react: '>=16.8.0'
 
@@ -4074,10 +4067,10 @@ snapshots:
       '@microsoft/fetch-event-source': 2.0.1
       fastq: 1.20.1
 
-  '@durable-streams/server@0.3.1(@tanstack/db@0.6.6(typescript@5.9.3))':
+  '@durable-streams/server@0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))':
     dependencies:
       '@durable-streams/client': 0.2.3
-      '@durable-streams/state': 0.2.5(@tanstack/db@0.6.6(typescript@5.9.3))
+      '@durable-streams/state': 0.2.5(@tanstack/db@0.6.7(typescript@5.9.3))
       '@neophi/sieve-cache': 1.5.0
       lmdb: 3.5.4
     transitivePeerDependencies:
@@ -4089,11 +4082,11 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       '@tanstack/db': 0.5.33(typescript@5.9.3)
 
-  '@durable-streams/state@0.2.5(@tanstack/db@0.6.6(typescript@5.9.3))':
+  '@durable-streams/state@0.2.5(@tanstack/db@0.6.7(typescript@5.9.3))':
     dependencies:
       '@durable-streams/client': 0.2.3
       '@standard-schema/spec': 1.1.0
-      '@tanstack/db': 0.6.6(typescript@5.9.3)
+      '@tanstack/db': 0.6.7(typescript@5.9.3)
 
   '@effect/ai@0.35.0(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)':
     dependencies:
@@ -4956,7 +4949,7 @@ snapshots:
       '@tanstack/pacer-lite': 0.2.1
       typescript: 5.9.3
 
-  '@tanstack/db@0.6.6(typescript@5.9.3)':
+  '@tanstack/db@0.6.7(typescript@5.9.3)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@tanstack/db-ivm': 0.1.18(typescript@5.9.3)
@@ -4977,9 +4970,9 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@tanstack/react-db@0.1.84(react@19.2.6)(typescript@5.9.3)':
+  '@tanstack/react-db@0.1.85(react@19.2.6)(typescript@5.9.3)':
     dependencies:
-      '@tanstack/db': 0.6.6(typescript@5.9.3)
+      '@tanstack/db': 0.6.7(typescript@5.9.3)
       react: 19.2.6
       use-sync-external-store: 1.6.0(react@19.2.6)
     transitivePeerDependencies:

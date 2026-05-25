@@ -5,6 +5,7 @@ import {
   type RuntimeAgentProtocol,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
+import type { AcpPermissionPolicy } from "@firegrid/protocol/acp"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
@@ -75,6 +76,7 @@ const codecLayerForProtocol = (
   // `firegrid-runtime-context` declaration built from the host's OWN
   // bound MCP base. The client never expresses this URL.
   effectiveMcpServers: ReadonlyArray<ResolvedMcpServerDeclaration> | undefined,
+  permissionPolicy?: AcpPermissionPolicy,
 ): Layer.Layer<AgentSession, AgentCodecError> =>
   Match.value(protocol).pipe(
     Match.when("stdio-jsonl", () =>
@@ -91,6 +93,7 @@ const codecLayerForProtocol = (
     Match.when("acp", () =>
       AcpSessionLive(bytes, {
         ...(context.runtime.config.cwd === undefined ? {} : { cwd: context.runtime.config.cwd }),
+        ...(permissionPolicy === undefined ? {} : { permissionPolicy }),
         ...(effectiveMcpServers === undefined ? {} : {
           mcpServers: effectiveMcpServers.map(declaration => ({
             name: declaration.name,
@@ -248,12 +251,16 @@ const startSessionSpanAttributes = (
   return attributes
 }
 
-export const makeCodecRuntimeContextWorkflowSessionService:
+export const makeCodecRuntimeContextWorkflowSessionService = (
+  options: {
+    readonly permissionPolicy?: AcpPermissionPolicy
+  } = {},
+):
   Effect.Effect<
     RuntimeContextWorkflowSessionService,
     never,
     SessionCommon.RuntimeContextSessionAdapterRequirements
-  > =
+  > =>
   SessionCommon.makeRuntimeContextSessionAdapterService<CodecRuntimeContextSession>((deps) => {
     const startSession = (
       context: RuntimeContext,
@@ -275,7 +282,13 @@ export const makeCodecRuntimeContextWorkflowSessionService:
           // `WorkflowInstance.initial(<body workflow>, …)` is gone with
           // the body. Audit: neither codec Live (`AcpSessionLive` /
           // `StdioJsonlSessionLive`) declares the workflow Tags in R.
-          const codecLayer = codecLayerForProtocol(bytes, context, protocol, effectiveMcpServers)
+          const codecLayer = codecLayerForProtocol(
+            bytes,
+            context,
+            protocol,
+            effectiveMcpServers,
+            options.permissionPolicy,
+          )
           const sessionContext = yield* Layer.buildWithScope(
             codecLayer,
             deps.scope,
@@ -429,5 +442,5 @@ export const makeCodecRuntimeContextWorkflowSessionService:
   })
 
 export const CodecRuntimeContextWorkflowSessionLive = SessionCommon.scopedRuntimeContextWorkflowSessionLayer(
-  makeCodecRuntimeContextWorkflowSessionService,
+  makeCodecRuntimeContextWorkflowSessionService(),
 )

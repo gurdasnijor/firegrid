@@ -672,6 +672,49 @@ describe("AcpSessionLive", () => {
     expect(result.staleResponse._tag).toBe("Right")
   })
 
+  it("agent-coordination-patterns-experiment.EXECUTION.10 applies explicit ACP session permission policy", async () => {
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const harness = yield* makeHarness
+          startAgent(harness, connection => new PermissionFixtureAgent(connection))
+          const session = yield* openSession(
+            harness.bytes,
+            { permissionPolicy: "allow" },
+            deterministicIdGenerator(),
+          )
+          const fiber = yield* collectOutputs(session, 4).pipe(Effect.fork)
+          yield* session.send({
+            _tag: "Prompt",
+            correlationId: "prompt-policy-allow",
+            prompt: userMessage("edit config"),
+          })
+          return yield* Fiber.join(fiber)
+        }),
+      ),
+    )
+
+    expect(events.some(event => event._tag === "PermissionRequest")).toBe(false)
+    expect(events[1]).toEqual({
+      _tag: "ToolUse",
+      part: Prompt.toolCallPart({
+        id: "tool-permission",
+        name: "edit config",
+        params: { path: "config.json" },
+        providerExecuted: true,
+      }),
+    })
+    expect(events[2]?._tag).toBe("TextChunk")
+    if (events[2]?._tag === "TextChunk") {
+      expect(events[2].part.delta).toBe("selected")
+    }
+    expect(events[3]).toEqual({
+      _tag: "TurnComplete",
+      finishReason: "stop",
+      messageId: "prompt-policy-allow",
+    })
+  })
+
   it("tf-90w5 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3 bounds the permission wait and resolves ACP as cancelled when no response arrives", async () => {
     // The codec must never wait unboundedly on a PermissionDecision: a response
     // that never arrives would otherwise hang the agent's requestPermission()

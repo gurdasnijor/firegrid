@@ -4,10 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "run": "tsx src/index.ts run",
-    "init": "tsx src/index.ts init",
-    "score": "tsx src/index.ts score",
-    "finding": "tsx src/index.ts finding",
     "typecheck": "tsc --noEmit --allowImportingTsExtensions"
   },
   "dependencies": {
@@ -18,9 +14,5 @@
     "@firegrid/runtime": "workspace:*",
     "effect": "^3.21.2",
     "effect-durable-operators": "workspace:*"
-  },
-  "devDependencies": {
-    "tsx": "^4.20.4",
-    "typescript": "^5.9.3"
   }
 }

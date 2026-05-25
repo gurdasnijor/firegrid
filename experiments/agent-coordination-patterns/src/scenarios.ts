@@ -40,7 +40,7 @@ const harnessMaterials = [
 
 // agent-coordination-patterns-experiment.SCENARIOS.1
 // agent-coordination-patterns-experiment.SCENARIOS.5
-export const experimentScenarios = [
+const experimentScenarios = [
   {
     id: "solo-baseline",
     name: "Solo Baseline",

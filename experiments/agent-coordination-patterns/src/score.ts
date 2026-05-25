@@ -1,6 +1,6 @@
 import { readdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { readJson, writeJson } from "./files.ts"
+import { experimentRoot, readJson, resolveRunDir, writeJson } from "./files.ts"
 import type { ArmScore, ArmSummary, BoardScore, TraceScore } from "./types.ts"
 import type { CoordinationBoardRow } from "./app/coordination-board.ts"
 
@@ -174,4 +174,12 @@ export const writeScoreMarkdown = async (
     ].join("\n"),
     "utf8",
   )
+}
+
+export const scoreLatestRun = async (): Promise<string> => {
+  // agent-coordination-patterns-experiment.EXECUTION.8
+  const runDir = await resolveRunDir(path.join(experimentRoot, "latest"))
+  const scores = await scoreRun(runDir)
+  await writeScoreMarkdown(runDir, scores)
+  return path.join(runDir, "SCORE.md")
 }

@@ -249,11 +249,17 @@ const runtimeContextSubscriberHostBundle = RuntimeHostLive.pipe(
   Layer.provideMerge(HostRuntimeObservationStreamsLive),
 )
 
-const RuntimeContextWorkflowSessionLive = Layer.scoped(
+const RuntimeContextWorkflowSessionLive = (
+  options: RuntimeHostTopologyOptions,
+) => Layer.scoped(
   RuntimeContextWorkflowSession,
   Effect.gen(function*() {
     const raw = yield* makeRawRuntimeContextWorkflowSessionService
-    const codec = yield* makeCodecRuntimeContextWorkflowSessionService
+    const codec = yield* makeCodecRuntimeContextWorkflowSessionService(
+      options.runtimeContextAcpPermissionPolicy === undefined ? {} : {
+        permissionPolicy: options.runtimeContextAcpPermissionPolicy,
+      },
+    )
     const pick = (context: Parameters<typeof raw.startOrAttach>[0]) =>
       context.runtime.config.agentProtocol === undefined || context.runtime.config.agentProtocol === "raw"
         ? raw
@@ -427,7 +433,7 @@ export const FiregridRuntimeHostLive = (
     Layer.provideMerge(ToolDispatchLive),
     Layer.provideMerge(rcswBundle),
     Layer.provideMerge(hostPublic),
-    Layer.provideMerge(RuntimeContextWorkflowSessionLive),
+    Layer.provideMerge(RuntimeContextWorkflowSessionLive(options)),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),
     // HostWorkflowEngineLive is installed INSIDE the pipe so the outward
@@ -493,6 +499,7 @@ export const FiregridLocalHostLive = (
     readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
     readonly controlRequestReconciler?: boolean
     readonly mcpChannels?: RuntimeHostTopologyOptions["mcpChannels"]
+    readonly runtimeContextAcpPermissionPolicy?: RuntimeHostTopologyOptions["runtimeContextAcpPermissionPolicy"]
   },
   envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
 ) => {
@@ -511,6 +518,9 @@ export const FiregridLocalHostLive = (
     ...(options.mcpChannels === undefined
       ? {}
       : { mcpChannels: options.mcpChannels }),
+    ...(options.runtimeContextAcpPermissionPolicy === undefined
+      ? {}
+      : { runtimeContextAcpPermissionPolicy: options.runtimeContextAcpPermissionPolicy }),
   }
   return FiregridRuntimeHostWithWorkflowLive(composed, envPolicy)
 }
