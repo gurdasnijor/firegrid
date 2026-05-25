@@ -27,8 +27,14 @@ should run through Firegrid's public session/tool/trace surfaces.
   tools without a separate human permission UI.
 - Writes per-arm execution metadata, prompt, session output, board rows, trace
   path, and summary JSON.
-- Scores trace artifacts for basic correctness and overhead signals.
-- Compiles a Markdown finding from the recorded artifacts.
+- Scores trace artifacts for correctness, overhead, span-side breakdowns,
+  context lifetimes, and representative event timelines.
+- Compiles Markdown score, trace, and finding reports from the recorded
+  artifacts.
+- Writes `TRACE_QUERIES.sql` for deeper DuckDB analysis over the same Firegrid
+  OTel JSONL spans.
+- Compiles a comprehensive experiment report that maps metrics and durable
+  board traces back to the research questions.
 
 The prompt templates are the experimental treatment. They tell each arm what
 coordination pattern to use; they do not replace Firegrid session, channel, or
@@ -116,6 +122,11 @@ pnpm exec tsx --eval '
 pnpm exec tsx --eval '
   import { compileLatestFinding } from "./experiments/agent-coordination-patterns/src/finding.ts"
   void compileLatestFinding().then(console.log)
+'
+
+pnpm exec tsx --eval '
+  import { compileLatestExperimentReport } from "./experiments/agent-coordination-patterns/src/report.ts"
+  void compileLatestExperimentReport().then(console.log)
 '
 ```
 
