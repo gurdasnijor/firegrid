@@ -135,6 +135,8 @@ const conductorPromptForArm = (
         "For the central-orchestrator arm, you are the manager participant.",
         "Use session_new to create at least two child sessions with distinct assignments.",
         "Use wait_for on session.agent_output to observe at least one child reply before publishing coordination.final.",
+        "Important: session.agent_output returns one event at a time. Start with match:{sessionId:<child sessionId>, afterSequence:-1}; if the event is Ready or Status, set afterSequence to the returned event.sequence and call wait_for again until you see TextChunk or TurnComplete.",
+        "Do not use wait_for_any for session.agent_output.",
         "",
         base,
       ].join("\n")
