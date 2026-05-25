@@ -1,0 +1,12 @@
+{
+  "rowId": "2026-05-25T02-28-38-461Z:choreography:coordination.final:9460f6d8-2dd4-4eac-a1a3-2dd864a2a68a",
+  "runId": "2026-05-25T02-28-38-461Z",
+  "arm": "choreography",
+  "channel": "coordination.final",
+  "kind": "final",
+  "workId": "work-rr-2026-05-25-1",
+  "status": "complete",
+  "title": "Final: Experiment harness improvement plan (review-revision)",
+  "body": "DRAFT: Board-only oracle; driver schema-validates; require claims+(findings|reviews) before final; <=1200-char final; arm-agnostic probe each peer >=1 non-final row; synth questions row for missing tools.\n\nREVIEW: F1 oracle needs deterministic fold. F2 driver-as-judge contaminates arm; schema must be peer-consumed contract. F3 defer-vs-discard unspecified. F4 driver speaking for peers contaminates choreography. B1 board createdAt only. B2 uniqueness metric. B3 arm-blind scoring. B4 truncation = board row. E1 final tiebreak; E2 cycle bound; E3 claim TTL; E4 empty-board timeout; E5 per-runId scoping; E6 per-section budgets.\n\nREVISED: R1 fold by (createdAt,rowId), dedup keep-last. R2 schemaVersion on rows; peers self-reject; driver never judges. R3 defer not discard; latency=acceptedAt-firstWork. R4 truncation receipt = findings row. R5 probe scored unlabeled. R6 driver only publishes capability manifest. R7 board timestamps only. R8 unique/total per channel. R9 final tiebreak min createdAt then rowId. R10 cycle cap=3 stalemate. R11 claim TTL=120s. R12 empty-board 180s timeout. R13 channel-layer runId scoping. R14 sections <=350/350/400. R15 only structured finals=complete. Coord helped: reviewer F2/F4 reframed R2/R6; E1-E6 produced R9-R14 absent from draft.",
+  "createdAt": "2026-05-25T02:36:42.006Z"
+}

@@ -7,7 +7,7 @@ import {
   type RuntimeAgentOutputObservation,
 } from "@firegrid/client-sdk/firegrid"
 import { envBinding } from "@firegrid/protocol/launch"
-import { Clock, Duration, Effect, Fiber, Layer, Ref, Scope } from "effect"
+import { Duration, Effect, Layer, Scope } from "effect"
 import type {
   CoordinationBoardHost,
   CoordinationBoardPayload,
@@ -26,9 +26,7 @@ interface StartedConductorSession {
   readonly role: "conductor"
   readonly sessionId: string
   readonly contextId: string
-  readonly outputs: Ref.Ref<ReadonlyArray<RuntimeAgentOutputObservation>>
-  readonly outputFiber: Fiber.RuntimeFiber<void, unknown>
-  readonly startFiber: Fiber.RuntimeFiber<unknown, unknown>
+  readonly session: FiregridSessionHandle
 }
 
 interface AgentCoordinationClientResult {
@@ -66,42 +64,10 @@ const runtimeIntent = (runtime: ParticipantRuntime) =>
     runtimeContextMcp: { enabled: true },
   })
 
-const outputTag = (output: RuntimeAgentOutputObservation): string => {
-  const tagged = output as RuntimeAgentOutputObservation & {
-    readonly _tag?: string
-    readonly event?: { readonly _tag?: string }
-  }
-  return tagged.event?._tag ?? tagged._tag ?? "Unknown"
-}
-
 const outputText = (output: RuntimeAgentOutputObservation): string => {
   const event = output.event
   return event._tag === "TextChunk" ? event.part.delta : ""
 }
-
-const collectSessionOutputs = (
-  session: FiregridSessionHandle,
-  timeoutMs: number,
-  outputs: Ref.Ref<ReadonlyArray<RuntimeAgentOutputObservation>>,
-): Effect.Effect<void, unknown, Firegrid> =>
-  Effect.gen(function*() {
-    const deadline = (yield* Clock.currentTimeMillis) + timeoutMs
-    let afterSequence: number | undefined
-    while ((yield* Clock.currentTimeMillis) < deadline) {
-      const now = yield* Clock.currentTimeMillis
-      const remaining = Math.max(1, Math.min(10_000, deadline - now))
-      const next = yield* session.wait.forAgentOutput({
-        ...(afterSequence === undefined ? {} : { afterSequence }),
-        timeoutMs: remaining,
-      })
-      // agent-coordination-patterns-experiment.EXECUTION.6
-      if (!next.matched) continue
-      yield* Ref.update(outputs, current => [...current, next.output])
-      afterSequence = next.output.sequence
-      const tag = outputTag(next.output)
-      if (tag === "TurnComplete" || tag === "Terminated") break
-    }
-  })
 
 const conductorPromptForArm = (
   arm: ExperimentArm,
@@ -171,29 +137,18 @@ const createConductor = (
       runtime: runtimeIntent(input.options.runtime),
       createdBy: "agent-coordination-patterns-experiment",
     })
-    yield* session.permissions.autoApprove("allow", {
-      timeoutMs: Math.min(input.options.timeoutMs, 30_000),
-    })
     yield* session.prompt({
       payload: conductorPromptForArm(input.arm, input.options, input.task),
       idempotencyKey:
         `${input.options.runId}:${input.options.scenario.id}:${input.arm}:conductor-prompt`,
     })
     // agent-coordination-patterns-experiment.EXECUTION.9
-    const startFiber = yield* session.start().pipe(Effect.forkScoped)
-    const outputs = yield* Ref.make<ReadonlyArray<RuntimeAgentOutputObservation>>([])
-    const outputFiber = yield* collectSessionOutputs(
-      session,
-      input.options.timeoutMs,
-      outputs,
-    ).pipe(Effect.forkScoped)
+    yield* session.start()
     return {
       role: "conductor",
       sessionId: session.sessionId,
       contextId: session.contextId,
-      outputs,
-      outputFiber,
-      startFiber,
+      session,
     }
   })
 
@@ -249,9 +204,10 @@ const waitForFinalArtifact = (
 
 const snapshotConductorArtifact = (
   session: StartedConductorSession,
-): Effect.Effect<ArmSessionArtifact> =>
+): Effect.Effect<ArmSessionArtifact, unknown, never> =>
   Effect.gen(function*() {
-    const outputs = yield* Ref.get(session.outputs)
+    const snapshot = yield* session.session.snapshot()
+    const outputs = snapshot.agentOutputs
     return {
       role: session.role,
       sessionId: session.sessionId,
@@ -274,8 +230,6 @@ export const runAgentCoordinationClient = (
     const finalArtifact = yield* waitForFinalArtifact(input.arm, input.options)
     yield* Effect.sleep(Duration.millis(500))
     const sessions = [yield* snapshotConductorArtifact(conductor)]
-    yield* Fiber.interrupt(conductor.outputFiber)
-    yield* Fiber.interrupt(conductor.startFiber)
     const text = sessions.flatMap(session =>
       session.outputs.map(outputText).filter(part => part.length > 0)
     ).join("")

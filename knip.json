@@ -80,7 +80,8 @@
       "entry": [
         "src/run.ts",
         "src/score.ts",
-        "src/finding.ts"
+        "src/finding.ts",
+        "src/report.ts"
       ],
       "project": [
         "src/**/*.ts"

@@ -1,0 +1,21 @@
+{
+  "arm": "central",
+  "scenarioId": "webhook-burst",
+  "status": "completed",
+  "startedAt": "2026-05-25T02:37:10.928Z",
+  "finishedAt": "2026-05-25T02:38:39.076Z",
+  "durationMs": 91150,
+  "sessionCount": 1,
+  "outputCount": 111,
+  "finalArtifact": {
+    "rowId": "2026-05-25T02-28-38-461Z:central:coordination.final:15dfffd6-9009-48d8-a2f2-43e6d86090e8",
+    "runId": "2026-05-25T02-28-38-461Z",
+    "arm": "central",
+    "channel": "coordination.final",
+    "kind": "final",
+    "status": "complete",
+    "title": "Webhook burst triage — central orchestrator",
+    "body": "Deduped incident groups (by external entity):\n\n1) linear:TF-101 — severity P2 (label flip bug→regression). Evidence rows: linear:TF-101:a, linear:TF-101:duplicate (same external event id, deduped).\n2) linear:TF-102 — severity P1 (customer escalation comment). Evidence rows: linear:TF-102:a.\n3) github:check:failed — severity P1 (CI failure; signature mentions 'unknown-channel'). Evidence rows: github:check:failed. Correlation hint: 'unknown-channel' signature is a known channel-routing failure class but no direct linkage to TF-101/TF-102 from the evidence given.\n\nEvidence inspected: 4 coordination.work rows above + child analyst replies.\n\nChildren created: Analyst-A (Linear lane) confirmed TF-101 dedup pair + TF-102 singleton; Analyst-B (GitHub lane) flagged check:failed with unknown-channel hint. Their replies shaped the dedup grouping and severities.\n\nRecommendation: dedup webhook handlers by (source, external entity id) before triage; route P1 customer-escalation + CI failures to oncall; treat regression-label flips as P2 review.\n\nOpen questions: Is the 'unknown-channel' CI failure linked to either Linear ticket? Need a correlator over branch→ticket. Did orchestration help here? Marginally — only 1 of 4 work rows had ambiguity needing a specialist; lane split added overhead vs payoff.",
+    "createdAt": "2026-05-25T02:38:38.477Z"
+  }
+}

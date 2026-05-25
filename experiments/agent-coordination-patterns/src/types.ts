@@ -95,6 +95,43 @@ export interface TraceScore {
   readonly toolsCallSpans: number
   readonly permissionRequestSpans: number
   readonly sessionAgentOutputSpans: number
+  readonly bySide: ReadonlyArray<TraceSideSummary>
+  readonly topSpans: ReadonlyArray<TraceSpanSummary>
+  readonly contextLifetimes: ReadonlyArray<TraceContextLifetime>
+  readonly timeline: ReadonlyArray<TraceTimelineEvent>
+}
+
+export interface TraceSideSummary {
+  readonly side: string
+  readonly count: number
+  readonly totalMs: number
+  readonly avgMs: number
+}
+
+export interface TraceSpanSummary {
+  readonly name: string
+  readonly count: number
+  readonly totalMs: number
+  readonly avgMs: number
+  readonly maxMs: number
+}
+
+export interface TraceContextLifetime {
+  readonly contextId: string
+  readonly count: number
+  readonly firstMs: number
+  readonly lastMs: number
+  readonly durationMs: number
+  readonly sides: ReadonlyArray<string>
+}
+
+export interface TraceTimelineEvent {
+  readonly atMs: number
+  readonly side: string
+  readonly contextId?: string
+  readonly name: string
+  readonly durationMs: number
+  readonly status: "ok" | "error"
 }
 
 export interface BoardScore {

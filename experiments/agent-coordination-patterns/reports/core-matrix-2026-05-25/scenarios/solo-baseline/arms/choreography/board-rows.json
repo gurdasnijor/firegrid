@@ -1,0 +1,60 @@
+[
+  {
+    "rowId": "2026-05-25T02-28-38-461Z:choreography:coordination.claims:47fbeff3-cd22-4f29-b917-e219f038ca7e",
+    "runId": "2026-05-25T02-28-38-461Z",
+    "arm": "choreography",
+    "channel": "coordination.claims",
+    "kind": "claim",
+    "workId": "plan",
+    "claimantSessionId": "planner",
+    "status": "claimed",
+    "title": "Planner slice: propose small improvement to coordination harness docs/workflow",
+    "createdAt": "2026-05-25T02:30:33.380Z"
+  },
+  {
+    "rowId": "2026-05-25T02-28-38-461Z:choreography:coordination.findings:91a5e131-c1f7-4516-aafe-a39d5483bc15",
+    "runId": "2026-05-25T02-28-38-461Z",
+    "arm": "choreography",
+    "channel": "coordination.findings",
+    "kind": "finding",
+    "workId": "plan",
+    "status": "open",
+    "title": "Make coordination.final the sole scored artifact; require evidence-cite in body",
+    "body": "Evidence inspected (task packet only):\n- Driver waits for coordination.final via Firegrid.channels.waitFor; run is incomplete without it.\n- Rules already gate final on >=1 claim AND >=1 finding/review existing on the board.\n- Known risk: 'optional-prose final artifacts make scoring unreliable across arms'.\n- Known risk: judging should rely on durable board behavior, not hidden driver state.\n\nRecommendation (one small change):\nTighten the participant prompt's output contract for coordination.final so the body MUST cite the rowIds (or {channel, workId}) of the claim+finding/review it converged from. Add one bullet: 'body MUST list the board rowIds you converged from; do not claim coordination helped unless those rows exist'.\n\nWhy it is enough:\n- Keeps the artifact the driver already scores (final) as the sole signal -- no harness/code change needed.\n- Forces choreography arm to leave a durable provenance trail on the board, so a reviewer scoring arms can audit whether peer rows actually informed the final vs. solo-baseline where no peers post.\n- Directly addresses both named measurement risks: optional-prose becomes structured citation, and scoring stays on durable board behavior.\n- Cheapest possible change: prompt-text only; no schema migration; backward-compatible (older finals just lack citations and score lower on provenance).\n\nOpen questions:\n- Should citations be a typed field on coordination.final payload (e.g. citedRowIds: string[]) instead of prose, to make scoring mechanical? Proposing prose-first as the minimum, typed-field as a follow-up.\n- For solo-baseline arm, what is acceptable citation? Suggest: cite own claim+finding rowIds (still proves the agent used the board).",
+    "createdAt": "2026-05-25T02:30:48.149Z"
+  },
+  {
+    "rowId": "2026-05-25T02-28-38-461Z:choreography:coordination.claims:286a6b0e-7c33-43e3-8b78-b0c9630bfd9d",
+    "runId": "2026-05-25T02-28-38-461Z",
+    "arm": "choreography",
+    "channel": "coordination.claims",
+    "kind": "claim",
+    "workId": "build",
+    "claimantSessionId": "builder",
+    "title": "Builder claims concretization of one small workbench improvement",
+    "createdAt": "2026-05-25T02:31:40.141Z"
+  },
+  {
+    "rowId": "2026-05-25T02-28-38-461Z:choreography:coordination.findings:51d2abbf-00b8-4079-bd3d-193e12cde611",
+    "runId": "2026-05-25T02-28-38-461Z",
+    "arm": "choreography",
+    "channel": "coordination.findings",
+    "kind": "finding",
+    "workId": "build",
+    "title": "Require finals to cite board rowIds as evidence",
+    "body": "Change (task-packet template + final-schema doc): add one required field to the coordination.final contract — evidenceRowIds: string[] (>=1 for orchestrator/choreography arms, may be empty for solo-baseline). Wording to append to the Output contract block: 'body must cite at least one board rowId (claim/finding/review/question) in evidenceRowIds; finals lacking citations on multi-participant arms are scored as uncoordinated regardless of prose.' Why sufficient: (1) directly enforces the existing rule 'do not claim coordination helped unless board artifacts show why' by promoting it from prose to schema; (2) makes scoring arm-comparable from durable board state alone — no driver-side heuristics; (3) preserves solo-baseline (empty array allowed) so the three arms remain comparable; (4) zero new channels, zero new tools, just one field + one rule line; (5) catches the 'optional-prose final' risk because a final without citations is mechanically detectable. Open questions: should reviewer arm also cite the claim it reviewed via evidenceRowIds (probably yes, symmetry)?",
+    "createdAt": "2026-05-25T02:31:49.966Z"
+  },
+  {
+    "rowId": "2026-05-25T02-28-38-461Z:choreography:coordination.final:06d44368-1fd3-49d3-8be5-d7e1733be458",
+    "runId": "2026-05-25T02-28-38-461Z",
+    "arm": "choreography",
+    "channel": "coordination.final",
+    "kind": "final",
+    "workId": "plan",
+    "status": "complete",
+    "title": "Require coordination.final body to cite the board rowIds it converged from",
+    "body": "Evidence inspected (task packet only):\n- Driver scores a run by waiting for coordination.final; run is incomplete without it.\n- Rules already gate final on >=1 claim AND >=1 finding/review present.\n- Stated risks: optional-prose finals make cross-arm scoring unreliable; judging should be durable-board-based, not hidden driver state.\n- Board state this run: 1 claim (planner), 1 finding (planner) -- no peer rows arrived within 60s on solo-baseline.\n\nRecommendation:\nAmend the participant prompt's coordination.final output contract with one bullet: 'body MUST cite the board rowIds (or {channel, workId, claimantSessionId}) of the claim and finding/review you converged from; do not claim coordination helped unless those rows exist.'\n\nWhy this is enough:\n- Keeps final as the single scored artifact -- no harness/schema change.\n- Forces a durable provenance trail on the board, so reviewers can mechanically distinguish choreography (multiple distinct claimants cited) from solo-baseline (only own rows cited) without consulting driver state.\n- Solves both named risks at once: prose becomes structured-enough to score, and scoring stays on durable rows.\n\nCoordination evidence for THIS run: I did NOT observe peer rows -- only my own planner claim + finding. Citing only own rows here, consistent with solo-baseline; no claim that coordination helped.\n\nOpen questions:\n- Promote citations to a typed field (citedRowIds: string[]) on coordination.final as a follow-up?\n- For solo-baseline, is self-citation sufficient or should the contract require it explicitly?",
+    "createdAt": "2026-05-25T02:32:03.998Z"
+  }
+]

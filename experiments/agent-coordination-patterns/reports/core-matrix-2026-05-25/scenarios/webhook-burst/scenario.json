@@ -1,0 +1,48 @@
+{
+  "agent-coordination-patterns-experiment.SCENARIOS.3": true,
+  "id": "webhook-burst",
+  "name": "Webhook Burst Triage",
+  "axis": "bursty inbound event load",
+  "hypothesis": "Bursty inbound events should reveal whether arms can deduplicate, prioritize, and avoid over-coordinating under load.",
+  "expectedDivergence": "single may process linearly; central should delegate independent incidents; choreography should show durable claims preventing duplicate work.",
+  "taskPacket": "# Agent Coordination Patterns Task Packet\n\nThis packet is self-contained. Do not inspect the repository, shell, or filesystem.\nUse only the Firegrid session and coordination-channel tools exposed to you.\n\nScenario: Webhook Burst Triage\n\nTask:\n- Watch coordination.work for inbound webhook incidents.\n- Wait for these inbound workIds on coordination.work before finalizing: linear:TF-101:a, linear:TF-102:a, linear:TF-101:duplicate, github:check:failed.\n- Use scalar matches such as match.workId for those waits; do not guess payload timestamps.\n- Group duplicate incidents by external entity.\n- Triage severity and publish findings.\n- The final artifact must list the deduped incident groups and which evidence rows supported each group.\n\nOutput contract:\n- Produce one concise final artifact with body under 1,200 characters.\n- State which evidence you inspected.\n- State the implementation or design recommendation.\n- State open questions.\n- Do not claim coordination helped unless the artifacts show why.\n",
+  "inboundSignals": [
+    {
+      "atMs": 0,
+      "channel": "coordination.work",
+      "kind": "webhook",
+      "title": "linear.issue.updated TF-101",
+      "body": "Issue TF-101 changed labels from bug to regression.",
+      "workId": "linear:TF-101:a",
+      "status": "open"
+    },
+    {
+      "atMs": 250,
+      "channel": "coordination.work",
+      "kind": "webhook",
+      "title": "linear.issue.updated TF-102",
+      "body": "Issue TF-102 received a customer escalation comment.",
+      "workId": "linear:TF-102:a",
+      "status": "open"
+    },
+    {
+      "atMs": 500,
+      "channel": "coordination.work",
+      "kind": "webhook",
+      "title": "linear.issue.updated TF-101 duplicate",
+      "body": "Duplicate delivery for TF-101 with the same external event id.",
+      "workId": "linear:TF-101:duplicate",
+      "status": "open"
+    },
+    {
+      "atMs": 1500,
+      "channel": "coordination.work",
+      "kind": "webhook",
+      "title": "github.check.failed",
+      "body": "CI failed for a related branch; failure signature mentions unknown-channel.",
+      "workId": "github:check:failed",
+      "status": "open"
+    }
+  ],
+  "taskPath": ".firegrid/agent-coordination-patterns/runs/2026-05-25T02-28-38-461Z/scenarios/webhook-burst/task.md"
+}

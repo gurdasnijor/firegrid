@@ -1,0 +1,474 @@
+{
+  "scenarioId": "solo-baseline",
+  "arm": "single",
+  "summary": {
+    "arm": "single",
+    "scenarioId": "solo-baseline",
+    "status": "completed",
+    "startedAt": "2026-05-25T02:28:38.484Z",
+    "finishedAt": "2026-05-25T02:29:02.505Z",
+    "durationMs": 27037,
+    "sessionCount": 1,
+    "outputCount": 10,
+    "finalArtifact": {
+      "rowId": "2026-05-25T02-28-38-461Z:single:coordination.final:09d2ea02-9d5f-4e7a-8712-62957469fcf2",
+      "runId": "2026-05-25T02-28-38-461Z",
+      "arm": "single",
+      "channel": "coordination.final",
+      "kind": "final",
+      "workId": "solo-baseline-doc-improvement",
+      "status": "complete",
+      "title": "Add per-arm minimum board-row expectations to the task packet",
+      "body": "Evidence inspected: only this task packet (Experiment goal, Current harness shape, Known measurement risks, Task, Output contract).\n\nRecommendation: extend the packet with a short 'Per-arm board-row expectations' section that names the minimum durable rows each arm must publish so the scorer can compare arms on board evidence alone:\n- single: coordination.final only.\n- orchestrator: >=1 coordination.work row (assignment) + coordination.final.\n- choreography: >=1 coordination.claims + >=1 coordination.findings (or coordination.reviews) + coordination.final.\n\nWhy it is enough: the packet already names the third measurement risk ('choreography should be judged by durable board behavior, not by hidden driver state') but the Output contract only mandates coordination.final. That asymmetry lets an orchestrator or choreography arm pass scoring with the same artifact a solo arm produces, erasing the very signal the experiment exists to measure. A few lines pinned to the contract close the gap without changing the harness or channels.\n\nOpen questions:\n- Should reviews be required for choreography or only when disagreement arises?\n- Should the orchestrator arm publish a coordination.questions row when delegating, to make 'central coordination' visible vs a single work row?\n- Is a row-count threshold (>=1) enough, or should the scorer also require distinct claimantSessionId values to distinguish real peer choreography from a solo agent emitting peer-shaped rows?",
+      "createdAt": "2026-05-25T02:29:01.939Z"
+    }
+  },
+  "trace": {
+    "spans": 589,
+    "errorSpans": 0,
+    "clientClosedSpans": 0,
+    "agentSilentErrors": 0,
+    "unknownChannelErrors": 0,
+    "toolsCallSpans": 1,
+    "permissionRequestSpans": 1,
+    "sessionAgentOutputSpans": 0,
+    "bySide": [
+      {
+        "side": "host",
+        "count": 486,
+        "totalMs": 716674.4,
+        "avgMs": 1474.6
+      },
+      {
+        "side": "codec",
+        "count": 14,
+        "totalMs": 26930.8,
+        "avgMs": 1923.6
+      },
+      {
+        "side": "unknown",
+        "count": 35,
+        "totalMs": 23468.7,
+        "avgMs": 670.5
+      },
+      {
+        "side": "sdk",
+        "count": 21,
+        "totalMs": 199.2,
+        "avgMs": 9.5
+      },
+      {
+        "side": "agent-tools",
+        "count": 16,
+        "totalMs": 73.8,
+        "avgMs": 4.6
+      },
+      {
+        "side": "subprocess",
+        "count": 17,
+        "totalMs": 5.3,
+        "avgMs": 0.3
+      }
+    ],
+    "topSpans": [
+      {
+        "name": "firegrid.durable_table.rows",
+        "count": 11,
+        "totalMs": 190644.9,
+        "avgMs": 17331.4,
+        "maxMs": 23932.1
+      },
+      {
+        "name": "firegrid.runtime.tool_dispatch.host_install.layer",
+        "count": 1,
+        "totalMs": 23941.2,
+        "avgMs": 23941.2,
+        "maxMs": 23941.2
+      },
+      {
+        "name": "firegrid.host.runtime_substrate.observation_streams.layer",
+        "count": 1,
+        "totalMs": 23939.8,
+        "avgMs": 23939.8,
+        "maxMs": 23939.8
+      },
+      {
+        "name": "firegrid.host.runtime_substrate.observation.layer",
+        "count": 1,
+        "totalMs": 23939.5,
+        "avgMs": 23939.5,
+        "maxMs": 23939.5
+      },
+      {
+        "name": "firegrid.runtime.agent_tool_execution.layer",
+        "count": 1,
+        "totalMs": 23936.5,
+        "avgMs": 23936.5,
+        "maxMs": 23936.5
+      },
+      {
+        "name": "firegrid.host.agent_tools.tool_use_executor.layer",
+        "count": 1,
+        "totalMs": 23936.1,
+        "avgMs": 23936.1,
+        "maxMs": 23936.1
+      },
+      {
+        "name": "firegrid.runtime_context.subscriber.dispatch",
+        "count": 1,
+        "totalMs": 23933.9,
+        "avgMs": 23933.9,
+        "maxMs": 23933.9
+      },
+      {
+        "name": "firegrid.runtime_context.subscriber.source",
+        "count": 1,
+        "totalMs": 23933,
+        "avgMs": 23933,
+        "maxMs": 23933
+      },
+      {
+        "name": "firegrid.runtime_control_plane.context.rows",
+        "count": 1,
+        "totalMs": 23932.2,
+        "avgMs": 23932.2,
+        "maxMs": 23932.2
+      },
+      {
+        "name": "firegrid.runtime_context.input_facts.for_context",
+        "count": 1,
+        "totalMs": 23907.8,
+        "avgMs": 23907.8,
+        "maxMs": 23907.8
+      },
+      {
+        "name": "firegrid.runtime_output.per_context.agent_output.for_context",
+        "count": 1,
+        "totalMs": 23907.1,
+        "avgMs": 23907.1,
+        "maxMs": 23907.1
+      },
+      {
+        "name": "firegrid.host.control_request.start.side_effect",
+        "count": 3,
+        "totalMs": 23881.1,
+        "avgMs": 7960.4,
+        "maxMs": 23876.3
+      }
+    ],
+    "contextLifetimes": [
+      {
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "count": 152,
+        "firstMs": 23.5,
+        "lastMs": 23990.1,
+        "durationMs": 23966.7,
+        "sides": [
+          "agent-tools",
+          "codec",
+          "host",
+          "sdk",
+          "subprocess"
+        ]
+      }
+    ],
+    "timeline": [
+      {
+        "atMs": 23.5,
+        "side": "sdk",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.client.session.create_or_load",
+        "durationMs": 13,
+        "status": "ok"
+      },
+      {
+        "atMs": 23.8,
+        "side": "sdk",
+        "name": "firegrid.channel.host.sessions.create_or_load.call",
+        "durationMs": 12.5,
+        "status": "ok"
+      },
+      {
+        "atMs": 36.6,
+        "side": "sdk",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.client.session.prompt",
+        "durationMs": 44.9,
+        "status": "ok"
+      },
+      {
+        "atMs": 45.2,
+        "side": "host",
+        "name": "firegrid.workflow_engine.workflow.register",
+        "durationMs": 0.1,
+        "status": "ok"
+      },
+      {
+        "atMs": 46.1,
+        "side": "host",
+        "name": "firegrid.workflow_engine.workflow.register",
+        "durationMs": 0.1,
+        "status": "ok"
+      },
+      {
+        "atMs": 46.2,
+        "side": "host",
+        "name": "firegrid.workflow_engine.workflow.register",
+        "durationMs": 0,
+        "status": "ok"
+      },
+      {
+        "atMs": 49.7,
+        "side": "host",
+        "name": "firegrid.host.control_request.workflow_engine.layer",
+        "durationMs": 3.2,
+        "status": "ok"
+      },
+      {
+        "atMs": 50.2,
+        "side": "host",
+        "name": "firegrid.runtime_context.subscriber.dispatch",
+        "durationMs": 23933.9,
+        "status": "ok"
+      },
+      {
+        "atMs": 50.8,
+        "side": "host",
+        "name": "firegrid.runtime_context.subscriber.source",
+        "durationMs": 23933,
+        "status": "ok"
+      },
+      {
+        "atMs": 52.7,
+        "side": "host",
+        "name": "firegrid.workflow_engine.workflow.register",
+        "durationMs": 0,
+        "status": "ok"
+      },
+      {
+        "atMs": 52.8,
+        "side": "host",
+        "name": "firegrid.workflow_engine.workflow.register",
+        "durationMs": 0,
+        "status": "ok"
+      },
+      {
+        "atMs": 52.8,
+        "side": "host",
+        "name": "firegrid.workflow_engine.workflow.register",
+        "durationMs": 0,
+        "status": "ok"
+      },
+      {
+        "atMs": 53.9,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.execute",
+        "durationMs": 42.6,
+        "status": "ok"
+      },
+      {
+        "atMs": 64,
+        "side": "unknown",
+        "name": "firegrid.mcp.publish_runtime_context_base",
+        "durationMs": 0,
+        "status": "ok"
+      },
+      {
+        "atMs": 66.3,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.resume",
+        "durationMs": 0.5,
+        "status": "ok"
+      },
+      {
+        "atMs": 66.7,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.resume.body",
+        "durationMs": 0.1,
+        "status": "ok"
+      },
+      {
+        "atMs": 67.4,
+        "side": "host",
+        "name": "firegrid.workflow_engine.activity.execute",
+        "durationMs": 23.9,
+        "status": "ok"
+      },
+      {
+        "atMs": 67.6,
+        "side": "host",
+        "name": "firegrid.workflow_engine.activity.claim",
+        "durationMs": 2,
+        "status": "ok"
+      },
+      {
+        "atMs": 69.9,
+        "side": "host",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.host.control_request.context.workflow",
+        "durationMs": 10,
+        "status": "ok"
+      },
+      {
+        "atMs": 75.4,
+        "side": "host",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.runtime_context.input_facts.for_context",
+        "durationMs": 23907.8,
+        "status": "ok"
+      },
+      {
+        "atMs": 77.8,
+        "side": "sdk",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.client.channel.session_prompt.append",
+        "durationMs": 3.7,
+        "status": "ok"
+      },
+      {
+        "atMs": 81.6,
+        "side": "sdk",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.client.session.start",
+        "durationMs": 8.9,
+        "status": "ok"
+      },
+      {
+        "atMs": 82.7,
+        "side": "sdk",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.channel.host.sessions.start.call",
+        "durationMs": 7.8,
+        "status": "ok"
+      },
+      {
+        "atMs": 97.5,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.execute",
+        "durationMs": 5.9,
+        "status": "ok"
+      },
+      {
+        "atMs": 98.3,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.execute",
+        "durationMs": 0.5,
+        "status": "ok"
+      },
+      {
+        "atMs": 100,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.execute",
+        "durationMs": 4.7,
+        "status": "ok"
+      },
+      {
+        "atMs": 100,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.resume",
+        "durationMs": 0.2,
+        "status": "ok"
+      },
+      {
+        "atMs": 100.1,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.resume.body",
+        "durationMs": 0,
+        "status": "ok"
+      },
+      {
+        "atMs": 100.2,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.execute",
+        "durationMs": 3.9,
+        "status": "ok"
+      },
+      {
+        "atMs": 100.3,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.resume",
+        "durationMs": 0.1,
+        "status": "ok"
+      },
+      {
+        "atMs": 100.5,
+        "side": "host",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.host.control_request.claim.workflow",
+        "durationMs": 0.2,
+        "status": "ok"
+      },
+      {
+        "atMs": 102.9,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.resume",
+        "durationMs": 0.1,
+        "status": "ok"
+      },
+      {
+        "atMs": 107.1,
+        "side": "host",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.host.runtime_context.side_effect.start",
+        "durationMs": 23872.2,
+        "status": "ok"
+      },
+      {
+        "atMs": 108.2,
+        "side": "host",
+        "name": "firegrid.rcsw.session-workflow.execute",
+        "durationMs": 23870.5,
+        "status": "ok"
+      },
+      {
+        "atMs": 109.6,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.execute",
+        "durationMs": 1600.7,
+        "status": "ok"
+      },
+      {
+        "atMs": 110.3,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.resume",
+        "durationMs": 0.2,
+        "status": "ok"
+      },
+      {
+        "atMs": 110.4,
+        "side": "host",
+        "name": "firegrid.workflow_engine.execution.resume.body",
+        "durationMs": 0,
+        "status": "ok"
+      },
+      {
+        "atMs": 110.9,
+        "side": "host",
+        "name": "firegrid.workflow_engine.activity.execute",
+        "durationMs": 1542.3,
+        "status": "ok"
+      },
+      {
+        "atMs": 111,
+        "side": "host",
+        "name": "firegrid.workflow_engine.activity.claim",
+        "durationMs": 1,
+        "status": "ok"
+      },
+      {
+        "atMs": 112.2,
+        "side": "codec",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6c29sby1iYXNlbGluZTpzaW5nbGU6Y29uZHVjdG9yIl0",
+        "name": "firegrid.host.codec.start_session",
+        "durationMs": 1530.8,
+        "status": "ok"
+      }
+    ]
+  },
+  "board": {
+    "rows": 1,
+    "byChannel": {
+      "coordination.final": 1
+    }
+  }
+}
