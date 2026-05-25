@@ -42,6 +42,7 @@ import {
 import { Duration, Effect, Layer, Option, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import type { ChannelRegistration } from "@firegrid/protocol/channels"
+import type { AcpPermissionPolicy } from "@firegrid/protocol/acp"
 import { RuntimeContextRead } from "../tables/runtime-control-plane.ts"
 import {
   asRuntimeContextError,
@@ -87,6 +88,11 @@ export interface RuntimeHostTopologyOptions {
   readonly controlRequestReconciler?: boolean
   /** Runtime-context MCP edge string lookup catalog. Not an app-facing registry. */
   readonly mcpChannels?: ReadonlyArray<ChannelRegistration>
+  /**
+   * Host-plane policy for ACP runtime sessions started by this host. Defaults
+   * to the ACP codec's safe `forward` behavior when omitted.
+   */
+  readonly runtimeContextAcpPermissionPolicy?: AcpPermissionPolicy
 }
 
 // ---- commands.ts content (relocated) --------------------------------

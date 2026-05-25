@@ -114,12 +114,12 @@
     {
       "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
       "path": "packages/runtime/src/composition/host-public.ts",
-      "line": 99
+      "line": 105
     },
     {
       "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
       "path": "packages/runtime/src/composition/host-public.ts",
-      "line": 106
+      "line": 112
     }
   ]
 }

@@ -86,6 +86,7 @@ const runArmEffect = (
           namespace,
           tracePath: paths.tracePath,
           promptPath: paths.promptPath,
+          runtimeContextAcpPermissionPolicy: "allow",
           startedAt: new Date().toISOString(),
         }
         yield* Effect.promise(() =>

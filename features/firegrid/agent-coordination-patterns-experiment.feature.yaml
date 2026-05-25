@@ -49,6 +49,7 @@ components:
       7: Participant start lifecycles run concurrently with final-artifact waiting so experiment completion is determined by the public channel artifact, not by process teardown.
       8: Experiment code separates Firegrid host composition, Firegrid client interaction, and measurement artifacts without defining an experiment-specific CLI, command router, or package export surface.
       9: The headline experiment path bootstraps one Firegrid conductor session per arm; the conductor launches participants and coordinates the arm through normal Firegrid tools instead of driver-created worker sessions.
+      10: The experiment host may configure an explicit Firegrid session permission policy for conductor-created ACP child sessions; the policy is recorded with run artifacts.
 
 constraints:
   NO_PRIVATE_COORDINATION:

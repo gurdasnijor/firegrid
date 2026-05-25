@@ -447,6 +447,7 @@ const firegridLocalHostLayer = (
   namespace: string,
   runConfig: LaunchConfig,
   headers: DurableTableHeaders | undefined,
+  permissionPolicy?: AcpPermissionPolicy,
 ) =>
   FiregridLocalHostLive(
     {
@@ -455,6 +456,9 @@ const firegridLocalHostLayer = (
       input: true,
       ...(headers === undefined ? {} : { headers }),
       localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+      ...(permissionPolicy === undefined ? {} : {
+        runtimeContextAcpPermissionPolicy: permissionPolicy,
+      }),
     },
     envPolicyLayer(runConfig.authorizedBindings ?? []),
   )
@@ -597,6 +601,7 @@ const hostAcpLayer = (
     config.namespace,
     config.runConfig,
     headers,
+    config.permissionPolicy,
   )
   const acpEdge = AcpStdioEdgeLive({
     input: processInputStream(),

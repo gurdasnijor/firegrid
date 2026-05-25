@@ -61,6 +61,7 @@ export interface ArmCommandArtifact {
   readonly namespace: string
   readonly tracePath: string
   readonly promptPath: string
+  readonly runtimeContextAcpPermissionPolicy: "allow"
   readonly startedAt: string
 }
 

@@ -1,5 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
+import { defaultAcpPermissionPolicy, type AcpPermissionPolicy } from "@firegrid/protocol/acp"
 import { Deferred, Duration, Effect, Layer, Match, Queue, Ref, Runtime, Stream } from "effect"
 import type {
   AgentCapabilities,
@@ -49,6 +50,12 @@ export interface AcpMcpServerDeclaration {
 export interface AcpSessionOptions {
   readonly cwd?: string
   readonly mcpServers?: ReadonlyArray<AcpMcpServerDeclaration>
+  /**
+   * Host-plane policy for ACP `requestPermission`. The default `forward` emits a
+   * durable PermissionRequest and waits for a PermissionResponse; `allow`/`deny`
+   * are explicit operator policies for non-interactive hosts.
+   */
+  readonly permissionPolicy?: AcpPermissionPolicy
   /**
    * Upper bound on how long the codec waits for a PermissionDecision before it
    * fails fast with a typed default (`Cancelled`) so ACP is always owed a
@@ -540,6 +547,13 @@ export const AcpSessionLive = (
         requestPermission: params =>
           runPromise(
             Effect.gen(function*() {
+              const permissionPolicy = options.permissionPolicy ?? defaultAcpPermissionPolicy
+              if (permissionPolicy === "allow") {
+                return permissionResponse({ _tag: "Allow" }, params.options)
+              }
+              if (permissionPolicy === "deny") {
+                return permissionResponse({ _tag: "Deny" }, params.options)
+              }
               const permissionRequestId = yield* makePermissionRequestId(idGenerator)
               const deferred = yield* openPermissionDecision(permissionRequestId)
               yield* emitEffect({
@@ -561,6 +575,7 @@ export const AcpSessionLive = (
                   "firegrid.seam.kind": "authority",
                   "firegrid.contract.id": "firegrid-runtime-agent-event-pipeline.INGREDIENTS.4",
                   "firegrid.agent_output.tool_id": params.toolCall.toolCallId,
+                  "firegrid.acp.permission_policy": options.permissionPolicy ?? defaultAcpPermissionPolicy,
                 },
               }),
             ),

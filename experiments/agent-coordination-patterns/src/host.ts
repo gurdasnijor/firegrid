@@ -26,6 +26,8 @@ export const makeAgentCoordinationFiregridHost = (
     namespace: options.namespace,
     input: true,
     mcpChannels: options.board.registrations,
+    // agent-coordination-patterns-experiment.EXECUTION.10
+    runtimeContextAcpPermissionPolicy: "allow",
   }).pipe(
     Layer.provide(FiregridLocalProcessFromEnv(processEnv)),
     Layer.provide(FiregridEnvBindingsFromEnv({
