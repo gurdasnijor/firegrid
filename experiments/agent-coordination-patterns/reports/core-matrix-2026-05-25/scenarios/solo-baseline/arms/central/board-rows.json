@@ -1,0 +1,14 @@
+[
+  {
+    "rowId": "2026-05-25T02-28-38-461Z:central:coordination.final:669de68b-9ca8-4755-be95-ed7d994432d7",
+    "runId": "2026-05-25T02-28-38-461Z",
+    "arm": "central",
+    "channel": "coordination.final",
+    "kind": "final",
+    "workId": "solo-baseline-doc-improvement",
+    "status": "complete",
+    "title": "Add explicit tool-boundary preamble to task packet",
+    "body": "Recommendation: Add a one-paragraph 'Tool boundary' preamble at the TOP of every scenario task packet (before 'Provided materials'), naming the four forbidden tool families explicitly: shell, filesystem/terminal, repository inspection, and Firegrid execute. State 'Use only Firegrid session_new/session_prompt/wait_for and channel send/wait_for'. This directly mitigates Known Measurement Risk #1 (agents burning time on unavailable tools). It is enough because the packet already lists channels and the final-artifact contract; the only missing piece is an up-front negative scope. Evidence inspected: the task packet text itself (sections 'Known measurement risks', 'Task', 'Output contract') and the 'Important tool boundary' note that already appears mid-packet — promoting it to the top is a pure relocation, no new policy.\n\nChild sessions created: (A) doc-gap worker — recommended hoisting the tool-boundary note above the substrate description so it is read before an agent starts hunting, naming forbidden tool families explicitly; (B) workflow-gap worker — assignment dispatched (run-incomplete-without-coordination.final mechanism), reply not yet observed at publish time. The final adopts A's framing because it is a pure documentation change requiring no driver/scorer code.\n\nOpen questions: Should the scorer also emit a structured 'cause' field when coordination.final is missing (Worker B's lane)? Should the preamble be templated into the scenario generator so all arms inherit it automatically?\n\nCoordination claim: Delegation produced one concrete redirect (promote existing mid-packet boundary note to the top) that I would not have framed as 'pure relocation, zero new policy' without Worker A's phrasing.",
+    "createdAt": "2026-05-25T02:29:59.031Z"
+  }
+]

@@ -35,6 +35,8 @@ should run through Firegrid's public session/tool/trace surfaces.
   OTel JSONL spans.
 - Compiles a comprehensive experiment report that maps metrics and durable
   board traces back to the research questions.
+- Publishes the core matrix report snapshot and structured analysis data under
+  `reports/core-matrix-2026-05-25/`.
 
 The prompt templates are the experimental treatment. They tell each arm what
 coordination pattern to use; they do not replace Firegrid session, channel, or

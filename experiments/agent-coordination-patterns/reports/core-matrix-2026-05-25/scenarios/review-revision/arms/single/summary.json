@@ -1,0 +1,22 @@
+{
+  "arm": "single",
+  "scenarioId": "review-revision",
+  "status": "completed",
+  "startedAt": "2026-05-25T02:32:07.634Z",
+  "finishedAt": "2026-05-25T02:32:28.807Z",
+  "durationMs": 25178,
+  "sessionCount": 1,
+  "outputCount": 10,
+  "finalArtifact": {
+    "rowId": "2026-05-25T02-28-38-461Z:single:coordination.final:4108a4dd-88fb-4e1d-9b40-210363d4c643",
+    "runId": "2026-05-25T02-28-38-461Z",
+    "arm": "single",
+    "channel": "coordination.final",
+    "kind": "final",
+    "workId": "review-revision-single",
+    "status": "complete",
+    "title": "Review-and-revision: harness improvement plan (single arm)",
+    "body": "Evidence inspected: only the task packet (no repo/shell access available or used).\n\nDRAFT PLAN:\n1. Make coordination.final the sole success oracle; scorer ignores prose.\n2. Add board-schema validation at send time (kind, title, status, workId).\n3. Emit per-arm trace of channel rows with monotonic seq for replay.\n4. Provide a packet-only contract; forbid repo/shell tool calls in arms.\n5. For choreography arm, score on durable board state (claims/findings/reviews/final) not driver memory.\n\nREVIEW FINDINGS:\nA. Bias: single-arm has no claims/reviews; scoring across arms must not penalize empty boards when the protocol does not require them.\nB. Failure mode: schema validation at send hides arm bugs; should warn+record, not drop.\nC. Measurement risk: per-arm trace seq may diverge if host clock used; need logical seq from channel itself.\nD. Hidden state: 'durable board behavior' still depends on what the driver waitFor matches on; match predicates must be published with the run.\nE. Tool-boundary leak: packet says no shell, but agents may still attempt; need explicit deny + observable refusal metric.\n\nREVISED PLAN:\n1. Scorer keyed on coordination.final only; per-arm rubric declares which other channels are required (single: none; orchestrator: work+claims+final; choreography: findings+reviews+final).\n2. Validate final payload shape on receive; surface schema misses as a scored defect, do not drop.\n3. Use channel-assigned sequence for traces; publish driver waitFor predicates alongside the run id.\n4. Record tool-boundary violations (shell/fs attempts) as a separate metric, not a hard fail.\n5. Keep packet self-contained; include the rubric the scorer will apply.\n\nRECOMMENDATION: Adopt revised plan; land rubric+predicates as part of the run manifest so arms are comparable.\n\nOPEN QUESTIONS:\n- Is logical channel seq already monotonic across arms?\n- Should refusal-to-use-shell be rewarded or just neutral?\n- How is partial progress credited when an arm publishes final but skips intermediate channels its rubric required?",
+    "createdAt": "2026-05-25T02:32:28.269Z"
+  }
+}

@@ -1,0 +1,1895 @@
+[
+  {
+    "role": "conductor",
+    "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+    "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+    "outputCount": 74,
+    "outputs": [
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 0,
+        "_tag": "Ready",
+        "event": {
+          "_tag": "Ready",
+          "capabilities": {
+            "streamingText": true,
+            "tools": true,
+            "permissions": true,
+            "images": false,
+            "structuredInput": false,
+            "cancellation": true,
+            "multiTurn": true,
+            "customStatus": [
+              "tool_call_update"
+            ]
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 1,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "available_commands_update",
+          "payload": {
+            "availableCommands": [
+              {
+                "description": "Use this skill to configure the Claude Code harness via settings.json. Automated behaviors (\"from now on when X\", \"each time X\", \"whenever X\", \"before/after X\") require hooks configured in settings.json - the harness executes these, not Claude, so memory/preferences cannot fulfill them. Also use for: permissions (\"allow X\", \"add permission\", \"move permission to\"), env vars (\"set X=Y\"), hook troubleshooting, or any changes to settings.json/settings.local.json files. Examples: \"allow npm commands\", \"add bq permission to global settings\", \"move permission to user settings\", \"set DEBUG=true\", \"when claude stops show X\". For simple settings like theme/model, suggest the /config command.",
+                "input": null,
+                "name": "update-config"
+              },
+              {
+                "description": "Enable debug logging for this session and help diagnose issues",
+                "input": {
+                  "hint": "[issue description]"
+                },
+                "name": "debug"
+              },
+              {
+                "description": "Review changed code for reuse, quality, and efficiency, then fix any issues found.",
+                "input": null,
+                "name": "simplify"
+              },
+              {
+                "description": "Research and plan a large-scale change, then execute it in parallel across 5–30 isolated worktree agents that each open a PR.",
+                "input": {
+                  "hint": "<instruction>"
+                },
+                "name": "batch"
+              },
+              {
+                "description": "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts.",
+                "input": null,
+                "name": "fewer-permission-prompts"
+              },
+              {
+                "description": "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace.",
+                "input": {
+                  "hint": "[interval] [prompt]"
+                },
+                "name": "loop"
+              },
+              {
+                "description": "Build, debug, and optimize Claude API / Anthropic SDK apps. Apps built with this skill should include prompt caching. Also handles migrating existing Claude API code between Claude model versions (4.5 → 4.6, 4.6 → 4.7, retired-model replacements).\nTRIGGER when: code imports `anthropic`/`@anthropic-ai/sdk`; user asks for the Claude API, Anthropic SDK, or Managed Agents; user adds/modifies/tunes a Claude feature (caching, thinking, compaction, tool use, batch, files, citations, memory) or model (Opus/Sonnet/Haiku) in a file; questions about prompt caching / cache hit rate in an Anthropic SDK project.\nSKIP: file imports `openai`/other-provider SDK, filename like `*-openai.py`/`*-generic.py`, provider-neutral code, general programming/ML.",
+                "input": null,
+                "name": "claude-api"
+              },
+              {
+                "description": "Start a new session with empty context; previous session stays on disk (resumable with /resume)",
+                "input": {
+                  "hint": "[name]"
+                },
+                "name": "clear"
+              },
+              {
+                "description": "Free up context by summarizing the conversation so far",
+                "input": {
+                  "hint": "<optional custom summarization instructions>"
+                },
+                "name": "compact"
+              },
+              {
+                "description": "Show current context usage",
+                "input": null,
+                "name": "context"
+              },
+              {
+                "description": "Dump the JS heap to ~/Desktop",
+                "input": null,
+                "name": "heapdump"
+              },
+              {
+                "description": "Initialize a new CLAUDE.md file with codebase documentation",
+                "input": null,
+                "name": "init"
+              },
+              {
+                "description": "Review a pull request",
+                "input": null,
+                "name": "review"
+              },
+              {
+                "description": "Complete a security review of the pending changes on the current branch",
+                "input": null,
+                "name": "security-review"
+              },
+              {
+                "description": "Show the total cost and duration of the current session",
+                "input": null,
+                "name": "usage"
+              },
+              {
+                "description": "Generate a report analyzing your Claude Code sessions",
+                "input": null,
+                "name": "insights"
+              },
+              {
+                "description": "Set a goal — keep working until the condition is met",
+                "input": null,
+                "name": "goal"
+              },
+              {
+                "description": "Help teammates ramp on Claude Code with a guide from your usage",
+                "input": null,
+                "name": "team-onboarding"
+              }
+            ],
+            "sessionUpdate": "available_commands_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 2,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 39365,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 3,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "agent_thought_chunk",
+          "payload": {
+            "content": {
+              "text": "",
+              "type": "text"
+            },
+            "sessionUpdate": "agent_thought_chunk"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 4,
+        "_tag": "TextChunk",
+        "event": {
+          "_tag": "TextChunk",
+          "part": {
+            "type": "text-delta",
+            "id": "id_WlNXs7QvHgufYLNg",
+            "delta": "",
+            "metadata": {},
+            "~effect/ai/Content/Part": "~effect/ai/Content/Part"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 5,
+        "_tag": "TextChunk",
+        "event": {
+          "_tag": "TextChunk",
+          "part": {
+            "type": "text-delta",
+            "id": "id_WlNXs7QvHgufYLNg",
+            "delta": "I'll bootstrap three peer sessions,",
+            "metadata": {},
+            "~effect/ai/Content/Part": "~effect/ai/Content/Part"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 6,
+        "_tag": "TextChunk",
+        "event": {
+          "_tag": "TextChunk",
+          "part": {
+            "type": "text-delta",
+            "id": "id_WlNXs7QvHgufYLNg",
+            "delta": " then participate as a peer to claim/observe/finalize on",
+            "metadata": {},
+            "~effect/ai/Content/Part": "~effect/ai/Content/Part"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 7,
+        "_tag": "TextChunk",
+        "event": {
+          "_tag": "TextChunk",
+          "part": {
+            "type": "text-delta",
+            "id": "id_WlNXs7QvHgufYLNg",
+            "delta": " the board.",
+            "metadata": {},
+            "~effect/ai/Content/Part": "~effect/ai/Content/Part"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 8,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_013yssLNSN5Ba1FHfRTZ4bgK",
+            "name": "session_new",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_013yssLNSN5Ba1FHfRTZ4bgK",
+        "toolName": "session_new"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 9,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_013yssLNSN5Ba1FHfRTZ4bgK",
+            "name": "session_new",
+            "params": {
+              "agentKind": "claude-acp",
+              "prompt": "You are the \"planner\" peer in a Firegrid choreography experiment arm. There is no central manager.\n\nRun id: 2026-05-25T02-28-38-461Z\nScenario id: webhook-burst\nArm: choreography\nYour peer name: planner\n\nCoordinate ONLY through these Firegrid board channels (use the send / wait_for / wait_for_any tools):\n- coordination.work\n- coordination.claims\n- coordination.findings\n- coordination.questions\n- coordination.reviews\n- coordination.final\n\nWatch the board, claim useful work, publish findings, react to peer findings. Do not message me; coordinate with the other peers (builder, reviewer) via the channels above.\n\nRequired protocol:\n- For every send to a coordination.* channel, payload MUST be a JSON object (not a JSON string).\n- Before publishing coordination.final, publish at least one coordination.claims row AND one coordination.findings or coordination.reviews row.\n- If another peer already produced a final artifact, still publish your finding/review rows.\n\nTool boundary (HARD):\n- Do NOT use shell, filesystem, terminal, execute, or repository-inspection tools.\n- Use only Firegrid session tools and Firegrid channel tools (send, wait_for, wait_for_any).\n\nTask — Webhook Burst Triage:\n- Watch coordination.work for inbound webhook incidents.\n- Wait for these inbound workIds on coordination.work before finalizing: linear:TF-101:a, linear:TF-102:a, linear:TF-101:duplicate, github:check:failed.\n- Use scalar matches such as match.workId for those waits; do not guess payload timestamps.\n- Group duplicate incidents by external entity (e.g., the two TF-101 rows are the same Linear issue).\n- Triage severity and publish findings on coordination.findings.\n- As planner, your angle: outline the dedup grouping + triage plan as a coordination.findings row, then review the builder/reviewer outputs.\n\nFinal artifact contract (if you publish it):\n- channel: coordination.final\n- payload: JSON object with kind:\"final\", title, body, status:\"complete\", and relevant workId fields\n- body under 1,200 characters\n- list the deduped incident groups and which evidence rowIds supported each group\n- state which evidence you inspected, the recommendation, and any open questions\n- do NOT claim coordination helped unless the artifacts show why\n- after the send returns success, stop\n\nBegin: subscribe to coordination.work with wait_for_any for the four workIds above, publish a claim for your slice, post your planner finding, then observe peer activity.",
+              "options": {
+                "metadata": {
+                  "peer": "planner",
+                  "arm": "choreography",
+                  "runId": "2026-05-25T02-28-38-461Z"
+                }
+              }
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_013yssLNSN5Ba1FHfRTZ4bgK",
+        "toolName": "session_new"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 10,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__session_new"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "agentKind": "claude-acp",
+              "prompt": "You are the \"planner\" peer in a Firegrid choreography experiment arm. There is no central manager.\n\nRun id: 2026-05-25T02-28-38-461Z\nScenario id: webhook-burst\nArm: choreography\nYour peer name: planner\n\nCoordinate ONLY through these Firegrid board channels (use the send / wait_for / wait_for_any tools):\n- coordination.work\n- coordination.claims\n- coordination.findings\n- coordination.questions\n- coordination.reviews\n- coordination.final\n\nWatch the board, claim useful work, publish findings, react to peer findings. Do not message me; coordinate with the other peers (builder, reviewer) via the channels above.\n\nRequired protocol:\n- For every send to a coordination.* channel, payload MUST be a JSON object (not a JSON string).\n- Before publishing coordination.final, publish at least one coordination.claims row AND one coordination.findings or coordination.reviews row.\n- If another peer already produced a final artifact, still publish your finding/review rows.\n\nTool boundary (HARD):\n- Do NOT use shell, filesystem, terminal, execute, or repository-inspection tools.\n- Use only Firegrid session tools and Firegrid channel tools (send, wait_for, wait_for_any).\n\nTask — Webhook Burst Triage:\n- Watch coordination.work for inbound webhook incidents.\n- Wait for these inbound workIds on coordination.work before finalizing: linear:TF-101:a, linear:TF-102:a, linear:TF-101:duplicate, github:check:failed.\n- Use scalar matches such as match.workId for those waits; do not guess payload timestamps.\n- Group duplicate incidents by external entity (e.g., the two TF-101 rows are the same Linear issue).\n- Triage severity and publish findings on coordination.findings.\n- As planner, your angle: outline the dedup grouping + triage plan as a coordination.findings row, then review the builder/reviewer outputs.\n\nFinal artifact contract (if you publish it):\n- channel: coordination.final\n- payload: JSON object with kind:\"final\", title, body, status:\"complete\", and relevant workId fields\n- body under 1,200 characters\n- list the deduped incident groups and which evidence rowIds supported each group\n- state which evidence you inspected, the recommendation, and any open questions\n- do NOT claim coordination helped unless the artifacts show why\n- after the send returns success, stop\n\nBegin: subscribe to coordination.work with wait_for_any for the four workIds above, publish a claim for your slice, post your planner finding, then observe peer activity.",
+              "options": {
+                "metadata": {
+                  "peer": "planner",
+                  "arm": "choreography",
+                  "runId": "2026-05-25T02-28-38-461Z"
+                }
+              }
+            },
+            "title": "mcp__firegrid-runtime-context__session_new",
+            "toolCallId": "toolu_013yssLNSN5Ba1FHfRTZ4bgK",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 11,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01TLE3Ze4bYFy6wGF2V5XntM",
+            "name": "session_new",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01TLE3Ze4bYFy6wGF2V5XntM",
+        "toolName": "session_new"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 12,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"session\":{\"sessionId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_0bOXTDIuMa77SDxx\",\"contextId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_0bOXTDIuMa77SDxx\",\"status\":\"created\",\"metadata\":{\"parentSessionId\":\"ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0\",\"peer\":\"planner\",\"arm\":\"choreography\",\"runId\":\"2026-05-25T02-28-38-461Z\"}}}",
+                "toolName": "mcp__firegrid-runtime-context__session_new"
+              }
+            },
+            "toolCallId": "toolu_013yssLNSN5Ba1FHfRTZ4bgK",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 13,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__session_new"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"session\":{\"sessionId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_0bOXTDIuMa77SDxx\",\"contextId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_0bOXTDIuMa77SDxx\",\"status\":\"created\",\"metadata\":{\"parentSessionId\":\"ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0\",\"peer\":\"planner\",\"arm\":\"choreography\",\"runId\":\"2026-05-25T02-28-38-461Z\"}}}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"session\":{\"sessionId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_0bOXTDIuMa77SDxx\",\"contextId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_0bOXTDIuMa77SDxx\",\"status\":\"created\",\"metadata\":{\"parentSessionId\":\"ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0\",\"peer\":\"planner\",\"arm\":\"choreography\",\"runId\":\"2026-05-25T02-28-38-461Z\"}}}",
+            "status": "completed",
+            "toolCallId": "toolu_013yssLNSN5Ba1FHfRTZ4bgK",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 14,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01TLE3Ze4bYFy6wGF2V5XntM",
+            "name": "session_new",
+            "params": {
+              "agentKind": "claude-acp",
+              "prompt": "You are the \"builder\" peer in a Firegrid choreography experiment arm. There is no central manager.\n\nRun id: 2026-05-25T02-28-38-461Z\nScenario id: webhook-burst\nArm: choreography\nYour peer name: builder\n\nCoordinate ONLY through these Firegrid board channels (use the send / wait_for / wait_for_any tools):\n- coordination.work\n- coordination.claims\n- coordination.findings\n- coordination.questions\n- coordination.reviews\n- coordination.final\n\nWatch the board, claim useful work, publish findings, react to peer findings. Do not message me; coordinate with the other peers (planner, reviewer) via the channels above.\n\nRequired protocol:\n- For every send to a coordination.* channel, payload MUST be a JSON object (not a JSON string).\n- Before publishing coordination.final, publish at least one coordination.claims row AND one coordination.findings or coordination.reviews row.\n- If another peer already produced a final artifact, still publish your finding/review rows.\n\nTool boundary (HARD):\n- Do NOT use shell, filesystem, terminal, execute, or repository-inspection tools.\n- Use only Firegrid session tools and Firegrid channel tools (send, wait_for, wait_for_any).\n\nTask — Webhook Burst Triage:\n- Watch coordination.work for inbound webhook incidents.\n- Wait for these inbound workIds on coordination.work before finalizing: linear:TF-101:a, linear:TF-102:a, linear:TF-101:duplicate, github:check:failed.\n- Use scalar matches such as match.workId for those waits; do not guess payload timestamps.\n- Group duplicate incidents by external entity (e.g., the two TF-101 rows are the same Linear issue).\n- Triage severity and publish findings on coordination.findings.\n- As builder, your angle: actually assemble the deduped grouping table (which evidence rowIds map to which incident group) and post it on coordination.findings. Optionally take the final artifact if it is not yet published.\n\nFinal artifact contract (if you publish it):\n- channel: coordination.final\n- payload: JSON object with kind:\"final\", title, body, status:\"complete\", and relevant workId fields\n- body under 1,200 characters\n- list the deduped incident groups and which evidence rowIds supported each group\n- state which evidence you inspected, the recommendation, and any open questions\n- do NOT claim coordination helped unless the artifacts show why\n- after the send returns success, stop\n\nBegin: subscribe to coordination.work with wait_for_any for the four workIds above, publish a claim for your slice, then post the dedup grouping finding once you have the evidence.",
+              "options": {
+                "metadata": {
+                  "peer": "builder",
+                  "arm": "choreography",
+                  "runId": "2026-05-25T02-28-38-461Z"
+                }
+              }
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01TLE3Ze4bYFy6wGF2V5XntM",
+        "toolName": "session_new"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 15,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__session_new"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "agentKind": "claude-acp",
+              "prompt": "You are the \"builder\" peer in a Firegrid choreography experiment arm. There is no central manager.\n\nRun id: 2026-05-25T02-28-38-461Z\nScenario id: webhook-burst\nArm: choreography\nYour peer name: builder\n\nCoordinate ONLY through these Firegrid board channels (use the send / wait_for / wait_for_any tools):\n- coordination.work\n- coordination.claims\n- coordination.findings\n- coordination.questions\n- coordination.reviews\n- coordination.final\n\nWatch the board, claim useful work, publish findings, react to peer findings. Do not message me; coordinate with the other peers (planner, reviewer) via the channels above.\n\nRequired protocol:\n- For every send to a coordination.* channel, payload MUST be a JSON object (not a JSON string).\n- Before publishing coordination.final, publish at least one coordination.claims row AND one coordination.findings or coordination.reviews row.\n- If another peer already produced a final artifact, still publish your finding/review rows.\n\nTool boundary (HARD):\n- Do NOT use shell, filesystem, terminal, execute, or repository-inspection tools.\n- Use only Firegrid session tools and Firegrid channel tools (send, wait_for, wait_for_any).\n\nTask — Webhook Burst Triage:\n- Watch coordination.work for inbound webhook incidents.\n- Wait for these inbound workIds on coordination.work before finalizing: linear:TF-101:a, linear:TF-102:a, linear:TF-101:duplicate, github:check:failed.\n- Use scalar matches such as match.workId for those waits; do not guess payload timestamps.\n- Group duplicate incidents by external entity (e.g., the two TF-101 rows are the same Linear issue).\n- Triage severity and publish findings on coordination.findings.\n- As builder, your angle: actually assemble the deduped grouping table (which evidence rowIds map to which incident group) and post it on coordination.findings. Optionally take the final artifact if it is not yet published.\n\nFinal artifact contract (if you publish it):\n- channel: coordination.final\n- payload: JSON object with kind:\"final\", title, body, status:\"complete\", and relevant workId fields\n- body under 1,200 characters\n- list the deduped incident groups and which evidence rowIds supported each group\n- state which evidence you inspected, the recommendation, and any open questions\n- do NOT claim coordination helped unless the artifacts show why\n- after the send returns success, stop\n\nBegin: subscribe to coordination.work with wait_for_any for the four workIds above, publish a claim for your slice, then post the dedup grouping finding once you have the evidence.",
+              "options": {
+                "metadata": {
+                  "peer": "builder",
+                  "arm": "choreography",
+                  "runId": "2026-05-25T02-28-38-461Z"
+                }
+              }
+            },
+            "title": "mcp__firegrid-runtime-context__session_new",
+            "toolCallId": "toolu_01TLE3Ze4bYFy6wGF2V5XntM",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 16,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01RKsiKAWFQfuS5KwEwPpxUU",
+            "name": "session_new",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01RKsiKAWFQfuS5KwEwPpxUU",
+        "toolName": "session_new"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 17,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"session\":{\"sessionId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_lbgtw7IDIJCyx9Mj\",\"contextId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_lbgtw7IDIJCyx9Mj\",\"status\":\"created\",\"metadata\":{\"parentSessionId\":\"ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0\",\"peer\":\"builder\",\"arm\":\"choreography\",\"runId\":\"2026-05-25T02-28-38-461Z\"}}}",
+                "toolName": "mcp__firegrid-runtime-context__session_new"
+              }
+            },
+            "toolCallId": "toolu_01TLE3Ze4bYFy6wGF2V5XntM",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 18,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__session_new"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"session\":{\"sessionId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_lbgtw7IDIJCyx9Mj\",\"contextId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_lbgtw7IDIJCyx9Mj\",\"status\":\"created\",\"metadata\":{\"parentSessionId\":\"ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0\",\"peer\":\"builder\",\"arm\":\"choreography\",\"runId\":\"2026-05-25T02-28-38-461Z\"}}}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"session\":{\"sessionId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_lbgtw7IDIJCyx9Mj\",\"contextId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_lbgtw7IDIJCyx9Mj\",\"status\":\"created\",\"metadata\":{\"parentSessionId\":\"ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0\",\"peer\":\"builder\",\"arm\":\"choreography\",\"runId\":\"2026-05-25T02-28-38-461Z\"}}}",
+            "status": "completed",
+            "toolCallId": "toolu_01TLE3Ze4bYFy6wGF2V5XntM",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 19,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01RKsiKAWFQfuS5KwEwPpxUU",
+            "name": "session_new",
+            "params": {
+              "agentKind": "claude-acp",
+              "prompt": "You are the \"reviewer\" peer in a Firegrid choreography experiment arm. There is no central manager.\n\nRun id: 2026-05-25T02-28-38-461Z\nScenario id: webhook-burst\nArm: choreography\nYour peer name: reviewer\n\nCoordinate ONLY through these Firegrid board channels (use the send / wait_for / wait_for_any tools):\n- coordination.work\n- coordination.claims\n- coordination.findings\n- coordination.questions\n- coordination.reviews\n- coordination.final\n\nWatch the board, claim useful work, publish findings, react to peer findings. Do not message me; coordinate with the other peers (planner, builder) via the channels above.\n\nRequired protocol:\n- For every send to a coordination.* channel, payload MUST be a JSON object (not a JSON string).\n- Before publishing coordination.final, publish at least one coordination.claims row AND one coordination.findings or coordination.reviews row.\n- If another peer already produced a final artifact, still publish your finding/review rows.\n\nTool boundary (HARD):\n- Do NOT use shell, filesystem, terminal, execute, or repository-inspection tools.\n- Use only Firegrid session tools and Firegrid channel tools (send, wait_for, wait_for_any).\n\nTask — Webhook Burst Triage:\n- Watch coordination.work for inbound webhook incidents.\n- Wait for these inbound workIds on coordination.work before finalizing: linear:TF-101:a, linear:TF-102:a, linear:TF-101:duplicate, github:check:failed.\n- Use scalar matches such as match.workId for those waits; do not guess payload timestamps.\n- Group duplicate incidents by external entity (e.g., the two TF-101 rows are the same Linear issue).\n- Triage severity and publish findings on coordination.findings.\n- As reviewer, your angle: critique the planner/builder findings on coordination.reviews — check the dedup grouping, severity ordering, and that every group cites the evidence rowIds it claims. Do not be a rubber stamp.\n\nFinal artifact contract (if you publish it):\n- channel: coordination.final\n- payload: JSON object with kind:\"final\", title, body, status:\"complete\", and relevant workId fields\n- body under 1,200 characters\n- list the deduped incident groups and which evidence rowIds supported each group\n- state which evidence you inspected, the recommendation, and any open questions\n- do NOT claim coordination helped unless the artifacts show why\n- after the send returns success, stop\n\nBegin: subscribe to coordination.work with wait_for_any for the four workIds above, claim the \"review\" slice, then post coordination.reviews rows against the planner/builder findings as they appear.",
+              "options": {
+                "metadata": {
+                  "peer": "reviewer",
+                  "arm": "choreography",
+                  "runId": "2026-05-25T02-28-38-461Z"
+                }
+              }
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01RKsiKAWFQfuS5KwEwPpxUU",
+        "toolName": "session_new"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 20,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__session_new"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "agentKind": "claude-acp",
+              "prompt": "You are the \"reviewer\" peer in a Firegrid choreography experiment arm. There is no central manager.\n\nRun id: 2026-05-25T02-28-38-461Z\nScenario id: webhook-burst\nArm: choreography\nYour peer name: reviewer\n\nCoordinate ONLY through these Firegrid board channels (use the send / wait_for / wait_for_any tools):\n- coordination.work\n- coordination.claims\n- coordination.findings\n- coordination.questions\n- coordination.reviews\n- coordination.final\n\nWatch the board, claim useful work, publish findings, react to peer findings. Do not message me; coordinate with the other peers (planner, builder) via the channels above.\n\nRequired protocol:\n- For every send to a coordination.* channel, payload MUST be a JSON object (not a JSON string).\n- Before publishing coordination.final, publish at least one coordination.claims row AND one coordination.findings or coordination.reviews row.\n- If another peer already produced a final artifact, still publish your finding/review rows.\n\nTool boundary (HARD):\n- Do NOT use shell, filesystem, terminal, execute, or repository-inspection tools.\n- Use only Firegrid session tools and Firegrid channel tools (send, wait_for, wait_for_any).\n\nTask — Webhook Burst Triage:\n- Watch coordination.work for inbound webhook incidents.\n- Wait for these inbound workIds on coordination.work before finalizing: linear:TF-101:a, linear:TF-102:a, linear:TF-101:duplicate, github:check:failed.\n- Use scalar matches such as match.workId for those waits; do not guess payload timestamps.\n- Group duplicate incidents by external entity (e.g., the two TF-101 rows are the same Linear issue).\n- Triage severity and publish findings on coordination.findings.\n- As reviewer, your angle: critique the planner/builder findings on coordination.reviews — check the dedup grouping, severity ordering, and that every group cites the evidence rowIds it claims. Do not be a rubber stamp.\n\nFinal artifact contract (if you publish it):\n- channel: coordination.final\n- payload: JSON object with kind:\"final\", title, body, status:\"complete\", and relevant workId fields\n- body under 1,200 characters\n- list the deduped incident groups and which evidence rowIds supported each group\n- state which evidence you inspected, the recommendation, and any open questions\n- do NOT claim coordination helped unless the artifacts show why\n- after the send returns success, stop\n\nBegin: subscribe to coordination.work with wait_for_any for the four workIds above, claim the \"review\" slice, then post coordination.reviews rows against the planner/builder findings as they appear.",
+              "options": {
+                "metadata": {
+                  "peer": "reviewer",
+                  "arm": "choreography",
+                  "runId": "2026-05-25T02-28-38-461Z"
+                }
+              }
+            },
+            "title": "mcp__firegrid-runtime-context__session_new",
+            "toolCallId": "toolu_01RKsiKAWFQfuS5KwEwPpxUU",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 21,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"session\":{\"sessionId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_oHA2UVeHC3Qlyv3Z\",\"contextId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_oHA2UVeHC3Qlyv3Z\",\"status\":\"created\",\"metadata\":{\"parentSessionId\":\"ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0\",\"peer\":\"reviewer\",\"arm\":\"choreography\",\"runId\":\"2026-05-25T02-28-38-461Z\"}}}",
+                "toolName": "mcp__firegrid-runtime-context__session_new"
+              }
+            },
+            "toolCallId": "toolu_01RKsiKAWFQfuS5KwEwPpxUU",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 22,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 43097,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 23,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__session_new"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"session\":{\"sessionId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_oHA2UVeHC3Qlyv3Z\",\"contextId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_oHA2UVeHC3Qlyv3Z\",\"status\":\"created\",\"metadata\":{\"parentSessionId\":\"ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0\",\"peer\":\"reviewer\",\"arm\":\"choreography\",\"runId\":\"2026-05-25T02-28-38-461Z\"}}}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"session\":{\"sessionId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_oHA2UVeHC3Qlyv3Z\",\"contextId\":\"ctx_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0-mcp_ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0_id_oHA2UVeHC3Qlyv3Z\",\"status\":\"created\",\"metadata\":{\"parentSessionId\":\"ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0\",\"peer\":\"reviewer\",\"arm\":\"choreography\",\"runId\":\"2026-05-25T02-28-38-461Z\"}}}",
+            "status": "completed",
+            "toolCallId": "toolu_01RKsiKAWFQfuS5KwEwPpxUU",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 24,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 45616,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 25,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "agent_thought_chunk",
+          "payload": {
+            "content": {
+              "text": "",
+              "type": "text"
+            },
+            "sessionUpdate": "agent_thought_chunk"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 26,
+        "_tag": "TextChunk",
+        "event": {
+          "_tag": "TextChunk",
+          "part": {
+            "type": "text-delta",
+            "id": "id_WlNXs7QvHgufYLNg",
+            "delta": "",
+            "metadata": {},
+            "~effect/ai/Content/Part": "~effect/ai/Content/Part"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 27,
+        "_tag": "TextChunk",
+        "event": {
+          "_tag": "TextChunk",
+          "part": {
+            "type": "text-delta",
+            "id": "id_WlNXs7QvHgufYLNg",
+            "delta": "Three peers created. Now let me watch coordination.work for the inbound incident evidence.",
+            "metadata": {},
+            "~effect/ai/Content/Part": "~effect/ai/Content/Part"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 28,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01ETCEqHtuZku8V9dqisbnH2",
+            "name": "wait_for",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01ETCEqHtuZku8V9dqisbnH2",
+        "toolName": "wait_for"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 29,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01ETCEqHtuZku8V9dqisbnH2",
+            "name": "wait_for",
+            "params": {
+              "channel": "coordination.work",
+              "match": {
+                "workId": "linear:TF-101:a"
+              },
+              "timeoutMs": 120000
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01ETCEqHtuZku8V9dqisbnH2",
+        "toolName": "wait_for"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 30,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "channel": "coordination.work",
+              "match": {
+                "workId": "linear:TF-101:a"
+              },
+              "timeoutMs": 120000
+            },
+            "title": "mcp__firegrid-runtime-context__wait_for",
+            "toolCallId": "toolu_01ETCEqHtuZku8V9dqisbnH2",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 31,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01NAtKVjSBs2YiNduxUTMsFE",
+            "name": "wait_for",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01NAtKVjSBs2YiNduxUTMsFE",
+        "toolName": "wait_for"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 32,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:520c320d-4994-4360-9a83-6bbfa3dea5c2\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"linear:TF-101:a\",\"status\":\"open\",\"title\":\"linear.issue.updated TF-101\",\"body\":\"Issue TF-101 changed labels from bug to regression.\",\"createdAt\":\"2026-05-25T02:38:42.090Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":0}}}",
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "toolCallId": "toolu_01ETCEqHtuZku8V9dqisbnH2",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 33,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:520c320d-4994-4360-9a83-6bbfa3dea5c2\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"linear:TF-101:a\",\"status\":\"open\",\"title\":\"linear.issue.updated TF-101\",\"body\":\"Issue TF-101 changed labels from bug to regression.\",\"createdAt\":\"2026-05-25T02:38:42.090Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":0}}}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:520c320d-4994-4360-9a83-6bbfa3dea5c2\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"linear:TF-101:a\",\"status\":\"open\",\"title\":\"linear.issue.updated TF-101\",\"body\":\"Issue TF-101 changed labels from bug to regression.\",\"createdAt\":\"2026-05-25T02:38:42.090Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":0}}}",
+            "status": "completed",
+            "toolCallId": "toolu_01ETCEqHtuZku8V9dqisbnH2",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 34,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01NAtKVjSBs2YiNduxUTMsFE",
+            "name": "wait_for",
+            "params": {
+              "channel": "coordination.work",
+              "match": {
+                "workId": "linear:TF-102:a"
+              },
+              "timeoutMs": 120000
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01NAtKVjSBs2YiNduxUTMsFE",
+        "toolName": "wait_for"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 35,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "channel": "coordination.work",
+              "match": {
+                "workId": "linear:TF-102:a"
+              },
+              "timeoutMs": 120000
+            },
+            "title": "mcp__firegrid-runtime-context__wait_for",
+            "toolCallId": "toolu_01NAtKVjSBs2YiNduxUTMsFE",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 36,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01XJRC2hCowf6NFk9rDp25tD",
+            "name": "wait_for",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01XJRC2hCowf6NFk9rDp25tD",
+        "toolName": "wait_for"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 37,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:80d09943-6c8a-4ceb-a3f1-389a3804e20b\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"linear:TF-102:a\",\"status\":\"open\",\"title\":\"linear.issue.updated TF-102\",\"body\":\"Issue TF-102 received a customer escalation comment.\",\"createdAt\":\"2026-05-25T02:38:42.341Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":250}}}",
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "toolCallId": "toolu_01NAtKVjSBs2YiNduxUTMsFE",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 38,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:80d09943-6c8a-4ceb-a3f1-389a3804e20b\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"linear:TF-102:a\",\"status\":\"open\",\"title\":\"linear.issue.updated TF-102\",\"body\":\"Issue TF-102 received a customer escalation comment.\",\"createdAt\":\"2026-05-25T02:38:42.341Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":250}}}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:80d09943-6c8a-4ceb-a3f1-389a3804e20b\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"linear:TF-102:a\",\"status\":\"open\",\"title\":\"linear.issue.updated TF-102\",\"body\":\"Issue TF-102 received a customer escalation comment.\",\"createdAt\":\"2026-05-25T02:38:42.341Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":250}}}",
+            "status": "completed",
+            "toolCallId": "toolu_01NAtKVjSBs2YiNduxUTMsFE",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 39,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01XJRC2hCowf6NFk9rDp25tD",
+            "name": "wait_for",
+            "params": {
+              "channel": "coordination.work",
+              "match": {
+                "workId": "linear:TF-101:duplicate"
+              },
+              "timeoutMs": 120000
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01XJRC2hCowf6NFk9rDp25tD",
+        "toolName": "wait_for"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 40,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "channel": "coordination.work",
+              "match": {
+                "workId": "linear:TF-101:duplicate"
+              },
+              "timeoutMs": 120000
+            },
+            "title": "mcp__firegrid-runtime-context__wait_for",
+            "toolCallId": "toolu_01XJRC2hCowf6NFk9rDp25tD",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 41,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_011qco95eJoaaGsVgvwHXfMZ",
+            "name": "wait_for",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_011qco95eJoaaGsVgvwHXfMZ",
+        "toolName": "wait_for"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 42,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:60be49da-3d90-4eab-9dc2-6eccfe2ae63d\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"linear:TF-101:duplicate\",\"status\":\"open\",\"title\":\"linear.issue.updated TF-101 duplicate\",\"body\":\"Duplicate delivery for TF-101 with the same external event id.\",\"createdAt\":\"2026-05-25T02:38:42.590Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":500}}}",
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "toolCallId": "toolu_01XJRC2hCowf6NFk9rDp25tD",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 43,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:60be49da-3d90-4eab-9dc2-6eccfe2ae63d\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"linear:TF-101:duplicate\",\"status\":\"open\",\"title\":\"linear.issue.updated TF-101 duplicate\",\"body\":\"Duplicate delivery for TF-101 with the same external event id.\",\"createdAt\":\"2026-05-25T02:38:42.590Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":500}}}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:60be49da-3d90-4eab-9dc2-6eccfe2ae63d\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"linear:TF-101:duplicate\",\"status\":\"open\",\"title\":\"linear.issue.updated TF-101 duplicate\",\"body\":\"Duplicate delivery for TF-101 with the same external event id.\",\"createdAt\":\"2026-05-25T02:38:42.590Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":500}}}",
+            "status": "completed",
+            "toolCallId": "toolu_01XJRC2hCowf6NFk9rDp25tD",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 44,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_011qco95eJoaaGsVgvwHXfMZ",
+            "name": "wait_for",
+            "params": {
+              "channel": "coordination.work",
+              "match": {
+                "workId": "github:check:failed"
+              },
+              "timeoutMs": 120000
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_011qco95eJoaaGsVgvwHXfMZ",
+        "toolName": "wait_for"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 45,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "channel": "coordination.work",
+              "match": {
+                "workId": "github:check:failed"
+              },
+              "timeoutMs": 120000
+            },
+            "title": "mcp__firegrid-runtime-context__wait_for",
+            "toolCallId": "toolu_011qco95eJoaaGsVgvwHXfMZ",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 46,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:c8458570-25c0-453a-a0d5-efb379016322\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"github:check:failed\",\"status\":\"open\",\"title\":\"github.check.failed\",\"body\":\"CI failed for a related branch; failure signature mentions unknown-channel.\",\"createdAt\":\"2026-05-25T02:38:43.590Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":1500}}}",
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "toolCallId": "toolu_011qco95eJoaaGsVgvwHXfMZ",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 47,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 46346,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 48,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__wait_for"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:c8458570-25c0-453a-a0d5-efb379016322\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"github:check:failed\",\"status\":\"open\",\"title\":\"github.check.failed\",\"body\":\"CI failed for a related branch; failure signature mentions unknown-channel.\",\"createdAt\":\"2026-05-25T02:38:43.590Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":1500}}}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"matched\":true,\"event\":{\"rowId\":\"2026-05-25T02-28-38-461Z:choreography:coordination.work:c8458570-25c0-453a-a0d5-efb379016322\",\"runId\":\"2026-05-25T02-28-38-461Z\",\"arm\":\"choreography\",\"channel\":\"coordination.work\",\"kind\":\"webhook\",\"workId\":\"github:check:failed\",\"status\":\"open\",\"title\":\"github.check.failed\",\"body\":\"CI failed for a related branch; failure signature mentions unknown-channel.\",\"createdAt\":\"2026-05-25T02:38:43.590Z\",\"payload\":{\"scenarioId\":\"webhook-burst\",\"atMs\":1500}}}",
+            "status": "completed",
+            "toolCallId": "toolu_011qco95eJoaaGsVgvwHXfMZ",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 49,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 47476,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 50,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "agent_thought_chunk",
+          "payload": {
+            "content": {
+              "text": "",
+              "type": "text"
+            },
+            "sessionUpdate": "agent_thought_chunk"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 51,
+        "_tag": "TextChunk",
+        "event": {
+          "_tag": "TextChunk",
+          "part": {
+            "type": "text-delta",
+            "id": "id_WlNXs7QvHgufYLNg",
+            "delta": "",
+            "metadata": {},
+            "~effect/ai/Content/Part": "~effect/ai/Content/Part"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 52,
+        "_tag": "TextChunk",
+        "event": {
+          "_tag": "TextChunk",
+          "part": {
+            "type": "text-delta",
+            "id": "id_WlNXs7QvHgufYLNg",
+            "delta": "All four evidence rows in. Publishing claim, finding,",
+            "metadata": {},
+            "~effect/ai/Content/Part": "~effect/ai/Content/Part"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 53,
+        "_tag": "TextChunk",
+        "event": {
+          "_tag": "TextChunk",
+          "part": {
+            "type": "text-delta",
+            "id": "id_WlNXs7QvHgufYLNg",
+            "delta": " then final.",
+            "metadata": {},
+            "~effect/ai/Content/Part": "~effect/ai/Content/Part"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 54,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_017KQxj5Fgt79JzXKvCh3U5z",
+            "name": "send",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_017KQxj5Fgt79JzXKvCh3U5z",
+        "toolName": "send"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 55,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_017KQxj5Fgt79JzXKvCh3U5z",
+            "name": "send",
+            "params": {
+              "channel": "coordination.claims",
+              "payload": "{\"kind\": \"claim\", \"claimantSessionId\": \"conductor\", \"title\": \"Conductor peer: dedup grouping + final synthesis\", \"workId\": \"webhook-burst:triage:dedup\", \"status\": \"claimed\", \"body\": \"Conductor peer claiming the cross-evidence dedup grouping slice across linear:TF-101:a, linear:TF-101:duplicate, linear:TF-102:a, github:check:failed. Will publish a finding and a final artifact; peers (planner/builder/reviewer) are welcome to publish their own claims, findings, reviews, and finals in parallel — the runner measures board behavior, not just the first final.\"}"
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_017KQxj5Fgt79JzXKvCh3U5z",
+        "toolName": "send"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 56,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__send"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "channel": "coordination.claims",
+              "payload": "{\"kind\": \"claim\", \"claimantSessionId\": \"conductor\", \"title\": \"Conductor peer: dedup grouping + final synthesis\", \"workId\": \"webhook-burst:triage:dedup\", \"status\": \"claimed\", \"body\": \"Conductor peer claiming the cross-evidence dedup grouping slice across linear:TF-101:a, linear:TF-101:duplicate, linear:TF-102:a, github:check:failed. Will publish a finding and a final artifact; peers (planner/builder/reviewer) are welcome to publish their own claims, findings, reviews, and finals in parallel — the runner measures board behavior, not just the first final.\"}"
+            },
+            "title": "mcp__firegrid-runtime-context__send",
+            "toolCallId": "toolu_017KQxj5Fgt79JzXKvCh3U5z",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 57,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"sent\":true,\"channel\":\"coordination.claims\"}",
+                "toolName": "mcp__firegrid-runtime-context__send"
+              }
+            },
+            "toolCallId": "toolu_017KQxj5Fgt79JzXKvCh3U5z",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 58,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 48394,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 59,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__send"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"sent\":true,\"channel\":\"coordination.claims\"}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"sent\":true,\"channel\":\"coordination.claims\"}",
+            "status": "completed",
+            "toolCallId": "toolu_017KQxj5Fgt79JzXKvCh3U5z",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 60,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 48497,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 61,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01ACifvGUZzi3AHbkS4NmV9B",
+            "name": "send",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01ACifvGUZzi3AHbkS4NmV9B",
+        "toolName": "send"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 62,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01ACifvGUZzi3AHbkS4NmV9B",
+            "name": "send",
+            "params": {
+              "channel": "coordination.findings",
+              "payload": "{\"kind\": \"finding\", \"title\": \"Webhook burst dedup grouping (3 groups, 4 evidence rows)\", \"workId\": \"webhook-burst:triage:dedup\", \"status\": \"open\", \"body\": \"Evidence inspected (coordination.work rowIds):\\n- 520c320d-... workId=linear:TF-101:a — TF-101 label bug→regression, atMs=0\\n- 60be49da-... workId=linear:TF-101:duplicate — duplicate delivery same external id, atMs=500\\n- 80d09943-... workId=linear:TF-102:a — TF-102 customer escalation comment, atMs=250\\n- c8458570-... workId=github:check:failed — CI failed, signature mentions 'unknown-channel', atMs=1500\\n\\nDeduped groups:\\nG1 Linear TF-101 regression: [520c320d (TF-101:a), 60be49da (TF-101:duplicate)] — suppress duplicate, keep TF-101:a as canonical. Severity: medium (regression label).\\nG2 Linear TF-102 escalation: [80d09943 (TF-102:a)] — severity: high (customer escalation).\\nG3 GitHub CI failure: [c8458570 (github:check:failed)] — severity: medium; 'unknown-channel' signature may correlate with G1 regression — flag for confirmation, do not auto-merge.\\n\\nRecommendation: dedup by external entity id (linear issue key) + delivery id; cross-source links require an explicit signature match, not source proximity.\"}"
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01ACifvGUZzi3AHbkS4NmV9B",
+        "toolName": "send"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 63,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__send"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "channel": "coordination.findings",
+              "payload": "{\"kind\": \"finding\", \"title\": \"Webhook burst dedup grouping (3 groups, 4 evidence rows)\", \"workId\": \"webhook-burst:triage:dedup\", \"status\": \"open\", \"body\": \"Evidence inspected (coordination.work rowIds):\\n- 520c320d-... workId=linear:TF-101:a — TF-101 label bug→regression, atMs=0\\n- 60be49da-... workId=linear:TF-101:duplicate — duplicate delivery same external id, atMs=500\\n- 80d09943-... workId=linear:TF-102:a — TF-102 customer escalation comment, atMs=250\\n- c8458570-... workId=github:check:failed — CI failed, signature mentions 'unknown-channel', atMs=1500\\n\\nDeduped groups:\\nG1 Linear TF-101 regression: [520c320d (TF-101:a), 60be49da (TF-101:duplicate)] — suppress duplicate, keep TF-101:a as canonical. Severity: medium (regression label).\\nG2 Linear TF-102 escalation: [80d09943 (TF-102:a)] — severity: high (customer escalation).\\nG3 GitHub CI failure: [c8458570 (github:check:failed)] — severity: medium; 'unknown-channel' signature may correlate with G1 regression — flag for confirmation, do not auto-merge.\\n\\nRecommendation: dedup by external entity id (linear issue key) + delivery id; cross-source links require an explicit signature match, not source proximity.\"}"
+            },
+            "title": "mcp__firegrid-runtime-context__send",
+            "toolCallId": "toolu_01ACifvGUZzi3AHbkS4NmV9B",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 64,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"sent\":true,\"channel\":\"coordination.findings\"}",
+                "toolName": "mcp__firegrid-runtime-context__send"
+              }
+            },
+            "toolCallId": "toolu_01ACifvGUZzi3AHbkS4NmV9B",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 65,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 49043,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 66,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__send"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"sent\":true,\"channel\":\"coordination.findings\"}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"sent\":true,\"channel\":\"coordination.findings\"}",
+            "status": "completed",
+            "toolCallId": "toolu_01ACifvGUZzi3AHbkS4NmV9B",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 67,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 49147,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 68,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01UQ1GpwNdbVmfAoeGFKchkA",
+            "name": "send",
+            "params": {},
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01UQ1GpwNdbVmfAoeGFKchkA",
+        "toolName": "send"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 69,
+        "_tag": "ToolUse",
+        "event": {
+          "_tag": "ToolUse",
+          "part": {
+            "type": "tool-call",
+            "id": "toolu_01UQ1GpwNdbVmfAoeGFKchkA",
+            "name": "send",
+            "params": {
+              "channel": "coordination.final",
+              "payload": "{\"kind\": \"final\", \"title\": \"Webhook burst triage — deduped groups + recommendation\", \"status\": \"complete\", \"workId\": \"webhook-burst:triage:dedup\", \"body\": \"Evidence inspected (coordination.work rowIds):\\n- 520c320d linear:TF-101:a — TF-101 label bug→regression\\n- 60be49da linear:TF-101:duplicate — same external id as TF-101:a\\n- 80d09943 linear:TF-102:a — TF-102 customer escalation\\n- c8458570 github:check:failed — CI failed, signature mentions 'unknown-channel'\\n\\nDeduped groups:\\nG1 Linear TF-101 regression — rows [520c320d, 60be49da]. Suppress :duplicate; canonical=TF-101:a. Severity: medium.\\nG2 Linear TF-102 escalation — rows [80d09943]. Severity: high (customer escalation).\\nG3 GitHub CI failure — rows [c8458570]. Severity: medium.\\n\\nRecommendation: dedup by external-entity id (linear issue key) + delivery id at the webhook ingestor; do not merge G3 into G1 on source proximity alone — require a signature match. Triage order: G2 → G1 → G3.\\n\\nOpen questions:\\n1. Does the github 'unknown-channel' signature reference the same code path as TF-101's regression? Need a confirming evidence row before merging G3 into G1.\\n2. Is the duplicate delivery a webhook-provider retry or an at-least-once replay from our edge? Affects whether dedup belongs at ingestor or downstream.\\n\\nCoordination value: peers (planner/builder/reviewer) are spawned and may publish their own claim/finding/review/final rows on the board; this final reflects the conductor-peer slice only — additional peer artifacts are expected on the channels.\"}"
+            },
+            "providerExecuted": true,
+            "options": {},
+            "~effect/ai/Prompt/Part": "~effect/ai/Prompt/Part"
+          }
+        },
+        "toolUseId": "toolu_01UQ1GpwNdbVmfAoeGFKchkA",
+        "toolName": "send"
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 70,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__send"
+              }
+            },
+            "content": [],
+            "kind": "other",
+            "rawInput": {
+              "channel": "coordination.final",
+              "payload": "{\"kind\": \"final\", \"title\": \"Webhook burst triage — deduped groups + recommendation\", \"status\": \"complete\", \"workId\": \"webhook-burst:triage:dedup\", \"body\": \"Evidence inspected (coordination.work rowIds):\\n- 520c320d linear:TF-101:a — TF-101 label bug→regression\\n- 60be49da linear:TF-101:duplicate — same external id as TF-101:a\\n- 80d09943 linear:TF-102:a — TF-102 customer escalation\\n- c8458570 github:check:failed — CI failed, signature mentions 'unknown-channel'\\n\\nDeduped groups:\\nG1 Linear TF-101 regression — rows [520c320d, 60be49da]. Suppress :duplicate; canonical=TF-101:a. Severity: medium.\\nG2 Linear TF-102 escalation — rows [80d09943]. Severity: high (customer escalation).\\nG3 GitHub CI failure — rows [c8458570]. Severity: medium.\\n\\nRecommendation: dedup by external-entity id (linear issue key) + delivery id at the webhook ingestor; do not merge G3 into G1 on source proximity alone — require a signature match. Triage order: G2 → G1 → G3.\\n\\nOpen questions:\\n1. Does the github 'unknown-channel' signature reference the same code path as TF-101's regression? Need a confirming evidence row before merging G3 into G1.\\n2. Is the duplicate delivery a webhook-provider retry or an at-least-once replay from our edge? Affects whether dedup belongs at ingestor or downstream.\\n\\nCoordination value: peers (planner/builder/reviewer) are spawned and may publish their own claim/finding/review/final rows on the board; this final reflects the conductor-peer slice only — additional peer artifacts are expected on the channels.\"}"
+            },
+            "title": "mcp__firegrid-runtime-context__send",
+            "toolCallId": "toolu_01UQ1GpwNdbVmfAoeGFKchkA",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 71,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolResponse": "{\"sent\":true,\"channel\":\"coordination.final\"}",
+                "toolName": "mcp__firegrid-runtime-context__send"
+              }
+            },
+            "toolCallId": "toolu_01UQ1GpwNdbVmfAoeGFKchkA",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 72,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "usage_update",
+          "payload": {
+            "size": 200000,
+            "used": 49804,
+            "sessionUpdate": "usage_update"
+          }
+        }
+      },
+      {
+        "source": "firegrid.runtime.agent-output-events",
+        "sessionId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "contextId": "ctx_ext_WyJhZ2VudC1jb29yZGluYXRpb24tcGF0dGVybnMiLCIyMDI2LTA1LTI1VDAyLTI4LTM4LTQ2MVo6d2ViaG9vay1idXJzdDpjaG9yZW9ncmFwaHk6Y29uZHVjdG9yIl0",
+        "activityAttempt": 1,
+        "sequence": 73,
+        "_tag": "Status",
+        "event": {
+          "_tag": "Status",
+          "kind": "tool_call_update",
+          "payload": {
+            "_meta": {
+              "claudeCode": {
+                "toolName": "mcp__firegrid-runtime-context__send"
+              }
+            },
+            "content": [
+              {
+                "content": {
+                  "text": "{\"sent\":true,\"channel\":\"coordination.final\"}",
+                  "type": "text"
+                },
+                "type": "content"
+              }
+            ],
+            "rawOutput": "{\"sent\":true,\"channel\":\"coordination.final\"}",
+            "status": "completed",
+            "toolCallId": "toolu_01UQ1GpwNdbVmfAoeGFKchkA",
+            "sessionUpdate": "tool_call_update"
+          }
+        }
+      }
+    ]
+  }
+]

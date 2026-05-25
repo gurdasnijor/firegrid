@@ -1,0 +1,21 @@
+{
+  "arm": "single",
+  "scenarioId": "webhook-burst",
+  "status": "completed",
+  "startedAt": "2026-05-25T02:36:45.619Z",
+  "finishedAt": "2026-05-25T02:37:06.923Z",
+  "durationMs": 25309,
+  "sessionCount": 1,
+  "outputCount": 35,
+  "finalArtifact": {
+    "rowId": "2026-05-25T02-28-38-461Z:single:coordination.final:6e789b5d-e9fa-429c-88c5-05bee3657dfd",
+    "runId": "2026-05-25T02-28-38-461Z",
+    "arm": "single",
+    "channel": "coordination.final",
+    "kind": "final",
+    "status": "complete",
+    "title": "Webhook Burst Triage — deduped incident groups",
+    "body": "Evidence inspected (4 coordination.work rows):\n- linear:TF-101:a — linear.issue.updated TF-101 (labels bug→regression, atMs 0)\n- linear:TF-101:duplicate — duplicate delivery, same external entity TF-101 (atMs 500)\n- linear:TF-102:a — linear.issue.updated TF-102, customer escalation comment (atMs 250)\n- github:check:failed — CI failure on related branch, signature mentions unknown-channel (atMs 1500)\n\nDeduped incident groups by external entity:\n1) linear/TF-101 (sev: high — regression label) — rows: linear:TF-101:a, linear:TF-101:duplicate (duplicate suppressed by workId/external id).\n2) linear/TF-102 (sev: high — customer escalation) — rows: linear:TF-102:a.\n3) github/check (sev: medium — CI red, unknown-channel signature; likely correlates to TF-101 regression but no explicit link) — rows: github:check:failed.\n\nRecommendation: dedupe webhooks by (source, externalEntityId, externalEventId) at ingest; bucket downstream triage per entity. Severity ladder: customer escalation ≥ regression-label > CI-red. Treat unknown-channel CI failure as a correlation hint, not a merge key.\n\nOpen questions: is the duplicate redelivery from provider retry or a replay-storm bug? Should github/check link to TF-101 via branch metadata? Confirm dedupe window (workId-stable vs time-bounded).\n\nCoordination value: single-arm — coordination board only used to receive inputs via scalar workId waits; no multi-agent claim/finding traffic was needed.",
+    "createdAt": "2026-05-25T02:37:06.385Z"
+  }
+}
