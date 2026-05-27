@@ -14,7 +14,7 @@ import {
   CurrentAgentTurn,
   LanguageModelAdapter,
   PermissionRequiredButNotHandled,
-} from "../../../src/producers/codecs/agent-adapters/index.ts"
+} from "../../../../src/producers/codecs/agent-adapters/index.ts"
 
 const promptText = (prompt: unknown): string =>
   typeof prompt === "string" ? prompt : "[structured prompt]"
