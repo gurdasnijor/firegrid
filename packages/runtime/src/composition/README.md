@@ -22,7 +22,6 @@ Runtime-local topology wiring:
   bring up the runtime. Composes `producers/`, `tables/`, `channels/`, and
   `subscribers/` into a single `Layer`. Reserved public subpath:
   `@firegrid/runtime/composition/host-live`.
-- `topology-checks.ts` — CI checks that enforce the structural rules below.
 
 This folder is the **only** place in `packages/runtime/src/` that legitimately
 wires lower-order folders together. No business logic, no durable row
@@ -56,24 +55,19 @@ the narrow public subpath above.
   workflow body execution — those are owned by the lower-order folders and
   reached through the composed Layer at runtime, never invoked inline here
 
-## Topology checks (Wave 2 implementation)
+## Topology checks
 
-`topology-checks.ts` should grow CI checks for:
+CI invariants for the runtime tree are enforced **externally**, not by an
+in-tree `topology-checks.ts` module. The current enforcement surfaces:
 
-- no Shape C subscriber `R` channel mentions `WorkflowEngine` or
-  `WorkflowInstance` (Shape declared in each `subscribers/<name>/README.md`)
-- no `transforms/` export whose type includes `Effect.Effect`
-- no two subscribers owning the same state store tag
-- no read/write feedback cycle for the same table family unless explicitly
-  approved as a durable operator
-- every Shape D folder has a README with a workflow-machinery justification
-- no target code imports `_archive/`
-- host-sdk imports runtime only through narrow target subpaths (mirrors the
-  Semgrep gate; double-enforced)
+| Check | Where |
+| --- | --- |
+| Required target surfaces exist + READMEs, no numeric prefixes, no stale paths. | `scripts/runtime-public-surface-check.mjs` |
+| `kernel/` / `workflow-engine/` legacy roots stay empty. | `scripts/legacy-runtime-roots-scoreboard.mjs` |
+| Per-tier import direction (`events → tables → producers/transforms/channels → subscribers → composition`); no `_archive/` imports from target code. | `.dependency-cruiser.cjs` |
+| Shape D workflow-machinery justification; host-sdk reaches runtime only through narrow target subpaths. | `.semgrep.yml` |
 
-## Scaffold status
-
-Empty. Wave 2 lands `host-live.ts` (runtime layer graph) and
-`topology-checks.ts` (CI enforcement). For this wave, the host-sdk import
-gate runs as Semgrep rules under the existing `lint:semgrep` gate; the AST
-checks come in when `topology-checks.ts` is implemented.
+A future `composition/topology-checks.ts` may grow AST-level checks that
+duplicate or extend these (e.g., no transform export whose type includes
+`Effect.Effect`, no two subscribers owning the same state-store tag) — see #756.
+Until then this folder contains Layer wiring only.
