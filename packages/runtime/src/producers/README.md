@@ -23,10 +23,14 @@ Layout:
   `EffectAiSandboxProvider`, `SandboxProvider` contract)
 - `codecs/` — `AgentSession` live codec implementations (`acp/`,
   `stdio-jsonl/`) and the `AgentSession`/codec contract surface
-- `ingress-writers/` — append authorities that bridge live sources into
-  durable tables: `per-context-output.ts` (`AgentSession.outputs ->
-  RuntimeOutputTable.events`), `runtime-input-append.ts` (external input ->
-  ingress intent rows)
+- `ingress-writers/` — **scaffold (README only)**. Append authorities that
+  bridge live sources into durable tables (target contents:
+  `per-context-output.ts` for `AgentSession.outputs -> RuntimeOutputTable.events`,
+  `runtime-input-append.ts` for external input -> ingress intent rows). Two
+  existing helpers belong here but currently live in `tables/` and
+  `composition/` because the `subscribers/` → `producers/` tier rule blocks
+  the direct move. See `ingress-writers/README.md` and #756 for the
+  resolution paths.
 
 ## May import
 

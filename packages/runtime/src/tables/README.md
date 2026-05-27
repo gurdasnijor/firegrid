@@ -24,6 +24,13 @@ the table (for example `nextOutputObservation`'s
 next-output point read may surface to a Shape C subscriber). It does NOT own
 append/write authority — that lives in `producers/`.
 
+Known exception: `scheduled-prompt-append.ts:appendScheduledPromptIntent` is
+an append helper that currently lives in this folder because the Shape D
+subscriber that calls it cannot currently import `producers/` (per the
+subscribers → producers tier rule). This contradicts the "tables/ does not
+own append authority" rule above and is tracked in #756; resolution is
+pending a tier-rule decision documented in `producers/ingress-writers/README.md`.
+
 Transition/reducer logic does NOT live here. A function that takes a state
 plus a fact and returns the next state (`transitionInputEvent`,
 `transitionOutputEvent`) belongs in `transforms/`. Tables expose selection
