@@ -16,7 +16,7 @@ import {
   type Sandbox,
   type SandboxCommand,
   SandboxProviderError,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 import {
   Effect,
   Layer,

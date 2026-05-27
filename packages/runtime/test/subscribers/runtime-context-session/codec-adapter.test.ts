@@ -18,7 +18,7 @@ import {
   type AgentByteStream,
   type ExecutionResult,
   type Sandbox,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 import {
   Effect,
   Fiber,

@@ -12,8 +12,13 @@ import {
   EffectAiSandboxProvider,
   LocalProcessSandboxProvider,
   SandboxProvider,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 ```
+
+> The legacy `@firegrid/runtime/sources/sandbox` subpath is preserved as a
+> back-compat alias and will be removed in a future cleanup wave. New code
+> should import from `@firegrid/runtime/producers/sandbox` to match the
+> canonical tier name.
 
 ## Local Process
 
@@ -27,7 +32,7 @@ import { Effect, Layer } from "effect"
 import {
   LocalProcessSandboxProvider,
   SandboxProvider,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 
 const Live = LocalProcessSandboxProvider.layer().pipe(
   Layer.provide(NodeContext.layer),
@@ -64,7 +69,7 @@ import { LanguageModel } from "@effect/ai"
 import {
   EffectAiSandboxProvider,
   SandboxProvider,
-} from "@firegrid/runtime/sources/sandbox"
+} from "@firegrid/runtime/producers/sandbox"
 
 declare const AiLanguageModelLive: Layer.Layer<LanguageModel.LanguageModel>
 
@@ -108,7 +113,7 @@ For example, with OpenAI:
 import { NodeHttpClient } from "@effect/platform-node"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai"
 import { Layer, Redacted } from "effect"
-import { EffectAiSandboxProvider } from "@firegrid/runtime/sources/sandbox"
+import { EffectAiSandboxProvider } from "@firegrid/runtime/producers/sandbox"
 
 const OpenAiLanguageModelLive = OpenAiLanguageModel.layer({
   model: "gpt-4.1-mini",
