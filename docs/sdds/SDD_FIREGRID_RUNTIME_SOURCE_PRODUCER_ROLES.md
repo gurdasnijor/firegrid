@@ -1,9 +1,9 @@
 # SDD: Source / Producer Role Split In `packages/runtime/`
 
-Status: draft proposal
+Status: **accepted** (path chosen, migration sequenced below)
 Created: 2026-05-28
 Owner: Firegrid Runtime
-Related issue: #756 (umbrella for directory-refactor follow-ups), #757, #758, #759, #760
+Related issue: #756 (umbrella for directory-refactor follow-ups), #757, #758, #759, #760, #761
 
 Related specs / docs:
 
@@ -12,6 +12,27 @@ Related specs / docs:
 - `docs/cannon/architecture/runtime-pipeline-type-boundaries.md`
 - `packages/runtime/ARCHITECTURE.md`
 - `packages/runtime/src/producers/README.md`
+
+## Decisions (recorded)
+
+1. **Adopt Option 1** — flat Kafka-broker-style split. `sources/` for
+   emitters (no row authority); `producers/` for topic-writers (write to
+   `tables/`). Rationale below.
+2. **Keep the name `producers/`** for the topic-writer tier. Kafka client
+   vocab is the dominant term in the ecosystem; existing dep-cruiser /
+   semgrep rules already use it. The conceptual ambiguity only existed
+   because two roles shared the folder — with `sources/` standing apart,
+   `producers/` reads unambiguously.
+3. **Add a new `capabilities/` tier** for typed Producer capability
+   `Context.Tag` declarations. Pure declarations only; importable from
+   both `producers/` (provides Live) and `subscribers/` (consumes).
+   Mirrors how `events/` works (pure schemas, importable from any tier).
+4. **Split `verified-webhook-ingest/`** into the tier folders now (not
+   later). It is the only Connect-shaped feature in the tree; leaving it
+   as an exception under an otherwise flat-split layout is debt that gets
+   harder to clean up once another adapter copies the pattern. Future
+   external adapters (Linear, Slack, GitHub) land into the tier folders
+   directly.
 
 ## Problem
 
@@ -252,7 +273,7 @@ The Effect-native shape lines up cleanly:
 
 ## Options
 
-### Option 1: Kafka-broker-style flat split (proposed)
+### Option 1: Kafka-broker-style flat split — **ACCEPTED**
 
 ```text
 packages/runtime/src/
@@ -284,7 +305,7 @@ packages/runtime/src/
   `verified-webhook-ingest/`) now have to choose between adjacent-feature
   style and tier-style. F becomes a follow-on decision.
 
-### Option 2: Kafka-Connect-style nesting
+### Option 2: Kafka-Connect-style nesting — rejected
 
 ```text
 packages/runtime/src/
@@ -315,7 +336,7 @@ packages/runtime/src/
 - Con: a "producer that doesn't have its own source" (e.g., a workflow
   step that writes a row) has no obvious home.
 
-### Option 3: Flink-style fused source (status quo + cleanup)
+### Option 3: Flink-style fused source (status quo + cleanup) — rejected
 
 Keep `producers/` as one folder for both roles; close out the umbrella
 items by relaxing the `subscribers/ ✗ producers/` rule with a narrow
@@ -325,78 +346,217 @@ carveout for Shape D writers. No structural rename.
 - Con: the conceptual overload remains; the producer/source ambiguity
   recurs every time a new ingress adapter lands.
 
-## Recommendation
+## Rationale For The Chosen Path
 
-**Option 1** (Kafka-broker-style flat split).
+### Why Option 1 over Option 2
 
-Reasoning: firegrid already commits to an explicit durable topic layer
-(`tables/`), which is the Kafka-family architectural assumption.
-Naming the tiers around the Kafka-broker producer/consumer split makes the
-dataflow read in one direction with no overloaded roles, and resolves the
-recorded debt items D and E by construction. The Connect-nesting option
-(Option 2) is more attractive *only if* multiple external adapters are
-imminent; absent that, the flat split keeps the tier graph small.
+The reality on disk already wants the flat split. Two of three things in
+today's `producers/` are pure emitters (`sandbox/`, `codecs/`) — they
+neither import `tables/` nor write rows. The "topic-writer" role is
+currently scattered across `tables/scheduled-prompt-append.ts` and
+`composition/host-public.ts:appendRuntimeIngress` as homeless functions.
+Option 1 is just naming what's there.
 
-Option 2 should be re-evaluated together with item F when the next
-external ingress adapter (Linear / Slack / GitHub / similar) lands.
+Option 2 (Connect-nesting) would force us to disassemble
+`composition/host-live.ts` to extract per-adapter Producer files that
+don't currently exist as standalone modules. That's a much larger
+restructure, undertaken before we have multiple external adapters to
+justify the bundle shape. If future adapters concentrate at the system
+edge in a way that argues for re-bundling, we can revisit; today there is
+exactly one (`verified-webhook-ingest/`) and we don't want it to dictate
+the tier shape.
 
-## Migration Sketch (if Option 1 is accepted)
+### Why keep `producers/` (not rename to `journalers/`)
 
-This is a sketch, not a step-by-step. A separate implementation SDD or PR
-should pin the order.
+Kafka client "Producer" is the dominant vocabulary in stream processing
+systems with an explicit durable topic layer (Kafka, Pulsar, NATS).
+Existing dep-cruiser and semgrep rules already reference `producers/`;
+keeping the name minimizes rename mechanics. The conceptual ambiguity
+went away the moment `sources/` lifted the emitter role out of the folder.
 
-1. Pause / close PRs #758 (naming alias deprecation) and #760
-   (`producers/ingress-writers/` scaffold) since both presume the current
-   tier naming. PR #757 (stale doc sweep) and PR #759 (test layout)
-   are independent of the naming question and can land as-is.
-2. Add `sources/` to the public-surface map and the dep-cruiser rules. Its
-   tier position is **3a**, peer with the renamed `producers/` (3b),
-   peer with `transforms/` and `channels/`. `sources/` may NOT import
-   `tables/`.
-3. Move `producers/sandbox/` → `sources/sandbox/`. Move
-   `producers/codecs/` → `sources/codecs/`. Update internal imports.
-   Add `@firegrid/runtime/sources/sandbox` and
-   `@firegrid/runtime/sources/codecs` exports; keep the
-   `@firegrid/runtime/producers/*` aliases for a deprecation window.
-4. Move `tables/scheduled-prompt-append.ts` → `producers/scheduled-prompt-append.ts`.
-   Introduce a typed capability tag (e.g., `ScheduledPromptIngressAppender`)
-   in `channels/` so the Shape D subscriber depends on the Tag, not on
-   `producers/`.
-5. Move `composition/host-public.ts:appendRuntimeIngress` into a new
-   `producers/runtime-input-append.ts` exporting a `RuntimeInputAppender`
-   capability layer. `composition/host-public.ts` becomes pure wiring
-   that re-exports the host facade and depends on the new capability.
-6. Delete the `producers/ingress-writers/` scaffold (its purpose is
-   absorbed into the renamed `producers/`).
-7. Update dep-cruiser to express the new rules:
-   - `sources/` may import `events/` only. Not `tables/`.
-   - `producers/` may import `events/`, `tables/`, `sources/`.
-   - `subscribers/` may import `events/`, `tables/`, `transforms/`,
-     `channels/`. Not `sources/`, not `producers/`.
-   - `channels/` may import `events/`, `tables/`. (Capability tags only;
-     no Live bindings depending on `producers/`.)
-8. Update ARCHITECTURE.md and the target-tree doc to reflect the new tiers.
-9. Update `test/` layout: `test/sources/`, `test/producers/`.
+### Why a new `capabilities/` folder for Tags
 
-## Open Questions
+The Tag is a contract, not behavior — it is to a `Layer` what an event
+schema is to an event row. `events/` already establishes the pattern:
+pure declarations, importable from any tier. A peer `capabilities/`
+folder for Effect `Context.Tag` declarations:
 
-- Should the renamed tier be `producers/` (Kafka client vocab) or
-  `journalers/` (more descriptive)? The SDD assumes `producers/`; both are
-  reasonable.
-- Where do typed Producer capability tags live? `channels/` is the
-  natural fit (a channel is a wire-edge capability); a new `capabilities/`
-  folder is also defensible.
-- F (`verified-webhook-ingest/`) — split into tier folders, or keep as an
-  adjacent self-contained adapter? Re-evaluate once another external
-  adapter is imminent.
+- keeps the `subscribers/ ✗ producers/` dep-cruiser rule precise and
+  mechanically enforceable (subscribers depend on Tags from
+  `capabilities/`, never on `producers/` files);
+- avoids overloading `channels/`, whose existing meaning is "wire-edge
+  live routing" (`host-control/`, `routes/`, `router.ts`);
+- avoids a file-naming convention (`*-live.ts` vs `*-tag.ts`) that
+  dep-cruiser doesn't model cleanly.
 
-## Decisions Required
+### Why split `verified-webhook-ingest/` now
 
-Before any code moves, this SDD needs explicit yes/no on:
+It is small (one schema, one key encoder, one ingest adapter). Living as
+the only Connect-shaped feature in an otherwise flat-split tree is
+conceptual debt that gets harder to clean up once another adapter copies
+the pattern. Future adapters (Linear, Slack, GitHub) land cleanly into
+the tier folders. If a future requirement argues for re-bundling under
+Connect-style nesting, that decision is reversible — re-bundling three
+small files is cheap, but unwinding the convention "external adapters
+bundle their own table+writer" once two or three of them exist would not
+be.
 
-- Adopt Option 1 (flat Kafka-broker split)?
-- Rename to `producers/` or `journalers/`?
-- Where do capability tags live (`channels/` vs new folder)?
+## Target Tier Graph
 
-The three open PRs (#758, #760) are blocked on the first decision. PR #757
-(docs) and PR #759 (test layout) are independent and can land regardless.
+After migration:
+
+```text
+packages/runtime/src/
+├── events/                    # 1.  pure event/row schemas
+├── capabilities/              # 1b. pure Effect Context.Tag declarations (NEW)
+├── tables/                    # 2.  durable topics (DurableTable definitions)
+├── sources/                   # 3a. emitters — return Stream / session contract
+│   ├── sandbox/
+│   ├── codecs/
+│   └── webhook-ingest/        # (was: verified-webhook-ingest/ — emitter half)
+├── producers/                 # 3b. topic writers — consume Stream, append to tables
+│   ├── per-context-output.ts
+│   ├── runtime-input-append.ts
+│   ├── scheduled-prompt-append.ts
+│   └── webhook-ingest-writer.ts
+├── transforms/                # 4.  pure row/event transforms
+├── channels/                  # 5.  wire-edge live routing
+├── subscribers/               # 6.  Shape B/C/D consumers
+└── composition/               # 7.  Layer wiring only
+```
+
+### Dep-cruiser rule updates
+
+| Tier | May import | Must not import |
+| --- | --- | --- |
+| `events/` | (none from runtime tree) | everything else |
+| `capabilities/` | `events/`, `tables/` (Tag schemas may reference row types) | `sources/`, `producers/`, `transforms/`, `channels/`, `subscribers/`, `composition/` |
+| `tables/` | `events/` | everything else from runtime |
+| `sources/` | `events/`, `capabilities/` | `tables/`, peers (`producers/`, `transforms/`, `channels/`), `subscribers/`, `composition/` |
+| `producers/` | `events/`, `capabilities/`, `tables/`, `sources/` | peers (`transforms/`, `channels/`), `subscribers/`, `composition/` |
+| `transforms/` | `events/` (current) | unchanged |
+| `channels/` | `events/`, `tables/`, `capabilities/` | `sources/`, `producers/`, `subscribers/`, `composition/` |
+| `subscribers/` | `events/`, `capabilities/`, `tables/`, `transforms/`, `channels/` | `sources/`, `producers/`, `composition/` |
+| `composition/` | every lower-order folder (Layer assembly only) | nothing imports `composition/` |
+
+The critical change: subscribers depend on Producer capabilities through
+**Tags in `capabilities/`**, never by importing `producers/` directly.
+This preserves the "subscribers don't write rows" invariant mechanically.
+
+## Sequenced PR Plan
+
+Five active migration PRs, each landable independently behind a single
+deprecation window for the legacy public subpaths. PRs already open are
+either independent (land them) or blocked by this decision (close and
+roll forward).
+
+### Status of currently open PRs
+
+| PR | Disposition |
+| --- | --- |
+| #757 (stale doc sweep) | **Land.** Independent of this decision. |
+| #758 (sandbox imports → `producers/` canonical) | **Close.** Superseded by PR-M1 which moves the canonical name back to `sources/`. |
+| #759 (test layout mirrors src/) | **Land.** Independent. |
+| #760 (`producers/ingress-writers/` scaffold) | **Close.** The whole subfolder becomes redundant under Option 1; its job is absorbed into the renamed `producers/` tier. |
+| #761 (this SDD) | **Land** to record the decision. |
+
+### PR-M1 — Foundation: `capabilities/` tier + `sources/` tier
+
+Scope:
+
+- Create `packages/runtime/src/capabilities/README.md` (empty otherwise).
+- Move `producers/sandbox/` → `sources/sandbox/`.
+- Move `producers/codecs/` → `sources/codecs/`.
+- Update all internal imports (one-time depth fix + path rename).
+- Add public subpath exports `@firegrid/runtime/sources/sandbox` and
+  `@firegrid/runtime/sources/codecs` in `packages/runtime/package.json`.
+- Keep `@firegrid/runtime/producers/sandbox` and
+  `@firegrid/runtime/producers/codecs` as deprecation-window aliases.
+- Update `.dependency-cruiser.cjs` to declare `sources/`, `capabilities/`,
+  and the new `subscribers/ ✗ sources/` ban.
+- Update `.semgrep.yml` host-sdk import patterns to allow
+  `@firegrid/runtime/sources/*`.
+- Update `scripts/runtime-public-surface-check.mjs` required-surface list.
+- Update `packages/runtime/ARCHITECTURE.md` and the target-tree doc to
+  describe the two tiers.
+
+Verification: typecheck + full vitest + all four boundary scripts.
+
+### PR-M2 — `scheduled-prompt-append` into `producers/`
+
+Scope:
+
+- Create `capabilities/scheduled-prompt-ingress.ts` with
+  `ScheduledPromptIngressAppender` `Context.Tag`.
+- Move `tables/scheduled-prompt-append.ts` →
+  `producers/scheduled-prompt-append.ts`. The Live binding now consumes
+  the Tag from `capabilities/` and is provided by the host layer.
+- Update `subscribers/scheduled-prompt/workflow.ts` to depend on the
+  Tag from `capabilities/`, not on the producer module.
+- Update `composition/host-live.ts` to provide the Live binding.
+- Update `tables/README.md` to drop the "Known exception" paragraph.
+
+Verification: typecheck + targeted vitest (`test/subscribers/scheduled-prompt/`,
+`test/tables/`) + scripts.
+
+### PR-M3 — `appendRuntimeIngress` into `producers/`
+
+Scope:
+
+- Create `capabilities/runtime-input-ingress.ts` with
+  `RuntimeInputAppender` `Context.Tag`.
+- Create `producers/runtime-input-append.ts` with the Live binding,
+  carrying the body currently inline in
+  `composition/host-public.ts:appendRuntimeIngress`.
+- Reduce `composition/host-public.ts:appendRuntimeIngress` to a thin
+  facade that resolves the Tag and forwards.
+- Update `composition/host-live.ts` to provide the Live binding.
+
+Verification: typecheck + vitest (`test/composition/`, host-public callers
+in factory/flamecast if any) + scripts.
+
+### PR-M4 — Split `verified-webhook-ingest/`
+
+Scope:
+
+- Move the fact-row schema → `tables/webhook-ingest-facts.ts`.
+- Move the key encoder → `transforms/webhook-ingest-key.ts` (pure).
+- Move the ingest adapter → `sources/webhook-ingest/` and
+  `producers/webhook-ingest-writer.ts` (the writer half consumes the
+  source stream and appends to `tables/webhook-ingest-facts`).
+- Update host-sdk webhook entrypoints accordingly.
+- Delete `packages/runtime/src/verified-webhook-ingest/`.
+
+Verification: typecheck + vitest
+(`test/verified-webhook-ingest/adapter.test.ts` moves to follow the new
+homes) + scripts.
+
+### PR-M5 — Cleanup + docs
+
+Scope:
+
+- Delete `producers/ingress-writers/` scaffold (purpose absorbed into
+  `producers/`).
+- Sweep `packages/runtime/ARCHITECTURE.md`, the target-tree doc, and the
+  per-folder READMEs to reflect the final tier graph + dep-cruiser rule
+  table.
+- Sweep `test/` layout if PR-M4 changed test homes
+  (test layout follows the rules in #759).
+- Audit `@firegrid/runtime/producers/{sandbox,codecs}` alias callsites
+  outside the runtime package; track remaining external callers.
+
+### PR-M6 — (Deferred) Drop legacy aliases
+
+After at least one release with the deprecation aliases in place:
+
+- Remove `./producers/sandbox` and `./producers/codecs` exports from
+  `packages/runtime/package.json`.
+
+## Open Items Not In Scope For This SDD
+
+- **G (`runtime-context-session` vs `runtime-context-session-workflow`)** —
+  orthogonal naming question; handled in a separate follow-up.
+- **C (channels/ cutover)** — independent of source/producer split;
+  channels keep their existing role under the new mapping.
+- **Future external adapter shape** — if Linear / Slack / GitHub adapters
+  arrive and pull toward Connect-style bundles, revisit Option 2 then.
