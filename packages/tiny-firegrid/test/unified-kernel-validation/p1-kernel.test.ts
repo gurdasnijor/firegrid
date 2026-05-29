@@ -78,8 +78,10 @@ const buildInputBodyLayer = () =>
     Effect.gen(function*() {
       const instance = yield* WorkflowEngine.WorkflowInstance
       const table = yield* UnifiedTable
+      // P1 uses sequence=0 for simplicity — the test workflow processes
+      // a single input at the cursor head.
       const row = yield* table.inputs.get(
-        inputKey(payload.contextId, payload.inputId),
+        inputKey(payload.contextId, 0),
       ).pipe(Effect.orDie)
       if (Option.isNone(row)) {
         return yield* Workflow.suspend(instance)
@@ -122,6 +124,7 @@ const inputRewriterFor = (
       inputKey: cmd.inputKey,
       contextId: payload.contextId,
       inputId: payload.inputId,
+      sequence: 0,
       kind: payload.kind as "prompt",
       payloadJson: payload.payloadJson,
       appendedAt: new Date().toISOString(),
@@ -151,9 +154,10 @@ const writeInputRow = (
   body: string,
 ) =>
   unified.inputs.insertOrGet({
-    inputKey: inputKey(contextId, inputId),
+    inputKey: inputKey(contextId, 0),
     contextId,
     inputId,
+    sequence: 0,
     kind: "prompt",
     payloadJson: body,
     appendedAt: new Date().toISOString(),
@@ -255,7 +259,7 @@ describe("P1 — kernel + substrate", () => {
               workflowName: InputBodyWorkflow.name,
               executionId,
               inputTable: "inputs",
-              inputKey: inputKey(contextId, inputId),
+              inputKey: inputKey(contextId, 0),
               write: (v) => writeInputRow(services.unified, v.contextId, v.inputId, v.payloadJson),
               value: inputValuePayload(contextId, inputId, body),
               serializeValue: (v) => JSON.stringify(v),
@@ -350,7 +354,7 @@ describe("P1 — kernel + substrate", () => {
               workflowName: InputBodyWorkflow.name,
               executionId: gen1State.wakeExec,
               inputTable: "inputs",
-              inputKey: inputKey(contextId, inputId),
+              inputKey: inputKey(contextId, 0),
               write: (v) => writeInputRow(services.unified, v.contextId, v.inputId, v.payloadJson),
               value: inputValuePayload(contextId, inputId, body),
               serializeValue: (v) => JSON.stringify(v),

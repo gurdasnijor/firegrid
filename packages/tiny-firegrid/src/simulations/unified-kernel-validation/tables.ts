@@ -21,17 +21,24 @@ import { DurableTable } from "effect-durable-operators"
 export const RuntimeContextRowSchema = Schema.Struct({
   contextId: Schema.String.pipe(DurableTable.primaryKey),
   agent: Schema.String,
+  /** Allocator for input sequence numbers per context. Atomic-append owns this. */
+  nextInputSequence: Schema.Number,
   createdAt: Schema.String,
 })
 
 // ── Input intent (workflow-owned input table; the kernel arms on write) ─────
 
 export const InputRowSchema = Schema.Struct({
-  /** Domain-identity primary key: `${contextId}/${inputId}`. */
+  /**
+   * Primary key: `${contextId}/${sequence}`. Sequence is kernel-allocated
+   * by the atomic-append helper; gives the body a stable cursor.
+   */
   inputKey: Schema.String.pipe(DurableTable.primaryKey),
   contextId: Schema.String,
-  /** Caller-supplied stable id. Used for identity-keyed dedup. */
+  /** Caller-supplied stable id. Used for identity-keyed dedup via inputIds. */
   inputId: Schema.String,
+  /** Position within the context's input log. Body cursor advances by this. */
+  sequence: Schema.Number,
   /** `kind` distinguishes prompt / permission-response / tool-result / etc. */
   kind: Schema.Literal(
     "prompt",
@@ -39,6 +46,7 @@ export const InputRowSchema = Schema.Struct({
     "tool-result",
     "peer-event",
     "scheduled-fire",
+    "terminal",
   ),
   /** JSON-encoded payload the subscriber decodes. */
   payloadJson: Schema.String,
@@ -46,7 +54,7 @@ export const InputRowSchema = Schema.Struct({
 })
 
 export const InputIdsRowSchema = Schema.Struct({
-  /** Idempotency index for caller-supplied `inputId` per context. */
+  /** Idempotency index keyed by `${contextId}/${inputId}`. */
   key: Schema.String.pipe(DurableTable.primaryKey),
   contextId: Schema.String,
   inputId: Schema.String,
@@ -167,8 +175,8 @@ export type UnifiedTableService = UnifiedTable["Type"]
 
 // ── Domain-key helpers (so contributors don't recompute keys ad hoc) ────────
 
-export const inputKey = (contextId: string, inputId: string): string =>
-  `${contextId}/${inputId}`
+export const inputKey = (contextId: string, sequence: number): string =>
+  `${contextId}/${sequence}`
 export const inputIdsKey = (contextId: string, inputId: string): string =>
   `${contextId}/${inputId}`
 export const outputKey = (contextId: string, sequence: number): string =>
