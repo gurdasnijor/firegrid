@@ -15,6 +15,9 @@ parked input mailbox, no cross-execution handoff.
 
 ## When does a tool need this folder?
 
+**See [docs/architecture/shape-c-vs-shape-d.md](../../../../../docs/architecture/shape-c-vs-shape-d.md)** for the full
+decision procedure. Quick reference for tools:
+
 Two paths run tool calls in the runtime. They are independent and you
 should pick the right one.
 

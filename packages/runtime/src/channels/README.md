@@ -113,6 +113,46 @@ belong under one observable name, it merges them under one
 [`makeVerifiedWebhookSource` + `mergeWebhookSourceChannels`](verified-webhook/README.md)
 for the worked example).
 
+## Terminal completion ordering
+
+Per constraint **C7** in
+`docs/cannon/architecture/runtime-design-constraints.md` §"Route
+Completion":
+
+> Immediate append/call receipts are router metadata. **Terminal prompt
+> completion is durable runtime result state. Do not synthesize terminal
+> `Done` at the ACP edge over raw `TurnComplete` observation. Bind
+> terminal completion to the state/result fact that the keyed handler
+> owns.**
+
+In practice this means **observe `SessionLifecycleChannel`, not the
+`Terminated` variant of `SessionAgentOutputChannel`**, when you need
+the terminal "operation done" evidence:
+
+| Concern | Channel | Why |
+| --- | --- | --- |
+| Did the agent emit a `Terminated` event? (raw codec event) | `session.agent_output` → `_tag: "Terminated"` | Raw TurnComplete-shaped observation. Useful for streaming UI, not for "did the run actually settle." |
+| Did the durable run actually settle? (operation evidence) | `session.lifecycle` → `RuntimeRunEvent { status: "exited" \| "failed", exitCode, signal, message, … }` | The durable run-lifecycle row written by the keyed handler. The channel's `stream` IS `control.runs.rows().filter(...)`, so observation cannot resolve before the row exists. |
+
+The ordering gap that motivates this: the codec's `Terminated` event
+can fire **before** the keyed handler durably writes the run-lifecycle
+row. An edge synthesizing "Done" from `Terminated` will signal
+completion that downstream code can observe before the run state has
+settled — leading to flaky races and lost retry context.
+
+### Reference
+
+`packages/tiny-firegrid/src/simulations/shape-c-terminal-ordering/`
+reproduces the ordering gap and proves `SessionLifecycleChannel`
+closes it. Production wiring:
+
+| Concern | Production symbol |
+|---|---|
+| Durable run-lifecycle event row | `RuntimeRunEventSchema` — `packages/protocol/src/launch/schema.ts` |
+| Durable runs table | `RuntimeControlPlaneTable.runs` |
+| Per-session lifecycle ingress channel | `SessionLifecycleChannel.forSession(sessionId)` — `packages/protocol/src/channels/host-control.ts` |
+| Channel Live | `RuntimeHostControlChannelsLive` — `packages/runtime/src/channels/host-control-routes.ts` |
+
 ## May import
 
 - `events/`, `tables/`

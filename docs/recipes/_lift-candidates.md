@@ -17,15 +17,37 @@ This list is not exhaustive. Add to it as new simulations land.
 |---|---|---|---|
 | 1 | Wave C dispatch contract | [`docs/recipes/client-sdk-channel-targets.md`](client-sdk-channel-targets.md) | ✓ landed |
 | 2 | RuntimeContext fact matrix | [`docs/architecture/runtime-context-fact-matrix.md`](../architecture/runtime-context-fact-matrix.md) + cross-link in `subscribers/runtime-context/README.md` | ✓ landed |
-| 3 | Shape D dispatch criterion | Section in `subscribers/tool-dispatch/README.md` | ✓ landed |
+| 3 | Shape D dispatch criterion (MCP-entry tool path) | Section in `subscribers/tool-dispatch/README.md` + cross-link to #8 | ✓ landed |
 | 4 | Agent-to-agent observation | [`docs/recipes/agent-to-agent-observation.md`](agent-to-agent-observation.md) | ✓ landed |
 | 5 | Channel completion contracts | Section in `channels/README.md` | ✓ landed |
 | 6 | Locked tool surface | Section in `subscribers/tool-dispatch/README.md` | ✓ landed |
 | 7 | Channel-target indirection (host registry) | Section in `channels/README.md` | ✓ landed |
+| 8 | Shape C vs Shape D — full decision table | [`docs/architecture/shape-c-vs-shape-d.md`](../architecture/shape-c-vs-shape-d.md) | ✓ landed |
+| 9 | Terminal completion ordering (`SessionLifecycleChannel` vs `Terminated` event) | Section in `channels/README.md` | ✓ landed |
+| 10 | Identity-keyed input dedup (Shape B/C handler discipline) | Section in `subscribers/keyed-dispatch/README.md` | ✓ landed |
+| — | **Drift fix:** `docs/recipes/runtime-permission-resume.md` rewritten — was pointing at retired `@firegrid/runtime/durable-tools` / `SourceCollections` / `RuntimeObservationSourceNames` / `agent-event-pipeline` paths. | (recipe rewrite) | ✓ landed |
 
 The entries below remain as the audit derivation for each lift. As new
 lift candidates appear, add them to this list with a recommended target
 form.
+
+## Deferred — runtime substrate / engine internals
+
+These FINDING.md sims contain valuable patterns but are deeper into
+engine substrate semantics than the typical contributor needs to read.
+Lift them when a contributor is making changes in the affected layer:
+
+| Sim | Pattern | Suggested target | When to lift |
+|---|---|---|---|
+| `input-suspend-crash-recovery` | Axis-2 durability gap; `Workflow.suspend` body is NOT re-armed by reconstruction (asymmetric vs `DurableClock.sleep` which IS). | Section in `engine/README.md` referenced from `shape-c-vs-shape-d.md`. | When the engine recovery semantics change. |
+| `per-key-subscriber-push-restart` | Per-key subscriber-runtime style (fork-per-fact + per-key mutex) under `DurableTable` over Durable Streams. | Section in `subscribers/keyed-dispatch/README.md`. | When considering an alternative subscriber-runtime style. |
+| `tiny-input-append-wakeup` | Atomic input append + wakeup via a single table method; `inputIds` as the idempotency index; dense point-addressed key allocation under concurrent producers. | Section in `tables/README.md` or a dedicated input-table doc when the input table is built. | When the input-table is implemented (#617). |
+| `kernel-owned-write-arm` | Host-kernel/controller-owned write+arm pattern for resuming parked table-wait bodies on restart — without driver re-drive and without generic resume-all sweep. | Section in `engine/README.md` or a dedicated table-wait body doc. | When the table-wait body shape lands in production. |
+| `shape-c-non-recursive-start` | Three-surface decomposition that prevents recursion in the public start path. | Section in `composition/host-public.ts` callers' README or a dedicated runbook. | When changes touch the start facade. |
+| `runtime-context-session-workflow` | Shape D lane that closes two interlocking races on the Shape C session lifecycle. | Section in `subscribers/runtime-context-session/README.md` or a new `subscribers/runtime-context-session-workflow/README.md` once that subscriber lands. | When the Shape D lane lands in production. |
+| `loop-state-table` (no FINDING.md) | Durable workflow-owned loop-state row (cursors + pending permission sets) lets skip-output-cursor avoid replay re-walk while permission request/response matching survives reloads. | Section in `subscribers/runtime-context/README.md`. | When the loop-state shape lands in production. |
+| `target-architecture-reference` (no FINDING.md) | Phase 0B workflow-owned output append log + durable output cursor + result return; O(outputs) observation. | Reference in `engine/README.md` once the substrate is consolidated. | Substrate consolidation. |
+| `delegation-proof-cap4`, `dark-factory`, `durable-channels-sync-async-spike`, `runtime-tool-use-executor-contract`, `tool-result-roundtrip` (no FINDING.md) | Various worked examples and substrate probes. | Review individually if a new contributor area needs an example. | As-needed. |
 
 ## High value (recommend lifting next)
 
