@@ -89,14 +89,14 @@ export {
   resolveMcpServerHeaders,
   resolveSpawnEnvVars,
   type EnvLookup,
-} from "./producers/sandbox/secrets.ts"
+} from "./sources/sandbox/secrets.ts"
 // firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.1
 export {
   effectAi,
   EffectAiSandboxProvider,
   type EffectAiSandboxConfig,
   type EffectAiSandboxProviderHelper,
-} from "./producers/sandbox/effect-ai.ts"
+} from "./sources/sandbox/effect-ai.ts"
 export {
   AcpCapabilities,
   AcpSessionLive,
@@ -104,7 +104,7 @@ export {
   type AcpSessionOptions,
   StdioJsonlCapabilities,
   StdioJsonlSessionLive,
-} from "./producers/codecs/index.ts"
+} from "./sources/codecs/index.ts"
 export {
   RuntimeAgentOutputEnvelopeSchema,
   decodeRuntimeAgentOutputEnvelope,
@@ -131,7 +131,7 @@ export {
   type AgentAdapterRegistryService,
   type AgentAdapterService,
   type AgentTurn,
-} from "./producers/codecs/agent-adapters/index.ts"
+} from "./sources/codecs/agent-adapters/index.ts"
 export {
   ingestVerifiedWebhook,
   LinearWebhookFactSchema,

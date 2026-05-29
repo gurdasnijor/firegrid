@@ -79,15 +79,15 @@ import {
 import {
   localProcessSpawnEnvFromHostEnv,
   RuntimeEnvResolverPolicy,
-} from "@firegrid/runtime/producers/sandbox"
+} from "@firegrid/runtime/sources/sandbox"
 import {
   AcpStdioEdge,
   AcpStdioEdgeLive,
   type AcpStdioSessionRuntimeRequest,
-} from "@firegrid/runtime/producers/codecs/acp/stdio-edge"
+} from "@firegrid/runtime/sources/codecs/acp/stdio-edge"
 import {
   FiregridMcpServerLayer,
-} from "@firegrid/runtime/producers/codecs/mcp"
+} from "@firegrid/runtime/composition/mcp-host"
 import { Cause, Console, Context, Data, Effect, Either, Exit, Layer, Option, ParseResult } from "effect"
 import { Readable, Writable } from "node:stream"
 

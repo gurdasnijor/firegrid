@@ -4,8 +4,8 @@
 // `packages/host-sdk/src/host/layers.ts:79-97`. They are runtime-side
 // process-env composition (sandbox provider options + env-binding policy
 // for `RuntimeEnvResolverPolicy`); per #733/§7 they have no client-sdk
-// equivalent and the canonical home is `producers/sandbox/`. Reachable
-// via `@firegrid/runtime/producers/sandbox/local-process-from-env`.
+// equivalent and the canonical home is `sources/sandbox/`. Reachable
+// via `@firegrid/runtime/sources/sandbox/local-process-from-env`.
 
 import { Context, Layer } from "effect"
 import {

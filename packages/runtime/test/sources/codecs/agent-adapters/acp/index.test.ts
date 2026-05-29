@@ -8,14 +8,14 @@ import {
   Stream,
 } from "effect"
 import { describe, expect, it } from "vitest"
-import type { AgentByteStream } from "../../../../src/producers/sandbox/byte-stream.ts"
+import type { AgentByteStream } from "../../../../../src/sources/sandbox/byte-stream.ts"
 import {
   AdapterUnsupportedFeature,
   AgentAdapter,
   CurrentAgentTurn,
   PermissionRequiredButNotHandled,
-} from "../../../../src/producers/codecs/agent-adapters/index.ts"
-import { AcpAgentAdapter } from "../../../../src/producers/codecs/agent-adapters/acp/index.ts"
+} from "../../../../../src/sources/codecs/agent-adapters/index.ts"
+import { AcpAgentAdapter } from "../../../../../src/sources/codecs/agent-adapters/acp/index.ts"
 
 interface Harness {
   readonly bytes: AgentByteStream

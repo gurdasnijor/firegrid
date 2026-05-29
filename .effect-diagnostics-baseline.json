@@ -549,7 +549,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/producers/codecs/acp/index.ts",
+      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
       "line": 636,
       "column": 54,
       "severity": "message",
@@ -558,7 +558,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/producers/codecs/acp/index.ts",
+      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
       "line": 695,
       "column": 54,
       "severity": "message",
@@ -567,7 +567,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/producers/codecs/acp/index.ts",
+      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
       "line": 752,
       "column": 9,
       "severity": "message",
@@ -576,7 +576,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/producers/codecs/stdio-jsonl/index.ts",
+      "file": "packages/runtime/src/sources/codecs/stdio-jsonl/index.ts",
       "line": 224,
       "column": 21,
       "severity": "message",
@@ -630,7 +630,7 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/codecs/stdio-jsonl/index.test.ts",
+      "file": "packages/runtime/test/sources/codecs/stdio-jsonl/index.test.ts",
       "line": 74,
       "column": 25,
       "severity": "message",

@@ -47,29 +47,35 @@ packages/runtime/src/
 │   ├── runtime-output.ts             # RuntimeEventRow / RuntimeLogLineRow schemas
 │   └── runtime-context-state.ts      # RuntimeContextEventState schema
 │
-├── tables/                           # 2. WHERE durable state lives
+├── capabilities/                     # 1b. Context.Tag declarations for producer write capabilities
+│   ├── README.md                     # SDD #761 — Tag-only; no Layer, no Effect bodies
+│   └── (Tag declarations land in PR-M2 / PR-M3)
+│
+├── tables/                           # 2. WHERE durable state lives ("topics")
 │   ├── README.md                     # DurableTable definitions; one table family per file
 │   ├── runtime-control-plane.ts      # RuntimeControlPlaneTable
 │   ├── runtime-output.ts             # RuntimeOutputTable
 │   └── runtime-context-state.ts      # RuntimeContextStateStore
 │
-├── producers/                        # 3. WHO appends rows from live boundaries
-│   ├── README.md                     # Shape A only: scoped live work, no owned state
-│   ├── sandbox/
+├── sources/                          # 3a. Kafka-Connect "Source" emitters (post-SDD #761)
+│   ├── README.md                     # emitters; expose Stream/session — no row authority
+│   ├── sandbox/                      # live process/byte/AI boundaries
 │   │   ├── byte-stream.ts            # AgentByteStream
 │   │   ├── local-process.ts          # LocalProcessSandboxProvider
 │   │   ├── effect-ai.ts              # EffectAiSandboxProvider
 │   │   └── SandboxProvider.ts        # provider contract
-│   ├── codecs/
-│   │   ├── contract.ts               # AgentSession live codec boundary
-│   │   ├── acp/                      # ACP wire-protocol translator
-│   │   │   ├── index.ts              #   outbound: decode bytes from spawned ACP agent
-│   │   │   ├── mapping.ts            #   shared ACP↔runtime mapping helpers
-│   │   │   └── stdio-edge.ts         #   inbound: translate inbound ACP stdio requests
-│   │   │                             #     into host-plane channel-router dispatches
-│   │   └── stdio-jsonl/
-│   └── ingress-writers/
-│       └── runtime-input-append.ts   # external input -> input intent rows
+│   └── codecs/                       # protocol byte→event normalization
+│       ├── contract.ts               # AgentSession live codec boundary
+│       ├── acp/                      # ACP wire-protocol translator
+│       │   ├── index.ts              #   outbound: decode bytes from spawned ACP agent
+│       │   ├── mapping.ts            #   shared ACP↔runtime mapping helpers
+│       │   └── stdio-edge.ts         #   inbound: translate inbound ACP stdio requests
+│       │                             #     into host-plane channel-router dispatches
+│       └── stdio-jsonl/
+│
+├── producers/                        # 3b. Kafka-broker "Producer" topic writers (post-SDD #761)
+│   ├── README.md                     # journals streams into tables; behind capabilities/ Tags
+│   └── (writer modules land in PR-M2 scheduled-prompt-append / PR-M3 runtime-input-append)
 │
 ├── transforms/                       # 4. HOW rows shape into facts/actions; PURE
 │   ├── README.md                     # no Effect, no R channel, no I/O

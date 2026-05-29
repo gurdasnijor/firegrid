@@ -1,36 +1,36 @@
 # producers/
 
-Logical pipeline position: **3** (peer with `transforms/`, `channels/`). May
-import `events/` and `tables/`. Peers do not import each other. Must not
-import `subscribers/` or `composition/`.
+Logical pipeline position: **3b** (peer with `sources/`, `transforms/`,
+`channels/`). May import `events/`, `capabilities/`, `tables/`, `sources/`.
+Must not import peers (`transforms/`, `channels/`), `subscribers/`, or
+`composition/`.
 
-Source: `docs/architecture/2026-05-22-runtime-physical-target-tree.md`.
+Source: `docs/sdds/SDD_FIREGRID_RUNTIME_SOURCE_PRODUCER_ROLES.md`,
+`docs/architecture/2026-05-22-runtime-physical-target-tree.md`.
 
 ## Owns
 
-Shape A live-boundary producers and append authorities: scoped, live work
-that turns boundary events into durable rows. Producers are not subscribers
-— they do not read keyed rows and dispatch behavior; they translate a live
-boundary (process stdout, codec session, external webhook) into durable
-row appends.
+**Topic writers** — Kafka-client "Producer" role: layers that consume a
+`Stream` from `sources/` (or from another live boundary), and append
+durable rows to a specific `DurableTable` in `tables/`. A producer module
+provides a `Layer` (and optional accompanying `Context.Tag` declared in
+`capabilities/`) so that consumers downstream can depend on the *capability*
+rather than on this folder.
 
-Producers have no owned RuntimeContext state; their `R` channel only names
-transport/session tags, `IdGenerator`, and `Scope`.
+Producers are not subscribers — they do not read keyed rows and dispatch
+behavior. They translate live streams into authoritative durable writes.
 
-Layout:
+Producers have no owned RuntimeContext state. Their `R` channel names
+transport/session tags from `sources/`, an `IdGenerator`, and `Scope`.
 
-- `sandbox/` — sandbox providers (`AgentByteStream`, `LocalProcessSandboxProvider`,
-  `EffectAiSandboxProvider`, `SandboxProvider` contract)
-- `codecs/` — `AgentSession` live codec implementations (`acp/`,
-  `stdio-jsonl/`) and the `AgentSession`/codec contract surface
-- `ingress-writers/` — append authorities that bridge live sources into
-  durable tables: `per-context-output.ts` (`AgentSession.outputs ->
-  RuntimeOutputTable.events`), `runtime-input-append.ts` (external input ->
-  ingress intent rows)
+This folder is **currently empty** (other than this README) following the
+PR-M1 cutover that moved `sandbox/` and `codecs/` to `sources/`. Concrete
+topic-writer modules land here in PR-M2 (scheduled-prompt-append) and
+PR-M3 (runtime-input-append).
 
 ## May import
 
-- `events/`, `tables/`
+- `events/`, `capabilities/`, `tables/`, `sources/`
 - protocol schemas
 - `effect`, `@effect/platform`, transport SDKs
 
@@ -38,32 +38,11 @@ Layout:
 
 - peer-tier `transforms/`, `channels/`
 - `subscribers/`, `composition/`
-- `WorkflowEngine`, `WorkflowInstance`, `Workflow.make`, `Activity.make`,
-  `DurableDeferred` — producers are Shape A live-boundary producers, not
-  workflow-shaped subscribers
+- `_archive/`
 
-A producer that needs durable wait or memoization is the wrong shape; route
-through a Shape D subscriber.
+## Subscribers depend on Tags, not on this folder
 
-## DO
-
-```ts
-// ingress-writers/per-context-output.ts
-yield* RuntimeOutputTable.events.append(eventRow)   // append authority
-```
-
-## DO NOT
-
-```ts
-// ingress-writers/per-context-output.ts
-const memoized = yield* Activity.make(/* ... */)   // workflow machinery in a producer
-```
-
-## Scaffold status
-
-Empty subfolders staged. Wave 2 moves `producers/sandbox/`,
-`producers/codecs/`, and
-`tables/per-context-output.ts` into this tree, and
-introduces `runtime-context-input-facts.ts` as the input-fact append authority.
-The public subpath `@firegrid/runtime/producers/runtime-context-input-facts` is
-reserved for that Wave 2 export.
+The `subscribers/ ✗ producers/` dep-cruiser rule is enforced. A subscriber
+that needs a producer's write capability depends on the Tag in
+`capabilities/`, which the host layer satisfies with the producer's Live
+binding. Subscribers never import files in this folder directly.

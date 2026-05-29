@@ -39,7 +39,9 @@ const runtimeSrc = resolve(repoRoot, "packages/runtime/src")
 
 const targetTierFolders = [
   "events",
+  "capabilities",
   "tables",
+  "sources",
   "transforms",
   "producers",
   "channels",

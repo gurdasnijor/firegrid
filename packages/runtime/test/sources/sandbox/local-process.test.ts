@@ -2,14 +2,14 @@ import { NodeContext } from "@effect/platform-node"
 import {
   SandboxProvider,
   type ProcessOutputChunk,
-} from "../../../src/producers/sandbox/SandboxProvider.ts"
+} from "../../../src/sources/sandbox/SandboxProvider.ts"
 import { Effect, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   localProcess,
   localProcessSpawnEnvFromHostEnv,
   LocalProcessSandboxProvider,
-} from "../../../src/producers/sandbox/local-process.ts"
+} from "../../../src/sources/sandbox/local-process.ts"
 
 const Live = LocalProcessSandboxProvider.layer().pipe(
   Layer.provide(NodeContext.layer),

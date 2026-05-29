@@ -5,14 +5,14 @@ import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
 import { Chunk, Context, Deferred, Duration, Effect, Fiber, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import type { AgentOutputEvent } from "../../../src/events/index.ts"
-import type { AgentByteStream } from "../../../src/producers/sandbox/byte-stream.ts"
+import type { AgentOutputEvent } from "../../../../src/events/index.ts"
+import type { AgentByteStream } from "../../../../src/sources/sandbox/byte-stream.ts"
 import {
   AcpCapabilities,
   AcpSessionLive,
   type AcpSessionOptions,
-} from "../../../src/producers/codecs/acp/index.ts"
-import { AgentSession } from "../../../src/producers/codecs/contract.ts"
+} from "../../../../src/sources/codecs/acp/index.ts"
+import { AgentSession } from "../../../../src/sources/codecs/contract.ts"
 
 const requireFromTest = createRequire(import.meta.url)
 

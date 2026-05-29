@@ -5,7 +5,7 @@ import {
   makeRawRuntimeContextByteSession,
   prepareRawRuntimeContextInput,
   type RuntimeRawByteSession,
-} from "../producers/codecs/session-byte-stream-adapter.ts"
+} from "../sources/codecs/session-byte-stream-adapter.ts"
 import {
   Effect,
   Scope,

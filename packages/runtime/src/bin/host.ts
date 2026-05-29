@@ -19,11 +19,11 @@ import {
   FiregridLocalHostLive,
   RuntimeHostTopologyFromConfig,
 } from "@firegrid/runtime/composition/host-live"
-import { localProcessSpawnEnvFromHostEnv } from "@firegrid/runtime/producers/sandbox"
+import { localProcessSpawnEnvFromHostEnv } from "@firegrid/runtime/sources/sandbox"
 import {
   FiregridMcpServerLayer,
   FiregridMcpServerListenerConfig,
-} from "@firegrid/runtime/producers/codecs/mcp"
+} from "@firegrid/runtime/composition/mcp-host"
 import { Cause, Console, Effect, Exit, Layer } from "effect"
 
 export const firegridHostProgram = Effect.never

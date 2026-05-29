@@ -6,7 +6,7 @@ import {
   resolveMcpServerHeaders,
   RuntimeEnvResolverPolicy,
   resolveSpawnEnvVars,
-} from "../../../src/producers/sandbox/secrets.ts"
+} from "../../../src/sources/sandbox/secrets.ts"
 
 const policyLayer = (
   authorized: ReadonlyArray<readonly [string, string]>,

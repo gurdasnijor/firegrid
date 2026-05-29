@@ -20,6 +20,13 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "events/index\\.ts$",
   "events/agent-input\\.ts$",
   "events/agent-output\\.ts$",
+  // Canonical post-PR-M1 source-tier subpaths (sandbox + codecs moved
+  // from producers/ to sources/ per SDD #761). The producers/* paths
+  // below remain as back-compat aliases until PR-M6.
+  "sources/codecs/index\\.ts$",
+  "sources/codecs/session-byte-stream-adapter\\.ts$",
+  "sources/codecs/agent-adapters/index\\.ts$",
+  "sources/sandbox/index\\.ts$",
   "producers/codecs/index\\.ts$",
   "producers/codecs/session-byte-stream-adapter\\.ts$",
   "producers/codecs/agent-adapters/index\\.ts$",
@@ -106,11 +113,13 @@ module.exports = {
       name: "runtime-events-no-higher-tier-import",
       severity: "error",
       comment:
-        "events/ is the pure event-vocabulary tier. It must not import from tables/, transforms/, channels/, producers/, subscribers/, composition/, workflow-engine/, or agent-event-pipeline/. Move shared types INTO events/ and have the higher tier re-export from there. Direct cause: PR #695 first push had events/runtime-context-state.ts re-exporting from ../tables/runtime-context-state.ts — wrong direction. The prior `agent-event-pipeline/events/` bridge carve-out is now obsolete (AEP retired by the cleanup wave); the canonical event-vocabulary source files were physically moved into this folder.",
+        "events/ is the pure event-vocabulary tier. It must not import from any higher tier. Move shared types INTO events/ and have the higher tier re-export from there.",
       from: { path: "^packages/runtime/src/events/" },
       to: {
         path: [
+          "^packages/runtime/src/capabilities/",
           "^packages/runtime/src/tables/",
+          "^packages/runtime/src/sources/",
           "^packages/runtime/src/transforms/",
           "^packages/runtime/src/channels/",
           "^packages/runtime/src/producers/",
@@ -122,13 +131,31 @@ module.exports = {
       },
     },
     {
+      name: "runtime-capabilities-no-higher-tier-import",
+      severity: "error",
+      comment:
+        "capabilities/ holds pure Context.Tag declarations. It may import events/ + tables/ for row type references in Tag service shapes. It must not import any behavior-bearing tier (sources/, transforms/, channels/, producers/, subscribers/, composition/) — those tiers depend on capabilities/, not the other way around.",
+      from: { path: "^packages/runtime/src/capabilities/" },
+      to: {
+        path: [
+          "^packages/runtime/src/sources/",
+          "^packages/runtime/src/transforms/",
+          "^packages/runtime/src/channels/",
+          "^packages/runtime/src/producers/",
+          "^packages/runtime/src/subscribers/",
+          "^packages/runtime/src/composition/",
+        ],
+      },
+    },
+    {
       name: "runtime-tables-no-higher-tier-import",
       severity: "error",
       comment:
-        "tables/ is the durable state-of-record tier; it may depend on events/ + protocol. It must not import from transforms/ (transforms are pure consumers of events, not callable from tables), channels/, producers/, subscribers/, or composition/.",
+        "tables/ is the durable state-of-record tier; it may depend on events/ + capabilities/ + protocol. It must not import from sources/, transforms/, channels/, producers/, subscribers/, or composition/.",
       from: { path: "^packages/runtime/src/tables/" },
       to: {
         path: [
+          "^packages/runtime/src/sources/",
           "^packages/runtime/src/transforms/",
           "^packages/runtime/src/channels/",
           "^packages/runtime/src/producers/",
@@ -141,11 +168,12 @@ module.exports = {
       name: "runtime-transforms-no-higher-tier-import",
       severity: "error",
       comment:
-        "transforms/ is the pure-function tier. It may depend on events/ and protocol. It must not import from tables/, channels/, producers/, subscribers/, composition/, or the legacy agent-event-pipeline/ tree (the pre-cutover event-vocab home — use events/ instead).",
+        "transforms/ is the pure-function tier. It may depend on events/ + capabilities/ + protocol. It must not import from tables/, sources/, channels/, producers/, subscribers/, composition/, or the legacy agent-event-pipeline/ tree.",
       from: { path: "^packages/runtime/src/transforms/" },
       to: {
         path: [
           "^packages/runtime/src/tables/",
+          "^packages/runtime/src/sources/",
           "^packages/runtime/src/channels/",
           "^packages/runtime/src/producers/",
           "^packages/runtime/src/subscribers/",
@@ -155,10 +183,27 @@ module.exports = {
       },
     },
     {
+      name: "runtime-sources-no-peer-or-higher-tier-import",
+      severity: "error",
+      comment:
+        "sources/ owns Kafka-Connect 'Source' emitters: live boundaries that produce typed Streams. Sources have no row authority and must not import tables/. They must not import peers (producers/, transforms/, channels/), subscribers/, or composition/. Allowed: events/, capabilities/, protocol, external transport SDKs.",
+      from: { path: "^packages/runtime/src/sources/" },
+      to: {
+        path: [
+          "^packages/runtime/src/tables/",
+          "^packages/runtime/src/producers/",
+          "^packages/runtime/src/transforms/",
+          "^packages/runtime/src/channels/",
+          "^packages/runtime/src/subscribers/",
+          "^packages/runtime/src/composition/",
+        ],
+      },
+    },
+    {
       name: "runtime-producers-no-peer-or-higher-tier-import",
       severity: "error",
       comment:
-        "producers/ is a middle tier; per the target-tree doc, producers/transforms/channels are peers and peers do not import each other. producers/ may import only events/ + tables/ (+ allowed external libs); it must not import transforms/, channels/, subscribers/, or composition/. Carve-out: producers/ingress-writers/per-context-output.ts (moved from agent-event-pipeline/authorities/) imports channels/output-table-layer.ts as the shared per-context RuntimeOutputTable factory. That module is the single source of truth for the per-context output stream URL + table options and is shared with the channels themselves; relocating it into tables/ is the cleanup follow-up. Carve-out shrinks when that move lands.",
+        "producers/ owns Kafka-broker 'Producer' topic writers (post-SDD #761): layers that consume a Stream from sources/ and append rows to tables/. May import events/, capabilities/, tables/, sources/. Must not import peers (transforms/, channels/), subscribers/, or composition/. The per-context-output writer carve-out for channels/output-table-layer.ts is retained — the shared per-context RuntimeOutputTable factory is the single source of truth for the per-context output stream URL + table options.",
       from: { path: "^packages/runtime/src/producers/" },
       to: {
         path: [
@@ -176,10 +221,11 @@ module.exports = {
       name: "runtime-channels-no-peer-or-higher-tier-import",
       severity: "error",
       comment:
-        "channels/ is a middle tier; per the target-tree doc, channels/transforms/producers are peers and peers do not import each other. channels/ may import only events/ + tables/ (+ protocol/external libs); it must not import transforms/, producers/, subscribers/, or composition/.",
+        "channels/ is a middle tier; channels/sources/transforms/producers are peers and peers do not import each other. channels/ may import events/, capabilities/, tables/ (+ protocol/external libs); it must not import sources/, transforms/, producers/, subscribers/, or composition/.",
       from: { path: "^packages/runtime/src/channels/" },
       to: {
         path: [
+          "^packages/runtime/src/sources/",
           "^packages/runtime/src/transforms/",
           "^packages/runtime/src/producers/",
           "^packages/runtime/src/subscribers/",
@@ -199,9 +245,17 @@ module.exports = {
       name: "runtime-subscribers-no-producers-import",
       severity: "error",
       comment:
-        "HARD STOP per the target-tree roadmap: subscribers/ must not import producers/, full stop. Subscribers depend on typed lower-tier sources (tables/, transforms/, channels/, events/). A subscriber that needs producer behavior either needs a typed table read (cleaner) or itself crosses into producer responsibilities (wrong tier). The Shape C-specific rule below stays in place for sharper messaging on the runtime-context subtree.",
+        "HARD STOP per SDD #761: subscribers/ must not import producers/. Subscribers depend on Producer write capabilities through Tags in capabilities/, never through the producer file itself. A subscriber that needs to append a durable row depends on a capabilities/<name>.ts Context.Tag; the host layer provides the Live binding from producers/. The Shape C-specific rule below stays in place for sharper messaging on the runtime-context subtree.",
       from: { path: "^packages/runtime/src/subscribers/" },
       to: { path: "^packages/runtime/src/producers/" },
+    },
+    {
+      name: "runtime-subscribers-no-sources-import",
+      severity: "error",
+      comment:
+        "HARD STOP per SDD #761: subscribers/ must not import sources/. Subscribers consume durable rows from tables/, not live emitter streams. A subscriber that needs to react to a live stream needs the producer to journal it first (via producers/ + capabilities/), at which point the subscriber reads the rows.",
+      from: { path: "^packages/runtime/src/subscribers/" },
+      to: { path: "^packages/runtime/src/sources/" },
     },
     {
       name: "runtime-shape-c-runtime-context-no-producers-import",
@@ -241,6 +295,19 @@ module.exports = {
       comment:
         "Target-tree producers/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. Wave A semantic-move enforcement.",
       from: { path: "^packages/runtime/src/producers/" },
+      to: {
+        path: [
+          "^packages/runtime/src/workflow-engine/",
+          "^packages/runtime/src/agent-event-pipeline/",
+        ],
+      },
+    },
+    {
+      name: "runtime-sources-no-legacy-tree-import",
+      severity: "error",
+      comment:
+        "Target-tree sources/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees.",
+      from: { path: "^packages/runtime/src/sources/" },
       to: {
         path: [
           "^packages/runtime/src/workflow-engine/",

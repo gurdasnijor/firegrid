@@ -552,7 +552,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/producers/**"
         - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
@@ -716,7 +716,7 @@ rules:
         second writer/reader authority.
       fix-hint: |
         Move the provider to packages/runtime/src/authorities/**,
-        packages/runtime/src/producers/ingress-writers/**, or
+        packages/runtime/src/producers/**, or
         packages/runtime/src/tables/**, or compose the existing authority
         provider layer.
     paths:
@@ -729,7 +729,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/producers/**"
         - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
@@ -791,7 +791,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/producers/**"
         - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
@@ -996,7 +996,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
-        - "/packages/runtime/src/producers/ingress-writers/**"
+        - "/packages/runtime/src/producers/**"
         - "/packages/runtime/src/tables/**"
         - "/packages/runtime/src/channels/**"
         - "/packages/runtime/src/control-plane/**"
@@ -1342,7 +1342,7 @@ rules:
       # RuntimeContext wait kind C4 governs.
       include:
         - "/packages/runtime/src/workflow-engine/workflows/**/*.ts"
-        - "/packages/runtime/src/{producers,subscribers,tables,transforms,events}/**/*.ts"
+        - "/packages/runtime/src/{sources,producers,subscribers,tables,transforms,events,capabilities}/**/*.ts"
         - "/packages/runtime/src/control-plane/**/*.ts"
         - "/packages/runtime/src/channels/**/*.ts"
         - "/semgrep-tests/**/*.ts"

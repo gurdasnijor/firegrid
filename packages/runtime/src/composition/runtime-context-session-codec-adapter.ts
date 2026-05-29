@@ -16,18 +16,18 @@ import {
   AgentSession,
   StdioJsonlSessionLive,
   type AgentCodecError,
-} from "../producers/codecs/index.ts"
+} from "../sources/codecs/index.ts"
 import {
   AgentInputEventSchema,
 } from "../events/index.ts"
 import {
   runCodecRuntimeContextStderrJournal,
-} from "../producers/codecs/session-byte-stream-adapter.ts"
+} from "../sources/codecs/session-byte-stream-adapter.ts"
 import {
   resolveMcpServerHeaders,
   type AgentByteStream,
   type RuntimeEnvResolverPolicy,
-} from "../producers/sandbox/index.ts"
+} from "../sources/sandbox/index.ts"
 import {
   Context,
   Effect,

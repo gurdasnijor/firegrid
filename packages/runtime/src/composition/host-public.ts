@@ -52,7 +52,7 @@ import {
 } from "../runtime-errors.ts"
 import type {
   LocalProcessSandboxProviderOptions,
-} from "../producers/sandbox/index.ts"
+} from "../sources/sandbox/index.ts"
 
 // ---- types.ts content (relocated) -----------------------------------
 

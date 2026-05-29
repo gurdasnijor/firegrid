@@ -139,8 +139,8 @@ import {
   RuntimeEnvResolverPolicy,
   SandboxStdinEmissionClaimLive,
   SandboxSupervisorCommandTable,
-} from "../producers/sandbox/index.ts"
-import { FiregridLocalProcess } from "../producers/sandbox/local-process-from-env.ts"
+} from "../sources/sandbox/index.ts"
+import { FiregridLocalProcess } from "../sources/sandbox/local-process-from-env.ts"
 import {
   RuntimeControlPlaneRecorderLive,
 } from "../tables/runtime-control-plane.ts"

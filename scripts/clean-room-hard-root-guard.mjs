@@ -59,12 +59,17 @@ const repoRoot = resolve(here, "..")
 
 const CANONICAL_RUNTIME_DIRS = new Set([
   "events",
+  "capabilities",
   "tables",
+  "sources",
   "producers",
   "transforms",
   "channels",
   "subscribers",
   "composition",
+  "engine",
+  "bin",
+  "verified-webhook-ingest",
   "_archive",
 ])
 
@@ -79,7 +84,9 @@ const CANONICAL_RUNTIME_TOP_FILES = new Set([
 
 const TREE_ALIGNED_FIRST_SEGMENTS = new Set([
   "events",
+  "capabilities",
   "tables",
+  "sources",
   "transforms",
   "channels",
   "subscribers",

@@ -9,12 +9,12 @@ import type {
   RuntimeEnvResolverPolicy,
   SandboxProvider,
   SandboxProviderError,
-} from "../producers/sandbox/index.ts"
+} from "../sources/sandbox/index.ts"
 import {
   commandForContext,
   SandboxProvider as SandboxProviderTag,
   SandboxStdinEmissionClaim,
-} from "../producers/sandbox/index.ts"
+} from "../sources/sandbox/index.ts"
 import { Effect, Layer, Ref, type Context, type Scope } from "effect"
 import { PerContextRuntimeOutputWriter } from "../tables/per-context-output.ts"
 import type { FiregridRuntimeContextMcpBaseUrl } from "./runtime-context-mcp-base-url.ts"

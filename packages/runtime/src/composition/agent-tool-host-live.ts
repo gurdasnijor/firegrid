@@ -33,7 +33,7 @@ import {
   SandboxProvider,
   type SandboxCommand,
   type SandboxProviderService,
-} from "../producers/sandbox/index.ts"
+} from "../sources/sandbox/index.ts"
 import { Clock, type Context, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import {
   AgentToolHost,
