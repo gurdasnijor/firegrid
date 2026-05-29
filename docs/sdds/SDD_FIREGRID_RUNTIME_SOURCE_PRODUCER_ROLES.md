@@ -1,9 +1,14 @@
 # SDD: Source / Producer Role Split In `packages/runtime/`
 
-Status: **accepted** (path chosen, migration sequenced below)
+Status: **accepted** for items 1–3; item 4 (`verified-webhook-ingest`
+disposition) revised to "**dissolve into `tables/` + `channels/`**" per
+the channel-native learning recorded below. The earlier `connectors/`
+tier revision is **rejected** (parallel infrastructure to the existing
+channel primitive).
+
 Created: 2026-05-28
 Owner: Firegrid Runtime
-Related issue: #756 (umbrella for directory-refactor follow-ups), #757, #758, #759, #760, #761
+Related issue: #756 (umbrella for directory-refactor follow-ups), #757, #758, #759, #760, #761, #762, #763
 
 Related specs / docs:
 
@@ -12,6 +17,13 @@ Related specs / docs:
 - `docs/cannon/architecture/runtime-pipeline-type-boundaries.md`
 - `packages/runtime/ARCHITECTURE.md`
 - `packages/runtime/src/producers/README.md`
+- `packages/protocol/src/channels/core.ts` — `IngressChannel<S>` /
+  `EgressChannel<S>` / `BidirectionalChannel<S>` / `CallableChannel<Req, Res>`
+  primitive; `makeIngressChannel`; `ChannelTarget` brand. **The
+  pre-existing primitive that external-adapter ingestion already uses.**
+- `packages/runtime/src/channels/verified-webhook/live.ts` — pre-existing
+  Live wiring of the verified-webhook flow as an `IngressChannel` exposed
+  through `CallerOwnedFactStreams`.
 
 ## Decisions (recorded)
 
@@ -27,12 +39,14 @@ Related specs / docs:
    `Context.Tag` declarations. Pure declarations only; importable from
    both `producers/` (provides Live) and `subscribers/` (consumes).
    Mirrors how `events/` works (pure schemas, importable from any tier).
-4. **Split `verified-webhook-ingest/`** into the tier folders now (not
-   later). It is the only Connect-shaped feature in the tree; leaving it
-   as an exception under an otherwise flat-split layout is debt that gets
-   harder to clean up once another adapter copies the pattern. Future
-   external adapters (Linear, Slack, GitHub) land into the tier folders
-   directly.
+4. **Dissolve `verified-webhook-ingest/`** — relocate its bits into
+   `tables/` (the durable fact table) and `channels/verified-webhook/`
+   (the live ingestion + observation projection). The top-level
+   `verified-webhook-ingest/` module was a proof of concept and is **not
+   meant to be consumed as a top-level module**. External adapters going
+   forward (Linear, GitHub, Slack, …) land as channel registrations
+   against the pre-existing `IngressChannel<S>` primitive — *not* under a
+   new `connectors/` tier (that revision is rejected; see below).
 
 ## Problem
 
@@ -401,7 +415,126 @@ small files is cheap, but unwinding the convention "external adapters
 bundle their own table+writer" once two or three of them exist would not
 be.
 
-## Revision — `connectors/` For External Adapters
+## Second Revision — Channels Are The Existing Primitive (Connectors Rejected)
+
+Status: **supersedes** the `connectors/` revision below. Recorded
+2026-05-29.
+
+The connectors/ revision (next section) tried to solve the cognitive-load
+problem by inventing a new `ConnectorAdapter<E, F>` primitive and a
+`connectors/<name>/` tier. PR-M3.5 (#763) built that spike for Linear
+webhooks and the primitive *did* validate in isolation — but a review
+caught that the spike entirely missed the existing channel primitive.
+
+### What was already there
+
+`packages/protocol/src/channels/core.ts` defines `IngressChannel<S>`,
+`EgressChannel<S, Receipt>`, `BidirectionalChannel<S>`, and
+`CallableChannel<Req, Res>` — with `ChannelTarget` brand, typed schema,
+and `binding.stream` / `binding.append` halves. `makeIngressChannel({
+target, schema, sourceClass, stream })` is the constructor.
+
+`packages/runtime/src/channels/verified-webhook/live.ts` already wires
+the verified-webhook flow as `VerifiedWebhookFactChannelLive` and
+projects its rows as `CallerOwnedFactStreams` — the same observation
+source the **wait-router subscribers** already use via
+`RuntimeObservationSource` and `WaitForWorkflow`.
+
+### Why this matters
+
+The channel primitive already provides:
+
+- A wire-edge boundary with a typed schema.
+- A directional shape (ingress / egress / bidirectional / callable).
+- A stream binding subscribers/wait operators consume.
+- A `ChannelTarget` for routing through `HostPlaneChannelRouter`.
+- **Agent participation:** agents already invoke channels via the
+  channel router; tools dispatch through channels; MCP exposes
+  channels.
+
+The `ConnectorAdapter` spike provided none of those couplings. An agent
+*could not* `wait_for` a Linear webhook through it. The spike was
+parallel infrastructure that reinvented the wire-edge shape without the
+router/observation/agent integration, which is precisely the cognitive
+burden ("five seams to get right") the connectors/ revision was supposed
+to *fix*.
+
+### Disposition
+
+- **Close PR #763** (Linear connector spike). The branch stays in place
+  as a historical artifact of the wrong direction. The friction
+  findings recorded in its body remain useful — they apply equally to
+  any future channel-Live that combines HTTP route registration with a
+  capability tag.
+- **Reject the `connectors/` revision** in the next section. No
+  `connectors/` tier is added. The `ConnectorAdapter` primitive, the
+  `ExternalIngressAppender` tag, and the `composeConnector` helper
+  introduced in the spike are *not* part of the canonical tree.
+- **Reshape PR-M4** to **dissolve `verified-webhook-ingest/`** into the
+  pre-existing channel + table tiers. See the PR-M4 entry further down
+  (updated in place).
+- Document the channel-registration pattern as **the way** external
+  adapters land going forward.
+
+### The pattern: external adapter == channel registration
+
+To add a new external ingress adapter (Linear / GitHub / Slack / …):
+
+1. Declare a `ChannelTarget` and `Context.Tag` in
+   `packages/protocol/src/channels/<name>.ts`. Examples already in tree:
+   `verified-webhook.ts`, `host-sessions-create-or-load.ts`.
+2. Add a Live binding in `packages/runtime/src/channels/<name>/live.ts`
+   that constructs an `IngressChannel<S>` via `makeIngressChannel({
+   target, schema, sourceClass, stream })`. Inside the Live: HTTP route
+   registration, signature/verification, payload decode, journal-to-table,
+   and the `stream` projection that observers consume. The pattern
+   mirrors `channels/verified-webhook/live.ts` and
+   `channels/session-permission/live.ts`.
+3. Add the table for the journaled facts under `tables/`. Mirrors
+   `tables/runtime-output.ts` and (after PR-M4) `tables/verified-webhook-facts.ts`.
+4. Wire the Live into `composition/host-live.ts`. One layer-merge line.
+
+That is the entire surface. No new tier. No new primitive. The cognitive
+unit is the channel — the same shape every other wire-edge thing in the
+runtime already uses, and the same shape agents already participate in
+through the channel router. Sketch for Linear:
+
+```ts
+// packages/protocol/src/channels/linear-webhook.ts
+export const LinearWebhookFactChannelTarget = makeChannelTarget("firegrid.linearWebhooks")
+export class LinearWebhookFactChannel extends Context.Tag(
+  "firegrid/protocol/channels/firegrid.linearWebhooks",
+)<LinearWebhookFactChannel, IngressChannel<typeof LinearWebhookFactSchema>>() {}
+
+// packages/runtime/src/channels/linear-webhook/live.ts
+export const LinearWebhookFactChannelLive = Layer.effect(
+  LinearWebhookFactChannel,
+  Effect.gen(function*() {
+    const table = yield* LinearWebhookFactTable
+    // HTTP route mount + HMAC verify + decode + insertOrGet against `table`
+    // happens inside this Live's scoped Effect (same shape as the existing
+    // verified-webhook Live). The IngressChannel binding's `stream` projects
+    // table.rows() decoded against LinearWebhookFactSchema.
+    return makeIngressChannel({
+      target: LinearWebhookFactChannelTarget,
+      schema: LinearWebhookFactSchema,
+      sourceClass: "static-source",
+      stream: table.rows().pipe(Stream.filterMap(...)),
+    })
+  })
+)
+```
+
+That's it. The `ingestVerifiedWebhook` adapter already handles Linear
+payloads via `LinearWebhookPayloadSchema` — production Linear support is
+"register the channel + table + route."
+
+## Revision — `connectors/` For External Adapters (REJECTED)
+
+**This revision was rejected in favor of the channel-native pattern
+described above.** It is retained verbatim below as a record of the
+wrong turn and the reasoning that led there, so future contributors can
+see why the channel primitive is the right answer.
 
 Status: appended after the initial decision. Triggered by a stress-test
 question: "if Linear/GitHub/Slack ingress is on the roadmap, how does an
@@ -694,53 +827,49 @@ Scope:
 Verification: typecheck + vitest (`test/composition/`, host-public callers
 in factory/flamecast if any) + scripts.
 
-### PR-M3.5 — Linear connector spike
+### PR-M3.5 — Linear connector spike (CLOSED, see #763)
+
+Built and closed. The spike's primitive validated in isolation but
+missed the existing channel primitive (see Second Revision section
+above). No code from the spike lands in main. Friction findings recorded
+in the PR body remain useful as channel-Live implementation notes.
+
+### PR-M4 — Dissolve `verified-webhook-ingest/` into `tables/` + `channels/`
 
 Scope:
 
-- Define `events/connector-adapter.ts` exporting the
-  `ConnectorAdapter<E, F>` shape and `ConnectorSourceError` /
-  `ConnectorJournalError` schemas.
-- Define `capabilities/external-ingress-appender.ts` exporting the
-  `ExternalIngressAppender` Tag.
-- Add `tables/external-ingress-facts.ts` for journaled webhook facts
-  (delivery-id keyed, idempotent).
-- Add `connectors/README.md` documenting the connector unit, the
-  "no cross-connector imports" rule, and the recommended internal layout.
-- Add `connectors/linear/index.ts` implementing
-  `LinearConnector: ConnectorAdapter<LinearEvent, LinearFact>`, plus
-  `connectors/linear/schema.ts` and `connectors/linear/signature.ts`.
-- Add `composition/compose-connector.ts` with `composeConnector(adapter)`.
-- Integration test under `test/connectors/linear/` that:
-  - posts a captured Linear webhook payload at the route;
-  - asserts the durable row landed in `external-ingress-facts`;
-  - asserts an HMAC mismatch is rejected and writes no row;
-  - asserts replay of the same delivery-id is idempotent.
+- Move `VerifiedWebhookFactTable` (currently in
+  `src/verified-webhook-ingest/table.ts`) to
+  `src/tables/verified-webhook-facts.ts`. The fact-key encoding in
+  `keys.ts` lands alongside it (key encoding is part of the table's row
+  schema, not a separate transform tier concern).
+- Move `ingestVerifiedWebhook` (currently in
+  `src/verified-webhook-ingest/adapter.ts`) into the existing
+  `src/channels/verified-webhook/live.ts`. The channel's Live becomes
+  the single owner of the wire-edge work: HTTP route registration, HMAC
+  verification, payload decode, table-insert, and the `binding.stream`
+  projection observers consume. Mirrors the existing
+  `channels/session-permission/live.ts` pattern.
+- Delete `packages/runtime/src/verified-webhook-ingest/` entirely.
+- Remove the `./verified-webhook-ingest` subpath from
+  `packages/runtime/package.json` exports (it was a proof-of-concept
+  surface; host-sdk and external callers consume the channel instead).
+- Audit host-sdk callers of `ingestVerifiedWebhook` and retarget them
+  at the channel surface (likely a thin `composition/host-public.ts`
+  facade if needed).
+- Move tests from `test/verified-webhook-ingest/` to
+  `test/channels/verified-webhook/` and `test/tables/verified-webhook-facts/`.
 
-Verification: typecheck + vitest (targeted) + dep-cruiser (new
-`connectors/` rules) + surface check (new tier).
+Verification: typecheck + vitest (touched test files) + dep-cruiser +
+public surface check (the stale `./verified-webhook-ingest` export and
+the top-level dir both come out).
 
-Findings dictate whether PR-M4 proceeds as planned or the
-`ConnectorAdapter` shape needs revision. The spike is the gate.
-
-### PR-M4 — Rework `verified-webhook-ingest/` as `connectors/webhook/`
-
-Scope (assuming PR-M3.5 lands the primitive cleanly):
-
-- Move `verified-webhook-ingest/` to `connectors/webhook/`.
-- Refactor its body to expose a `makeVerifiedWebhookConnector(config):
-  ConnectorAdapter<E, F>` factory parameterized by signature header,
-  secret resolution, and event-decoder schema.
-- Retarget the Linear connector from PR-M3.5 at
-  `makeVerifiedWebhookConnector` so its `signature.ts` collapses into a
-  config object.
-- Update host-sdk webhook entrypoints to consume the new connector
-  surface.
-- Delete `packages/runtime/src/verified-webhook-ingest/`.
-
-Verification: typecheck + vitest
-(`test/verified-webhook-ingest/adapter.test.ts` moves to
-`test/connectors/webhook/`) + scripts.
+After PR-M4: external adapters land as channel registrations against
+the existing primitive (see "The pattern" section above). Linear support
+specifically reuses the dissolved `ingestVerifiedWebhook` body (which
+already handles `LinearWebhookPayloadSchema`) — production Linear is a
+new `channels/linear-webhook/live.ts` Live + `tables/linear-webhook-facts.ts`
+table + protocol channel target, not a refactor of webhook-ingest.
 
 ### PR-M5 — Cleanup + docs
 
@@ -769,7 +898,10 @@ After at least one release with the deprecation aliases in place:
   orthogonal naming question; handled in a separate follow-up.
 - **C (channels/ cutover)** — independent of source/producer split;
   channels keep their existing role under the new mapping.
-- **Future external adapter shape** — addressed by the connectors/
-  revision above. Tier-internal infrastructure stays tier-shaped; external
-  adapters bundle per-feature under `connectors/`. Stress-tested by the
-  PR-M3.5 Linear spike.
+- **Future external adapter shape** — answered by the Second Revision:
+  external adapters land as channel registrations against the existing
+  `IngressChannel<S>` / `EgressChannel<S>` / `BidirectionalChannel<S>` /
+  `CallableChannel<Req, Res>` primitive in
+  `packages/protocol/src/channels/core.ts`. No new tier, no new
+  primitive. Pattern documented above; the dissolved
+  `verified-webhook-ingest/` flow is the worked example.
