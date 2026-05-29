@@ -3,9 +3,31 @@
 Audience: anyone adding a new subscriber or deciding whether an existing
 subscriber needs `@effect/workflow` machinery.
 
-Status: architectural reference. Invariants enforced by
-`shape-d-workflow-admission` + `shape-d-tool-dispatch-mcp-entry` +
-`runtime-context-fact-matrix` + several other tiny-firegrid simulations.
+Status: **transitional**. The Shape C/D distinction is a workaround for
+a missing engine capability — durable suspend recovery for non-clock
+waits. The target architecture
+([`unified-subscriber-kernel.md`](unified-subscriber-kernel.md)) is
+"every subscriber is a workflow," with the distinction dissolving once
+the kernel-owned write+arm primitive lands (`tf-c9r9`,
+`docs/cannon/architecture/kernel-owned-write-arm.md`). The criteria
+below remain authoritative for code being written today; treat the
+Shape C path as bridge state expected to collapse.
+
+Invariants enforced by `shape-d-workflow-admission` +
+`shape-d-tool-dispatch-mcp-entry` + `runtime-context-fact-matrix` +
+several other tiny-firegrid simulations.
+
+## Why the distinction exists today
+
+The engine has `recoverPendingClockWakeups` for `DurableClock.sleep`
+but no equivalent for `Workflow.suspend` on a domain-keyed signal
+(input arrival, permission response, tool result). A generic engine
+sweep was prototyped and falsified — it races `DurableDeferred.deferredDone`
+and corrupts terminality (`tf-12q9`). Until the kernel-owned write+arm
+controller lands, "wait on a domain signal" has to be hand-written as a
+fresh handler per fact over a durable row — Shape C. See
+[`unified-subscriber-kernel.md`](unified-subscriber-kernel.md) for the
+full conceptual collapse story.
 
 ## The boundary in one sentence
 
@@ -147,9 +169,16 @@ The decision table above complies with the runtime design constraints
 
 ## Related Docs
 
+- [**Unified subscriber kernel**](unified-subscriber-kernel.md) — the
+  target shape under which this distinction dissolves. Read first to
+  understand whether you're writing new bridge-state code or
+  contributing toward the collapse.
 - [RuntimeContext fact matrix](runtime-context-fact-matrix.md) — the
-  Shape C subscriber's fact taxonomy.
+  Shape C subscriber's fact taxonomy. The matrix routing keys stay
+  valid under the kernel — they become the `kernelWriteArm` keys.
 - `packages/runtime/src/subscribers/tool-dispatch/README.md` — the
   Shape D tool dispatch path + locked-tool-surface gate.
 - `packages/runtime/src/subscribers/keyed-dispatch/README.md` — the
-  per-key subscriber dispatch primitive both shapes plug into.
+  per-key subscriber dispatch primitive both shapes plug into today.
+- `docs/cannon/architecture/kernel-owned-write-arm.md` — the cannon
+  authority that decided the target shape.

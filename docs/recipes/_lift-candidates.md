@@ -25,6 +25,7 @@ This list is not exhaustive. Add to it as new simulations land.
 | 8 | Shape C vs Shape D — full decision table | [`docs/architecture/shape-c-vs-shape-d.md`](../architecture/shape-c-vs-shape-d.md) | ✓ landed |
 | 9 | Terminal completion ordering (`SessionLifecycleChannel` vs `Terminated` event) | Section in `channels/README.md` | ✓ landed |
 | 10 | Identity-keyed input dedup (Shape B/C handler discipline) | Section in `subscribers/keyed-dispatch/README.md` | ✓ landed |
+| 11 | **Unified subscriber kernel — the concept-space collapse** | [`docs/architecture/unified-subscriber-kernel.md`](../architecture/unified-subscriber-kernel.md) + transitional-status note in `shape-c-vs-shape-d.md` | ✓ landed |
 | — | **Drift fix:** `docs/recipes/runtime-permission-resume.md` rewritten — was pointing at retired `@firegrid/runtime/durable-tools` / `SourceCollections` / `RuntimeObservationSourceNames` / `agent-event-pipeline` paths. | (recipe rewrite) | ✓ landed |
 
 The entries below remain as the audit derivation for each lift. As new
