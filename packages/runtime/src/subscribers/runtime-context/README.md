@@ -33,3 +33,13 @@ Import boundary (Shape C, per
 
 The fact-matrix dispatch primitive (`subscribers/keyed-dispatch/`) wires this
 handler to its keyed event source.
+
+## Reference
+
+The fact taxonomy this handler reduces over — routing keys, sparse vs
+dense, replay/correlation invariants — is documented at
+[`docs/architecture/runtime-context-fact-matrix.md`](../../../../../docs/architecture/runtime-context-fact-matrix.md).
+The matrix is asserted as a clean-room proof by
+`packages/tiny-firegrid/src/simulations/runtime-context-fact-matrix/`.
+Read the architecture doc before adding a new fact kind or wait
+correlation here.

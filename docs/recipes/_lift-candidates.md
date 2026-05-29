@@ -11,6 +11,22 @@ ARCHITECTURE.md section. Acceptance criterion is the same as
 
 This list is not exhaustive. Add to it as new simulations land.
 
+## Status (lifts landed in this PR)
+
+| # | Lift | Target | Status |
+|---|---|---|---|
+| 1 | Wave C dispatch contract | [`docs/recipes/client-sdk-channel-targets.md`](client-sdk-channel-targets.md) | ✓ landed |
+| 2 | RuntimeContext fact matrix | [`docs/architecture/runtime-context-fact-matrix.md`](../architecture/runtime-context-fact-matrix.md) + cross-link in `subscribers/runtime-context/README.md` | ✓ landed |
+| 3 | Shape D dispatch criterion | Section in `subscribers/tool-dispatch/README.md` | ✓ landed |
+| 4 | Agent-to-agent observation | [`docs/recipes/agent-to-agent-observation.md`](agent-to-agent-observation.md) | ✓ landed |
+| 5 | Channel completion contracts | Section in `channels/README.md` | ✓ landed |
+| 6 | Locked tool surface | Section in `subscribers/tool-dispatch/README.md` | ✓ landed |
+| 7 | Channel-target indirection (host registry) | Section in `channels/README.md` | ✓ landed |
+
+The entries below remain as the audit derivation for each lift. As new
+lift candidates appear, add them to this list with a recommended target
+form.
+
 ## High value (recommend lifting next)
 
 ### 1. Wave C dispatch contract — client SDK ↔ runtime channel targets
