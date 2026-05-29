@@ -28,6 +28,7 @@ exists and is documented:
 | `tables/` | `DurableTable`-backed state of record (the "topics" in the Kafka-broker mapping). | 2 |
 | `sources/` | Kafka-Connect "Source" emitters: `sandbox/`, `codecs/`. Live boundaries that produce typed `Stream`s; no row authority. | 3a |
 | `producers/` | Kafka-broker "Producer" topic writers: layers that consume Streams from `sources/` and append rows to `tables/`. | 3b |
+| `connectors/` | external adapter bundles (Linear / GitHub / webhook base). Each subfolder is one `ConnectorAdapter<E, F>`. SDD #761 connectors revision. | 3c |
 | `transforms/` | pure row/event transforms; no `Effect`. | 4 |
 | `channels/` | wire-edge live routing (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
 | `subscribers/` | keyed subscribers — Shape B/C/D recorded in folder READMEs (`projections/`, `runtime-context/`, `runtime-context-session/`, `tool-dispatch/`, `wait-router/`, `scheduled-prompt/`, `runtime-control/`). | 6 |

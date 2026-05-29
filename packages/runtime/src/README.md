@@ -24,6 +24,7 @@ the surfaces below exists and is documented here:
 | [`tables/`](./tables/README.md) | DurableTable-backed state of record (the runtime's durable "topics"). | 2 |
 | [`sources/`](./sources/README.md) | Kafka-Connect "Source" emitters: live boundaries that produce typed `Stream`s (`sandbox/`, `codecs/`). No row authority. | 3a |
 | [`producers/`](./producers/README.md) | Kafka-broker "Producer" topic writers: layers that consume Streams from `sources/` and append rows to `tables/`. | 3b |
+| [`connectors/`](./connectors/README.md) | External adapter bundles (Linear / GitHub / webhook base). Each subfolder is one `ConnectorAdapter<E, F>`. SDD #761 connectors revision. | 3c |
 | [`transforms/`](./transforms/README.md) | pure row/event transforms; no `Effect`. | 4 |
 | [`channels/`](./channels/README.md) | wire-edge live routing (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
 | [`subscribers/`](./subscribers/README.md) | keyed subscribers — Shape B/C/D recorded in folder READMEs. | 6 |
