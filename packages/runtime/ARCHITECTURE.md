@@ -192,12 +192,30 @@ per SDD #761 — the contract is Shape A codec-bound, an emitter not a writer;
 public subpath `@firegrid/runtime/agent-adapters` is preserved as an alias
 for `@firegrid/runtime/sources/codecs/agent-adapters`.)
 
+## External Adapters (Webhooks, Linear, GitHub, …)
+
+External adapters land as **channel registrations** against the existing
+`IngressChannel<S>` / `EgressChannel<S>` / `BidirectionalChannel<S>` /
+`CallableChannel<Req, Res>` primitive in
+`packages/protocol/src/channels/core.ts`. They do **not** introduce a new
+runtime tier.
+
+For HTTP-delivered webhook providers the canonical helper is
+`makeVerifiedWebhookSource` in
+`src/channels/verified-webhook/source-live.ts`. One factory call per
+provider mounts the HTTP listener, calls the existing
+`ingestVerifiedWebhook` adapter, journals into `VerifiedWebhookFactTable`,
+and projects an `IngressChannel` so agents can `wait_for({channel:
+"firegrid.verifiedWebhooks", whereFields})`. See the public recipe at
+`docs/recipes/durable-webhook-facts-and-wait-for.md`.
+
 ## Verified Webhook Ingest
 
-`src/verified-webhook-ingest/` is an adjacent external ingress/source adapter.
-It owns verified webhook fact schemas, key encoding, table declaration, and an
-ingest adapter. It can be observed by durable waits through normal source
-stream patterns, but it is not part of the agent event pipeline.
+`src/verified-webhook-ingest/` is an adjacent module owning verified
+webhook fact schemas, key encoding, table declaration, and the
+`ingestVerifiedWebhook` adapter that the channel-Live helper calls. It is
+not consumed directly by host integrators; reach for
+`channels/verified-webhook/source-live.ts` instead.
 
 ## App Consumer Patterns
 

@@ -4,7 +4,7 @@
   "counts": {
     "error": 0,
     "warning": 10,
-    "message": 70
+    "message": 72
   },
   "entries": [
     {
@@ -19,20 +19,11 @@
     {
       "project": "packages/effect-durable-operators/tsconfig.json",
       "file": "packages/effect-durable-operators/src/DurableTable.ts",
-      "line": 780,
+      "line": 778,
       "column": 5,
       "severity": "message",
       "code": "effectFnOpportunity",
       "message": "This expression can be rewritten in the reusable function form `Effect.fn(\"firegrid.durable_table.insert_or_get\")(function*(row) { ... }, ...pipeTransformations)`."
-    },
-    {
-      "project": "packages/effect-durable-operators/tsconfig.json",
-      "file": "packages/effect-durable-operators/test/durable-table.test.ts",
-      "line": 1327,
-      "column": 11,
-      "severity": "message",
-      "code": "tryCatchInEffectGen",
-      "message": "This Effect generator contains `try/catch`; in this context, error handling is expressed with Effect APIs such as Effect.try, Effect.tryPromise, Effect.catchAll, Effect.catchTag)."
     },
     {
       "project": "packages/effect-durable-operators/tsconfig.json",
@@ -46,7 +37,16 @@
     {
       "project": "packages/effect-durable-operators/tsconfig.json",
       "file": "packages/effect-durable-operators/test/durable-table.test.ts",
-      "line": 1350,
+      "line": 1353,
+      "column": 11,
+      "severity": "message",
+      "code": "tryCatchInEffectGen",
+      "message": "This Effect generator contains `try/catch`; in this context, error handling is expressed with Effect APIs such as Effect.try, Effect.tryPromise, Effect.catchAll, Effect.catchTag)."
+    },
+    {
+      "project": "packages/effect-durable-operators/tsconfig.json",
+      "file": "packages/effect-durable-operators/test/durable-table.test.ts",
+      "line": 1363,
       "column": 11,
       "severity": "message",
       "code": "tryCatchInEffectGen",
@@ -388,24 +388,6 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 283,
-      "column": 3,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
-    },
-    {
-      "project": "packages/protocol/tsconfig.json",
-      "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 284,
-      "column": 3,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
-    },
-    {
-      "project": "packages/protocol/tsconfig.json",
-      "file": "packages/protocol/src/agent-tools/schema.ts",
       "line": 291,
       "column": 3,
       "severity": "message",
@@ -415,7 +397,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 662,
+      "line": 292,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -424,7 +406,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 666,
+      "line": 299,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -434,6 +416,24 @@
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "line": 670,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/agent-tools/schema.ts",
+      "line": 674,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/agent-tools/schema.ts",
+      "line": 678,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -549,42 +549,6 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
-      "line": 636,
-      "column": 54,
-      "severity": "message",
-      "code": "preferSchemaOverJson",
-      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
-      "line": 695,
-      "column": 54,
-      "severity": "message",
-      "code": "preferSchemaOverJson",
-      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
-      "line": 752,
-      "column": 9,
-      "severity": "message",
-      "code": "unnecessaryEffectGen",
-      "message": "This Effect.gen contains a single return statement."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/sources/codecs/stdio-jsonl/index.ts",
-      "line": 224,
-      "column": 21,
-      "severity": "message",
-      "code": "preferSchemaOverJson",
-      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
       "file": "packages/runtime/src/channels/observation-streams/sources.ts",
       "line": 13,
       "column": 51,
@@ -609,6 +573,60 @@
       "severity": "message",
       "code": "schemaStructWithTag",
       "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/channels/verified-webhook/source-live.ts",
+      "line": 161,
+      "column": 18,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/channels/verified-webhook/source-live.ts",
+      "line": 237,
+      "column": 9,
+      "severity": "message",
+      "code": "runEffectInsideEffect",
+      "message": "`Effect.runFork` is called inside an Effect with a separate runtime invocation. In this context, run child Effects with the surrounding runtime, which can be accessed through `Effect.runtime` and `Runtime.runFork`."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
+      "line": 651,
+      "column": 54,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
+      "line": 710,
+      "column": 54,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
+      "line": 767,
+      "column": 9,
+      "severity": "message",
+      "code": "unnecessaryEffectGen",
+      "message": "This Effect.gen contains a single return statement."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/sources/codecs/stdio-jsonl/index.ts",
+      "line": 224,
+      "column": 21,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
     },
     {
       "project": "packages/runtime/tsconfig.json",
