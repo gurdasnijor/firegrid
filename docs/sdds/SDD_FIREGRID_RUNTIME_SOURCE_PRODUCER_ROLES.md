@@ -401,28 +401,206 @@ small files is cheap, but unwinding the convention "external adapters
 bundle their own table+writer" once two or three of them exist would not
 be.
 
+## Revision — `connectors/` For External Adapters
+
+Status: appended after the initial decision. Triggered by a stress-test
+question: "if Linear/GitHub/Slack ingress is on the roadmap, how does an
+implementer build one?" The tier-only model answers "edit `sources/`,
+`producers/`, `capabilities/`, `tables/`, and `composition/`" — five
+folders for one self-contained feature. That's the wrong cognitive shape
+for a per-feature adapter, even though it's the right shape for shared
+runtime infrastructure.
+
+This revision adds **`connectors/`** as a peer tier whose unit-of-thought
+is the adapter, not the role. It does not change PR-M1/M2/M3. It revises
+PR-M4 (`verified-webhook-ingest/` split) and shapes how external adapters
+land in the future.
+
+### Two organizing principles, not one
+
+The runtime now has two orthogonal layout principles:
+
+1. **Tier folders** for shared runtime infrastructure used across many
+   features. `sources/sandbox/` is consumed by every codec and by the
+   workflow-driven runtime; `sources/codecs/` is consumed by every agent
+   session; `producers/` topic-writers are reused across subscribers;
+   `capabilities/` Tags are imported from everywhere. Tier-shape fits
+   because each piece is genuinely cross-cutting.
+
+2. **Connector folders** for self-contained external adapters where one
+   feature owns its source + writer + schema together. `connectors/linear/`
+   contains everything for the Linear integration — the implementer's
+   mental unit is "Linear," not "the source half of Linear plus the
+   producer half of Linear plus the table schema of Linear plus the
+   capability tag for Linear." Bundle-shape fits because the pieces are
+   only consumed by each other.
+
+The two principles do not compete. Tier folders hold what's *shared*;
+connector folders hold what's *bespoke*. A new external adapter does not
+touch any tier folder — it lands as one new `connectors/<name>/` folder
+plus one wiring line in `composition/host-live.ts`.
+
+### The `ConnectorAdapter<E, F>` primitive
+
+Boundary enforcement moves from "five dep-cruiser rules across five tier
+folders" to "one type signature." The Effect-native shape:
+
+```ts
+// events/connector-adapter.ts
+export interface ConnectorAdapter<Event, Fact, Tag = never> {
+  /** Wire-edge: where the external system delivers events. */
+  readonly route: HttpRoute
+
+  /** Emitter half: HTTP bytes -> typed events. Pure (no tables/, no
+   *  Effect side-effects beyond signature verification). */
+  readonly source: (
+    request: HttpRequest,
+  ) => Effect.Effect<Stream.Stream<Event, ConnectorSourceError>, ConnectorSourceError>
+
+  /** Writer half: event -> durable fact row. Requires the
+   *  ExternalIngressAppender capability Tag from capabilities/. */
+  readonly journal: (
+    event: Event,
+  ) => Effect.Effect<Fact, ConnectorJournalError, ExternalIngressAppender | Tag>
+
+  /** Pure schemas for the event union and the journaled row. */
+  readonly factSchema: Schema.Schema<Fact>
+  readonly eventSchema: Schema.Schema<Event>
+
+  /** Identity for telemetry / composition wiring. */
+  readonly id: string
+}
+```
+
+The field types encode the role boundaries that dep-cruiser would
+otherwise enforce per-file: `source` returns a `Stream` with no
+`tables/` reachability; `journal` requires the appender Tag so it cannot
+short-circuit to a direct table write; `factSchema` is a pure value.
+
+A composition helper:
+
+```ts
+// composition/compose-connector.ts
+export const composeConnector = <E, F>(
+  adapter: ConnectorAdapter<E, F>,
+): Layer.Layer<never, never, ExternalIngressAppender | HttpRouter>
+```
+
+wires the adapter's `route` onto the host's HTTP router, runs
+`source(request) |> Stream.mapEffect(adapter.journal)`, and Layer-merges
+into the runtime. `composition/host-live.ts` takes
+`readonly ConnectorAdapter<unknown, unknown>[]` and merges each.
+
+### Per-adapter folder shape
+
+```text
+connectors/
+├── README.md                         # explains the unit; documents the convention
+├── linear/
+│   ├── README.md
+│   ├── index.ts                      # LinearConnector: ConnectorAdapter<LinearEvent, LinearFact>
+│   ├── schema.ts                     # LinearEvent union + LinearFact row schemas
+│   └── signature.ts                  # HMAC-SHA256 verification helper
+├── github/                           # (future)
+├── slack/                            # (future)
+└── webhook/                          # generalized base — see PR-M4 below
+    └── (the post-rework `verified-webhook-ingest/`)
+```
+
+Internal file structure is the implementer's choice. The folder boundary
+is what dep-cruiser rules against. One file is fine for small adapters;
+the suggested splits above are conventions, not requirements.
+
+### Tier position and dep-cruiser rules
+
+`connectors/` is logical position **3c**, peer with `sources/` (3a),
+`producers/` (3b), `transforms/` (4), `channels/` (5).
+
+| Tier | May import | Must not import |
+| --- | --- | --- |
+| `connectors/<name>/` | `events/`, `capabilities/`, `tables/`, `transforms/`, `channels/` | `sources/`, `producers/`, `subscribers/`, `composition/`, **any other `connectors/<other-name>/`** |
+
+The "no cross-connector imports" rule is the load-bearing one: it keeps
+each adapter a closed unit. If two adapters need to share code, that code
+goes into a tier folder (`transforms/`, `capabilities/`) or into
+`connectors/webhook/` (the generalized base) — not into one connector
+importing another.
+
+### How PR-M4 changes under this revision
+
+PR-M4 was: "split `verified-webhook-ingest/` across `sources/`,
+`producers/`, `tables/`."
+
+PR-M4 becomes: "rework `verified-webhook-ingest/` as
+`connectors/webhook/`, exposing the shared verified-webhook base as a
+`ConnectorAdapter` factory that concrete adapters (Linear, GitHub, …)
+parameterize."
+
+The substantive content (HMAC verification, fact schema, table) stays
+together as one connector. The "generalized" base is a function that
+takes a per-adapter configuration (header name, secret resolution,
+event-decoder schema) and returns a `ConnectorAdapter<E, F>`. Linear's
+adapter becomes one call to that factory; future adapters likewise.
+
+### Effect on the migration sequence
+
+| PR | Disposition under revision |
+| --- | --- |
+| PR-M1 (foundation) | **No change.** Tiers are still right for sandbox/codecs/capabilities. Already on disk via #762. |
+| PR-M2 (scheduled-prompt-append) | **No change.** A runtime-internal writer, not an external adapter. |
+| PR-M3 (appendRuntimeIngress) | **No change.** Same reasoning. |
+| PR-M4 | **Reshaped** as described above. |
+| PR-M5 (cleanup) | **Add**: connector layout docs, `composeConnector` helper. |
+| PR-M6 (alias drop) | **No change.** |
+
+A new **PR-M3.5 (Linear connector spike)** lands between PR-M3 and PR-M4
+to stress-test `ConnectorAdapter` against a concrete adapter *before*
+PR-M4 commits to the primitive shape for the verified-webhook rework.
+The spike findings inform PR-M4; if the primitive grinds, PR-M4 either
+adopts a revised shape or this revision is itself revised.
+
+### Distinguishing tier-internal `sources/`/`producers/` from connectors
+
+A judgment call for future code:
+
+- Sandbox, codecs, and any future *internal* boundary used across
+  multiple features → `sources/`. The producers/writers that journal
+  *internal* runtime data flow → `producers/`. Tags consumed by multiple
+  subscribers → `capabilities/`.
+- An external system whose events become rows for one feature →
+  `connectors/<name>/`. Even if the connector internally has an emitter
+  half and a writer half, they live together because nothing outside the
+  connector consumes them.
+
+If in doubt: would another feature reasonably depend on this piece in
+isolation? If yes, tier. If no, connector.
+
 ## Target Tier Graph
 
 After migration:
 
 ```text
 packages/runtime/src/
-├── events/                    # 1.  pure event/row schemas
-├── capabilities/              # 1b. pure Effect Context.Tag declarations (NEW)
+├── events/                    # 1.  pure event/row schemas + ConnectorAdapter shape
+├── capabilities/              # 1b. pure Effect Context.Tag declarations
 ├── tables/                    # 2.  durable topics (DurableTable definitions)
-├── sources/                   # 3a. emitters — return Stream / session contract
+├── sources/                   # 3a. internal emitters
 │   ├── sandbox/
-│   ├── codecs/
-│   └── webhook-ingest/        # (was: verified-webhook-ingest/ — emitter half)
-├── producers/                 # 3b. topic writers — consume Stream, append to tables
+│   └── codecs/
+├── producers/                 # 3b. internal topic writers
 │   ├── per-context-output.ts
 │   ├── runtime-input-append.ts
-│   ├── scheduled-prompt-append.ts
-│   └── webhook-ingest-writer.ts
+│   └── scheduled-prompt-append.ts
+├── connectors/                # 3c. external adapters — one folder per adapter (post-PR-M4)
+│   ├── README.md
+│   ├── webhook/               # generalized verified-webhook base (was verified-webhook-ingest/)
+│   ├── linear/                # PR-M3.5 spike, then production adapter
+│   ├── github/                # (future)
+│   └── slack/                 # (future)
 ├── transforms/                # 4.  pure row/event transforms
 ├── channels/                  # 5.  wire-edge live routing
 ├── subscribers/               # 6.  Shape B/C/D consumers
-└── composition/               # 7.  Layer wiring only
+└── composition/               # 7.  Layer wiring only (incl. composeConnector helper)
 ```
 
 ### Dep-cruiser rule updates
@@ -435,8 +613,9 @@ packages/runtime/src/
 | `sources/` | `events/`, `capabilities/` | `tables/`, peers (`producers/`, `transforms/`, `channels/`), `subscribers/`, `composition/` |
 | `producers/` | `events/`, `capabilities/`, `tables/`, `sources/` | peers (`transforms/`, `channels/`), `subscribers/`, `composition/` |
 | `transforms/` | `events/` (current) | unchanged |
-| `channels/` | `events/`, `tables/`, `capabilities/` | `sources/`, `producers/`, `subscribers/`, `composition/` |
-| `subscribers/` | `events/`, `capabilities/`, `tables/`, `transforms/`, `channels/` | `sources/`, `producers/`, `composition/` |
+| `connectors/<name>/` | `events/`, `capabilities/`, `tables/`, `transforms/`, `channels/` | `sources/`, `producers/`, `subscribers/`, `composition/`, **any other `connectors/<other>/`** |
+| `channels/` | `events/`, `tables/`, `capabilities/` | `sources/`, `producers/`, `connectors/`, `subscribers/`, `composition/` |
+| `subscribers/` | `events/`, `capabilities/`, `tables/`, `transforms/`, `channels/` | `sources/`, `producers/`, `connectors/`, `composition/` |
 | `composition/` | every lower-order folder (Layer assembly only) | nothing imports `composition/` |
 
 The critical change: subscribers depend on Producer capabilities through
@@ -515,21 +694,53 @@ Scope:
 Verification: typecheck + vitest (`test/composition/`, host-public callers
 in factory/flamecast if any) + scripts.
 
-### PR-M4 — Split `verified-webhook-ingest/`
+### PR-M3.5 — Linear connector spike
 
 Scope:
 
-- Move the fact-row schema → `tables/webhook-ingest-facts.ts`.
-- Move the key encoder → `transforms/webhook-ingest-key.ts` (pure).
-- Move the ingest adapter → `sources/webhook-ingest/` and
-  `producers/webhook-ingest-writer.ts` (the writer half consumes the
-  source stream and appends to `tables/webhook-ingest-facts`).
-- Update host-sdk webhook entrypoints accordingly.
+- Define `events/connector-adapter.ts` exporting the
+  `ConnectorAdapter<E, F>` shape and `ConnectorSourceError` /
+  `ConnectorJournalError` schemas.
+- Define `capabilities/external-ingress-appender.ts` exporting the
+  `ExternalIngressAppender` Tag.
+- Add `tables/external-ingress-facts.ts` for journaled webhook facts
+  (delivery-id keyed, idempotent).
+- Add `connectors/README.md` documenting the connector unit, the
+  "no cross-connector imports" rule, and the recommended internal layout.
+- Add `connectors/linear/index.ts` implementing
+  `LinearConnector: ConnectorAdapter<LinearEvent, LinearFact>`, plus
+  `connectors/linear/schema.ts` and `connectors/linear/signature.ts`.
+- Add `composition/compose-connector.ts` with `composeConnector(adapter)`.
+- Integration test under `test/connectors/linear/` that:
+  - posts a captured Linear webhook payload at the route;
+  - asserts the durable row landed in `external-ingress-facts`;
+  - asserts an HMAC mismatch is rejected and writes no row;
+  - asserts replay of the same delivery-id is idempotent.
+
+Verification: typecheck + vitest (targeted) + dep-cruiser (new
+`connectors/` rules) + surface check (new tier).
+
+Findings dictate whether PR-M4 proceeds as planned or the
+`ConnectorAdapter` shape needs revision. The spike is the gate.
+
+### PR-M4 — Rework `verified-webhook-ingest/` as `connectors/webhook/`
+
+Scope (assuming PR-M3.5 lands the primitive cleanly):
+
+- Move `verified-webhook-ingest/` to `connectors/webhook/`.
+- Refactor its body to expose a `makeVerifiedWebhookConnector(config):
+  ConnectorAdapter<E, F>` factory parameterized by signature header,
+  secret resolution, and event-decoder schema.
+- Retarget the Linear connector from PR-M3.5 at
+  `makeVerifiedWebhookConnector` so its `signature.ts` collapses into a
+  config object.
+- Update host-sdk webhook entrypoints to consume the new connector
+  surface.
 - Delete `packages/runtime/src/verified-webhook-ingest/`.
 
 Verification: typecheck + vitest
-(`test/verified-webhook-ingest/adapter.test.ts` moves to follow the new
-homes) + scripts.
+(`test/verified-webhook-ingest/adapter.test.ts` moves to
+`test/connectors/webhook/`) + scripts.
 
 ### PR-M5 — Cleanup + docs
 
@@ -558,5 +769,7 @@ After at least one release with the deprecation aliases in place:
   orthogonal naming question; handled in a separate follow-up.
 - **C (channels/ cutover)** — independent of source/producer split;
   channels keep their existing role under the new mapping.
-- **Future external adapter shape** — if Linear / Slack / GitHub adapters
-  arrive and pull toward Connect-style bundles, revisit Option 2 then.
+- **Future external adapter shape** — addressed by the connectors/
+  revision above. Tier-internal infrastructure stays tier-shaped; external
+  adapters bundle per-feature under `connectors/`. Stress-tested by the
+  PR-M3.5 Linear spike.
