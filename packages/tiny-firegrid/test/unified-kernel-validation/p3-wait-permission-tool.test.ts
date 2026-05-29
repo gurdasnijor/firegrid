@@ -17,8 +17,8 @@
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { durableStreamUrl } from "@firegrid/protocol/launch"
-import { WorkflowEngine } from "@effect/workflow"
-import { Effect, Layer, Option, Ref, Schema, Stream } from "effect"
+import type { WorkflowEngine } from "@effect/workflow"
+import { Effect, Option, Ref } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { kernelWriteArm } from "../../src/simulations/unified-kernel-validation/kernel.ts"
 import {
@@ -38,7 +38,6 @@ import {
 import {
   peerEventKey,
   permissionKey,
-  UnifiedTable,
 } from "../../src/simulations/unified-kernel-validation/tables.ts"
 
 let server: DurableStreamTestServer | undefined
@@ -97,7 +96,7 @@ describe("P3.1 — WaitForFactWorkflow", () => {
                 factTable: "peerEvents",
                 timeoutMs: 5_000,
                 waitId,
-              }) as Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine>,
+              }),
             )
 
             // Give body time to park.
@@ -125,7 +124,7 @@ describe("P3.1 — WaitForFactWorkflow", () => {
 
             const exit = yield* fiber.await
             if (exit._tag === "Failure") {
-              return yield* Effect.die(exit.cause)
+              return yield* Effect.failCause(exit.cause)
             }
             return exit.value as {
               readonly matched: boolean
@@ -163,10 +162,7 @@ describe("P3.1 — WaitForFactWorkflow", () => {
             timeoutMs: 200,
             waitId,
           }) as Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine>),
-      ) as Effect.Effect<
-        { readonly matched: boolean; readonly timedOut: boolean },
-        unknown
-      >,
+      ),
     )
     expect(outcome.matched).toBe(false)
     expect(outcome.timedOut).toBe(true)
@@ -204,7 +200,7 @@ describe("P3.2 — PermissionRoundtripWorkflow", () => {
                 contextId,
                 permissionRequestId,
                 toolUseId,
-              }) as Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine>,
+              }),
             )
 
             // Give body time to record request + park.
@@ -237,8 +233,8 @@ describe("P3.2 — PermissionRoundtripWorkflow", () => {
             })
 
             const exit = yield* fiber.await
-            if (exit._tag === "Failure") return yield* Effect.die(exit.cause)
-            return exit.value as { readonly decision: string }
+            if (exit._tag === "Failure") return yield* Effect.failCause(exit.cause)
+            return exit.value
           }) as Effect.Effect<{ readonly decision: string }, unknown>,
       ),
     )
@@ -288,25 +284,12 @@ describe("P3.3 — ToolDispatchWorkflow", () => {
                 result2: both[1],
               }
             }),
-        ) as Effect.Effect<
-          {
-            readonly invocations: number
-            readonly result1: { readonly resultJson: string }
-            readonly result2: { readonly resultJson: string }
-          },
-          unknown
-        >
-      }) as Effect.Effect<
-        {
-          readonly invocations: number
-          readonly result1: { readonly resultJson: string }
-          readonly result2: { readonly resultJson: string }
-        },
-        unknown
-      >,
+        )
+      }),
     )
 
     expect(outcome.invocations).toBe(1)
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(outcome.result1.resultJson).toBe(outcome.result2.resultJson)
   }, 15_000)
 })

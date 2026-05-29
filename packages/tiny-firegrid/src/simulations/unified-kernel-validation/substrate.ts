@@ -12,7 +12,7 @@
  */
 
 import {
-  WorkflowEngine,
+  type WorkflowEngine,
 } from "@effect/workflow"
 import {
   DurableStreamsWorkflowEngine,
@@ -105,7 +105,7 @@ export const runGeneration = <A>(
   const upperLayers = setup.workflowLayers.reduce<
     Layer.Layer<unknown, unknown, unknown>
   >(
-    (acc, wf) => Layer.merge(acc, wf as Layer.Layer<unknown, unknown, unknown>),
+    (acc, wf) => Layer.merge(acc, wf),
     Layer.merge(unifiedLayer, kernelLayer) as Layer.Layer<unknown, unknown, unknown>,
   )
   const generationLayer = upperLayers.pipe(

@@ -20,10 +20,9 @@ import {
   Workflow,
   WorkflowEngine,
 } from "@effect/workflow"
-import { Effect, Exit, Layer, Option, Ref, Schema, Stream } from "effect"
+import { Effect, Exit, Option, Ref, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
-  KernelCommandTable,
   type KernelRowRewriter,
   type KernelWorkflowCatalog,
   kernelRecordAndWrite,
@@ -215,7 +214,7 @@ describe("P1 — kernel + substrate", () => {
             Effect.map(Option.flatten),
           )
           expect(Option.isSome(final)).toBe(true)
-        })) as Effect.Effect<void, unknown>,
+        })),
     )
     expect(result).toBeUndefined()
   }, 10_000)
@@ -417,15 +416,7 @@ describe("P1 — kernel + substrate", () => {
               replaySkipped: services.replaySkipped,
             }
           }),
-      ) as Effect.Effect<
-        {
-          readonly wakeFinal: boolean
-          readonly deferredHasFinal: boolean
-          readonly replayed: number
-          readonly replaySkipped: number
-        },
-        unknown
-      >,
+      ),
     )
     expect(observations.wakeFinal).toBe(true)
     expect(observations.deferredHasFinal).toBe(false)

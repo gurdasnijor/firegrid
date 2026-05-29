@@ -88,8 +88,8 @@ export const appendInputIntent = (options: {
       Effect.orDie,
     )
     if (contextRow === undefined) {
-      return yield* Effect.die(
-        new Error(`appendInputIntent: context ${options.contextId} not found; call ensureContext first`),
+      throw new Error(
+        `appendInputIntent: context ${options.contextId} not found; call ensureContext first`,
       )
     }
     const sequence = contextRow.nextInputSequence

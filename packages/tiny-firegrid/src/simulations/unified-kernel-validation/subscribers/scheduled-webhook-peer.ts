@@ -24,9 +24,9 @@ import {
   Activity,
   DurableClock,
   Workflow,
-  WorkflowEngine,
+  type WorkflowEngine,
 } from "@effect/workflow"
-import { Duration, Effect, Option, Schema } from "effect"
+import { Data, Duration, Effect, Option, Schema } from "effect"
 import {
   kernelWriteArm,
   type KernelCommandTableService,
@@ -178,12 +178,10 @@ const hmacSha256Hex = (
     catch: (e) => e as Error,
   })
 
-export class VerifiedWebhookError extends Error {
-  override readonly name = "VerifiedWebhookError"
-  constructor(message: string, readonly op: string) {
-    super(message)
-  }
-}
+export class VerifiedWebhookError extends Data.TaggedError("VerifiedWebhookError")<{
+  readonly message: string
+  readonly op: string
+}> {}
 
 export interface VerifyAndIngestResult {
   readonly _tag: "Inserted" | "Duplicate"
@@ -205,19 +203,26 @@ export const verifyAndIngestWebhook = (options: {
     readonly workflow: ResumableWorkflow
     readonly executionId: string
   }
-}): Effect.Effect<VerifyAndIngestResult, VerifiedWebhookError | unknown, WorkflowEngine.WorkflowEngine> =>
+}): Effect.Effect<VerifyAndIngestResult, VerifiedWebhookError, WorkflowEngine.WorkflowEngine> =>
   Effect.gen(function*() {
     const expected = yield* hmacSha256Hex(
       options.verify.secret,
       options.verify.rawBody,
     ).pipe(
       Effect.mapError(
-        (e) => new VerifiedWebhookError(`HMAC digest failed: ${String(e)}`, "signature/digest"),
+        (e) =>
+          new VerifiedWebhookError({
+            message: `HMAC digest failed: ${String(e)}`,
+            op: "signature/digest",
+          }),
       ),
     )
     if (!constantTimeHexEquals(expected, options.verify.receivedSignatureHex)) {
       return yield* Effect.fail(
-        new VerifiedWebhookError("invalid signature", "signature/invalid"),
+        new VerifiedWebhookError({
+          message: "invalid signature",
+          op: "signature/invalid",
+        }),
       )
     }
     const factKey = webhookFactKey(options.verify.source, options.verify.deliveryId)
@@ -247,7 +252,7 @@ export const verifyAndIngestWebhook = (options: {
         write: () => Effect.void, // row already written above
         value: { factKey, source: options.verify.source, deliveryId: options.verify.deliveryId },
         serializeValue: (v) => JSON.stringify(v),
-      })
+      }).pipe(Effect.orDie)
     }
     return { _tag: "Inserted" as const, factKey }
   })
@@ -297,7 +302,7 @@ export const emitPeerEvent = (options: {
         write: () => Effect.void,
         value: { factKey, name: options.name, eventId: options.eventId },
         serializeValue: (v) => JSON.stringify(v),
-      })
+      }).pipe(Effect.orDie)
     }
     return { _tag: "Inserted" as const, factKey }
   })

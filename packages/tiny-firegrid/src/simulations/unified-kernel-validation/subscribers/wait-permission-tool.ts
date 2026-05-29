@@ -126,7 +126,7 @@ const pointReadFact = (
 }
 
 const asUnknownOpt = <A>(opt: Option.Option<A>): Option.Option<unknown> =>
-  opt as Option.Option<unknown>
+  opt
 
 export const buildWaitForFactLayer = () => WaitForFactWorkflow.toLayer(waitForFactBody)
 

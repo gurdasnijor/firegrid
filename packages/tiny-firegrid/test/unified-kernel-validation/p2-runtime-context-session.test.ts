@@ -19,11 +19,9 @@
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { durableStreamUrl } from "@firegrid/protocol/launch"
-import {
-  Workflow,
-  WorkflowEngine,
-} from "@effect/workflow"
-import { Effect, Exit, Layer, Option, Stream } from "effect"
+import type { WorkflowEngineTableService } from "@firegrid/runtime/engine/durable-streams-workflow-engine"
+import { Effect, Exit, Option, Stream } from "effect"
+import type { KernelCommandTableService } from "../../src/simulations/unified-kernel-validation/kernel.ts"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { appendInputIntent, ensureContext } from "../../src/simulations/unified-kernel-validation/input-append.ts"
 import {
@@ -113,7 +111,7 @@ const inputRewriter = (unified: UnifiedTable["Type"]): KernelRowRewriter => ({
 // Helper: write an input via the atomic append + arm via the kernel.
 const appendAndArm = (options: {
   readonly unified: UnifiedTable["Type"]
-  readonly kernel: import("../../src/simulations/unified-kernel-validation/kernel.ts").KernelCommandTableService
+  readonly kernel: KernelCommandTableService
   readonly contextId: string
   readonly inputId: string
   readonly kind:
@@ -154,7 +152,7 @@ const appendAndArm = (options: {
   })
 
 const awaitExecutionFinalResult = (
-  engineTable: import("@firegrid/runtime/engine/durable-streams-workflow-engine").WorkflowEngineTableService,
+  engineTable: WorkflowEngineTableService,
   executionId: string,
   timeout = "5 seconds" as const,
 ) =>
@@ -303,7 +301,7 @@ describe("P2 — RuntimeContext session as workflow body", () => {
                   contextId,
                   attempt,
                   expectedInputs: 3,
-                }) as Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine>,
+                }),
               )
 
               // Give the body a moment to park.
@@ -340,7 +338,7 @@ describe("P2 — RuntimeContext session as workflow body", () => {
 
               const exit = yield* executeFiber.await
               if (Exit.isFailure(exit)) {
-                return yield* Effect.die(exit.cause)
+                return yield* Effect.failCause(exit.cause)
               }
               const snapshot = yield* recorder.snapshot
               const runRow = yield* services.unified.runs.get(
@@ -409,7 +407,7 @@ describe("P2 — RuntimeContext session as workflow body", () => {
                 contextId,
                 attempt,
                 expectedInputs: 1,
-              }) as Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine>,
+              }),
             )
             yield* Effect.sleep("100 millis")
             // Append the terminal input WITHOUT arming — the row exists

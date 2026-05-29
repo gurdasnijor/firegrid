@@ -13,8 +13,8 @@
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { durableStreamUrl } from "@firegrid/protocol/launch"
-import { WorkflowEngine } from "@effect/workflow"
-import { Effect, Layer, Option } from "effect"
+import type { WorkflowEngine } from "@effect/workflow"
+import { Effect, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   type GenerationUrls,
@@ -114,18 +114,14 @@ describe("P4.1 — ScheduledPromptWorkflow", () => {
               status: scheduleRow?.status,
             }
           }),
-      ) as Effect.Effect<
-        {
-          readonly result: { readonly scheduleId: string; readonly firedAt: string }
-          readonly status: "pending" | "fired" | undefined
-        },
-        unknown
-      >,
+      ),
     )
 
     expect(outcome.status).toBe("fired")
+    /* eslint-disable @typescript-eslint/no-unsafe-member-access */
     expect(outcome.result.scheduleId).toBe(scheduleId)
     expect(outcome.result.firedAt).toBeDefined()
+    /* eslint-enable @typescript-eslint/no-unsafe-member-access */
   }, 15_000)
 })
 
@@ -170,7 +166,7 @@ describe("P4.2 — verifyAndIngestWebhook", () => {
                 factTable: "webhookFacts",
                 timeoutMs: 5_000,
                 waitId,
-              }) as Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine>,
+              }),
             )
             yield* Effect.sleep("100 millis")
 
@@ -193,7 +189,7 @@ describe("P4.2 — verifyAndIngestWebhook", () => {
             })
 
             const exit = yield* fiber.await
-            if (exit._tag === "Failure") return yield* Effect.die(exit.cause)
+            if (exit._tag === "Failure") return yield* Effect.failCause(exit.cause)
             const waitOutcome = exit.value as {
               readonly matched: boolean
               readonly timedOut: boolean
@@ -319,7 +315,7 @@ describe("P4.3 — emitPeerEvent", () => {
                 factTable: "peerEvents",
                 timeoutMs: 5_000,
                 waitId,
-              }) as Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine>,
+              }),
             )
             yield* Effect.sleep("100 millis")
 
@@ -337,7 +333,7 @@ describe("P4.3 — emitPeerEvent", () => {
             })
 
             const exit = yield* fiber.await
-            if (exit._tag === "Failure") return yield* Effect.die(exit.cause)
+            if (exit._tag === "Failure") return yield* Effect.failCause(exit.cause)
             const waitOutcome = exit.value as {
               readonly matched: boolean
               readonly factKey?: string
