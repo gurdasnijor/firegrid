@@ -14,6 +14,19 @@ Take this folder and you can delete the production Shape C /
 DurableDeferred-based subscriber surface and rebuild on top of these
 primitives.
 
+## Run it
+
+```sh
+pnpm --filter @firegrid/tiny-firegrid simulate:run unified-kernel-validation
+```
+
+Goes through the standard tiny-firegrid driver/host harness — same as
+every other simulation in this folder (`kernel-owned-write-arm`,
+`inv5-cross-agent-event-choreography`, etc.). Produces a `.simulate/
+runs/<runId>/` directory with `trace.jsonl` (OTel spans), and prints a
+GREEN verdict block to stdout with the result of every probe + every
+structural invariant.
+
 ## The signal primitive
 
 `signal.ts` defines the standard durable-execution capability that
@@ -67,15 +80,25 @@ have a pending signal. Workflows parked on `DurableDeferred.await`
 ```
 unified-kernel-validation/
 ├── README.md
+├── index.ts                 # defineSimulation
+├── host.ts                  # exposes runtime probes to the driver
+├── driver.ts                # runs probes + invariants + prints verdict
+├── invariants.ts            # structural source-text checks
 ├── signal.ts                # SignalTable, awaitSignal, readSignalsFor,
 │                            # sendSignal, recordSignal, recoverPendingSignals.
-│                            # The durable-signal primitive.
 ├── tables.ts                # UnifiedTable: ONLY families that hold
 │                            # data the engine doesn't track —
 │                            # permissions, schedules, webhookFacts,
 │                            # peerEvents.
 ├── substrate.ts             # runGeneration: engine + tables + signal
 │                            # recovery sweep. The "rebuild base."
+├── probes/                  # runtime probes used by the driver
+│   ├── _helpers.ts
+│   ├── p1-signal.ts
+│   ├── p2-session.ts
+│   ├── p3-permission-tool.ts
+│   ├── p4-scheduled-webhook-peer.ts
+│   └── p5-end-to-end.ts
 └── subscribers/
     ├── runtime-context.ts                  # Session lifecycle.
     ├── permission-and-tool.ts              # PermissionRoundtripWorkflow,
@@ -88,7 +111,8 @@ unified-kernel-validation/
 ### What's NOT in this tree
 
 The unified shape retires these Shape C-era concepts; their absence is
-asserted by the collapse-invariant suite in `p5-end-to-end.test.ts`:
+asserted by the structural-invariant checks in `invariants.ts`
+(driven by the simulation, not by vitest tests):
 
 - **`runs` / `outputs` / `toolResults` row families** — engine
   `executions.finalResult` + Activity memoization already track these.
@@ -112,94 +136,44 @@ asserted by the collapse-invariant suite in `p5-end-to-end.test.ts`:
 
 ## What's proven
 
-Each phase is a self-contained vitest file under
-`packages/tiny-firegrid/test/unified-kernel-validation/`. **25 tests
-total, all green.**
+The simulation drives 13 runtime probes through the real
+`DurableStreamsWorkflowEngine` (via the tiny-firegrid host harness)
+and 12 structural source-text invariants.
 
-### P1 — signal + substrate (3 tests)
+### Runtime probes
 
-1. Happy path: `sendSignal` records the signal (with payload), wakes
-   the parked body. The body reads its own signal via `awaitSignal`
-   and returns the payload.
-2. Crash between record and resume: `recoverPendingSignals` re-arms
-   on reconstruction. Body completes without test re-drive.
-3. Bounded ownership: a `DurableDeferred.await`-only workflow with NO
-   signal for it stays parked across recovery.
+| probe | scenario |
+| --- | --- |
+| **P1A** | `sendSignal` wakes a parked body that returns the signal payload |
+| **P1B** | crash between record and resume → recovery re-arms, body completes |
+| **P1C** | bounded ownership — `DurableDeferred.await` body untouched by recovery |
+| **P2A** | concurrent `Workflow.execute` for `(contextId, attempt)` collapse to ONE body; spawn Activity fires once |
+| **P2B** | session input arrival via `sendSignal` after the body parks; recorder sees N sends |
+| **P2C** | session crash recovery; gen-2 spawn Activity memoized from gen-1 |
+| **P3A** | permission body parks via `awaitSignal`, returns signal-delivered decision |
+| **P3B** | tool dispatch: same `toolUseId` across concurrent executes invokes executor ONCE |
+| **P4A** | scheduled prompt fires after `DurableClock.sleep` delay |
+| **P4B** | webhook ingest (valid HMAC) + observer wake via signal |
+| **P4C** | webhook ingest (invalid HMAC) rejected; no fact written |
+| **P4D** | peer event emit + observer wake via signal |
+| **P5** | end-to-end product surface in one driver: spawn → prompt → tool → permission → permission-response → scheduled → webhook → peer → terminal |
 
-### P2 — RuntimeContext session as workflow body (3 tests)
+### Structural collapse invariants
 
-The most load-bearing production subscriber, generalized as a single
-workflow body. The body iterates its own signals as the input log —
-no parallel `inputs` table.
-
-1. Single execution + memoized spawn: concurrent `Workflow.execute`
-   for the same `(contextId, attempt)` admit ONE body. Spawns = 1,
-   sends = N.
-2. Input arrival via `sendSignal`: body parks before signals exist;
-   subsequent signal sends wake it; recorder sees each send exactly
-   once (Activity-memoized).
-3. Crash recovery: gen-1 records terminal signal WITHOUT resuming,
-   drops generation. Gen-2 recovery re-arms, body completes,
-   `executions.finalResult` lands. Spawn Activity is memoized from
-   gen-1, so the fresh gen-2 recorder sees no spawn side effect.
-
-### P3 — permission + tool (2 tests)
-
-1. `PermissionRoundtripWorkflow` writes an open-request row (no
-   `status` flag), parks via `awaitSignal`, returns the decision
-   delivered in the signal payload.
-2. `ToolDispatchWorkflow` idempotency: same toolUseId across two
-   concurrent executes invokes the executor count = 1; both return
-   identical resultJson. At-most-once via `Workflow.idempotencyKey` +
-   Activity memoization — no `toolResults` table.
-
-### P4 — scheduled + external adapters (4 tests)
-
-1. `ScheduledPromptWorkflow` fires after wall-clock delay; the
-   commitment row is present, the body returns `firedAt`. No `status`
-   column.
-2. `verifyAndIngestWebhook`: signed payload → row written → waiting
-   observer wakes via signal send and returns the matched row.
-3. `verifyAndIngestWebhook` rejects invalid HMAC; no fact written.
-4. `emitPeerEvent` + waiting observer wakes via signal send.
-
-### P5 — end-to-end + collapse invariants (13 tests)
-
-1. **End-to-end driver** walks the complete product surface: spawn →
-   prompt input → tool dispatch → permission roundtrip →
-   permission-response input → scheduled prompt → webhook ingest →
-   peer event emit → terminal input → session completes.
-
-2-13. **Collapse-invariant assertions** read the simulation source
-   (with comments stripped) and assert structural absence of:
-   - Shape C `eventAlreadyProcessed` / `lastProcessedInputSequence`
-     gates.
-   - `DurableDeferred` mailbox in subscriber bodies.
-   - `appendRuntimeInputDeferred` / `RuntimeContextWorkflowRuntime`
-     bridge symbols.
-   - Parallel `connectors/` / `ConnectorAdapter` primitive.
-   - Subscriber bodies that don't park via `awaitSignal` /
-     `Workflow.suspend` / `DurableClock.sleep`.
-   - Tool dispatch without `Workflow.idempotencyKey: (p) => p.toolUseId`.
-   - Subscribers calling `engine.resume` / `Workflow.resume` directly
-     (the signal primitive is the only wake authority).
-   - **`makePerKeyMutex` / `per-key-mutex`** — Shape C subscriber-
-     runtime artifact.
-   - **`WaitForFactWorkflow` / `SourceCollections` /
-     `RuntimeObservationSourceNames`** — string-dispatch registry.
-   - **Parallel runtime-state tables** — `runs` / `outputs` /
-     `toolResults` row families duplicate engine state.
-   - **Shape C atomic-allocator helpers** — `appendInputIntent` /
-     `ensureContext` / `nextInputSequence` reconstruct the host-side
-     producer allocator.
-   - **Row-level lifecycle status flags** — `permissions.status` /
-     `schedules.status` duplicate engine execution lifecycle.
-
-## Run it
-
-```sh
-pnpm --filter @firegrid/tiny-firegrid test test/unified-kernel-validation/
-```
+| id | invariant |
+| --- | --- |
+| I1 | no Shape C `eventAlreadyProcessed` / `lastProcessedInputSequence` |
+| I2 | no `DurableDeferred` mailbox in subscriber bodies |
+| I3 | no `appendRuntimeInputDeferred` / `RuntimeContextWorkflowRuntime` bridge |
+| I4 | no parallel `connectors/` / `ConnectorAdapter` |
+| I5 | every subscriber body parks via `awaitSignal` / `Workflow.suspend` / `DurableClock.sleep` |
+| I6 | tool dispatch via `Workflow.idempotencyKey`, no result table |
+| I7 | subscribers never call `engine.resume` / `Workflow.resume` directly |
+| I8 | no `makePerKeyMutex` / `per-key-mutex` |
+| I9 | no generic `WaitForFactWorkflow` / `SourceCollections` / `RuntimeObservationSourceNames` |
+| I10 | no parallel `runs` / `outputs` / `toolResults` row families |
+| I11 | no `appendInputIntent` / `ensureContext` / `nextInputSequence` |
+| I12 | no row-level `status` flag on `permissions` / `schedules` |
 
 ## Prior art
 
@@ -212,10 +186,9 @@ other durable-execution runtime:
 - **AWS Step Functions** — `waitForTaskToken` + `SendTaskSuccess`
 - **Conductor** — `WAIT` tasks + `WorkflowClient.completeSignal`
 
-What the simulation calls `sendSignal` / `awaitSignal` /
-`recoverPendingSignals` is structurally identical to these — a
-durable record of "fact arrived for execution X" plus a recovery
-sweep that re-issues wake calls on reconstruction.
+`sendSignal` / `awaitSignal` / `recoverPendingSignals` are structurally
+identical — a durable record of "fact arrived for execution X" plus a
+recovery sweep that re-issues wake calls on reconstruction.
 
 ## What this is NOT
 

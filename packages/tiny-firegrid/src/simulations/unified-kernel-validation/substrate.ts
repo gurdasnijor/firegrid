@@ -46,8 +46,17 @@ export interface GenerationServices {
 
 export interface GenerationSetup {
   readonly urls: GenerationUrls
-  /** Workflows to register with the engine for this generation. */
-  readonly workflowLayers: ReadonlyArray<Layer.Layer<unknown, unknown, unknown>>
+  /**
+   * Workflows to register with the engine for this generation. The
+   * layer requirements (`RIn`) are widened to `any` because Layer is
+   * contravariant in RIn — a layer requiring `WorkflowEngine | UnifiedTable
+   * | SignalTable` is not assignable to a layer requiring `unknown`. The
+   * substrate provides those services internally, so widening here is
+   * safe; the actual layer merge below carries the requirements
+   * through.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly workflowLayers: ReadonlyArray<Layer.Layer<never, unknown, any>>
   /** Catalog the signal primitive consults at recovery. */
   readonly catalog: WorkflowCatalog
   /**
