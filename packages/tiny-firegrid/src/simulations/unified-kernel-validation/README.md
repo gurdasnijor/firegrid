@@ -19,95 +19,114 @@ adapter.
 unified-kernel-validation/
 ├── README.md
 ├── kernel.ts                # KernelCommandTable, kernelWriteArm,
-│                            # kernelRecordAndWrite, replayPendingWriteArm.
+│                            # kernelRecordAndWrite, readCommandsFor,
+│                            # replayPendingWriteArm.
 │                            # The "missing engine capability."
-├── tables.ts                # UnifiedTable namespace: one DurableTable
-│                            # with all row families (contexts, inputs,
-│                            # inputIds, outputs, runs, toolResults,
-│                            # permissions, schedules, webhookFacts,
-│                            # peerEvents). Key helpers per family.
-├── input-append.ts          # appendInputIntent: atomic (contexts,
-│                            # inputs, inputIds) write with idempotency
-│                            # index + sequence allocation.
+├── tables.ts                # UnifiedTable namespace: ONLY the row
+│                            # families that hold data the engine
+│                            # doesn't already track — permissions
+│                            # (UI-renderable open request),
+│                            # schedules (UI-renderable commitment),
+│                            # webhookFacts, peerEvents.
 ├── substrate.ts             # runGeneration: per-generation engine +
 │                            # tables + replay sweep. The "rebuild base."
 └── subscribers/
-    ├── runtime-context.ts                  # The canonical session lifecycle
-    │                                       # workflow body: spawn (Activity-
-    │                                       # memoized) + cursor loop + terminal.
-    ├── permission-and-tool.ts              # PermissionRoundtripWorkflow,
-    │                                       # ToolDispatchWorkflow.
-    └── scheduled-webhook-peer.ts           # ScheduledPromptWorkflow (DurableClock),
-                                            # verifyAndIngestWebhook (host helper),
-                                            # WebhookFactObserverWorkflow,
-                                            # emitPeerEvent (host helper),
-                                            # PeerEventObserverWorkflow.
+    ├── runtime-context.ts                  # Session lifecycle: spawn
+    │                                       # (Activity-memoized) + body
+    │                                       # iterates its own kernel
+    │                                       # commands + terminal return.
+    ├── permission-and-tool.ts              # PermissionRoundtripWorkflow
+    │                                       # (decision flows via kernel
+    │                                       # command payload),
+    │                                       # ToolDispatchWorkflow
+    │                                       # (Activity memoization +
+    │                                       # idempotencyKey is the
+    │                                       # durable record).
+    └── scheduled-webhook-peer.ts           # ScheduledPromptWorkflow
+                                            # (DurableClock), webhook +
+                                            # peer host helpers,
+                                            # specialized observers.
 ```
 
-There is deliberately NO `per-key-mutex.ts` and NO generic
-`WaitForFactWorkflow`. Both are Shape C / SourceCollections-era
-concepts that the unified kernel retires:
+### What's NOT in this tree
 
-- **Per-key serialization** is given by `Workflow.idempotencyKey` (one
-  execution per logical key) + the engine's single-fiber execution
-  model. No subscriber-runtime mutex needed.
-- **Fact observation** is per-family specialized workflows
-  (`WebhookFactObserverWorkflow`, `PeerEventObserverWorkflow`,
-  `PermissionRoundtripWorkflow`'s embedded observer). A generic
-  "wait_for any fact" workflow with a string `factTable` discriminator
-  recreates the retired `SourceCollections` /
-  `RuntimeObservationSourceNames` registry pattern.
+The unified kernel retires these Shape C-era concepts; their absence is
+asserted by the collapse-invariant suite in `p5-end-to-end.test.ts`:
 
-The P5 collapse invariants assert structural absence of both patterns.
+- **`runs` / `outputs` / `toolResults` row families** — the engine's
+  `executions.finalResult` + Activity memoization carries each one's
+  load. Adding them reconstructs the "subscriber tracks its own
+  lifecycle" pattern.
+- **`inputs` / `inputIds` / `contexts` row families** — session input
+  intents ARE kernel commands targeting the session execution. The
+  command's `inputValueJson` carries the input payload. The session
+  body iterates its own commands by `recordedAt` order.
+- **`input-append.ts` host helper** — no producer-side allocator that
+  mutates a `contexts.nextInputSequence` row. Producers just call
+  `kernelWriteArm` directly.
+- **`status` columns on permissions / schedules** — both duplicated
+  engine execution lifecycle. The kernel command payload IS the
+  permission decision; engine clock recovery + `executions.finalResult`
+  IS the schedule firing evidence.
+- **`per-key-mutex.ts`** — `Workflow.idempotencyKey` + the engine's
+  single-fiber execution model already serializes per logical key.
+- **Generic `WaitForFactWorkflow`** — string-dispatch over a fact-table
+  name reconstructs the retired `SourceCollections` /
+  `RuntimeObservationSourceNames` registry. Specialized per-family
+  observers are the unified shape.
 
 ## What's proven
 
 Each phase is a self-contained vitest file under
-`packages/tiny-firegrid/test/unified-kernel-validation/`. **22 tests
+`packages/tiny-firegrid/test/unified-kernel-validation/`. **25 tests
 total, all green.**
 
 ### P1 — kernel + substrate (3 tests)
 
-1. Happy path: `kernelWriteArm` wakes a parked `Workflow.suspend` body.
-2. Crash between write and arm: `replayPendingWriteArm` re-arms on
+1. Happy path: `kernelWriteArm` records the command (with payload),
+   wakes the parked body. The body reads its own kernel command and
+   returns the payload — no separate input row table needed.
+2. Crash between record and arm: `replayPendingWriteArm` re-arms on
    reconstruction. Body completes without test re-drive.
 3. Bounded ownership: a `DurableDeferred.await`-only workflow with NO
-   kernel fact for it stays parked across replay. Proves the
+   kernel command for it stays parked across replay. Proves the
    `tf-12q9` generic-sweep failure mode does NOT recur (kernel only
    recovers what it owns).
 
 ### P2 — RuntimeContext session as workflow body (3 tests)
 
 The most load-bearing production subscriber, generalized as a single
-workflow body.
+workflow body. The body iterates its own kernel commands as the input
+log — no parallel `inputs` table.
 
-1. Single execution + memoized spawn: concurrent
-   `Workflow.execute` for the same `(contextId, attempt)` admit ONE
-   body. Spawns = 1, sends = N. Kills the production TOCTOU that
-   spawned double `claude-agent-acp` PIDs.
-2. Input arrival via `kernelWriteArm`: body parks before inputs
-   exist; subsequent `appendAndArm` calls wake it; outputs land in
-   order; terminal completes.
-3. Crash recovery: gen-1 appends terminal input + records kernel fact
-   WITHOUT arming, drops generation. Gen-2 replay re-arms, body
-   completes, `runs.exited` lands. No test re-drive.
+1. Single execution + memoized spawn: concurrent `Workflow.execute` for
+   the same `(contextId, attempt)` admit ONE body. Spawns = 1, sends =
+   N. Kills the production TOCTOU that spawned double `claude-agent-acp`
+   PIDs.
+2. Input arrival via `kernelWriteArm`: body parks before commands
+   exist; subsequent kernel writes wake it; recorder sees each send
+   exactly once (Activity-memoized).
+3. Crash recovery: gen-1 records terminal kernel command WITHOUT
+   arming, drops generation. Gen-2 replay re-arms, body completes,
+   engine `executions.finalResult` lands. Spawn Activity is memoized
+   from gen-1, so the fresh gen-2 recorder sees no spawn side effect.
 
 ### P3 — permission + tool (2 tests)
 
-1. `PermissionRoundtripWorkflow` parks until host upserts row to
-   `responded`; returns decision.
+1. `PermissionRoundtripWorkflow` writes an open request row (no
+   `status` flag), parks, returns the decision delivered in the kernel
+   command payload by the responder.
 2. `ToolDispatchWorkflow` idempotency: same toolUseId across two
    concurrent executes invokes the executor count = 1; both return
-   identical resultJson. At-most-once via
-   `Workflow.idempotencyKey` over `WorkflowEngineTable` — no separate
-   `runtime-tool-result` table needed.
+   identical resultJson. At-most-once via `Workflow.idempotencyKey` +
+   Activity memoization — no `toolResults` table.
 
 ### P4 — scheduled + external adapters (4 tests)
 
-1. `ScheduledPromptWorkflow` fires after wall-clock delay;
-   `schedules` row settles `fired`. (The one Shape D admission that
-   survives in the unified model — and the only place
-   `DurableClock.sleep` is used in the simulation.)
+1. `ScheduledPromptWorkflow` fires after wall-clock delay; the
+   commitment row is present, the body returns `firedAt`. No `status`
+   column — engine clock recovery + `executions.finalResult` IS the
+   firing evidence.
 2. `verifyAndIngestWebhook`: signed payload → row written → waiting
    `WebhookFactObserverWorkflow` wakes via kernel arm and returns the
    matched row.
@@ -116,16 +135,15 @@ workflow body.
    kernel arm. Same shape as webhook — the producer side differs, the
    observer is specialized to its fact family.
 
-### P5 — end-to-end + collapse invariants (10 tests)
+### P5 — end-to-end + collapse invariants (13 tests)
 
 1. **End-to-end driver** walks the complete product surface in one
-   test: spawn → prompt input → tool dispatch (Shape D MCP-entry) →
-   permission roundtrip → permission-response input → scheduled
-   prompt → webhook ingest → peer event emit → terminal input →
-   session completes. Asserts every fact landed durably; the
-   recording adapter snapshot proves spawn = 1.
+   test: spawn → prompt input → tool dispatch → permission roundtrip →
+   permission-response input → scheduled prompt → webhook ingest →
+   peer event emit → terminal input → session completes. Asserts every
+   fact landed durably; the recording adapter snapshot proves spawn = 1.
 
-2-10. **Collapse-invariant assertions** read the simulation source
+2-13. **Collapse-invariant assertions** read the simulation source
    (with comments stripped) and assert structural absence of:
    - Shape C `eventAlreadyProcessed` / `lastProcessedInputSequence`
      gates.
@@ -139,12 +157,17 @@ workflow body.
    - Subscribers calling `engine.resume` / `Workflow.resume` directly
      (the kernel is the only wake authority).
    - **`makePerKeyMutex` / `per-key-mutex`** — Shape C subscriber-
-     runtime artifact; the workflow context already serializes per
-     idempotency key.
+     runtime artifact.
    - **`WaitForFactWorkflow` / `SourceCollections` /
-     `RuntimeObservationSourceNames`** — string-dispatch over a fact
-     table reconstructs the retired registry pattern. Specialized
-     per-family observers are the unified shape.
+     `RuntimeObservationSourceNames`** — string-dispatch registry
+     reconstruction.
+   - **Parallel runtime-state tables** — `runs` / `outputs` /
+     `toolResults` row families duplicate engine state.
+   - **Shape C atomic-allocator helpers** — `appendInputIntent` /
+     `ensureContext` / `nextInputSequence` reconstruct the host-side
+     producer allocator.
+   - **Row-level lifecycle status flags** — `permissions.status` /
+     `schedules.status` duplicate engine execution lifecycle.
 
 ## Run it
 

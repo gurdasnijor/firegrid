@@ -4,11 +4,12 @@
  * Two halves:
  *
  *   1. An end-to-end driver that walks a realistic product flow
- *      through the unified kernel, exercising every capability:
- *      spawn → input → tool dispatch (Shape D) → permission roundtrip
- *      → scheduled prompt → webhook → peer event → terminal completion.
- *      Asserts each step lands a durable row in the appropriate
- *      UnifiedTable family.
+ *      through the unified kernel: spawn → prompt input → tool dispatch
+ *      → permission roundtrip → permission-response input → scheduled
+ *      prompt → webhook ingest → peer event emit → terminal input →
+ *      session completes. Asserts every step settles durably either as
+ *      a UnifiedTable row (external payloads) or as the workflow's
+ *      `executions.finalResult` (lifecycle).
  *
  *   2. Collapse-invariant assertions: read the simulation source to
  *      confirm none of the retired primitives appear. The simulation
@@ -23,7 +24,6 @@ import { Effect, Option, Ref } from "effect"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { appendInputIntent, ensureContext } from "../../src/simulations/unified-kernel-validation/input-append.ts"
 import { kernelWriteArm } from "../../src/simulations/unified-kernel-validation/kernel.ts"
 import {
   type GenerationUrls,
@@ -34,11 +34,15 @@ import {
   buildRuntimeContextSessionLayer,
   makeRuntimeContextRecorder,
   RuntimeContextSessionWorkflow,
+  SESSION_INPUT_TABLE,
+  type SessionInputPayload,
 } from "../../src/simulations/unified-kernel-validation/subscribers/runtime-context.ts"
 import {
   buildPermissionRoundtripLayer,
   buildToolDispatchLayer,
   makeToolExecutor,
+  PERMISSION_DECISION_TABLE,
+  type PermissionDecisionPayload,
   PermissionRoundtripWorkflow,
   ToolDispatchWorkflow,
 } from "../../src/simulations/unified-kernel-validation/subscribers/permission-and-tool.ts"
@@ -51,8 +55,6 @@ import {
 import {
   peerEventKey,
   permissionKey,
-  runKey,
-  toolKey,
   webhookFactKey,
 } from "../../src/simulations/unified-kernel-validation/tables.ts"
 
@@ -132,11 +134,6 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
           (services) =>
             Effect.gen(function*() {
               // ── 1. Spawn the RuntimeContext session ──────────────
-              yield* ensureContext({
-                table: services.unified,
-                contextId,
-                agent: "e2e-agent",
-              })
               const sessionExecutionId = yield* RuntimeContextSessionWorkflow.executionId({
                 contextId,
                 attempt,
@@ -150,21 +147,17 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
 
               // ── 2. Input #1: prompt ─────────────────────────────
               yield* Effect.sleep("50 millis")
-              const in1 = yield* appendInputIntent({
-                table: services.unified,
-                contextId,
-                inputId: "prompt-1",
-                kind: "prompt",
-                payloadJson: JSON.stringify({ text: "hello" }),
-              })
               yield* kernelWriteArm({
                 kernel: services.kernel,
                 workflow: RuntimeContextSessionWorkflow,
                 executionId: sessionExecutionId,
-                inputTable: "inputs",
-                inputKey: in1.inputKey,
+                inputTable: SESSION_INPUT_TABLE,
+                inputKey: "prompt-1",
                 write: () => Effect.void,
-                value: { sequence: in1.sequence },
+                value: {
+                  kind: "prompt",
+                  payloadJson: JSON.stringify({ text: "hello" }),
+                } satisfies SessionInputPayload,
                 serializeValue: (v) => JSON.stringify(v),
               })
 
@@ -205,20 +198,10 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
                 kernel: services.kernel,
                 workflow: PermissionRoundtripWorkflow,
                 executionId: permExec,
-                inputTable: "permissions",
-                inputKey: permKey,
-                write: () =>
-                  services.unified.permissions.upsert({
-                    permissionKey: permKey,
-                    contextId,
-                    permissionRequestId,
-                    toolUseId,
-                    status: "responded",
-                    decisionJson: JSON.stringify("allow"),
-                    requestedAt: requestRow!.requestedAt,
-                    respondedAt: new Date().toISOString(),
-                  }).pipe(Effect.orDie, Effect.asVoid),
-                value: { decision: "allow" },
+                inputTable: PERMISSION_DECISION_TABLE,
+                inputKey: permissionRequestId,
+                write: () => Effect.void,
+                value: { decision: "allow" } satisfies PermissionDecisionPayload,
                 serializeValue: (v) => JSON.stringify(v),
               })
               const permExit = yield* permFiber.await
@@ -226,21 +209,17 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
               const permResult = permExit.value as { readonly decision: string }
 
               // ── 5. Input #2: permission-response feeds back ─────
-              const in2 = yield* appendInputIntent({
-                table: services.unified,
-                contextId,
-                inputId: "perm-response-1",
-                kind: "permission-response",
-                payloadJson: JSON.stringify({ permissionRequestId, decision: permResult.decision }),
-              })
               yield* kernelWriteArm({
                 kernel: services.kernel,
                 workflow: RuntimeContextSessionWorkflow,
                 executionId: sessionExecutionId,
-                inputTable: "inputs",
-                inputKey: in2.inputKey,
+                inputTable: SESSION_INPUT_TABLE,
+                inputKey: "perm-response-1",
                 write: () => Effect.void,
-                value: { sequence: in2.sequence },
+                value: {
+                  kind: "permission-response",
+                  payloadJson: JSON.stringify({ permissionRequestId, decision: permResult.decision }),
+                } satisfies SessionInputPayload,
                 serializeValue: (v) => JSON.stringify(v),
               })
 
@@ -292,21 +271,17 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
               })
 
               // ── 9. Input #3: terminal ───────────────────────────
-              const in3 = yield* appendInputIntent({
-                table: services.unified,
-                contextId,
-                inputId: "terminal",
-                kind: "terminal",
-                payloadJson: JSON.stringify({ reason: "done" }),
-              })
               yield* kernelWriteArm({
                 kernel: services.kernel,
                 workflow: RuntimeContextSessionWorkflow,
                 executionId: sessionExecutionId,
-                inputTable: "inputs",
-                inputKey: in3.inputKey,
+                inputTable: SESSION_INPUT_TABLE,
+                inputKey: "terminal",
                 write: () => Effect.void,
-                value: { sequence: in3.sequence },
+                value: {
+                  kind: "terminal",
+                  payloadJson: JSON.stringify({ reason: "done" }),
+                } satisfies SessionInputPayload,
                 serializeValue: (v) => JSON.stringify(v),
               })
 
@@ -319,12 +294,9 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
 
               // ── Final observations ──────────────────────────────
               const recordingSnapshot = yield* recorder.snapshot
-              const runRow = yield* services.unified.runs.get(runKey(contextId, attempt)).pipe(
-                Effect.map(Option.getOrUndefined),
-              )
-              const toolRow = yield* services.unified.toolResults.get(toolKey(contextId, toolUseId)).pipe(
-                Effect.map(Option.getOrUndefined),
-              )
+              const sessionFinal = yield* services.engineTable.executions.get(
+                sessionExecutionId,
+              ).pipe(Effect.map(Option.getOrUndefined))
               const webhookRow = yield* services.unified.webhookFacts.get(
                 webhookFactKey(webhookSource, deliveryId),
               ).pipe(Effect.map(Option.getOrUndefined))
@@ -333,7 +305,8 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
               ).pipe(Effect.map(Option.getOrUndefined))
 
               return {
-                runStatus: runRow?.status,
+                permissionRequestRowPresent: requestRow !== undefined,
+                sessionFinalResultPresent: sessionFinal?.finalResult !== undefined,
                 spawnCount: recordingSnapshot.spawns.length,
                 sendCount: recordingSnapshot.sends.length,
                 toolResult: toolResult.resultJson,
@@ -344,7 +317,6 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
                 peerFactWritten: peerRow !== undefined,
                 sessionConsumed: sessionResult.inputsConsumed,
                 sessionTerminal: sessionResult.reachedTerminal,
-                toolRowExists: toolRow !== undefined,
               }
             }),
         )
@@ -352,11 +324,12 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
     )
 
     // ── Assertions: every product surface settled durably ────────
-    expect(outcome.runStatus).toBe("exited")
+    expect(outcome.permissionRequestRowPresent).toBe(true)
+    expect(outcome.sessionFinalResultPresent).toBe(true)
     expect(outcome.spawnCount).toBe(1)
     expect(outcome.sendCount).toBeGreaterThanOrEqual(3)
     expect(outcome.toolInvocations).toBe(1)
-    expect(outcome.toolRowExists).toBe(true)
+    expect(outcome.toolResult).toBeDefined()
     expect(outcome.permDecision).toBe("allow")
     expect(outcome.scheduleFiredAt).toBeDefined()
     expect(outcome.webhookFactWritten).toBe(true)
@@ -375,14 +348,8 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
     "unified-kernel-validation",
   )
 
-  /**
-   * Strip line + block comments so the invariant assertions only flag
-   * actual code uses (not "we don't do X" doc text).
-   */
   const stripComments = (source: string): string => {
-    // Remove /* ... */ block comments first (non-greedy).
     const noBlock = source.replace(/\/\*[\s\S]*?\*\//g, "")
-    // Remove // line comments.
     return noBlock
       .split("\n")
       .map((line) => {
@@ -419,9 +386,6 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
 
   it("no `DurableDeferred` mailbox: subscribers don't park on engine deferreds for domain signals", () => {
     const files = readAllSimFiles()
-    // DurableDeferred is allowed in the simulation only for test-contrast
-    // workflows (none in production subscribers). The simulation source
-    // tree under `subscribers/` MUST NOT reference it.
     const offenders = files.filter((f) =>
       f.path.includes("/subscribers/") && /DurableDeferred/.test(f.text),
     )
@@ -451,7 +415,6 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
     for (const f of files) {
       const hasSuspendOrSleep =
         /Workflow\.suspend/.test(f.text) || /DurableClock\.sleep/.test(f.text)
-      // Some subscriber files are pure helpers (no workflow body); skip those.
       const hasWorkflowMake = /Workflow\.make/.test(f.text)
       if (hasWorkflowMake) {
         expect.soft(hasSuspendOrSleep, `${f.path} should park via Workflow.suspend or DurableClock.sleep`).toBe(true)
@@ -464,7 +427,6 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
     const toolDispatch = files.find((f) => f.path.includes("permission-and-tool.ts"))
     expect(toolDispatch).toBeDefined()
     expect(/idempotencyKey:\s*\(p\)\s*=>\s*p\.toolUseId/.test(toolDispatch!.text)).toBe(true)
-    // No separate `RuntimeToolResultTable` / `runtimeToolResultAtMostOnce`.
     const offenders = files.filter((f) =>
       /RuntimeToolResultTable/.test(f.text) ||
       /runtimeToolResultAtMostOnce/.test(f.text),
@@ -474,8 +436,6 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
 
   it("the kernel is the ONLY wake authority: kernelWriteArm + replayPendingWriteArm are the surface", () => {
     const files = readAllSimFiles().filter((f) => f.path.includes("/subscribers/"))
-    // Subscribers never call `engine.resume` or `Workflow.resume` directly —
-    // only the kernel does.
     const offenders = files.filter((f) =>
       /engine\.resume/.test(f.text) || /Workflow\.resume/.test(f.text),
     )
@@ -484,12 +444,6 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
 
   it("no per-key mutex / fork-per-fact dispatcher pattern (Shape C subscriber-runtime artifact)", () => {
     const files = readAllSimFiles()
-    // The unified model gets per-key serialization for free from
-    // Workflow.idempotencyKey + engine execution serialization. A
-    // per-key mutex is a Shape C concept from the per-key-subscriber-
-    // push-restart finding (tf-4fy3) that does NOT apply here. Its
-    // presence would steer implementers back into the fork-per-fact
-    // dispatcher shape the unified kernel retires.
     const offenders = files.filter((f) =>
       /makePerKeyMutex/.test(f.text) ||
       /per-key-mutex/.test(f.text),
@@ -499,14 +453,57 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
 
   it("no generic `wait_for any fact` workflow (would reconstruct SourceCollections registry)", () => {
     const files = readAllSimFiles()
-    // A workflow that takes a fact-table name as a string discriminator
-    // recreates the retired SourceCollections / RuntimeObservationSourceNames
-    // registry pattern. The unified model uses specialized observers
-    // (one workflow per fact family) instead.
     const offenders = files.filter((f) =>
       /WaitForFactWorkflow/.test(f.text) ||
       /SourceCollections/.test(f.text) ||
       /RuntimeObservationSourceNames/.test(f.text),
+    )
+    expect(offenders.map((f) => f.path)).toEqual([])
+  })
+
+  it("no parallel runtime-state tables: subscribers don't keep `runs` / `outputs` / `toolResults` families", () => {
+    const files = readAllSimFiles()
+    // The engine's executions.finalResult, activity memoization, and
+    // DurableClock recovery cover every lifecycle / output / per-tool
+    // result the simulation needs to remember. Re-introducing parallel
+    // row families for these reconstructs Shape C "subscriber tracks
+    // its own state" patterns.
+    const offenders = files.filter((f) =>
+      /\bruns:\s*RunRow/.test(f.text) ||
+      /\boutputs:\s*OutputRow/.test(f.text) ||
+      /\btoolResults:\s*ToolResultRow/.test(f.text) ||
+      /\bRunRowSchema\b/.test(f.text) ||
+      /\bOutputRowSchema\b/.test(f.text) ||
+      /\bToolResultRowSchema\b/.test(f.text),
+    )
+    expect(offenders.map((f) => f.path)).toEqual([])
+  })
+
+  it("no Shape C atomic-allocator helpers: `appendInputIntent` / `ensureContext` / `nextInputSequence`", () => {
+    const files = readAllSimFiles()
+    // Session inputs are kernel commands (the command IS the input
+    // log). A producer-side atomic allocator that mutates a `contexts`
+    // row reconstructs the host-side `appendRuntimeIngress` shape the
+    // unified kernel retires.
+    const offenders = files.filter((f) =>
+      /\bappendInputIntent\b/.test(f.text) ||
+      /\bensureContext\b/.test(f.text) ||
+      /\bnextInputSequence\b/.test(f.text),
+    )
+    expect(offenders.map((f) => f.path)).toEqual([])
+  })
+
+  it("no row-level lifecycle status flags on permission/schedule rows (those duplicate engine finalResult)", () => {
+    const files = readAllSimFiles()
+    // `permissions.status` / `schedules.status` duplicate engine
+    // execution lifecycle. The kernel command payload IS the decision
+    // (permission) and the engine's clock recovery + finalResult IS
+    // the firing evidence (schedule).
+    const offenders = files.filter((f) =>
+      /permissions:\s*Schema\.Struct[\s\S]*?status:/.test(f.text) ||
+      /schedules:\s*Schema\.Struct[\s\S]*?status:/.test(f.text) ||
+      /PermissionRequestRowSchema[\s\S]{0,400}?status:/.test(f.text) ||
+      /ScheduledRowSchema[\s\S]{0,400}?status:/.test(f.text),
     )
     expect(offenders.map((f) => f.path)).toEqual([])
   })

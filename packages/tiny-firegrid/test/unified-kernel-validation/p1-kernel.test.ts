@@ -2,17 +2,17 @@
  * P1 — Kernel + substrate validation.
  *
  * Asserts the kernel-owned write+arm primitive:
- *   1. happy path: write+arm wakes a parked workflow body.
- *   2. crash between write and arm: replay re-arms on restart.
+ *   1. happy path: write+arm wakes a parked workflow body that reads
+ *      its own kernel command as the input log.
+ *   2. crash between record and arm: replay re-arms on restart and the
+ *      body completes without test re-drive.
  *   3. bounded ownership: workflows the kernel doesn't own a fact for
- *      are NOT touched by replay.
+ *      are NOT touched by replay (a `DurableDeferred.await`-only body
+ *      stays parked across reconstruction).
  *
- * Per-key serialization is given for free by `Workflow.idempotencyKey`
- * (one execution per logical key) + engine execution serialization
- * (one fiber per execution body). No per-key mutex helper is needed
- * in the unified model — that was a Shape C concept from
- * `per-key-subscriber-push-restart` (tf-4fy3) that does NOT apply
- * here.
+ * Per-key serialization comes free from `Workflow.idempotencyKey` (one
+ * execution per logical key) + the engine's single-fiber execution
+ * model. There is no per-key mutex helper in the unified kernel.
  */
 
 import { DurableStreamTestServer } from "@durable-streams/server"
@@ -25,10 +25,11 @@ import {
 import { Effect, Exit, Option, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
-  type KernelRowRewriter,
+  KernelCommandTable,
   type KernelWorkflowCatalog,
   kernelRecordAndWrite,
   kernelWriteArm,
+  readCommandsFor,
   type ResumableWorkflow,
 } from "../../src/simulations/unified-kernel-validation/kernel.ts"
 import {
@@ -36,12 +37,7 @@ import {
   type GenerationUrls,
   makeCatalog,
   runGeneration,
-  tableLayerFor,
 } from "../../src/simulations/unified-kernel-validation/substrate.ts"
-import {
-  UnifiedTable,
-  inputKey,
-} from "../../src/simulations/unified-kernel-validation/tables.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -57,7 +53,7 @@ afterEach(async () => {
   baseUrl = undefined
 })
 
-// ── Test workflow: parks on a workflow-owned input row ──────────────────────
+// ── Test workflow: parks until a kernel command arrives, returns its payload ─
 
 const TestPayloadSchema = Schema.Struct({
   contextId: Schema.String,
@@ -71,21 +67,23 @@ const InputBodyWorkflow = Workflow.make({
   idempotencyKey: (p) => `${p.contextId}:${p.inputId}`,
 })
 
+const TEST_INPUT_TABLE = "p1-test-inputs"
+
 const buildInputBodyLayer = () =>
-  InputBodyWorkflow.toLayer((payload) =>
+  InputBodyWorkflow.toLayer((_payload, executionId) =>
     Effect.gen(function*() {
       const instance = yield* WorkflowEngine.WorkflowInstance
-      const table = yield* UnifiedTable
-      // P1 uses sequence=0 for simplicity — the test workflow processes
-      // a single input at the cursor head.
-      const row = yield* table.inputs.get(
-        inputKey(payload.contextId, 0),
-      ).pipe(Effect.orDie)
-      if (Option.isNone(row)) {
-        return yield* Workflow.suspend(instance)
+      const kernel = yield* KernelCommandTable
+      while (true) {
+        const commands = yield* readCommandsFor(kernel, executionId).pipe(Effect.orDie)
+        if (commands.length > 0) {
+          const body = JSON.parse(commands[0].inputValueJson) as { readonly body: string }
+          return body.body
+        }
+        yield* Workflow.suspend(instance)
+        return yield* Effect.never
       }
-      return row.value.payloadJson
-    }))
+    }) as Effect.Effect<string, never, WorkflowEngine.WorkflowInstance | KernelCommandTable>)
 
 // ── Deferred-only contrast workflow (bounded-ownership probe) ───────────────
 
@@ -101,36 +99,11 @@ const DeferredOnlyWorkflow = Workflow.make({
 const buildDeferredOnlyLayer = () =>
   DeferredOnlyWorkflow.toLayer(() => DurableDeferred.await(Gate))
 
-// ── Catalog + rewriter (for restart recovery) ───────────────────────────────
+// ── Test plumbing ───────────────────────────────────────────────────────────
 
 const catalogFor = (
   workflows: ReadonlyArray<ResumableWorkflow>,
 ): KernelWorkflowCatalog => makeCatalog(workflows)
-
-const inputRewriterFor = (
-  unified: UnifiedTable["Type"],
-): KernelRowRewriter => ({
-  forCommand: (cmd) => {
-    if (cmd.inputTable !== "inputs") return undefined
-    const payload = JSON.parse(cmd.inputValueJson) as {
-      readonly contextId: string
-      readonly inputId: string
-      readonly kind: string
-      readonly payloadJson: string
-    }
-    return unified.inputs.insertOrGet({
-      inputKey: cmd.inputKey,
-      contextId: payload.contextId,
-      inputId: payload.inputId,
-      sequence: 0,
-      kind: payload.kind as "prompt",
-      payloadJson: payload.payloadJson,
-      appendedAt: new Date().toISOString(),
-    }).pipe(Effect.orDie, Effect.asVoid)
-  },
-})
-
-// ── Test plumbing ───────────────────────────────────────────────────────────
 
 const buildUrls = (namespace: string): GenerationUrls => ({
   engineStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.engine`),
@@ -138,33 +111,10 @@ const buildUrls = (namespace: string): GenerationUrls => ({
   kernelTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.kernel`),
 })
 
-const inputValuePayload = (contextId: string, inputId: string, body: string) => ({
-  contextId,
-  inputId,
-  kind: "prompt" as const,
-  payloadJson: body,
-})
-
-const writeInputRow = (
-  unified: UnifiedTable["Type"],
-  contextId: string,
-  inputId: string,
-  body: string,
-) =>
-  unified.inputs.insertOrGet({
-    inputKey: inputKey(contextId, 0),
-    contextId,
-    inputId,
-    sequence: 0,
-    kind: "prompt",
-    payloadJson: body,
-    appendedAt: new Date().toISOString(),
-  }).pipe(Effect.orDie, Effect.asVoid)
-
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("P1 — kernel + substrate", () => {
-  it("happy path: kernelWriteArm wakes a parked body, body returns the row's payload", async () => {
+  it("happy path: kernelWriteArm wakes a parked body that returns its kernel command payload", async () => {
     const ns = `p1-happy-${crypto.randomUUID()}`
     const urls = buildUrls(ns)
     const contextId = "ctx-A"
@@ -178,10 +128,10 @@ describe("P1 — kernel + substrate", () => {
       catalog: catalogFor([InputBodyWorkflow]),
     }
 
-    const result = await Effect.runPromise(
+    await Effect.runPromise(
       runGeneration(setup, (services) =>
         Effect.gen(function*() {
-          // Park the body (no row yet → Workflow.suspend).
+          // Park the body (no kernel command yet → Workflow.suspend).
           const exit = yield* Effect.exit(
             InputBodyWorkflow.execute({ contextId, inputId }).pipe(
               Effect.timeoutOption("100 millis"),
@@ -192,15 +142,15 @@ describe("P1 — kernel + substrate", () => {
 
           const executionId = yield* InputBodyWorkflow.executionId({ contextId, inputId })
 
-          // Now arm: kernel records fact + writes row + resumes.
+          // Arm: kernel records command (with payload) and resumes.
           yield* kernelWriteArm({
             kernel: services.kernel,
             workflow: InputBodyWorkflow,
             executionId,
-            inputTable: "inputs",
-            inputKey: inputKey(contextId, inputId),
-            write: (value) => writeInputRow(services.unified, value.contextId, value.inputId, value.payloadJson),
-            value: inputValuePayload(contextId, inputId, expectedBody),
+            inputTable: TEST_INPUT_TABLE,
+            inputKey: inputId,
+            write: () => Effect.void,
+            value: { body: expectedBody },
             serializeValue: (v) => JSON.stringify(v),
           })
 
@@ -215,20 +165,18 @@ describe("P1 — kernel + substrate", () => {
           expect(Option.isSome(final)).toBe(true)
         })),
     )
-    expect(result).toBeUndefined()
   }, 10_000)
 
-  it("crash between write and arm: replay re-arms on restart", async () => {
+  it("crash between record and arm: replay re-arms on restart", async () => {
     const ns = `p1-replay-${crypto.randomUUID()}`
     const urls = buildUrls(ns)
     const contextId = "ctx-B"
     const inputId = "i-replay"
     const body = "delivered-by-replay"
 
-    // Generation 1: kernel records fact, writes row, but we DROP the arm
-    // before the body can complete. We simulate this by calling
-    // kernelWriteArm WITHOUT awaiting the engine finalResult; then we
-    // close the generation (drops in-memory state).
+    // Generation 1: park the body, record the kernel command (with
+    // payload) WITHOUT arming, then drop the generation. Simulates a
+    // crash between durable record and engine resume.
     const gen1Layer = buildInputBodyLayer()
     const gen1: { executionId: string } = { executionId: "" }
     await Effect.runPromise(
@@ -240,7 +188,6 @@ describe("P1 — kernel + substrate", () => {
         },
         (services) =>
           Effect.gen(function*() {
-            // Park the body.
             yield* Effect.exit(
               InputBodyWorkflow.execute({ contextId, inputId }).pipe(
                 Effect.timeoutOption("100 millis"),
@@ -248,68 +195,47 @@ describe("P1 — kernel + substrate", () => {
             )
             const executionId = yield* InputBodyWorkflow.executionId({ contextId, inputId })
             gen1.executionId = executionId
-
-            // Record the kernel fact + write the row, but DO NOT arm —
-            // models a crash between the durable write and the engine
-            // resume. Generation 2's replay must re-arm.
             yield* kernelRecordAndWrite({
               kernel: services.kernel,
               workflowName: InputBodyWorkflow.name,
               executionId,
-              inputTable: "inputs",
-              inputKey: inputKey(contextId, 0),
-              write: (v) => writeInputRow(services.unified, v.contextId, v.inputId, v.payloadJson),
-              value: inputValuePayload(contextId, inputId, body),
+              inputTable: TEST_INPUT_TABLE,
+              inputKey: inputId,
+              write: () => Effect.void,
+              value: { body },
               serializeValue: (v) => JSON.stringify(v),
             })
-            // Closing the scope here drops the in-memory engine state.
           }) as Effect.Effect<void, unknown>,
       ),
     )
 
-    // Generation 2: rebuild. Replay should re-arm and the body should complete.
+    // Generation 2: rebuild. Replay re-arms; body completes.
     const gen2Layer = buildInputBodyLayer()
     const final = await Effect.runPromise(
-      Effect.gen(function*() {
-        // Build kernel/unified outside runGeneration so we can capture
-        // the unified table for the rewriter.
-        const dummyUnified = yield* Effect.scoped(
+      runGeneration(
+        {
+          urls,
+          workflowLayers: [gen2Layer],
+          catalog: catalogFor([InputBodyWorkflow]),
+        },
+        (services) =>
           Effect.gen(function*() {
-            return yield* UnifiedTable
-          }).pipe(
-            Effect.provide(
-              tableLayerFor(UnifiedTable, urls.unifiedTableStreamUrl),
-            ),
-          ),
-        )
-        return yield* runGeneration(
-          {
-            urls,
-            workflowLayers: [gen2Layer],
-            catalog: catalogFor([InputBodyWorkflow]),
-            rewriter: inputRewriterFor(dummyUnified),
-          },
-          (services) =>
-            Effect.gen(function*() {
-              // Replay already ran inside runGeneration. Await final result.
-              const finalRow = yield* services.engineTable.executions.get(
-                gen1.executionId,
-              ).pipe(Effect.map(Option.getOrUndefined))
-              if (finalRow?.finalResult !== undefined) return true
-              // Else wait briefly for the resumed body to settle.
-              const found = yield* services.engineTable.executions.rows().pipe(
-                Stream.filter((row) =>
-                  row.executionId === gen1.executionId &&
-                  row.finalResult !== undefined),
-                Stream.runHead,
-                Effect.timeoutOption("3 seconds"),
-                Effect.map((opt) => Option.flatten(opt)),
-                Effect.map(Option.isSome),
-              )
-              return found
-            }),
-        )
-      }) as Effect.Effect<boolean, unknown>,
+            const finalRow = yield* services.engineTable.executions.get(
+              gen1.executionId,
+            ).pipe(Effect.map(Option.getOrUndefined))
+            if (finalRow?.finalResult !== undefined) return true
+            const found = yield* services.engineTable.executions.rows().pipe(
+              Stream.filter((row) =>
+                row.executionId === gen1.executionId &&
+                row.finalResult !== undefined),
+              Stream.runHead,
+              Effect.timeoutOption("3 seconds"),
+              Effect.map((opt) => Option.flatten(opt)),
+              Effect.map(Option.isSome),
+            )
+            return found
+          }) as Effect.Effect<boolean, unknown, WorkflowEngine.WorkflowEngine>,
+      ),
     )
     expect(final).toBe(true)
   }, 15_000)
@@ -321,10 +247,6 @@ describe("P1 — kernel + substrate", () => {
     const inputId = "i-bounded"
     const body = "kernel-owned-body"
 
-    // Generation 1: park the kernel-owned body + start (and DON'T resolve)
-    // the deferred-only body. Crash.
-    const gen1WakeLayer = buildInputBodyLayer()
-    const gen1DeferredLayer = buildDeferredOnlyLayer()
     const gen1State: { wakeExec: string; deferredExec: string } = {
       wakeExec: "",
       deferredExec: "",
@@ -333,31 +255,30 @@ describe("P1 — kernel + substrate", () => {
       runGeneration(
         {
           urls,
-          workflowLayers: [gen1WakeLayer, gen1DeferredLayer],
+          workflowLayers: [buildInputBodyLayer(), buildDeferredOnlyLayer()],
           catalog: catalogFor([InputBodyWorkflow, DeferredOnlyWorkflow]),
         },
         (services) =>
           Effect.gen(function*() {
-            // Park the kernel-owned body.
             yield* Effect.exit(
               InputBodyWorkflow.execute({ contextId, inputId }).pipe(
                 Effect.timeoutOption("100 millis"),
               ),
             )
             gen1State.wakeExec = yield* InputBodyWorkflow.executionId({ contextId, inputId })
-            // Record the kernel fact + write the row, but DO NOT arm —
-            // so generation 2's replay has work to do.
+            // Record the kernel command but DO NOT arm — generation 2's
+            // replay must close the gap.
             yield* kernelRecordAndWrite({
               kernel: services.kernel,
               workflowName: InputBodyWorkflow.name,
               executionId: gen1State.wakeExec,
-              inputTable: "inputs",
-              inputKey: inputKey(contextId, 0),
-              write: (v) => writeInputRow(services.unified, v.contextId, v.inputId, v.payloadJson),
-              value: inputValuePayload(contextId, inputId, body),
+              inputTable: TEST_INPUT_TABLE,
+              inputKey: inputId,
+              write: () => Effect.void,
+              value: { body },
               serializeValue: (v) => JSON.stringify(v),
             })
-            // Start the deferred-only body (no kernel fact for it).
+            // Start the deferred-only body (no kernel command for it).
             yield* Effect.exit(
               DeferredOnlyWorkflow.execute({ id: "deferred-1" }).pipe(
                 Effect.timeoutOption("100 millis"),
@@ -368,30 +289,15 @@ describe("P1 — kernel + substrate", () => {
       ),
     )
 
-    // Generation 2: replay only touches the kernel-owned execution.
-    const gen2Layers = [buildInputBodyLayer(), buildDeferredOnlyLayer()]
     const observations = await Effect.runPromise(
       runGeneration(
         {
           urls,
-          workflowLayers: gen2Layers,
+          workflowLayers: [buildInputBodyLayer(), buildDeferredOnlyLayer()],
           catalog: catalogFor([InputBodyWorkflow, DeferredOnlyWorkflow]),
-          rewriter: {
-            forCommand: (cmd) => {
-              if (cmd.inputTable !== "inputs") return undefined
-              const value = JSON.parse(cmd.inputValueJson) as ReturnType<
-                typeof inputValuePayload
-              >
-              return Effect.gen(function*() {
-                const unified = yield* UnifiedTable
-                yield* writeInputRow(unified, value.contextId, value.inputId, value.payloadJson)
-              }) as Effect.Effect<void, unknown>
-            },
-          },
         },
         (services) =>
           Effect.gen(function*() {
-            // Wait for the kernel-owned execution to complete.
             const wakeFinal = yield* services.engineTable.executions.rows().pipe(
               Stream.filter((row) =>
                 row.executionId === gen1State.wakeExec &&
@@ -401,13 +307,9 @@ describe("P1 — kernel + substrate", () => {
               Effect.map((opt) => Option.flatten(opt)),
               Effect.map(Option.isSome),
             )
-
-            // The deferred-only execution should NOT have a finalResult
-            // (kernel replay didn't touch it).
             const deferredRow = yield* services.engineTable.executions.get(
               gen1State.deferredExec,
             ).pipe(Effect.map(Option.getOrUndefined))
-
             return {
               wakeFinal,
               deferredHasFinal: deferredRow?.finalResult !== undefined,

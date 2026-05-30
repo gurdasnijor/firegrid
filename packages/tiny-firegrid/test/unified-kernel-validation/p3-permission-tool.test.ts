@@ -3,19 +3,19 @@
  *
  * Two specialized workflow bodies on the kernel primitive:
  *
- *   - PermissionRoundtripWorkflow: records the permission-request row
- *     (Activity-memoized), parks on the missing "responded" status,
- *     returns the decision when the host updates the row + arms via
- *     kernel. No DurableDeferred mailbox.
+ *   - PermissionRoundtripWorkflow: writes a UI-renderable open request
+ *     row (Activity-memoized), parks, returns the decision delivered
+ *     in the kernel command payload. The `permissions` row holds NO
+ *     lifecycle status flag — the engine's executions.finalResult
+ *     records that the decision was returned, and the kernel command
+ *     payload is the decision itself.
  *   - ToolDispatchWorkflow: Activity-memoized executor;
- *     idempotencyKey: ({toolUseId}) admits one execution per logical
- *     tool call. Same toolUseId across two concurrent executes invokes
- *     the executor ONCE. At-most-once via WorkflowEngineTable — no
- *     separate runtime-tool-result.ts.
+ *     idempotencyKey: ({ toolUseId }) admits one execution per logical
+ *     tool call. No parallel `toolResults` table — Activity memoization
+ *     + executions.finalResult IS the durable record.
  *
- * Webhook + peer-event observers are tested in P4 (they share the
- * specialized-observer shape). DurableClock timer semantics are
- * tested in P4.1 (ScheduledPromptWorkflow).
+ * Webhook + peer-event observers are tested in P4. DurableClock timer
+ * semantics are tested in P4.1 (ScheduledPromptWorkflow).
  */
 
 import { DurableStreamTestServer } from "@durable-streams/server"
@@ -32,6 +32,8 @@ import {
   buildPermissionRoundtripLayer,
   buildToolDispatchLayer,
   makeToolExecutor,
+  PERMISSION_DECISION_TABLE,
+  type PermissionDecisionPayload,
   PermissionRoundtripWorkflow,
   ToolDispatchWorkflow,
 } from "../../src/simulations/unified-kernel-validation/subscribers/permission-and-tool.ts"
@@ -62,7 +64,7 @@ const buildUrls = (namespace: string): GenerationUrls => ({
 // ── Permission roundtrip ────────────────────────────────────────────────────
 
 describe("P3.1 — PermissionRoundtripWorkflow", () => {
-  it("body parks until host updates permission row to responded; returns decision", async () => {
+  it("body parks until the responder delivers a decision via kernelWriteArm; returns it", async () => {
     const ns = `p3-perm-${crypto.randomUUID()}`
     const urls = buildUrls(ns)
     const contextId = "ctx-perm"
@@ -98,27 +100,18 @@ describe("P3.1 — PermissionRoundtripWorkflow", () => {
             const requestRow = yield* services.unified.permissions.get(key).pipe(
               Effect.map(Option.getOrUndefined),
             )
-            expect(requestRow?.status).toBe("pending")
+            expect(requestRow).toBeDefined()
+            expect(requestRow?.toolUseId).toBe(toolUseId)
 
-            // Host updates row to "responded" + arms.
+            // Deliver the decision via the kernel command payload.
             yield* kernelWriteArm({
               kernel: services.kernel,
               workflow: PermissionRoundtripWorkflow,
               executionId,
-              inputTable: "permissions",
-              inputKey: key,
-              write: () =>
-                services.unified.permissions.upsert({
-                  permissionKey: key,
-                  contextId,
-                  permissionRequestId,
-                  toolUseId,
-                  status: "responded",
-                  decisionJson: JSON.stringify("allow"),
-                  requestedAt: requestRow!.requestedAt,
-                  respondedAt: new Date().toISOString(),
-                }).pipe(Effect.orDie, Effect.asVoid),
-              value: { decision: "allow" },
+              inputTable: PERMISSION_DECISION_TABLE,
+              inputKey: permissionRequestId,
+              write: () => Effect.void,
+              value: { decision: "allow" } satisfies PermissionDecisionPayload,
               serializeValue: (v) => JSON.stringify(v),
             })
 

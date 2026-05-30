@@ -1,24 +1,23 @@
 /**
  * Scheduled prompts + external adapters (webhook + peer event).
  *
- * 1. `ScheduledPromptWorkflow` — the one genuine Shape D admission
- *    that survives in the unified model: `DurableClock.sleep` for a
- *    wall-clock wakeup, then mark the schedule fired.
- * 2. `verifyAndIngestWebhook` — host-side helper that verifies an HMAC
- *    on raw bytes, decodes JSON, writes a `webhookFacts` row, and
- *    optionally kernel-arms `WebhookFactObserverWorkflow`. HMAC +
- *    idempotency shape mirrors `makeVerifiedWebhookSource` in
- *    production.
- * 3. `emitPeerEvent` — host helper that writes a `peerEvents` row and
- *    optionally kernel-arms `PeerEventObserverWorkflow`.
- * 4. `WebhookFactObserverWorkflow` — specialized observer for a
- *    `(source, deliveryId)` webhook fact. Parks on `Workflow.suspend`;
- *    kernel arm wakes; returns the row.
- * 5. `PeerEventObserverWorkflow` — specialized observer for a
- *    `(name, eventId)` peer event.
+ *   1. `ScheduledPromptWorkflow` — the one genuine Shape D admission
+ *      that survives in the unified model: `DurableClock.sleep` for a
+ *      wall-clock wakeup, then return. No `status` flag — engine
+ *      DurableClock recovery + `executions.finalResult` is the
+ *      durable evidence of firing.
+ *   2. `verifyAndIngestWebhook` — host-side helper that verifies an
+ *      HMAC on raw bytes, decodes JSON, writes a `webhookFacts` row,
+ *      and optionally kernel-arms `WebhookFactObserverWorkflow`.
+ *   3. `emitPeerEvent` — host helper that writes a `peerEvents` row
+ *      and optionally kernel-arms `PeerEventObserverWorkflow`.
+ *   4. `WebhookFactObserverWorkflow` — specialized observer for a
+ *      `(source, deliveryId)` webhook fact. Parks on
+ *      `Workflow.suspend`; kernel arm wakes; returns the row.
+ *   5. `PeerEventObserverWorkflow` — specialized observer for a
+ *      `(name, eventId)` peer event.
  *
- * Each observer is specialized to its fact family. There is no
- * "wait_for any fact" workflow in the simulation — string-dispatch
+ * Each observer is specialized to its fact family — string-dispatch
  * over a fact-table name reconstructs the retired SourceCollections
  * pattern.
  */
@@ -70,7 +69,8 @@ const scheduledPromptBody = (payload: ScheduledPromptPayload) =>
     const table = yield* UnifiedTable
     const key = scheduleKey(payload.contextId, payload.scheduleId)
 
-    // Record the commitment (idempotent — first execute creates it).
+    // Record the commitment so the host can list pending schedules.
+    // Idempotent on the natural key; replay sees the existing row.
     yield* Activity.make({
       name: `unified.scheduled.record/${key}`,
       success: Schema.Void,
@@ -79,7 +79,6 @@ const scheduledPromptBody = (payload: ScheduledPromptPayload) =>
         contextId: payload.contextId,
         fireAtMs: payload.fireAtMs,
         payloadJson: payload.payloadJson,
-        status: "pending",
       }).pipe(Effect.orDie, Effect.asVoid),
     })
 
@@ -93,23 +92,12 @@ const scheduledPromptBody = (payload: ScheduledPromptPayload) =>
       inMemoryThreshold: Duration.zero,
     })
 
-    // Mark the schedule fired.
-    const firedAt = new Date().toISOString()
-    yield* Activity.make({
-      name: `unified.scheduled.fire/${key}`,
-      success: Schema.Void,
-      execute: table.schedules.upsert({
-        scheduleKey: key,
-        contextId: payload.contextId,
-        fireAtMs: payload.fireAtMs,
-        payloadJson: payload.payloadJson,
-        status: "fired",
-        firedAt,
-      }).pipe(Effect.orDie, Effect.asVoid),
-    })
-
-    return { scheduleId: payload.scheduleId, firedAt }
-  })
+    return { scheduleId: payload.scheduleId, firedAt: new Date().toISOString() }
+  }) as Effect.Effect<
+    Schema.Schema.Type<typeof ScheduledPromptResultSchema>,
+    never,
+    UnifiedTable | WorkflowEngine.WorkflowInstance | WorkflowEngine.WorkflowEngine
+  >
 
 export const buildScheduledPromptLayer = () =>
   ScheduledPromptWorkflow.toLayer(scheduledPromptBody)
@@ -252,7 +240,7 @@ export const verifyAndIngestWebhook = (options: {
         executionId: options.armOptions.executionId,
         inputTable: "webhookFacts",
         inputKey: factKey,
-        write: () => Effect.void, // row already written above
+        write: () => Effect.void,
         value: { factKey, source: options.verify.source, deliveryId: options.verify.deliveryId },
         serializeValue: (v) => JSON.stringify(v),
       }).pipe(Effect.orDie)
@@ -315,12 +303,6 @@ export const emitPeerEvent = (options: {
 // Specialized observer: parks until a `webhookFacts` row exists for the
 // requested `(source, deliveryId)`. The kernel write+arm path from
 // `verifyAndIngestWebhook` wakes the body.
-//
-// There is deliberately no generic "wait_for any fact" workflow in the
-// simulation. Each observer is specialized to one fact family — that
-// keeps `Workflow.suspend` + point-read + predicate-match the canonical
-// shape, and avoids string-dispatch over fact-table names (the retired
-// SourceCollections / RuntimeObservationSourceNames pattern).
 
 export const WebhookFactObserverPayloadSchema = Schema.Struct({
   source: Schema.String,
@@ -360,6 +342,7 @@ const webhookFactObserverBody = (payload: WebhookFactObserverPayload) =>
         }
       }
       yield* Workflow.suspend(instance)
+      return yield* Effect.never
     }
   }) as Effect.Effect<
     Schema.Schema.Type<typeof WebhookFactObserverResultSchema>,
@@ -410,6 +393,7 @@ const peerEventObserverBody = (payload: PeerEventObserverPayload) =>
         }
       }
       yield* Workflow.suspend(instance)
+      return yield* Effect.never
     }
   }) as Effect.Effect<
     Schema.Schema.Type<typeof PeerEventObserverResultSchema>,

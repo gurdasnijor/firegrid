@@ -2,24 +2,27 @@
  * Unified Subscriber Kernel — substrate primitives.
  *
  * Implements the kernel-owned write+arm primitive from
- * `docs/cannon/architecture/kernel-owned-write-arm.md`, ported from the
- * `kernel-owned-write-arm` simulation. This is the "missing engine
- * capability" that lets every subscriber be a workflow body parked on
- * `Workflow.suspend`, with restart recovery scoped to the kernel's own
- * pending commands (not a generic engine sweep).
+ * `docs/cannon/architecture/kernel-owned-write-arm.md`. This is the
+ * missing engine capability that lets every subscriber be a workflow
+ * body parked on `Workflow.suspend`, with restart recovery scoped to
+ * the kernel's own pending commands.
+ *
+ * The kernel command IS the durable input log for any workflow body
+ * that consumes externally-delivered inputs (session prompts, permission
+ * decisions, observer wake notifications). `inputValueJson` carries the
+ * input payload; the body iterates its own commands by executionId.
  *
  * Three pieces:
  *
- *   1. `KernelCommandTable` — durable record of write+arm intents.
- *   2. `kernelWriteArm(execId, key, value, workflow)` — atomic command:
- *      record fact, write workflow-owned row, resume execution.
+ *   1. `KernelCommandTable` — durable record of write+arm intents +
+ *      input payloads.
+ *   2. `kernelWriteArm(...)` — atomic command: record the fact (with
+ *      payload), perform an optional row write, resume execution.
  *   3. `replayPendingWriteArm(workflows)` — startup sweep over the
- *      kernel's own facts (NOT engine.executions). Re-issues write+arm
- *      for each command whose execution has no finalResult.
- *
- * Each piece is idempotent. The kernel is the only thing the
- * subscribers depend on for "wake me when a fact arrives." Subscribers
- * never touch `engine.resume` directly.
+ *      kernel's own facts. Re-arms each execution that still has no
+ *      finalResult exactly once, even if it has multiple pending
+ *      commands. Bounded ownership: never touches executions for
+ *      workflows the catalog doesn't know about.
  */
 
 import {
@@ -41,21 +44,16 @@ export const KernelCommandRowSchema = Schema.Struct({
   workflowName: Schema.String,
   /** Execution id of the owning workflow body. */
   executionId: Schema.String,
-  /** Logical table name the input row belongs to (audit trail). */
+  /** Logical input family the command belongs to (audit trail). */
   inputTable: Schema.String,
-  /**
-   * Stable input identifier. Combined with `inputTable` this lets a
-   * subscriber that hosts more than one input shape derive a unique key.
-   */
+  /** Stable input identifier within the family. */
   inputKey: Schema.String,
   /** JSON-encoded payload the workflow body will consume. */
   inputValueJson: Schema.String,
-  /** "pending" until the execution gains a finalResult; then "satisfied". */
-  status: Schema.Literal("pending", "satisfied"),
   recordedAt: Schema.String,
 }).annotations({
   identifier: "firegrid.unified.kernelCommand",
-  title: "kernel-owned write+arm command fact",
+  title: "kernel-owned write+arm command + input payload",
 })
 
 export type KernelCommandRow = Schema.Schema.Type<typeof KernelCommandRowSchema>
@@ -89,10 +87,10 @@ export interface ResumableWorkflow<Name extends string = string> {
 }
 
 /**
- * Step 1+2: record the kernel fact, then write the workflow-owned row.
- * Both idempotent. Useful for tests that want to model "crash between
+ * Step 1+2: record the kernel command (with payload), then perform the
+ * optional row write. Useful for tests that want to model "crash between
  * write and arm" — call this without calling arm, then close the
- * generation. Production code should call `kernelWriteArm` instead.
+ * generation. Production code calls `kernelWriteArm` instead.
  */
 export const kernelRecordAndWrite = <Row, RowR>(options: {
   readonly kernel: KernelCommandTableService
@@ -116,7 +114,6 @@ export const kernelRecordAndWrite = <Row, RowR>(options: {
       inputTable: options.inputTable,
       inputKey: options.inputKey,
       inputValueJson: options.serializeValue(options.value),
-      status: "pending",
       recordedAt: now(),
     }).pipe(Effect.orDie)
     yield* options.write(options.value)
@@ -133,13 +130,16 @@ export const kernelRecordAndWrite = <Row, RowR>(options: {
   )
 
 /**
- * Idempotent durable write of a workflow-owned input row, paired with an
- * idempotent resume of the owning execution. Records the kernel fact
- * FIRST so restart replay can find it.
+ * Idempotent durable record-and-arm. Records the kernel command (with
+ * payload) FIRST so restart replay can find it, performs the optional
+ * row write, then resumes the owning execution.
  *
- * The kernel is responsible for serializing concurrent write+arms for
- * the same `(workflowName, executionId, inputKey)` — see
- * `withKernelKeyMutex` in `per-key-mutex.ts`.
+ * For session-input / decision-delivery cases the `write` arg is
+ * `Effect.void` — the input value lives in the command's
+ * `inputValueJson` and the body reads it directly. For fact-observer
+ * cases (webhook, peer event) the producer writes the external fact
+ * row separately BEFORE calling kernelWriteArm; the kernel command is
+ * just the wake notification.
  */
 export const kernelWriteArm = <Row, RowR>(options: {
   readonly kernel: KernelCommandTableService
@@ -163,7 +163,6 @@ export const kernelWriteArm = <Row, RowR>(options: {
       inputTable: options.inputTable,
       inputKey: options.inputKey,
       inputValueJson: options.serializeValue(options.value),
-      status: "pending",
       recordedAt: now(),
     }).pipe(Effect.orDie)
     yield* options.write(options.value)
@@ -180,6 +179,25 @@ export const kernelWriteArm = <Row, RowR>(options: {
     }),
   )
 
+// ── Reading kernel commands as durable input log ────────────────────────────
+
+/**
+ * Read all kernel commands targeting an execution in `recordedAt`
+ * order. Subscriber bodies use this to iterate their own input log.
+ *
+ * The iteration order is durable (recordedAt is a stable ISO timestamp
+ * written at insert) so replay sees the same sequence the original run
+ * saw, and `Activity.make` memoization keys remain stable.
+ */
+export const readCommandsFor = (
+  kernel: KernelCommandTableService,
+  executionId: string,
+): Effect.Effect<ReadonlyArray<KernelCommandRow>, unknown> =>
+  kernel.commands.query((coll) =>
+    coll.toArray
+      .filter((row) => row.executionId === executionId)
+      .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt)))
+
 // ── Restart recovery ─────────────────────────────────────────────────────────
 
 /**
@@ -192,12 +210,12 @@ export interface KernelWorkflowCatalog {
 }
 
 /**
- * Optional row-rewrite hook so the kernel can re-issue the workflow-
- * owned row write on restart. The subscriber registers a per-workflow
- * rewriter that decodes `inputValueJson` and writes the row.
- *
- * The rewrite is idempotent at the row layer (`insertOrGet`), so calling
- * it on every replay is safe.
+ * Optional row-rewrite hook so the kernel can re-issue a workflow-owned
+ * row write on restart. Most kernel uses don't need this — the input
+ * lives in the command's `inputValueJson`, the body reads the command
+ * directly. The hook only matters when a producer chose to write a
+ * separate row through `kernelWriteArm` and that row write was lost
+ * mid-command.
  */
 export interface KernelRowRewriter {
   readonly forCommand: (
@@ -206,27 +224,31 @@ export interface KernelRowRewriter {
 }
 
 /**
- * Startup recovery: walk the kernel's OWN pending facts. For each fact
- * whose execution has no finalResult, re-issue the row write and
- * re-arm. Bounded to owned facts; never touches engine.executions for
- * arbitrary suspended workflows.
+ * Startup recovery: walk the kernel's OWN pending facts deduped by
+ * executionId. For each execution that still has no finalResult, run
+ * the row rewriter for each of its commands then re-arm ONCE.
  *
- * Run AFTER all participating workflows are registered with the engine
- * — the catalog must be able to resolve their names. The simulation's
- * generation harness sequences this for us.
+ * Bounded ownership: never touches executions for workflows the
+ * catalog doesn't know about, and never touches executions that have
+ * no kernel command (those parked on `DurableDeferred` or
+ * `DurableClock` are the engine's own recovery problem).
  */
 export const replayPendingWriteArm = (options: {
   readonly kernel: KernelCommandTableService
   readonly engineTable: WorkflowEngineTableService
   readonly catalog: KernelWorkflowCatalog
-  readonly rewriter: KernelRowRewriter
+  readonly rewriter?: KernelRowRewriter
 }): Effect.Effect<{ readonly replayed: number; readonly skipped: number }, unknown, WorkflowEngine.WorkflowEngine> =>
   Effect.gen(function*() {
-    const pending = yield* options.kernel.commands.query((coll) =>
-      coll.toArray.filter((row) => row.status === "pending"))
+    const commands = yield* options.kernel.commands.query((coll) => coll.toArray)
     let replayed = 0
     let skipped = 0
-    for (const cmd of pending) {
+    const seen = new Set<string>()
+    for (const cmd of commands) {
+      const rewrite = options.rewriter?.forCommand(cmd)
+      if (rewrite !== undefined) yield* rewrite
+      if (seen.has(cmd.executionId)) continue
+      seen.add(cmd.executionId)
       const exec = yield* options.engineTable.executions.get(cmd.executionId).pipe(
         Effect.map(Option.getOrUndefined),
       )
@@ -239,8 +261,6 @@ export const replayPendingWriteArm = (options: {
         skipped += 1
         continue
       }
-      const rewrite = options.rewriter.forCommand(cmd)
-      if (rewrite !== undefined) yield* rewrite
       yield* workflow.resume(cmd.executionId)
       replayed += 1
     }

@@ -6,9 +6,9 @@
  * stream URLs. Closing a generation drops in-memory state (= process
  * death); a fresh layer over the same URLs reconstructs.
  *
- * `runGeneration` ALSO runs `replayPendingWriteArm` once after
- * registering the workflow catalog — that's how the kernel auto-recovers
- * parked bodies on restart without the test re-driving them.
+ * `runGeneration` runs `replayPendingWriteArm` once after registering
+ * the workflow catalog — that's how the kernel auto-recovers parked
+ * bodies on restart without the test re-driving them.
  */
 
 import {
@@ -50,11 +50,16 @@ export interface GenerationSetup {
   readonly workflowLayers: ReadonlyArray<Layer.Layer<unknown, unknown, unknown>>
   /** Catalog the kernel consults at replay. */
   readonly catalog: KernelWorkflowCatalog
-  /** Optional per-command row rewriter used during replay. */
+  /**
+   * Optional per-command row rewriter. Only needed when a producer
+   * delegated a row write to the kernel (rare) and that row write was
+   * lost mid-command. The common case — input payload travels in the
+   * command's `inputValueJson` — does not need a rewriter.
+   */
   readonly rewriter?: KernelRowRewriter
 }
 
-export const tableLayerFor = <T extends UnifiedTable | KernelCommandTable>(
+const tableLayerFor = <T extends UnifiedTable | KernelCommandTable>(
   cls: {
     layer: (options: {
       readonly streamOptions: {
@@ -73,10 +78,6 @@ export const tableLayerFor = <T extends UnifiedTable | KernelCommandTable>(
 
 const engineLayer = (url: string) =>
   DurableStreamsWorkflowEngine.layer({ streamUrl: url })
-
-const defaultRewriter: KernelRowRewriter = {
-  forCommand: () => undefined,
-}
 
 const makeCatalog = (
   workflows: ReadonlyArray<ResumableWorkflow>,
@@ -99,9 +100,6 @@ export const runGeneration = <A>(
 ): Effect.Effect<A, unknown> => {
   const unifiedLayer = tableLayerFor(UnifiedTable, setup.urls.unifiedTableStreamUrl)
   const kernelLayer = tableLayerFor(KernelCommandTable, setup.urls.kernelTableStreamUrl)
-  // All upper-tier layers (tables + workflow registrations) must be merged
-  // BEFORE the engine is `provideMerge`d under them, so the workflow
-  // layers' `WorkflowEngine` requirement is satisfied at the right tier.
   const upperLayers = setup.workflowLayers.reduce<
     Layer.Layer<unknown, unknown, unknown>
   >(
@@ -120,7 +118,7 @@ export const runGeneration = <A>(
         kernel,
         engineTable,
         catalog: setup.catalog,
-        rewriter: setup.rewriter ?? defaultRewriter,
+        ...(setup.rewriter !== undefined ? { rewriter: setup.rewriter } : {}),
       })
       const services: GenerationServices = {
         engineTable,
@@ -140,4 +138,4 @@ export const runGeneration = <A>(
   ) as Effect.Effect<A, unknown>
 }
 
-export { makeCatalog }
+export { makeCatalog, tableLayerFor }

@@ -91,7 +91,7 @@ const hmacSign = async (secret: string, rawBody: Uint8Array): Promise<string> =>
 // ── 1. Scheduled prompt ─────────────────────────────────────────────────────
 
 describe("P4.1 — ScheduledPromptWorkflow", () => {
-  it("DurableClock fires the prompt after the delay; schedule row settles 'fired'", async () => {
+  it("DurableClock fires the prompt after the delay; body returns firedAt; commitment row present", async () => {
     const ns = `p4-sched-${crypto.randomUUID()}`
     const urls = buildUrls(ns)
     const contextId = "ctx-sched"
@@ -118,13 +118,16 @@ describe("P4.1 — ScheduledPromptWorkflow", () => {
             ).pipe(Effect.map(Option.getOrUndefined))
             return {
               result: result as { readonly scheduleId: string; readonly firedAt: string },
-              status: scheduleRow?.status,
+              rowPresent: scheduleRow !== undefined,
             }
           }),
       ),
     )
 
-    expect(outcome.status).toBe("fired")
+    // Firing is determined by the workflow's executions.finalResult
+    // (the body returned with a firedAt); the schedule row only holds
+    // the UI-renderable commitment, no `status` lifecycle column.
+    expect(outcome.rowPresent).toBe(true)
     /* eslint-disable @typescript-eslint/no-unsafe-member-access */
     expect(outcome.result.scheduleId).toBe(scheduleId)
     expect(outcome.result.firedAt).toBeDefined()

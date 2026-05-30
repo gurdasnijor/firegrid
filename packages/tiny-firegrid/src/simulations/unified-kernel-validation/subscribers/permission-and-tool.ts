@@ -3,23 +3,15 @@
  * bodies on the kernel primitive.
  *
  * Each subscriber is specialized to its concern. There is deliberately
- * NO generic "wait_for any fact" workflow in the simulation:
+ * NO generic "wait_for any fact" workflow — string-dispatch over a
+ * fact-table name reconstructs the retired SourceCollections /
+ * RuntimeObservationSourceNames registry pattern.
  *
- *   - String-dispatch over a fact-table name reconstructs the retired
- *     `SourceCollections` / `RuntimeObservationSourceNames` registry
- *     pattern, which the channel-target-indirection finding (lift #7
- *     in the audit) explicitly retired.
- *   - The unified model says "every subscriber is a workflow body that
- *     parks on the SPECIFIC fact it cares about." Each waiter knows
- *     its fact family, its predicate, and its idempotency key.
- *
- * Other specialized observers in the simulation:
- *
- *   - `subscribers/scheduled-webhook-peer.ts` →
- *     `WebhookFactObserverWorkflow` (waits on `webhookFacts`),
- *     `PeerEventObserverWorkflow` (waits on `peerEvents`).
- *   - `subscribers/runtime-context.ts` →
- *     `RuntimeContextSessionWorkflow` (waits on `inputs` cursor).
+ * State minimalism: neither body keeps a parallel result table. The
+ * engine activity table memoizes activity returns; the engine
+ * execution table records each body's final result. The `permissions`
+ * row holds only what the UI needs to render an open request — no
+ * lifecycle status flag, no responder fields.
  */
 
 import {
@@ -27,8 +19,9 @@ import {
   Workflow,
   WorkflowEngine,
 } from "@effect/workflow"
-import { Effect, Option, Ref, Schema } from "effect"
-import { UnifiedTable, permissionKey, toolKey } from "../tables.ts"
+import { Effect, Ref, Schema } from "effect"
+import { KernelCommandTable, readCommandsFor } from "../kernel.ts"
+import { UnifiedTable, permissionKey } from "../tables.ts"
 
 // ── PermissionRoundtripWorkflow ─────────────────────────────────────────────
 
@@ -39,9 +32,12 @@ export const PermissionRoundtripPayloadSchema = Schema.Struct({
 })
 export type PermissionRoundtripPayload = Schema.Schema.Type<typeof PermissionRoundtripPayloadSchema>
 
+export const PermissionDecisionSchema = Schema.Literal("allow", "deny", "cancelled")
+export type PermissionDecision = Schema.Schema.Type<typeof PermissionDecisionSchema>
+
 export const PermissionRoundtripResultSchema = Schema.Struct({
   permissionRequestId: Schema.String,
-  decision: Schema.Literal("allow", "deny", "cancelled"),
+  decision: PermissionDecisionSchema,
 })
 
 export const PermissionRoundtripWorkflow = Workflow.make({
@@ -51,13 +47,27 @@ export const PermissionRoundtripWorkflow = Workflow.make({
   idempotencyKey: (p) => `${p.contextId}:${p.permissionRequestId}`,
 })
 
-const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
+export const PERMISSION_DECISION_TABLE = "permission-decision"
+
+/** Payload shape the responder delivers via kernelWriteArm. */
+export const PermissionDecisionPayloadSchema = Schema.Struct({
+  decision: PermissionDecisionSchema,
+})
+export type PermissionDecisionPayload = Schema.Schema.Type<typeof PermissionDecisionPayloadSchema>
+
+const permissionRoundtripBody = (
+  payload: PermissionRoundtripPayload,
+  executionId: string,
+) =>
   Effect.gen(function*() {
     const instance = yield* WorkflowEngine.WorkflowInstance
+    const kernel = yield* KernelCommandTable
     const table = yield* UnifiedTable
     const key = permissionKey(payload.contextId, payload.permissionRequestId)
 
-    // Activity-memoized: record the request row (idempotent).
+    // Activity-memoized: record the open request row so the host UI
+    // can render the pending decision. The row holds no lifecycle
+    // status — the decision flows via the kernel command payload.
     yield* Activity.make({
       name: `unified.permission.request/${key}`,
       success: Schema.Void,
@@ -66,42 +76,45 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
         contextId: payload.contextId,
         permissionRequestId: payload.permissionRequestId,
         toolUseId: payload.toolUseId,
-        status: "pending",
         requestedAt: new Date().toISOString(),
       }).pipe(Effect.orDie, Effect.asVoid),
     })
 
-    // Suspend loop: read the row; if status="responded" return the
-    // decision; else suspend. Kernel write+arm wakes us when the
-    // host updates the row to "responded".
+    // Park until the responder delivers a decision via kernelWriteArm.
+    // On wake, the kernel command's inputValueJson holds the payload.
     while (true) {
-      const row = yield* table.permissions.get(key).pipe(Effect.orDie)
-      if (Option.isSome(row) && row.value.status === "responded") {
-        const decisionJson = row.value.decisionJson ?? "\"deny\""
-        const decision = JSON.parse(decisionJson) as "allow" | "deny" | "cancelled"
+      const commands = yield* readCommandsFor(kernel, executionId).pipe(Effect.orDie)
+      if (commands.length > 0) {
+        const decisionPayload = JSON.parse(commands[0]!.inputValueJson) as PermissionDecisionPayload
         return {
           permissionRequestId: payload.permissionRequestId,
-          decision,
+          decision: decisionPayload.decision,
         }
       }
       yield* Workflow.suspend(instance)
+      return yield* Effect.never
     }
   }) as Effect.Effect<
     Schema.Schema.Type<typeof PermissionRoundtripResultSchema>,
     never,
-    WorkflowEngine.WorkflowInstance | UnifiedTable
+    WorkflowEngine.WorkflowInstance | KernelCommandTable | UnifiedTable
   >
 
 export const buildPermissionRoundtripLayer = () =>
   PermissionRoundtripWorkflow.toLayer(permissionRoundtripBody)
 
 // ── ToolDispatchWorkflow ────────────────────────────────────────────────────
+//
+// At-most-once via `Workflow.idempotencyKey` (one execution per toolUseId)
+// + `Activity.make` memoization (one executor invocation per execution).
+// No `toolResults` table — the engine activity record IS the durable
+// result, and the workflow execution's `finalResult` is the durable
+// return value.
 
 export const ToolDispatchPayloadSchema = Schema.Struct({
   contextId: Schema.String,
   toolUseId: Schema.String,
   toolName: Schema.String,
-  /** JSON-encoded tool input. The executor decodes per-tool. */
   inputJson: Schema.String,
 })
 export type ToolDispatchPayload = Schema.Schema.Type<typeof ToolDispatchPayloadSchema>
@@ -115,12 +128,6 @@ export const ToolDispatchWorkflow = Workflow.make({
   name: "unified.tool-dispatch",
   payload: ToolDispatchPayloadSchema,
   success: ToolDispatchResultSchema,
-  /**
-   * At-most-once via WorkflowEngineTable: same toolUseId across
-   * retries / reconstruction returns the same result without
-   * re-invoking the executor. This is the shape-d-tool-dispatch-mcp-entry
-   * finding: NO separate tables/runtime-tool-result.ts primitive needed.
-   */
   idempotencyKey: (p) => p.toolUseId,
 })
 
@@ -154,30 +161,16 @@ export const makeToolExecutor = (
 const toolDispatchBody = (executor: ToolExecutor) =>
   (payload: ToolDispatchPayload) =>
     Effect.gen(function*() {
-      const table = yield* UnifiedTable
-      const key = toolKey(payload.contextId, payload.toolUseId)
-      // Activity-memoized: first successful invocation persists; replays
-      // see the existing activity row and return its result without
-      // re-invoking the executor.
       const resultJson = yield* Activity.make({
-        name: `unified.tool.execute/${key}`,
+        name: `unified.tool.execute/${payload.toolUseId}`,
         success: Schema.String,
         execute: executor.execute(payload),
       })
-      yield* table.toolResults.insertOrGet({
-        toolKey: key,
-        contextId: payload.contextId,
-        toolUseId: payload.toolUseId,
-        toolName: payload.toolName,
-        resultJson,
-        invocationCount: 1,
-        recordedAt: new Date().toISOString(),
-      }).pipe(Effect.orDie)
       return { toolUseId: payload.toolUseId, resultJson }
     }) as Effect.Effect<
       Schema.Schema.Type<typeof ToolDispatchResultSchema>,
       never,
-      UnifiedTable
+      never
     >
 
 export const buildToolDispatchLayer = (executor: ToolExecutor) =>
