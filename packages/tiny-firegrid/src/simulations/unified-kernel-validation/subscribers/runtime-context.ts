@@ -2,33 +2,25 @@
  * Canonical RuntimeContext subscriber — as a workflow body.
  *
  * The most load-bearing Shape C subscriber today collapses into a
- * single `Workflow.make` body parked on `Workflow.suspend`, with the
- * kernel-owned write+arm primitive arming on every input append.
+ * single `Workflow.make` body parked on `Workflow.suspend`, woken by
+ * the signal primitive on every input arrival.
  *
  * The body:
  *   1. Spawns once via `Activity.make` (memoized across resumes /
- *      reconstruction). The Activity's recorded execution IS the
- *      durable spawn evidence — no parallel `runs` row needed.
- *   2. Reads its own kernel commands in `recordedAt` order to derive
- *      the input log. Each command's `inputValueJson` is the input
- *      payload. On miss → `Workflow.suspend`. On hit → `Activity.make`
- *      to deliver the input (memoized return IS the durable evidence
- *      of delivery — no parallel `outputs` row needed).
- *   3. Returns when a kind === "terminal" command is consumed. The
+ *      reconstruction). The Activity record IS the durable spawn
+ *      evidence — no parallel `runs` row needed.
+ *   2. Reads its own signals in `recordedAt` order to derive the
+ *      input log. Each signal's payload is the input envelope
+ *      `{ kind, payloadJson }`. On miss → `Workflow.suspend`. On hit →
+ *      `Activity.make` to deliver the input (memoized return IS the
+ *      durable evidence — no parallel `outputs` row needed).
+ *   3. Returns when a kind === "terminal" signal is consumed. The
  *      engine records the return in `executions.finalResult` — no
  *      parallel `runs.exited` row needed.
  *
  * One execution per `(contextId, attempt)` via `idempotencyKey` —
  * kills the production TOCTOU that spawned two `claude-agent-acp`
  * processes for one logical session.
- *
- * Restart safety:
- *   - The spawn Activity is memoized; replay sees the existing
- *     activity row and skips the side effect.
- *   - Per-position send Activities are memoized.
- *   - The cursor re-derives from the kernel command list (stable
- *     `recordedAt` order); suspend/resume returns the body to the
- *     same point in the loop with the same activities replayed.
  */
 
 import {
@@ -37,7 +29,7 @@ import {
   WorkflowEngine,
 } from "@effect/workflow"
 import { Effect, Ref, Schema } from "effect"
-import { KernelCommandTable, readCommandsFor } from "../kernel.ts"
+import { readSignalsFor, SignalTable } from "../signal.ts"
 
 // ── Recording adapter (test stand-in for production codec/spawn) ────────────
 //
@@ -109,10 +101,6 @@ export const RuntimeContextSessionWorkflow = Workflow.make({
   idempotencyKey: (p) => `${p.contextId}:${p.attempt}`,
 })
 
-/**
- * The terminal-kind discriminator on the session input payload. Used to
- * tell the body it's seen the last input and should return.
- */
 export const SessionInputPayloadSchema = Schema.Struct({
   kind: Schema.Literal(
     "prompt",
@@ -126,8 +114,6 @@ export const SessionInputPayloadSchema = Schema.Struct({
 })
 export type SessionInputPayload = Schema.Schema.Type<typeof SessionInputPayloadSchema>
 
-export const SESSION_INPUT_TABLE = "session-input"
-
 const sessionKey = (contextId: string, attempt: number): string =>
   `${contextId}:${attempt}`
 
@@ -135,7 +121,7 @@ const body = (recorder: RuntimeContextRecorder) =>
   (payload: RuntimeContextSessionPayload, executionId: string) =>
     Effect.gen(function*() {
       const instance = yield* WorkflowEngine.WorkflowInstance
-      const kernel = yield* KernelCommandTable
+      const signals = yield* SignalTable
       const key = sessionKey(payload.contextId, payload.attempt)
 
       // Spawn once per attempt (Activity-memoized; the engine activity
@@ -146,15 +132,15 @@ const body = (recorder: RuntimeContextRecorder) =>
         execute: recorder.recordSpawn(key),
       })
 
-      // Iterate own kernel commands. The kernel command IS the input
-      // log; `inputValueJson` carries the payload. Order is durable
-      // (recordedAt ISO timestamp), so cursor positions are stable
-      // across replay and per-position Activity memoization holds.
+      // Iterate own signals. Each signal's payload is a session input
+      // envelope; order is durable (recordedAt), so cursor positions
+      // are stable across replay and per-position Activity memoization
+      // holds.
       let consumed = 0
       let reachedTerminal = false
       while (!reachedTerminal) {
-        const commands = yield* readCommandsFor(kernel, executionId).pipe(Effect.orDie)
-        if (consumed >= commands.length) {
+        const rows = yield* readSignalsFor(signals, executionId).pipe(Effect.orDie)
+        if (consumed >= rows.length) {
           yield* Effect.annotateCurrentSpan({
             "firegrid.unified.body.decision": "suspend",
             "firegrid.unified.cursor": consumed,
@@ -162,9 +148,9 @@ const body = (recorder: RuntimeContextRecorder) =>
           yield* Workflow.suspend(instance)
           return yield* Effect.never
         }
-        while (consumed < commands.length && !reachedTerminal) {
-          const cmd = commands[consumed]!
-          const input = JSON.parse(cmd.inputValueJson) as SessionInputPayload
+        while (consumed < rows.length && !reachedTerminal) {
+          const row = rows[consumed]!
+          const input = JSON.parse(row.payloadJson) as SessionInputPayload
           const cursor = consumed
           yield* Activity.make({
             name: `unified.session.send/${key}/${cursor}`,

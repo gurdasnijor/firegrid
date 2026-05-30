@@ -62,7 +62,7 @@ afterEach(async () => {
 const buildUrls = (namespace: string): GenerationUrls => ({
   engineStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.engine`),
   unifiedTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.tables`),
-  kernelTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.kernel`),
+  signalTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.signals`),
 })
 
 const encoder = new TextEncoder()
@@ -187,8 +187,8 @@ describe("P4.2 — verifyAndIngestWebhook", () => {
                 rawBody,
                 receivedSignatureHex: signature,
               },
-              armOptions: {
-                kernel: services.kernel,
+              signalOptions: {
+                signals: services.signals,
                 workflow: WebhookFactObserverWorkflow,
                 executionId,
               },
@@ -322,8 +322,8 @@ describe("P4.3 — emitPeerEvent", () => {
               eventId,
               emitterContextId: "ctx-emit",
               payloadJson: JSON.stringify({ phase: "planning" }),
-              armOptions: {
-                kernel: services.kernel,
+              signalOptions: {
+                signals: services.signals,
                 workflow: PeerEventObserverWorkflow,
                 executionId,
               },

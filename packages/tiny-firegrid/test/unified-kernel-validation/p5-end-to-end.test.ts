@@ -24,7 +24,7 @@ import { Effect, Option, Ref } from "effect"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { kernelWriteArm } from "../../src/simulations/unified-kernel-validation/kernel.ts"
+import { sendSignal } from "../../src/simulations/unified-kernel-validation/signal.ts"
 import {
   type GenerationUrls,
   makeCatalog,
@@ -34,14 +34,13 @@ import {
   buildRuntimeContextSessionLayer,
   makeRuntimeContextRecorder,
   RuntimeContextSessionWorkflow,
-  SESSION_INPUT_TABLE,
   type SessionInputPayload,
 } from "../../src/simulations/unified-kernel-validation/subscribers/runtime-context.ts"
 import {
   buildPermissionRoundtripLayer,
   buildToolDispatchLayer,
   makeToolExecutor,
-  PERMISSION_DECISION_TABLE,
+  PERMISSION_DECISION_SIGNAL,
   type PermissionDecisionPayload,
   PermissionRoundtripWorkflow,
   ToolDispatchWorkflow,
@@ -75,7 +74,7 @@ afterEach(async () => {
 const buildUrls = (namespace: string): GenerationUrls => ({
   engineStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.engine`),
   unifiedTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.tables`),
-  kernelTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.kernel`),
+  signalTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.signals`),
 })
 
 const encoder = new TextEncoder()
@@ -147,12 +146,11 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
 
               // ── 2. Input #1: prompt ─────────────────────────────
               yield* Effect.sleep("50 millis")
-              yield* kernelWriteArm({
-                kernel: services.kernel,
+              yield* sendSignal({
+                signals: services.signals,
                 workflow: RuntimeContextSessionWorkflow,
                 executionId: sessionExecutionId,
-                inputTable: SESSION_INPUT_TABLE,
-                inputKey: "prompt-1",
+                name: "prompt-1",
                 write: () => Effect.void,
                 value: {
                   kind: "prompt",
@@ -194,12 +192,11 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
               const requestRow = yield* services.unified.permissions.get(permKey).pipe(
                 Effect.map(Option.getOrUndefined),
               )
-              yield* kernelWriteArm({
-                kernel: services.kernel,
+              yield* sendSignal({
+                signals: services.signals,
                 workflow: PermissionRoundtripWorkflow,
                 executionId: permExec,
-                inputTable: PERMISSION_DECISION_TABLE,
-                inputKey: permissionRequestId,
+                name: PERMISSION_DECISION_SIGNAL,
                 write: () => Effect.void,
                 value: { decision: "allow" } satisfies PermissionDecisionPayload,
                 serializeValue: (v) => JSON.stringify(v),
@@ -209,12 +206,11 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
               const permResult = permExit.value as { readonly decision: string }
 
               // ── 5. Input #2: permission-response feeds back ─────
-              yield* kernelWriteArm({
-                kernel: services.kernel,
+              yield* sendSignal({
+                signals: services.signals,
                 workflow: RuntimeContextSessionWorkflow,
                 executionId: sessionExecutionId,
-                inputTable: SESSION_INPUT_TABLE,
-                inputKey: "perm-response-1",
+                name: "perm-response-1",
                 write: () => Effect.void,
                 value: {
                   kind: "permission-response",
@@ -271,12 +267,11 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
               })
 
               // ── 9. Input #3: terminal ───────────────────────────
-              yield* kernelWriteArm({
-                kernel: services.kernel,
+              yield* sendSignal({
+                signals: services.signals,
                 workflow: RuntimeContextSessionWorkflow,
                 executionId: sessionExecutionId,
-                inputTable: SESSION_INPUT_TABLE,
-                inputKey: "terminal",
+                name: "terminal",
                 write: () => Effect.void,
                 value: {
                   kind: "terminal",
@@ -410,14 +405,16 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
     expect(offenders.map((f) => f.path)).toEqual([])
   })
 
-  it("every subscriber body uses `Workflow.suspend` OR `DurableClock.sleep` to park — never a custom mailbox", () => {
+  it("every subscriber body parks via one of the sanctioned primitives: `awaitSignal`, `readSignalsFor` + `Workflow.suspend`, or `DurableClock.sleep`", () => {
     const files = readAllSimFiles().filter((f) => f.path.includes("/subscribers/"))
     for (const f of files) {
-      const hasSuspendOrSleep =
-        /Workflow\.suspend/.test(f.text) || /DurableClock\.sleep/.test(f.text)
+      const parks =
+        /awaitSignal\s*[<(]/.test(f.text) ||
+        /Workflow\.suspend/.test(f.text) ||
+        /DurableClock\.sleep/.test(f.text)
       const hasWorkflowMake = /Workflow\.make/.test(f.text)
       if (hasWorkflowMake) {
-        expect.soft(hasSuspendOrSleep, `${f.path} should park via Workflow.suspend or DurableClock.sleep`).toBe(true)
+        expect.soft(parks, `${f.path} should park via awaitSignal / Workflow.suspend / DurableClock.sleep`).toBe(true)
       }
     }
   })
@@ -434,7 +431,7 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
     expect(offenders.map((f) => f.path)).toEqual([])
   })
 
-  it("the kernel is the ONLY wake authority: kernelWriteArm + replayPendingWriteArm are the surface", () => {
+  it("the signal primitive is the ONLY wake authority: sendSignal + recoverPendingSignals are the surface", () => {
     const files = readAllSimFiles().filter((f) => f.path.includes("/subscribers/"))
     const offenders = files.filter((f) =>
       /engine\.resume/.test(f.text) || /Workflow\.resume/.test(f.text),

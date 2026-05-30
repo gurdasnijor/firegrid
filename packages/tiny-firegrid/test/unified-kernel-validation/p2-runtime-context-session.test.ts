@@ -1,26 +1,18 @@
 /**
- * P2 — Canonical RuntimeContext subscriber as a workflow body.
+ * P2 — RuntimeContext session as workflow body.
  *
- * Validates the unified-kernel shape against the most load-bearing
+ * Validates the unified shape against the most load-bearing
  * subscriber (RuntimeContext session lifecycle). Asserts:
  *
- *   1. Single execution per (contextId, attempt) via idempotencyKey —
- *      kills the production TOCTOU that spawned double agent PIDs.
+ *   1. Single execution per (contextId, attempt) via idempotencyKey.
  *      Activity-memoized spawn fires exactly once.
- *   2. Input arrival via kernelWriteArm wakes a parked body. The
- *      kernel command IS the input log; the body iterates by
- *      executionId in `recordedAt` order. Activity memoization on the
- *      per-position send means the host-side recorder sees each input
- *      exactly once across replays.
- *   3. Crash recovery: kernel replay re-arms a parked body across a
- *      generation boundary; the body completes (engine
+ *   2. Input arrival via `sendSignal` wakes a parked body. The body
+ *      iterates its own signals in `recordedAt` order. Activity
+ *      memoization on the per-position send means the host-side
+ *      recorder sees each input exactly once across replays.
+ *   3. Crash recovery: signal recovery re-arms a parked body across
+ *      a generation boundary; the body completes (engine
  *      `executions.finalResult` lands) without test re-drive.
- *
- * State that the engine already owns is asserted via the engine:
- *   - "the session terminated" → executions.finalResult exists
- *   - "the spawn ran once" / "each send ran once" → recorder snapshot,
- *     which the spawn/send Activity wraps. The Activity record IS the
- *     durable memoization; the recorder is the side-effect proxy.
  */
 
 import { DurableStreamTestServer } from "@durable-streams/server"
@@ -29,9 +21,9 @@ import type { WorkflowEngineTableService } from "@firegrid/runtime/engine/durabl
 import { Effect, Exit, Option, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
-  kernelWriteArm,
-  type KernelCommandTableService,
-} from "../../src/simulations/unified-kernel-validation/kernel.ts"
+  sendSignal,
+  type SignalTableService,
+} from "../../src/simulations/unified-kernel-validation/signal.ts"
 import {
   type GenerationUrls,
   makeCatalog,
@@ -42,7 +34,6 @@ import {
   makeRuntimeContextRecorder,
   RuntimeContextSessionWorkflow,
   type RuntimeContextRecorder,
-  SESSION_INPUT_TABLE,
   type SessionInputPayload,
 } from "../../src/simulations/unified-kernel-validation/subscribers/runtime-context.ts"
 
@@ -63,7 +54,7 @@ afterEach(async () => {
 const buildUrls = (namespace: string): GenerationUrls => ({
   engineStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.engine`),
   unifiedTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.tables`),
-  kernelTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.kernel`),
+  signalTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.signals`),
 })
 
 const setupFor = (
@@ -78,23 +69,22 @@ const setupFor = (
 const inputPayload = (text: string) => JSON.stringify({ text })
 
 /**
- * Append a session input by writing a kernel command and arming the
- * session execution. The command's `inputValueJson` carries the
- * `{ kind, payloadJson }` envelope the session body iterates.
+ * Send a session input as a signal. The signal name is the producer-
+ * supplied inputId; the body iterates all session signals by
+ * recordedAt order.
  */
-const appendAndArm = (options: {
-  readonly kernel: KernelCommandTableService
+const sendInput = (options: {
+  readonly signals: SignalTableService
   readonly executionId: string
   readonly inputId: string
   readonly kind: SessionInputPayload["kind"]
   readonly payloadJson: string
 }) =>
-  kernelWriteArm({
-    kernel: options.kernel,
+  sendSignal({
+    signals: options.signals,
     workflow: RuntimeContextSessionWorkflow,
     executionId: options.executionId,
-    inputTable: SESSION_INPUT_TABLE,
-    inputKey: options.inputId,
+    name: options.inputId,
     write: () => Effect.void,
     value: { kind: options.kind, payloadJson: options.payloadJson } satisfies SessionInputPayload,
     serializeValue: (v) => JSON.stringify(v),
@@ -143,17 +133,17 @@ describe("P2 — RuntimeContext session as workflow body", () => {
                 contextId,
                 attempt,
               })
-              // Pre-arm two inputs (one prompt + terminal) so the body
-              // can complete deterministically when it starts.
-              yield* appendAndArm({
-                kernel: services.kernel,
+              // Pre-send two inputs (one prompt + terminal) so the
+              // body can complete deterministically.
+              yield* sendInput({
+                signals: services.signals,
                 executionId,
                 inputId: "in-1",
                 kind: "prompt",
                 payloadJson: inputPayload("hello"),
               })
-              yield* appendAndArm({
-                kernel: services.kernel,
+              yield* sendInput({
+                signals: services.signals,
                 executionId,
                 inputId: "in-term",
                 kind: "terminal",
@@ -210,7 +200,7 @@ describe("P2 — RuntimeContext session as workflow body", () => {
     expect(result.result2.reachedTerminal).toBe(true)
   }, 15_000)
 
-  it("input arrival via kernelWriteArm: append AFTER body parks, body wakes + processes", async () => {
+  it("input arrival via sendSignal: append AFTER body parks, body wakes + processes", async () => {
     const ns = `p2-arrival-${crypto.randomUUID()}`
     const urls = buildUrls(ns)
     const contextId = "ctx-arrival"
@@ -236,22 +226,22 @@ describe("P2 — RuntimeContext session as workflow body", () => {
               )
               yield* Effect.sleep("100 millis")
 
-              yield* appendAndArm({
-                kernel: services.kernel,
+              yield* sendInput({
+                signals: services.signals,
                 executionId,
                 inputId: "i-1",
                 kind: "prompt",
                 payloadJson: inputPayload("one"),
               })
-              yield* appendAndArm({
-                kernel: services.kernel,
+              yield* sendInput({
+                signals: services.signals,
                 executionId,
                 inputId: "i-2",
                 kind: "prompt",
                 payloadJson: inputPayload("two"),
               })
-              yield* appendAndArm({
-                kernel: services.kernel,
+              yield* sendInput({
+                signals: services.signals,
                 executionId,
                 inputId: "i-3",
                 kind: "terminal",
@@ -290,14 +280,12 @@ describe("P2 — RuntimeContext session as workflow body", () => {
     expect(outcome.finalLanded).toBe(true)
   }, 20_000)
 
-  it("crash recovery: kernel replay re-arms parked body across reconstruction; body completes", async () => {
+  it("crash recovery: signal recovery re-arms parked body across reconstruction; body completes", async () => {
     const ns = `p2-crash-${crypto.randomUUID()}`
     const urls = buildUrls(ns)
     const contextId = "ctx-crash"
     const attempt = 1
 
-    // Generation 1: park the body, record a terminal-kind kernel
-    // command WITHOUT arming, drop the generation.
     const gen1State: { executionId: string } = { executionId: "" }
     const gen1Recorder = await Effect.runPromise(makeRuntimeContextRecorder())
     await Effect.runPromise(
@@ -317,14 +305,13 @@ describe("P2 — RuntimeContext session as workflow body", () => {
               }),
             )
             yield* Effect.sleep("100 millis")
-            // Record the command (with terminal payload) — no arm.
-            yield* services.kernel.commands.insertOrGet({
-              commandKey: `${RuntimeContextSessionWorkflow.name}|${gen1State.executionId}|terminal`,
+            // Record the signal (terminal payload) — no resume.
+            yield* services.signals.signals.insertOrGet({
+              signalKey: `${gen1State.executionId}|terminal`,
               workflowName: RuntimeContextSessionWorkflow.name,
               executionId: gen1State.executionId,
-              inputTable: SESSION_INPUT_TABLE,
-              inputKey: "terminal",
-              inputValueJson: JSON.stringify({
+              name: "terminal",
+              payloadJson: JSON.stringify({
                 kind: "terminal",
                 payloadJson: inputPayload("terminal-payload"),
               } satisfies SessionInputPayload),
@@ -335,7 +322,6 @@ describe("P2 — RuntimeContext session as workflow body", () => {
       ),
     )
 
-    // Generation 2: rebuild. Replay re-arms; body completes.
     const gen2Recorder = await Effect.runPromise(makeRuntimeContextRecorder())
     const outcome = await Effect.runPromise(
       runGeneration(
@@ -359,9 +345,6 @@ describe("P2 — RuntimeContext session as workflow body", () => {
     )
 
     expect(outcome.found).toBe(true)
-    // gen2's spawn Activity is memoized from gen1's durable record, so
-    // the fresh gen2 recorder sees zero spawn side effects. The
-    // terminal send Activity is new in gen2, so the recorder sees one.
     expect(outcome.spawns).toBe(0)
     expect(outcome.sends).toBe(1)
     expect(outcome.replayed).toBeGreaterThanOrEqual(1)

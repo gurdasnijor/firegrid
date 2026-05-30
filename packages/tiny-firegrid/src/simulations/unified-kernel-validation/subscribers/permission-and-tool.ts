@@ -1,6 +1,6 @@
 /**
  * Permission roundtrip + tool dispatch — two specialized workflow
- * bodies on the kernel primitive.
+ * bodies.
  *
  * Each subscriber is specialized to its concern. There is deliberately
  * NO generic "wait_for any fact" workflow — string-dispatch over a
@@ -11,16 +11,15 @@
  * engine activity table memoizes activity returns; the engine
  * execution table records each body's final result. The `permissions`
  * row holds only what the UI needs to render an open request — no
- * lifecycle status flag, no responder fields.
+ * lifecycle status flag.
  */
 
 import {
   Activity,
   Workflow,
-  WorkflowEngine,
 } from "@effect/workflow"
 import { Effect, Ref, Schema } from "effect"
-import { KernelCommandTable, readCommandsFor } from "../kernel.ts"
+import { awaitSignal, type SignalTable } from "../signal.ts"
 import { UnifiedTable, permissionKey } from "../tables.ts"
 
 // ── PermissionRoundtripWorkflow ─────────────────────────────────────────────
@@ -47,27 +46,22 @@ export const PermissionRoundtripWorkflow = Workflow.make({
   idempotencyKey: (p) => `${p.contextId}:${p.permissionRequestId}`,
 })
 
-export const PERMISSION_DECISION_TABLE = "permission-decision"
+export const PERMISSION_DECISION_SIGNAL = "permission-decision"
 
-/** Payload shape the responder delivers via kernelWriteArm. */
+/** Payload shape the responder delivers via sendSignal. */
 export const PermissionDecisionPayloadSchema = Schema.Struct({
   decision: PermissionDecisionSchema,
 })
 export type PermissionDecisionPayload = Schema.Schema.Type<typeof PermissionDecisionPayloadSchema>
 
-const permissionRoundtripBody = (
-  payload: PermissionRoundtripPayload,
-  executionId: string,
-) =>
+const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
   Effect.gen(function*() {
-    const instance = yield* WorkflowEngine.WorkflowInstance
-    const kernel = yield* KernelCommandTable
     const table = yield* UnifiedTable
     const key = permissionKey(payload.contextId, payload.permissionRequestId)
 
-    // Activity-memoized: record the open request row so the host UI
+    // Activity-memoized: record the open-request row so the host UI
     // can render the pending decision. The row holds no lifecycle
-    // status — the decision flows via the kernel command payload.
+    // status — the decision flows via the signal payload.
     yield* Activity.make({
       name: `unified.permission.request/${key}`,
       success: Schema.Void,
@@ -80,24 +74,19 @@ const permissionRoundtripBody = (
       }).pipe(Effect.orDie, Effect.asVoid),
     })
 
-    // Park until the responder delivers a decision via kernelWriteArm.
-    // On wake, the kernel command's inputValueJson holds the payload.
-    while (true) {
-      const commands = yield* readCommandsFor(kernel, executionId).pipe(Effect.orDie)
-      if (commands.length > 0) {
-        const decisionPayload = JSON.parse(commands[0]!.inputValueJson) as PermissionDecisionPayload
-        return {
-          permissionRequestId: payload.permissionRequestId,
-          decision: decisionPayload.decision,
-        }
-      }
-      yield* Workflow.suspend(instance)
-      return yield* Effect.never
+    // Park until the responder sends the decision signal.
+    const decisionPayload = yield* awaitSignal<PermissionDecisionPayload>({
+      name: PERMISSION_DECISION_SIGNAL,
+    })
+
+    return {
+      permissionRequestId: payload.permissionRequestId,
+      decision: decisionPayload.decision,
     }
   }) as Effect.Effect<
     Schema.Schema.Type<typeof PermissionRoundtripResultSchema>,
     never,
-    WorkflowEngine.WorkflowInstance | KernelCommandTable | UnifiedTable
+    SignalTable | UnifiedTable
   >
 
 export const buildPermissionRoundtripLayer = () =>

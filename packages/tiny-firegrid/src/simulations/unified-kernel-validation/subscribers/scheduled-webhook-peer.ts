@@ -1,39 +1,36 @@
 /**
  * Scheduled prompts + external adapters (webhook + peer event).
  *
- *   1. `ScheduledPromptWorkflow` — the one genuine Shape D admission
- *      that survives in the unified model: `DurableClock.sleep` for a
- *      wall-clock wakeup, then return. No `status` flag — engine
- *      DurableClock recovery + `executions.finalResult` is the
- *      durable evidence of firing.
+ *   1. `ScheduledPromptWorkflow` — DurableClock.sleep for a wall-clock
+ *      wakeup, then return. No `status` flag — engine clock recovery
+ *      + `executions.finalResult` is the durable evidence of firing.
  *   2. `verifyAndIngestWebhook` — host-side helper that verifies an
  *      HMAC on raw bytes, decodes JSON, writes a `webhookFacts` row,
- *      and optionally kernel-arms `WebhookFactObserverWorkflow`.
+ *      and optionally sends a `webhook-fact` signal to a waiting
+ *      observer.
  *   3. `emitPeerEvent` — host helper that writes a `peerEvents` row
- *      and optionally kernel-arms `PeerEventObserverWorkflow`.
+ *      and optionally sends a `peer-event` signal.
  *   4. `WebhookFactObserverWorkflow` — specialized observer for a
- *      `(source, deliveryId)` webhook fact. Parks on
- *      `Workflow.suspend`; kernel arm wakes; returns the row.
+ *      `(source, deliveryId)` webhook fact. Parks via `awaitSignal`;
+ *      reads the corresponding row from `webhookFacts`.
  *   5. `PeerEventObserverWorkflow` — specialized observer for a
  *      `(name, eventId)` peer event.
- *
- * Each observer is specialized to its fact family — string-dispatch
- * over a fact-table name reconstructs the retired SourceCollections
- * pattern.
  */
 
 import {
   Activity,
   DurableClock,
   Workflow,
-  WorkflowEngine,
+  type WorkflowEngine,
 } from "@effect/workflow"
 import { Data, Duration, Effect, Option, Schema } from "effect"
 import {
-  kernelWriteArm,
-  type KernelCommandTableService,
+  awaitSignal,
+  sendSignal,
+  type SignalTable,
+  type SignalTableService,
   type ResumableWorkflow,
-} from "../kernel.ts"
+} from "../signal.ts"
 import {
   peerEventKey,
   scheduleKey,
@@ -70,7 +67,6 @@ const scheduledPromptBody = (payload: ScheduledPromptPayload) =>
     const key = scheduleKey(payload.contextId, payload.scheduleId)
 
     // Record the commitment so the host can list pending schedules.
-    // Idempotent on the natural key; replay sees the existing row.
     yield* Activity.make({
       name: `unified.scheduled.record/${key}`,
       success: Schema.Void,
@@ -82,8 +78,7 @@ const scheduledPromptBody = (payload: ScheduledPromptPayload) =>
       }).pipe(Effect.orDie, Effect.asVoid),
     })
 
-    // DurableClock — the engine recovers this on reconstruction via
-    // recoverPendingClockWakeups. The one safely-parked binding.
+    // DurableClock — the engine recovers this on reconstruction.
     const now = Date.now()
     const delay = Math.max(0, payload.fireAtMs - now)
     yield* DurableClock.sleep({
@@ -179,18 +174,19 @@ export interface VerifyAndIngestResult {
   readonly factKey: string
 }
 
+export const WEBHOOK_FACT_SIGNAL = "webhook-fact"
+export const PEER_EVENT_SIGNAL = "peer-event"
+
 /**
  * Verify HMAC + write a webhookFacts row. Idempotent on `(source,
- * deliveryId)`: a duplicate delivery returns `_tag: "Duplicate"`.
- *
- * If `armOptions` is provided, also calls kernelWriteArm to wake a
- * waiting `WebhookFactObserverWorkflow` body.
+ * deliveryId)`. If `signalOptions` is provided, also sends a
+ * `webhook-fact` signal to wake a waiting observer.
  */
 export const verifyAndIngestWebhook = (options: {
   readonly unified: UnifiedTableService
   readonly verify: VerifyWebhookOptions
-  readonly armOptions?: {
-    readonly kernel: KernelCommandTableService
+  readonly signalOptions?: {
+    readonly signals: SignalTableService
     readonly workflow: ResumableWorkflow
     readonly executionId: string
   }
@@ -233,13 +229,12 @@ export const verifyAndIngestWebhook = (options: {
       payloadJson,
       receivedAt: new Date().toISOString(),
     }).pipe(Effect.orDie)
-    if (options.armOptions !== undefined) {
-      yield* kernelWriteArm({
-        kernel: options.armOptions.kernel,
-        workflow: options.armOptions.workflow,
-        executionId: options.armOptions.executionId,
-        inputTable: "webhookFacts",
-        inputKey: factKey,
+    if (options.signalOptions !== undefined) {
+      yield* sendSignal({
+        signals: options.signalOptions.signals,
+        workflow: options.signalOptions.workflow,
+        executionId: options.signalOptions.executionId,
+        name: WEBHOOK_FACT_SIGNAL,
         write: () => Effect.void,
         value: { factKey, source: options.verify.source, deliveryId: options.verify.deliveryId },
         serializeValue: (v) => JSON.stringify(v),
@@ -256,8 +251,8 @@ export const emitPeerEvent = (options: {
   readonly eventId: string
   readonly emitterContextId: string
   readonly payloadJson: string
-  readonly armOptions?: {
-    readonly kernel: KernelCommandTableService
+  readonly signalOptions?: {
+    readonly signals: SignalTableService
     readonly workflow: ResumableWorkflow
     readonly executionId: string
   }
@@ -283,13 +278,12 @@ export const emitPeerEvent = (options: {
       payloadJson: options.payloadJson,
       emittedAt: new Date().toISOString(),
     }).pipe(Effect.orDie)
-    if (options.armOptions !== undefined) {
-      yield* kernelWriteArm({
-        kernel: options.armOptions.kernel,
-        workflow: options.armOptions.workflow,
-        executionId: options.armOptions.executionId,
-        inputTable: "peerEvents",
-        inputKey: factKey,
+    if (options.signalOptions !== undefined) {
+      yield* sendSignal({
+        signals: options.signalOptions.signals,
+        workflow: options.signalOptions.workflow,
+        executionId: options.signalOptions.executionId,
+        name: PEER_EVENT_SIGNAL,
         write: () => Effect.void,
         value: { factKey, name: options.name, eventId: options.eventId },
         serializeValue: (v) => JSON.stringify(v),
@@ -300,9 +294,9 @@ export const emitPeerEvent = (options: {
 
 // ── 4. WebhookFactObserverWorkflow ──────────────────────────────────────────
 //
-// Specialized observer: parks until a `webhookFacts` row exists for the
-// requested `(source, deliveryId)`. The kernel write+arm path from
-// `verifyAndIngestWebhook` wakes the body.
+// Specialized observer: parks on the `webhook-fact` signal. When the
+// ingest path sends the signal, the body wakes and reads the matching
+// `webhookFacts` row.
 
 export const WebhookFactObserverPayloadSchema = Schema.Struct({
   source: Schema.String,
@@ -328,26 +322,29 @@ export const WebhookFactObserverWorkflow = Workflow.make({
 
 const webhookFactObserverBody = (payload: WebhookFactObserverPayload) =>
   Effect.gen(function*() {
-    const instance = yield* WorkflowEngine.WorkflowInstance
     const table = yield* UnifiedTable
+    yield* awaitSignal<{ readonly factKey: string }>({ name: WEBHOOK_FACT_SIGNAL })
     const key = webhookFactKey(payload.source, payload.deliveryId)
-    while (true) {
-      const row = yield* table.webhookFacts.get(key).pipe(Effect.orDie)
-      if (Option.isSome(row)) {
-        return {
-          source: row.value.source,
-          deliveryId: row.value.deliveryId,
-          factKey: row.value.factKey,
-          eventType: row.value.eventType,
-        }
-      }
-      yield* Workflow.suspend(instance)
-      return yield* Effect.never
+    // Contract: the ingest path writes the fact row BEFORE sending the
+    // signal, so by the time we wake, the row exists.
+    const row = yield* table.webhookFacts.get(key).pipe(
+      Effect.flatMap(Option.match({
+        onNone: () =>
+          Effect.dieMessage(`webhook fact ${key} signaled but not present in table`),
+        onSome: Effect.succeed,
+      })),
+      Effect.orDie,
+    )
+    return {
+      source: row.source,
+      deliveryId: row.deliveryId,
+      factKey: row.factKey,
+      eventType: row.eventType,
     }
   }) as Effect.Effect<
     Schema.Schema.Type<typeof WebhookFactObserverResultSchema>,
     never,
-    WorkflowEngine.WorkflowInstance | UnifiedTable
+    SignalTable | UnifiedTable
   >
 
 export const buildWebhookFactObserverLayer = () =>
@@ -379,26 +376,27 @@ export const PeerEventObserverWorkflow = Workflow.make({
 
 const peerEventObserverBody = (payload: PeerEventObserverPayload) =>
   Effect.gen(function*() {
-    const instance = yield* WorkflowEngine.WorkflowInstance
     const table = yield* UnifiedTable
+    yield* awaitSignal<{ readonly factKey: string }>({ name: PEER_EVENT_SIGNAL })
     const key = peerEventKey(payload.name, payload.eventId)
-    while (true) {
-      const row = yield* table.peerEvents.get(key).pipe(Effect.orDie)
-      if (Option.isSome(row)) {
-        return {
-          name: row.value.name,
-          eventId: row.value.eventId,
-          factKey: row.value.eventKey,
-          emitterContextId: row.value.emitterContextId,
-        }
-      }
-      yield* Workflow.suspend(instance)
-      return yield* Effect.never
+    const row = yield* table.peerEvents.get(key).pipe(
+      Effect.flatMap(Option.match({
+        onNone: () =>
+          Effect.dieMessage(`peer event ${key} signaled but not present in table`),
+        onSome: Effect.succeed,
+      })),
+      Effect.orDie,
+    )
+    return {
+      name: row.name,
+      eventId: row.eventId,
+      factKey: row.eventKey,
+      emitterContextId: row.emitterContextId,
     }
   }) as Effect.Effect<
     Schema.Schema.Type<typeof PeerEventObserverResultSchema>,
     never,
-    WorkflowEngine.WorkflowInstance | UnifiedTable
+    SignalTable | UnifiedTable
   >
 
 export const buildPeerEventObserverLayer = () =>

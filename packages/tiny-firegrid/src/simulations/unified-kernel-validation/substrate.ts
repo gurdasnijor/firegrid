@@ -1,14 +1,14 @@
 /**
  * Substrate composition — durable-streams + workflow engine + unified
- * tables + kernel command table. The "rebuild base" for the simulation.
+ * tables + signal primitive. The "rebuild base" for the simulation.
  *
  * Each generation = one engine scope over the same set of durable
  * stream URLs. Closing a generation drops in-memory state (= process
  * death); a fresh layer over the same URLs reconstructs.
  *
- * `runGeneration` runs `replayPendingWriteArm` once after registering
- * the workflow catalog — that's how the kernel auto-recovers parked
- * bodies on restart without the test re-driving them.
+ * `runGeneration` runs `recoverPendingSignals` once after registering
+ * the workflow catalog — that's how parked bodies wake up
+ * automatically on restart without the test re-driving them.
  */
 
 import {
@@ -21,25 +21,25 @@ import {
 } from "@firegrid/runtime/engine/durable-streams-workflow-engine"
 import { Effect, Layer } from "effect"
 import {
-  KernelCommandTable,
-  type KernelCommandTableService,
-  type KernelRowRewriter,
-  type KernelWorkflowCatalog,
-  replayPendingWriteArm,
+  recoverPendingSignals,
   type ResumableWorkflow,
-} from "./kernel.ts"
+  SignalTable,
+  type SignalRowRewriter,
+  type SignalTableService,
+  type WorkflowCatalog,
+} from "./signal.ts"
 import { UnifiedTable, type UnifiedTableService } from "./tables.ts"
 
 export interface GenerationUrls {
   readonly engineStreamUrl: string
   readonly unifiedTableStreamUrl: string
-  readonly kernelTableStreamUrl: string
+  readonly signalTableStreamUrl: string
 }
 
 export interface GenerationServices {
   readonly engineTable: WorkflowEngineTableService
   readonly unified: UnifiedTableService
-  readonly kernel: KernelCommandTableService
+  readonly signals: SignalTableService
   readonly replayed: number
   readonly replaySkipped: number
 }
@@ -48,18 +48,18 @@ export interface GenerationSetup {
   readonly urls: GenerationUrls
   /** Workflows to register with the engine for this generation. */
   readonly workflowLayers: ReadonlyArray<Layer.Layer<unknown, unknown, unknown>>
-  /** Catalog the kernel consults at replay. */
-  readonly catalog: KernelWorkflowCatalog
+  /** Catalog the signal primitive consults at recovery. */
+  readonly catalog: WorkflowCatalog
   /**
-   * Optional per-command row rewriter. Only needed when a producer
-   * delegated a row write to the kernel (rare) and that row write was
-   * lost mid-command. The common case — input payload travels in the
-   * command's `inputValueJson` — does not need a rewriter.
+   * Optional per-signal row rewriter. Only needed when a producer
+   * delegated a companion row write to `sendSignal` (rare) and that
+   * row write was lost mid-send. The common case — payload travels
+   * in `payloadJson` — does not need a rewriter.
    */
-  readonly rewriter?: KernelRowRewriter
+  readonly rewriter?: SignalRowRewriter
 }
 
-const tableLayerFor = <T extends UnifiedTable | KernelCommandTable>(
+const tableLayerFor = <T extends UnifiedTable | SignalTable>(
   cls: {
     layer: (options: {
       readonly streamOptions: {
@@ -81,7 +81,7 @@ const engineLayer = (url: string) =>
 
 const makeCatalog = (
   workflows: ReadonlyArray<ResumableWorkflow>,
-): KernelWorkflowCatalog => {
+): WorkflowCatalog => {
   const map = new Map<string, ResumableWorkflow>()
   for (const wf of workflows) map.set(wf.name, wf)
   return {
@@ -91,20 +91,20 @@ const makeCatalog = (
 
 /**
  * Build a single generation's layer graph and run `program` inside it.
- * Runs the kernel replay sweep BEFORE `program` so the test sees the
- * post-recovery state directly.
+ * Runs the signal recovery sweep BEFORE `program` so the test sees
+ * the post-recovery state directly.
  */
 export const runGeneration = <A>(
   setup: GenerationSetup,
   program: (services: GenerationServices) => Effect.Effect<A, unknown, WorkflowEngine.WorkflowEngine>,
 ): Effect.Effect<A, unknown> => {
   const unifiedLayer = tableLayerFor(UnifiedTable, setup.urls.unifiedTableStreamUrl)
-  const kernelLayer = tableLayerFor(KernelCommandTable, setup.urls.kernelTableStreamUrl)
+  const signalLayer = tableLayerFor(SignalTable, setup.urls.signalTableStreamUrl)
   const upperLayers = setup.workflowLayers.reduce<
     Layer.Layer<unknown, unknown, unknown>
   >(
     (acc, wf) => Layer.merge(acc, wf),
-    Layer.merge(unifiedLayer, kernelLayer) as Layer.Layer<unknown, unknown, unknown>,
+    Layer.merge(unifiedLayer, signalLayer) as Layer.Layer<unknown, unknown, unknown>,
   )
   const generationLayer = upperLayers.pipe(
     Layer.provideMerge(engineLayer(setup.urls.engineStreamUrl)),
@@ -113,9 +113,9 @@ export const runGeneration = <A>(
     Effect.gen(function*() {
       const engineTable = yield* WorkflowEngineTable
       const unified = yield* UnifiedTable
-      const kernel = yield* KernelCommandTable
-      const replay = yield* replayPendingWriteArm({
-        kernel,
+      const signals = yield* SignalTable
+      const recovery = yield* recoverPendingSignals({
+        signals,
         engineTable,
         catalog: setup.catalog,
         ...(setup.rewriter !== undefined ? { rewriter: setup.rewriter } : {}),
@@ -123,14 +123,14 @@ export const runGeneration = <A>(
       const services: GenerationServices = {
         engineTable,
         unified,
-        kernel,
-        replayed: replay.replayed,
-        replaySkipped: replay.skipped,
+        signals,
+        replayed: recovery.replayed,
+        replaySkipped: recovery.skipped,
       }
       return yield* program(services)
     }).pipe(
       Effect.provide(generationLayer as Layer.Layer<
-        WorkflowEngine.WorkflowEngine | WorkflowEngineTable | UnifiedTable | KernelCommandTable,
+        WorkflowEngine.WorkflowEngine | WorkflowEngineTable | UnifiedTable | SignalTable,
         unknown,
         never
       >),
