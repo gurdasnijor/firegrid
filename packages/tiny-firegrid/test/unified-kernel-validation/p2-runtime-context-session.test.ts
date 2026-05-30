@@ -219,12 +219,10 @@ describe("P2 — RuntimeContext session as workflow body", () => {
               const exec1 = RuntimeContextSessionWorkflow.execute({
                 contextId,
                 attempt,
-                expectedInputs: 10,
               })
               const exec2 = RuntimeContextSessionWorkflow.execute({
                 contextId,
                 attempt,
-                expectedInputs: 10,
               })
               const both = yield* Effect.all([exec1, exec2], {
                 concurrency: 2,
@@ -292,7 +290,6 @@ describe("P2 — RuntimeContext session as workflow body", () => {
               const executionId = yield* RuntimeContextSessionWorkflow.executionId({
                 contextId,
                 attempt,
-                expectedInputs: 3,
               })
 
               // Start the body — it will park on the missing input row.
@@ -300,7 +297,6 @@ describe("P2 — RuntimeContext session as workflow body", () => {
                 RuntimeContextSessionWorkflow.execute({
                   contextId,
                   attempt,
-                  expectedInputs: 3,
                 }),
               )
 
@@ -399,14 +395,12 @@ describe("P2 — RuntimeContext session as workflow body", () => {
               yield* RuntimeContextSessionWorkflow.executionId({
                 contextId,
                 attempt,
-                expectedInputs: 1,
               })
             // Start the body in a forked fiber; let it park.
             yield* Effect.fork(
               RuntimeContextSessionWorkflow.execute({
                 contextId,
                 attempt,
-                expectedInputs: 1,
               }),
             )
             yield* Effect.sleep("100 millis")

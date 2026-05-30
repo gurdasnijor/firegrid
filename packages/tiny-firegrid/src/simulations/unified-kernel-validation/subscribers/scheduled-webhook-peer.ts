@@ -1,30 +1,33 @@
 /**
- * P4 subscribers — scheduled prompts + external adapters.
+ * Scheduled prompts + external adapters (webhook + peer event).
  *
  * 1. `ScheduledPromptWorkflow` — the one genuine Shape D admission
  *    that survives in the unified model: `DurableClock.sleep` for a
- *    wall-clock wakeup, then write a scheduled-fire input via
- *    `kernelWriteArm` so the RuntimeContext body consumes it.
+ *    wall-clock wakeup, then mark the schedule fired.
  * 2. `verifyAndIngestWebhook` — host-side helper that verifies an HMAC
- *    on raw bytes, decodes JSON, and writes a `webhookFacts` row +
- *    arms a WaitForFactWorkflow if one is waiting. The HMAC + idempotency
- *    shape mirrors `makeVerifiedWebhookSource` in production.
- * 3. `emitPeerEvent` — Activity that writes a `peerEvents` row keyed by
- *    `(name, eventId)`. Idempotent via insertOrGet. Pairs with
- *    WaitForFactWorkflow on the observer side.
+ *    on raw bytes, decodes JSON, writes a `webhookFacts` row, and
+ *    optionally kernel-arms `WebhookFactObserverWorkflow`. HMAC +
+ *    idempotency shape mirrors `makeVerifiedWebhookSource` in
+ *    production.
+ * 3. `emitPeerEvent` — host helper that writes a `peerEvents` row and
+ *    optionally kernel-arms `PeerEventObserverWorkflow`.
+ * 4. `WebhookFactObserverWorkflow` — specialized observer for a
+ *    `(source, deliveryId)` webhook fact. Parks on `Workflow.suspend`;
+ *    kernel arm wakes; returns the row.
+ * 5. `PeerEventObserverWorkflow` — specialized observer for a
+ *    `(name, eventId)` peer event.
  *
- * All three reuse:
- *   - kernel write+arm for waking observers
- *   - insertOrGet for idempotent fact writes
- *   - Activity.make for memoized side effects (P4.1 only — emit/ingest
- *     are pure host-side, not in workflow R-channel)
+ * Each observer is specialized to its fact family. There is no
+ * "wait_for any fact" workflow in the simulation — string-dispatch
+ * over a fact-table name reconstructs the retired SourceCollections
+ * pattern.
  */
 
 import {
   Activity,
   DurableClock,
   Workflow,
-  type WorkflowEngine,
+  WorkflowEngine,
 } from "@effect/workflow"
 import { Data, Duration, Effect, Option, Schema } from "effect"
 import {
@@ -193,7 +196,7 @@ export interface VerifyAndIngestResult {
  * deliveryId)`: a duplicate delivery returns `_tag: "Duplicate"`.
  *
  * If `armOptions` is provided, also calls kernelWriteArm to wake a
- * waiting subscriber (typically a WaitForFactWorkflow body).
+ * waiting `WebhookFactObserverWorkflow` body.
  */
 export const verifyAndIngestWebhook = (options: {
   readonly unified: UnifiedTableService
@@ -306,3 +309,113 @@ export const emitPeerEvent = (options: {
     }
     return { _tag: "Inserted" as const, factKey }
   })
+
+// ── 4. WebhookFactObserverWorkflow ──────────────────────────────────────────
+//
+// Specialized observer: parks until a `webhookFacts` row exists for the
+// requested `(source, deliveryId)`. The kernel write+arm path from
+// `verifyAndIngestWebhook` wakes the body.
+//
+// There is deliberately no generic "wait_for any fact" workflow in the
+// simulation. Each observer is specialized to one fact family — that
+// keeps `Workflow.suspend` + point-read + predicate-match the canonical
+// shape, and avoids string-dispatch over fact-table names (the retired
+// SourceCollections / RuntimeObservationSourceNames pattern).
+
+export const WebhookFactObserverPayloadSchema = Schema.Struct({
+  source: Schema.String,
+  deliveryId: Schema.String,
+  observerId: Schema.String,
+})
+export type WebhookFactObserverPayload =
+  Schema.Schema.Type<typeof WebhookFactObserverPayloadSchema>
+
+export const WebhookFactObserverResultSchema = Schema.Struct({
+  source: Schema.String,
+  deliveryId: Schema.String,
+  factKey: Schema.String,
+  eventType: Schema.String,
+})
+
+export const WebhookFactObserverWorkflow = Workflow.make({
+  name: "unified.webhook-fact-observer",
+  payload: WebhookFactObserverPayloadSchema,
+  success: WebhookFactObserverResultSchema,
+  idempotencyKey: (p) => p.observerId,
+})
+
+const webhookFactObserverBody = (payload: WebhookFactObserverPayload) =>
+  Effect.gen(function*() {
+    const instance = yield* WorkflowEngine.WorkflowInstance
+    const table = yield* UnifiedTable
+    const key = webhookFactKey(payload.source, payload.deliveryId)
+    while (true) {
+      const row = yield* table.webhookFacts.get(key).pipe(Effect.orDie)
+      if (Option.isSome(row)) {
+        return {
+          source: row.value.source,
+          deliveryId: row.value.deliveryId,
+          factKey: row.value.factKey,
+          eventType: row.value.eventType,
+        }
+      }
+      yield* Workflow.suspend(instance)
+    }
+  }) as Effect.Effect<
+    Schema.Schema.Type<typeof WebhookFactObserverResultSchema>,
+    never,
+    WorkflowEngine.WorkflowInstance | UnifiedTable
+  >
+
+export const buildWebhookFactObserverLayer = () =>
+  WebhookFactObserverWorkflow.toLayer(webhookFactObserverBody)
+
+// ── 5. PeerEventObserverWorkflow ────────────────────────────────────────────
+
+export const PeerEventObserverPayloadSchema = Schema.Struct({
+  name: Schema.String,
+  eventId: Schema.String,
+  observerId: Schema.String,
+})
+export type PeerEventObserverPayload =
+  Schema.Schema.Type<typeof PeerEventObserverPayloadSchema>
+
+export const PeerEventObserverResultSchema = Schema.Struct({
+  name: Schema.String,
+  eventId: Schema.String,
+  factKey: Schema.String,
+  emitterContextId: Schema.String,
+})
+
+export const PeerEventObserverWorkflow = Workflow.make({
+  name: "unified.peer-event-observer",
+  payload: PeerEventObserverPayloadSchema,
+  success: PeerEventObserverResultSchema,
+  idempotencyKey: (p) => p.observerId,
+})
+
+const peerEventObserverBody = (payload: PeerEventObserverPayload) =>
+  Effect.gen(function*() {
+    const instance = yield* WorkflowEngine.WorkflowInstance
+    const table = yield* UnifiedTable
+    const key = peerEventKey(payload.name, payload.eventId)
+    while (true) {
+      const row = yield* table.peerEvents.get(key).pipe(Effect.orDie)
+      if (Option.isSome(row)) {
+        return {
+          name: row.value.name,
+          eventId: row.value.eventId,
+          factKey: row.value.eventKey,
+          emitterContextId: row.value.emitterContextId,
+        }
+      }
+      yield* Workflow.suspend(instance)
+    }
+  }) as Effect.Effect<
+    Schema.Schema.Type<typeof PeerEventObserverResultSchema>,
+    never,
+    WorkflowEngine.WorkflowInstance | UnifiedTable
+  >
+
+export const buildPeerEventObserverLayer = () =>
+  PeerEventObserverWorkflow.toLayer(peerEventObserverBody)

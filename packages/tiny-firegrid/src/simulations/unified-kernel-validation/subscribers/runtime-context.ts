@@ -12,8 +12,8 @@
  *      reconstruction). Records a `runs` row with `status="started"`.
  *   2. Loops a cursor over the input table. On miss → `Workflow.suspend`.
  *      On hit → `Activity.make` to emit an output row, advance cursor.
- *   3. On terminal input (kind === "terminal") OR `expectedInputs`
- *      reached, writes a `runs` row with `status="exited"` and returns.
+ *   3. On terminal input (kind === "terminal"), writes a `runs` row
+ *      with `status="exited"` and returns.
  *
  * One execution per `(contextId, attempt)` via `idempotencyKey` —
  * kills the production TOCTOU that spawned two `claude-agent-acp`
@@ -86,12 +86,6 @@ export const makeRuntimeContextRecorder = (): Effect.Effect<RuntimeContextRecord
 export const RuntimeContextSessionPayloadSchema = Schema.Struct({
   contextId: Schema.String,
   attempt: Schema.Number,
-  /**
-   * Body terminates after consuming this many inputs (or the first
-   * `kind === "terminal"` input, whichever comes first). Test-convenience;
-   * production would use only the terminal-input signal.
-   */
-  expectedInputs: Schema.Number,
 })
 export type RuntimeContextSessionPayload =
   Schema.Schema.Type<typeof RuntimeContextSessionPayloadSchema>
@@ -138,11 +132,16 @@ const body = (recorder: RuntimeContextRecorder) =>
         }),
       })
 
-      // Cursor-based input consumption loop.
+      // Cursor-based input consumption loop. The body terminates ONLY
+      // on a `kind === "terminal"` input — there's no exit count.
+      // (Body-local `consumed` / `cursor` re-derive correctly across
+      // Workflow.suspend / resume because the body restarts from the
+      // top and Activity memoization replays previously-completed
+      // sends.)
       let consumed = 0
       let cursor = 0
       let reachedTerminal = false
-      while (consumed < payload.expectedInputs && !reachedTerminal) {
+      while (!reachedTerminal) {
         const row = yield* table.inputs.get(
           inputKey(payload.contextId, cursor),
         ).pipe(Effect.orDie)

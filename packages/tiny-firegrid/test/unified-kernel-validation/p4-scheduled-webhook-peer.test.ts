@@ -1,14 +1,22 @@
 /**
- * P4 — Scheduled prompts + webhook + peer events.
+ * P4 — Scheduled prompts + webhook + peer events + specialized observers.
  *
- * Three more product capabilities on the same kernel primitive:
+ * Four capabilities on the same kernel primitive:
  *
  *   - ScheduledPromptWorkflow: DurableClock.sleep wakes a body at a
  *     wall-clock instant, fires the scheduled prompt fact.
  *   - verifyAndIngestWebhook: HMAC verify + idempotent fact write +
  *     optional kernel arm. Linear/GitHub webhook ingest shape.
  *   - emitPeerEvent: peer-event row write keyed by (name, eventId);
- *     optional kernel arm wakes a WaitForFactWorkflow observer.
+ *     optional kernel arm.
+ *   - Specialized observers (`WebhookFactObserverWorkflow`,
+ *     `PeerEventObserverWorkflow`): each parks on a specific fact
+ *     family by point-read; kernel arm wakes; returns the row.
+ *
+ * Each observer is specialized to its fact family. There is
+ * deliberately no generic "wait_for any fact" workflow — that pattern
+ * reconstructs the retired SourceCollections / RuntimeObservationSourceNames
+ * registry shape.
  */
 
 import { DurableStreamTestServer } from "@durable-streams/server"
@@ -22,18 +30,17 @@ import {
   runGeneration,
 } from "../../src/simulations/unified-kernel-validation/substrate.ts"
 import {
+  buildPeerEventObserverLayer,
   buildScheduledPromptLayer,
+  buildWebhookFactObserverLayer,
   emitPeerEvent,
+  PeerEventObserverWorkflow,
   ScheduledPromptWorkflow,
   verifyAndIngestWebhook,
   VerifiedWebhookError,
+  WebhookFactObserverWorkflow,
 } from "../../src/simulations/unified-kernel-validation/subscribers/scheduled-webhook-peer.ts"
 import {
-  buildWaitForFactLayer,
-  WaitForFactWorkflow,
-} from "../../src/simulations/unified-kernel-validation/subscribers/wait-permission-tool.ts"
-import {
-  peerEventKey,
   scheduleKey,
   webhookFactKey,
 } from "../../src/simulations/unified-kernel-validation/tables.ts"
@@ -138,34 +145,30 @@ describe("P4.2 — verifyAndIngestWebhook", () => {
     const rawBody = encoder.encode(payload)
     const signature = await hmacSign(secret, rawBody)
 
-    const waitId = `wait-${crypto.randomUUID()}`
+    const observerId = `obs-${crypto.randomUUID()}`
     const factKey = webhookFactKey(source, deliveryId)
 
     const outcome = await Effect.runPromise(
       runGeneration(
         {
           urls,
-          workflowLayers: [buildWaitForFactLayer()],
-          catalog: makeCatalog([WaitForFactWorkflow]),
+          workflowLayers: [buildWebhookFactObserverLayer()],
+          catalog: makeCatalog([WebhookFactObserverWorkflow]),
         },
         (services) =>
           Effect.gen(function*() {
-            const executionId = yield* WaitForFactWorkflow.executionId({
-              channelTarget: "firegrid.verifiedWebhooks",
-              factKey,
-              factTable: "webhookFacts",
-              timeoutMs: 5_000,
-              waitId,
+            const executionId = yield* WebhookFactObserverWorkflow.executionId({
+              source,
+              deliveryId,
+              observerId,
             })
 
-            // Start the wait body parked.
+            // Start the observer body parked.
             const fiber = yield* Effect.fork(
-              WaitForFactWorkflow.execute({
-                channelTarget: "firegrid.verifiedWebhooks",
-                factKey,
-                factTable: "webhookFacts",
-                timeoutMs: 5_000,
-                waitId,
+              WebhookFactObserverWorkflow.execute({
+                source,
+                deliveryId,
+                observerId,
               }),
             )
             yield* Effect.sleep("100 millis")
@@ -183,18 +186,14 @@ describe("P4.2 — verifyAndIngestWebhook", () => {
               },
               armOptions: {
                 kernel: services.kernel,
-                workflow: WaitForFactWorkflow,
+                workflow: WebhookFactObserverWorkflow,
                 executionId,
               },
             })
 
             const exit = yield* fiber.await
             if (exit._tag === "Failure") return yield* Effect.failCause(exit.cause)
-            const waitOutcome = exit.value as {
-              readonly matched: boolean
-              readonly timedOut: boolean
-              readonly factKey?: string
-            }
+            const observerOutcome = exit.value
             const factRow = yield* services.unified.webhookFacts.get(factKey).pipe(
               Effect.map(Option.getOrUndefined),
             )
@@ -202,16 +201,16 @@ describe("P4.2 — verifyAndIngestWebhook", () => {
               ingestTag: ingestResult._tag,
               factWritten: factRow !== undefined,
               factSource: factRow?.source,
-              waitMatched: waitOutcome.matched,
-              waitFactKey: waitOutcome.factKey,
+              observerFactKey: observerOutcome.factKey,
+              observerEventType: observerOutcome.eventType,
             }
           }) as Effect.Effect<
             {
               readonly ingestTag: "Inserted" | "Duplicate"
               readonly factWritten: boolean
               readonly factSource: string | undefined
-              readonly waitMatched: boolean
-              readonly waitFactKey: string | undefined
+              readonly observerFactKey: string
+              readonly observerEventType: string
             },
             unknown
           >,
@@ -220,8 +219,8 @@ describe("P4.2 — verifyAndIngestWebhook", () => {
     expect(outcome.ingestTag).toBe("Inserted")
     expect(outcome.factWritten).toBe(true)
     expect(outcome.factSource).toBe(source)
-    expect(outcome.waitMatched).toBe(true)
-    expect(outcome.waitFactKey).toBe(factKey)
+    expect(outcome.observerFactKey).toBe(factKey)
+    expect(outcome.observerEventType).toBe("Issue.create")
   }, 15_000)
 
   it("rejects invalid HMAC; no fact written", async () => {
@@ -289,32 +288,27 @@ describe("P4.3 — emitPeerEvent", () => {
     const urls = buildUrls(ns)
     const eventName = "plan.ready"
     const eventId = "ev-1"
-    const waitId = `wait-${crypto.randomUUID()}`
-    const factKey = peerEventKey(eventName, eventId)
+    const observerId = `obs-${crypto.randomUUID()}`
 
     const outcome = await Effect.runPromise(
       runGeneration(
         {
           urls,
-          workflowLayers: [buildWaitForFactLayer()],
-          catalog: makeCatalog([WaitForFactWorkflow]),
+          workflowLayers: [buildPeerEventObserverLayer()],
+          catalog: makeCatalog([PeerEventObserverWorkflow]),
         },
         (services) =>
           Effect.gen(function*() {
-            const executionId = yield* WaitForFactWorkflow.executionId({
-              channelTarget: eventName,
-              factKey,
-              factTable: "peerEvents",
-              timeoutMs: 5_000,
-              waitId,
+            const executionId = yield* PeerEventObserverWorkflow.executionId({
+              name: eventName,
+              eventId,
+              observerId,
             })
             const fiber = yield* Effect.fork(
-              WaitForFactWorkflow.execute({
-                channelTarget: eventName,
-                factKey,
-                factTable: "peerEvents",
-                timeoutMs: 5_000,
-                waitId,
+              PeerEventObserverWorkflow.execute({
+                name: eventName,
+                eventId,
+                observerId,
               }),
             )
             yield* Effect.sleep("100 millis")
@@ -327,34 +321,34 @@ describe("P4.3 — emitPeerEvent", () => {
               payloadJson: JSON.stringify({ phase: "planning" }),
               armOptions: {
                 kernel: services.kernel,
-                workflow: WaitForFactWorkflow,
+                workflow: PeerEventObserverWorkflow,
                 executionId,
               },
             })
 
             const exit = yield* fiber.await
             if (exit._tag === "Failure") return yield* Effect.failCause(exit.cause)
-            const waitOutcome = exit.value as {
-              readonly matched: boolean
-              readonly factKey?: string
-            }
+            const observerOutcome = exit.value
             return {
               emitTag: emitResult._tag,
-              waitMatched: waitOutcome.matched,
-              waitFactKey: waitOutcome.factKey,
+              observerName: observerOutcome.name,
+              observerEventId: observerOutcome.eventId,
+              observerEmitter: observerOutcome.emitterContextId,
             }
           }) as Effect.Effect<
             {
               readonly emitTag: "Inserted" | "Duplicate"
-              readonly waitMatched: boolean
-              readonly waitFactKey: string | undefined
+              readonly observerName: string
+              readonly observerEventId: string
+              readonly observerEmitter: string
             },
             unknown
           >,
       ),
     )
     expect(outcome.emitTag).toBe("Inserted")
-    expect(outcome.waitMatched).toBe(true)
-    expect(outcome.waitFactKey).toBe(factKey)
+    expect(outcome.observerName).toBe(eventName)
+    expect(outcome.observerEventId).toBe(eventId)
+    expect(outcome.observerEmitter).toBe("ctx-emit")
   }, 15_000)
 })

@@ -1,136 +1,36 @@
 /**
- * P3 subscribers — three workflow bodies on the same kernel primitive,
- * proving the unified shape generalizes beyond RuntimeContext.
+ * Permission roundtrip + tool dispatch — two specialized workflow
+ * bodies on the kernel primitive.
  *
- * 1. `WaitForFactWorkflow` — generic wait_for. Parks on a fact row by
- *    domain identity; kernel-write+arm wakes on arrival; predicate-match
- *    or timeout via `DurableClock.sleep` (the one allowed Shape D
- *    parked body).
- * 2. `PermissionRoundtripWorkflow` — observes a `permission-request` fact,
- *    waits for the paired `permission-response` input, returns the
- *    decision. Pure workflow body — no Shape C handler, no
- *    `eventAlreadyProcessed` gate.
- * 3. `ToolDispatchWorkflow` — MCP-entry tool path. Body executes the
- *    tool via `Activity.make` (memoized). `idempotencyKey: ({toolUseId})`
- *    so retry returns the same result without re-invoking the executor
- *    — at-most-once via WorkflowEngineTable, no separate
- *    runtime-tool-result table.
+ * Each subscriber is specialized to its concern. There is deliberately
+ * NO generic "wait_for any fact" workflow in the simulation:
  *
- * All three reuse the kernel's `Workflow.suspend` + write+arm pattern.
- * None use `DurableDeferred.await` (the bridge debt being retired).
+ *   - String-dispatch over a fact-table name reconstructs the retired
+ *     `SourceCollections` / `RuntimeObservationSourceNames` registry
+ *     pattern, which the channel-target-indirection finding (lift #7
+ *     in the audit) explicitly retired.
+ *   - The unified model says "every subscriber is a workflow body that
+ *     parks on the SPECIFIC fact it cares about." Each waiter knows
+ *     its fact family, its predicate, and its idempotency key.
+ *
+ * Other specialized observers in the simulation:
+ *
+ *   - `subscribers/scheduled-webhook-peer.ts` →
+ *     `WebhookFactObserverWorkflow` (waits on `webhookFacts`),
+ *     `PeerEventObserverWorkflow` (waits on `peerEvents`).
+ *   - `subscribers/runtime-context.ts` →
+ *     `RuntimeContextSessionWorkflow` (waits on `inputs` cursor).
  */
 
 import {
   Activity,
-  DurableClock,
   Workflow,
   WorkflowEngine,
 } from "@effect/workflow"
-import { Duration, Effect, Option, Ref, Schema } from "effect"
+import { Effect, Option, Ref, Schema } from "effect"
 import { UnifiedTable, permissionKey, toolKey } from "../tables.ts"
 
-// ── 1. WaitForFactWorkflow ──────────────────────────────────────────────────
-
-export const WaitForFactPayloadSchema = Schema.Struct({
-  /** Channel target name the caller is observing (opaque to the workflow). */
-  channelTarget: Schema.String,
-  /**
-   * Fact-identifier the body point-reads. The host computes this from
-   * the (channelTarget, whereFields) and supplies it as the lookup key.
-   */
-  factKey: Schema.String,
-  /**
-   * Table the fact lives in. The workflow's R-channel reads from
-   * UnifiedTable; per-fact-kind dispatch via this discriminator.
-   */
-  factTable: Schema.Literal("permissions", "toolResults", "peerEvents", "webhookFacts"),
-  /** Caller-supplied timeout. */
-  timeoutMs: Schema.Number,
-  /** Unique key per wait invocation (one execution per logical wait). */
-  waitId: Schema.String,
-})
-export type WaitForFactPayload = Schema.Schema.Type<typeof WaitForFactPayloadSchema>
-
-export const WaitForFactResultSchema = Schema.Struct({
-  matched: Schema.Boolean,
-  factKey: Schema.optional(Schema.String),
-  timedOut: Schema.Boolean,
-})
-
-export const WaitForFactWorkflow = Workflow.make({
-  name: "unified.wait-for-fact",
-  payload: WaitForFactPayloadSchema,
-  success: WaitForFactResultSchema,
-  idempotencyKey: (p) => p.waitId,
-})
-
-const waitForFactBody = (payload: WaitForFactPayload) =>
-  Effect.gen(function*() {
-    const instance = yield* WorkflowEngine.WorkflowInstance
-    const table = yield* UnifiedTable
-    // The bounded race: row arrival vs DurableClock timeout. Production
-    // wait-for can use `DurableDeferred.raceAll([matchActivity,
-    // DurableClock.sleep])` (the inv2-waitforworkflow shape) once the
-    // engine combinator is available without a parked-body mailbox.
-    //
-    // For the simulation: single fixed-name DurableClock sleep for the
-    // full timeout window, then check once. The kernel `kernelWriteArm`
-    // path lets the caller wake the body early by writing the fact AND
-    // resuming the execution (DurableClock.sleep returns early if
-    // resume is called externally — that's the substrate's read-side
-    // effect of `engine.resume`).
-    const row1 = yield* pointReadFact(table, payload.factTable, payload.factKey)
-    if (Option.isSome(row1)) {
-      return {
-        matched: true,
-        factKey: payload.factKey,
-        timedOut: false,
-      }
-    }
-    yield* DurableClock.sleep({
-      name: `unified.wait_for/${payload.waitId}`,
-      duration: Duration.millis(payload.timeoutMs),
-      inMemoryThreshold: Duration.zero,
-    })
-    const row2 = yield* pointReadFact(table, payload.factTable, payload.factKey)
-    if (Option.isSome(row2)) {
-      return {
-        matched: true,
-        factKey: payload.factKey,
-        timedOut: false,
-      }
-    }
-    void instance
-    return { matched: false, timedOut: true }
-  }) as Effect.Effect<
-    Schema.Schema.Type<typeof WaitForFactResultSchema>,
-    never,
-    WorkflowEngine.WorkflowInstance | UnifiedTable
-  >
-
-const pointReadFact = (
-  table: UnifiedTable["Type"],
-  factTable: WaitForFactPayload["factTable"],
-  key: string,
-): Effect.Effect<Option.Option<unknown>, never> => {
-  switch (factTable) {
-    case "permissions":
-      return table.permissions.get(key).pipe(Effect.map(asUnknownOpt), Effect.orDie)
-    case "toolResults":
-      return table.toolResults.get(key).pipe(Effect.map(asUnknownOpt), Effect.orDie)
-    case "peerEvents":
-      return table.peerEvents.get(key).pipe(Effect.map(asUnknownOpt), Effect.orDie)
-    case "webhookFacts":
-      return table.webhookFacts.get(key).pipe(Effect.map(asUnknownOpt), Effect.orDie)
-  }
-}
-
-const asUnknownOpt = <A>(opt: Option.Option<A>): Option.Option<unknown> =>
-  opt
-
-export const buildWaitForFactLayer = () => WaitForFactWorkflow.toLayer(waitForFactBody)
-
-// ── 2. PermissionRoundtripWorkflow ──────────────────────────────────────────
+// ── PermissionRoundtripWorkflow ─────────────────────────────────────────────
 
 export const PermissionRoundtripPayloadSchema = Schema.Struct({
   contextId: Schema.String,
@@ -195,7 +95,7 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
 export const buildPermissionRoundtripLayer = () =>
   PermissionRoundtripWorkflow.toLayer(permissionRoundtripBody)
 
-// ── 3. ToolDispatchWorkflow ─────────────────────────────────────────────────
+// ── ToolDispatchWorkflow ────────────────────────────────────────────────────
 
 export const ToolDispatchPayloadSchema = Schema.Struct({
   contextId: Schema.String,

@@ -20,8 +20,10 @@ cannon to what shrinks in the codebase.
 - Once it lands, **every subscriber is a workflow**, the Shape C/D
   decision table dissolves, several subscriber folders collapse, the
   identity-keyed-dedup discipline is no longer a contributor concern
-  (the engine owns it), and `subscribers/keyed-dispatch/` shrinks to
-  the per-key mutex required for the kernel itself.
+  (the engine owns it), and `subscribers/keyed-dispatch/` (per-key
+  mutex helper + fork-per-fact dispatch) deletes entirely — the
+  workflow's `idempotencyKey` admission + the engine's single-fiber
+  execution model give per-key serialization for free.
 - The minimum runtime kernel is **three primitives** —
   `Channel`, `DurableTable<Row>`, `Workflow` (with `kernel-owned-write-arm`).
   Everything else composes from these.
@@ -47,7 +49,8 @@ So today's options for "wait on a domain signal" are:
 1. **Manual reimplementation** — fresh handler per fact over a durable
    state row. This is **Shape C**. The handler reads the row on every
    entry, derives the wait state, and either dispatches or returns.
-   `eventAlreadyProcessed` / identity-keyed dedup / per-key mutex —
+   `eventAlreadyProcessed` / identity-keyed dedup / per-key mutex
+   helper / fork-per-fact dispatcher —
    these are the contributor-facing discipline this approach demands.
 2. **`DurableClock.sleep` for clock waits only** — the one safely-parked
    binding. This is the only **Shape D** body that survives reconstruction.
@@ -98,10 +101,15 @@ Four sims compose the full collapse story; each closes a specific gap.
 | `tiny-input-append-wakeup` | Atomic input-append (`appendRuntimeContextWorkflowInput`) over `contexts` + `inputs` + `inputIds` tables; `inputIds` is the idempotency index; consumption by durable cursor with point reads; native row stream as the wakeup primitive. | The workflow-owned input table shape. No bridge table, no `appendRuntimeInputDeferred`, no input intent dispatcher. |
 | `runtime-context-session-workflow` (RCSW) | The unified shape applied to RuntimeContext: kills two production races (input-before-start dropped silently; double `claude-agent-acp` PIDs from a TOCTOU). Workflow body parks on `Workflow.suspend`; kernel write+arm re-arms via `Workflow.resume`; `Workflow.idempotencyKey` admits one execution per `(contextId, attempt)`; `Activity.make` memoizes the spawn. | Production-equivalent proof. The new lane is `subscribers/runtime-context-session-workflow/` — a NEW target folder, distinct from the Shape C `runtime-context-session/`. |
 
-`per-key-subscriber-push-restart` is supporting evidence — establishes
-that the substrate alone gives "serialization XOR cross-key concurrency,
-never both," so a thin per-key mutex is required as part of the kernel
-itself.
+`per-key-subscriber-push-restart` was supporting evidence for the
+Shape C cutover, NOT for the unified kernel. It establishes that the
+DurableTable substrate alone gives "serialization XOR cross-key
+concurrency, never both" — i.e., a Shape C fork-per-fact dispatcher
+needs a per-key mutex helper. The unified kernel sidesteps this
+entirely: the workflow IS the subscriber, `Workflow.idempotencyKey`
+admits at-most-one execution per logical key, and the engine runs each
+execution body in a single fiber. Per-key serialization is given for
+free; no mutex helper is needed.
 
 ## The three-primitive kernel
 
@@ -143,7 +151,7 @@ Once the kernel lands and the migration runs:
 |---|---|
 | `subscribers/runtime-context/` — Shape C handler over input facts | Folder collapses; the workflow body lives in `subscribers/runtime-context-session-workflow/` (the RCSW shape, generalized) |
 | `subscribers/runtime-context-session/` — Shape C codec command sink | Collapses into the same workflow body; the two interlocking races RCSW closes go away |
-| `subscribers/keyed-dispatch/` — per-key mutex over fact streams | Shrinks: the kernel itself owns the per-key serialization for its commands. The general "fork-per-fact + per-key mutex" helper may still be needed for non-kernel subscribers that read non-workflow tables; reassess scope. |
+| `subscribers/keyed-dispatch/` — per-key mutex over fact streams | **Deletes entirely.** Per-key serialization is given by `Workflow.idempotencyKey` admission + the engine's single-fiber execution model. There is no subscriber-runtime fork-per-fact pattern under the unified kernel. |
 | `subscribers/tool-dispatch/` — Shape D MCP-entry path | Stays, but the `runToolAndSend` in-handler stdio-jsonl path collapses into the workflow body |
 | `subscribers/wait-router/` | The `WaitForWorkflow` body becomes the canonical "wait via `Workflow.suspend` + kernel" pattern — every subscriber inherits its shape |
 | `tables/runtime-context-input-facts.ts` (live tail of `inputIntents`) | Collapses into the workflow-owned input table (`tiny-input-append-wakeup` shape); `appendRuntimeInputDeferred` deletes |

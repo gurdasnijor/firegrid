@@ -6,11 +6,13 @@
  *   2. crash between write and arm: replay re-arms on restart.
  *   3. bounded ownership: workflows the kernel doesn't own a fact for
  *      are NOT touched by replay.
- *   4. per-key mutex: same-key serializes, cross-key concurrent.
  *
- * Pattern ported from `kernel-owned-write-arm` simulation, generalized
- * for use as the substrate underneath the full subscriber matrix in
- * P2-P5.
+ * Per-key serialization is given for free by `Workflow.idempotencyKey`
+ * (one execution per logical key) + engine execution serialization
+ * (one fiber per execution body). No per-key mutex helper is needed
+ * in the unified model — that was a Shape C concept from
+ * `per-key-subscriber-push-restart` (tf-4fy3) that does NOT apply
+ * here.
  */
 
 import { DurableStreamTestServer } from "@durable-streams/server"
@@ -20,7 +22,7 @@ import {
   Workflow,
   WorkflowEngine,
 } from "@effect/workflow"
-import { Effect, Exit, Option, Ref, Schema, Stream } from "effect"
+import { Effect, Exit, Option, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   type KernelRowRewriter,
@@ -29,9 +31,6 @@ import {
   kernelWriteArm,
   type ResumableWorkflow,
 } from "../../src/simulations/unified-kernel-validation/kernel.ts"
-import {
-  makePerKeyMutex,
-} from "../../src/simulations/unified-kernel-validation/per-key-mutex.ts"
 import {
   type GenerationServices,
   type GenerationUrls,
@@ -422,62 +421,6 @@ describe("P1 — kernel + substrate", () => {
     expect(observations.deferredHasFinal).toBe(false)
     expect(observations.replayed).toBeGreaterThanOrEqual(1)
   }, 15_000)
-
-  it("per-key mutex: same-key serializes, cross-key runs concurrent", async () => {
-    const concurrentInKey = await Effect.runPromise(
-      Effect.gen(function*() {
-        const mutex = yield* makePerKeyMutex()
-        const inFlight = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
-        const maxInFlight = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
-
-        const bump = (key: string, delta: number) =>
-          Ref.update(inFlight, (m) => {
-            const next = new Map(m)
-            const current = (next.get(key) ?? 0) + delta
-            next.set(key, current)
-            return next
-          })
-        const captureMax = (key: string) =>
-          Effect.gen(function*() {
-            const current = (yield* Ref.get(inFlight)).get(key) ?? 0
-            yield* Ref.update(maxInFlight, (m) => {
-              const next = new Map(m)
-              const prev = next.get(key) ?? 0
-              next.set(key, Math.max(prev, current))
-              return next
-            })
-          })
-
-        const doWork = (key: string) =>
-          mutex.withLock(
-            key,
-            Effect.gen(function*() {
-              yield* bump(key, +1)
-              yield* captureMax(key)
-              yield* Effect.sleep("50 millis")
-              yield* bump(key, -1)
-            }),
-          )
-
-        yield* Effect.all(
-          [
-            doWork("a"),
-            doWork("a"),
-            doWork("a"),
-            doWork("b"),
-            doWork("b"),
-          ],
-          { concurrency: "unbounded" },
-        )
-
-        const maxes = yield* Ref.get(maxInFlight)
-        return { a: maxes.get("a") ?? 0, b: maxes.get("b") ?? 0 }
-      }),
-    )
-
-    expect(concurrentInKey.a).toBe(1)
-    expect(concurrentInKey.b).toBe(1)
-  }, 10_000)
 })
 
 // Type-only export usage to satisfy unused-import check.

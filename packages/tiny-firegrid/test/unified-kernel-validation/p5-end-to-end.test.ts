@@ -38,12 +38,10 @@ import {
 import {
   buildPermissionRoundtripLayer,
   buildToolDispatchLayer,
-  buildWaitForFactLayer,
   makeToolExecutor,
   PermissionRoundtripWorkflow,
   ToolDispatchWorkflow,
-  WaitForFactWorkflow,
-} from "../../src/simulations/unified-kernel-validation/subscribers/wait-permission-tool.ts"
+} from "../../src/simulations/unified-kernel-validation/subscribers/permission-and-tool.ts"
 import {
   buildScheduledPromptLayer,
   emitPeerEvent,
@@ -120,14 +118,12 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
             urls,
             workflowLayers: [
               buildRuntimeContextSessionLayer(recorder),
-              buildWaitForFactLayer(),
               buildPermissionRoundtripLayer(),
               buildToolDispatchLayer(toolExecutor),
               buildScheduledPromptLayer(),
             ],
             catalog: makeCatalog([
               RuntimeContextSessionWorkflow,
-              WaitForFactWorkflow,
               PermissionRoundtripWorkflow,
               ToolDispatchWorkflow,
               ScheduledPromptWorkflow,
@@ -144,13 +140,11 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
               const sessionExecutionId = yield* RuntimeContextSessionWorkflow.executionId({
                 contextId,
                 attempt,
-                expectedInputs: 4,
               })
               const sessionFiber = yield* Effect.fork(
                 RuntimeContextSessionWorkflow.execute({
                   contextId,
                   attempt,
-                  expectedInputs: 4,
                 }),
               )
 
@@ -305,15 +299,6 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
                 kind: "terminal",
                 payloadJson: JSON.stringify({ reason: "done" }),
               })
-              // Need expectedInputs(4) inputs to terminate via count;
-              // we have prompts 1,2 + terminal = 3. Add one more to fill.
-              const in4 = yield* appendInputIntent({
-                table: services.unified,
-                contextId,
-                inputId: "filler",
-                kind: "prompt",
-                payloadJson: JSON.stringify({ text: "filler" }),
-              })
               yield* kernelWriteArm({
                 kernel: services.kernel,
                 workflow: RuntimeContextSessionWorkflow,
@@ -324,8 +309,6 @@ describe("P5 — end-to-end product flow over the unified kernel", () => {
                 value: { sequence: in3.sequence },
                 serializeValue: (v) => JSON.stringify(v),
               })
-              // Body terminates on first kind==="terminal"; filler not consumed.
-              void in4
 
               const sessionExit = yield* sessionFiber.await
               if (sessionExit._tag === "Failure") return yield* Effect.failCause(sessionExit.cause)
@@ -478,7 +461,7 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
 
   it("idempotency for tool dispatch is via `Workflow.idempotencyKey`, not a separate result table", () => {
     const files = readAllSimFiles()
-    const toolDispatch = files.find((f) => f.path.includes("wait-permission-tool.ts"))
+    const toolDispatch = files.find((f) => f.path.includes("permission-and-tool.ts"))
     expect(toolDispatch).toBeDefined()
     expect(/idempotencyKey:\s*\(p\)\s*=>\s*p\.toolUseId/.test(toolDispatch!.text)).toBe(true)
     // No separate `RuntimeToolResultTable` / `runtimeToolResultAtMostOnce`.
@@ -495,6 +478,35 @@ describe("P5 — collapse invariants (the simulation IS the proof)", () => {
     // only the kernel does.
     const offenders = files.filter((f) =>
       /engine\.resume/.test(f.text) || /Workflow\.resume/.test(f.text),
+    )
+    expect(offenders.map((f) => f.path)).toEqual([])
+  })
+
+  it("no per-key mutex / fork-per-fact dispatcher pattern (Shape C subscriber-runtime artifact)", () => {
+    const files = readAllSimFiles()
+    // The unified model gets per-key serialization for free from
+    // Workflow.idempotencyKey + engine execution serialization. A
+    // per-key mutex is a Shape C concept from the per-key-subscriber-
+    // push-restart finding (tf-4fy3) that does NOT apply here. Its
+    // presence would steer implementers back into the fork-per-fact
+    // dispatcher shape the unified kernel retires.
+    const offenders = files.filter((f) =>
+      /makePerKeyMutex/.test(f.text) ||
+      /per-key-mutex/.test(f.text),
+    )
+    expect(offenders.map((f) => f.path)).toEqual([])
+  })
+
+  it("no generic `wait_for any fact` workflow (would reconstruct SourceCollections registry)", () => {
+    const files = readAllSimFiles()
+    // A workflow that takes a fact-table name as a string discriminator
+    // recreates the retired SourceCollections / RuntimeObservationSourceNames
+    // registry pattern. The unified model uses specialized observers
+    // (one workflow per fact family) instead.
+    const offenders = files.filter((f) =>
+      /WaitForFactWorkflow/.test(f.text) ||
+      /SourceCollections/.test(f.text) ||
+      /RuntimeObservationSourceNames/.test(f.text),
     )
     expect(offenders.map((f) => f.path)).toEqual([])
   })

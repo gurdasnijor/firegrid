@@ -1,23 +1,25 @@
 /**
- * P3 — Wait / Permission / Tool patterns as workflow bodies.
+ * P3 — Permission roundtrip + tool dispatch.
  *
- * Three subscribers, all on the same kernel primitive. Asserts the
- * unified shape covers the load-bearing Shape C/D patterns from
- * subscribers/{wait-router, runtime-context permission, tool-dispatch}/
- * without inventing primitives.
+ * Two specialized workflow bodies on the kernel primitive:
  *
- *   - wait_for: predicate-filtered fact observation with timeout
- *     (DurableClock — the one allowed Shape D parked body).
- *   - permission roundtrip: request, suspend, kernel-arm on response,
- *     return decision. No DurableDeferred mailbox.
- *   - tool dispatch: Activity-memoized executor; same toolUseId across
- *     retries returns same result without re-invoking. No separate
- *     runtime-tool-result table.
+ *   - PermissionRoundtripWorkflow: records the permission-request row
+ *     (Activity-memoized), parks on the missing "responded" status,
+ *     returns the decision when the host updates the row + arms via
+ *     kernel. No DurableDeferred mailbox.
+ *   - ToolDispatchWorkflow: Activity-memoized executor;
+ *     idempotencyKey: ({toolUseId}) admits one execution per logical
+ *     tool call. Same toolUseId across two concurrent executes invokes
+ *     the executor ONCE. At-most-once via WorkflowEngineTable — no
+ *     separate runtime-tool-result.ts.
+ *
+ * Webhook + peer-event observers are tested in P4 (they share the
+ * specialized-observer shape). DurableClock timer semantics are
+ * tested in P4.1 (ScheduledPromptWorkflow).
  */
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { durableStreamUrl } from "@firegrid/protocol/launch"
-import type { WorkflowEngine } from "@effect/workflow"
 import { Effect, Option, Ref } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { kernelWriteArm } from "../../src/simulations/unified-kernel-validation/kernel.ts"
@@ -29,14 +31,11 @@ import {
 import {
   buildPermissionRoundtripLayer,
   buildToolDispatchLayer,
-  buildWaitForFactLayer,
   makeToolExecutor,
   PermissionRoundtripWorkflow,
   ToolDispatchWorkflow,
-  WaitForFactWorkflow,
-} from "../../src/simulations/unified-kernel-validation/subscribers/wait-permission-tool.ts"
+} from "../../src/simulations/unified-kernel-validation/subscribers/permission-and-tool.ts"
 import {
-  peerEventKey,
   permissionKey,
 } from "../../src/simulations/unified-kernel-validation/tables.ts"
 
@@ -60,118 +59,9 @@ const buildUrls = (namespace: string): GenerationUrls => ({
   kernelTableStreamUrl: durableStreamUrl(baseUrl!, `${namespace}.kernel`),
 })
 
-// ── 1. wait_for ─────────────────────────────────────────────────────────────
+// ── Permission roundtrip ────────────────────────────────────────────────────
 
-describe("P3.1 — WaitForFactWorkflow", () => {
-  it("matches when a fact arrives before timeout", async () => {
-    const ns = `p3-wait-match-${crypto.randomUUID()}`
-    const urls = buildUrls(ns)
-    const waitId = `wait-${crypto.randomUUID()}`
-    const eventName = "test.event"
-    const eventId = "evt-1"
-    const factKey = peerEventKey(eventName, eventId)
-
-    const outcome = await Effect.runPromise(
-      runGeneration(
-        {
-          urls,
-          workflowLayers: [buildWaitForFactLayer()],
-          catalog: makeCatalog([WaitForFactWorkflow]),
-        },
-        (services) =>
-          Effect.gen(function*() {
-            const executionId = yield* WaitForFactWorkflow.executionId({
-              channelTarget: eventName,
-              factKey,
-              factTable: "peerEvents",
-              timeoutMs: 5_000,
-              waitId,
-            })
-
-            // Start the wait body in a forked fiber.
-            const fiber = yield* Effect.fork(
-              WaitForFactWorkflow.execute({
-                channelTarget: eventName,
-                factKey,
-                factTable: "peerEvents",
-                timeoutMs: 5_000,
-                waitId,
-              }),
-            )
-
-            // Give body time to park.
-            yield* Effect.sleep("100 millis")
-
-            // Write the fact + arm the workflow.
-            yield* kernelWriteArm({
-              kernel: services.kernel,
-              workflow: WaitForFactWorkflow,
-              executionId,
-              inputTable: "peerEvents",
-              inputKey: factKey,
-              write: () =>
-                services.unified.peerEvents.insertOrGet({
-                  eventKey: factKey,
-                  name: eventName,
-                  eventId,
-                  emitterContextId: "ctx-emit",
-                  payloadJson: JSON.stringify({ x: 1 }),
-                  emittedAt: new Date().toISOString(),
-                }).pipe(Effect.orDie, Effect.asVoid),
-              value: { factKey, eventId },
-              serializeValue: (v) => JSON.stringify(v),
-            })
-
-            const exit = yield* fiber.await
-            if (exit._tag === "Failure") {
-              return yield* Effect.failCause(exit.cause)
-            }
-            return exit.value as {
-              readonly matched: boolean
-              readonly timedOut: boolean
-              readonly factKey?: string
-            }
-          }) as Effect.Effect<
-            { readonly matched: boolean; readonly timedOut: boolean; readonly factKey?: string },
-            unknown
-          >,
-      ),
-    )
-    expect(outcome.matched).toBe(true)
-    expect(outcome.timedOut).toBe(false)
-    expect(outcome.factKey).toBe(factKey)
-  }, 15_000)
-
-  it("times out when no fact arrives", async () => {
-    const ns = `p3-wait-timeout-${crypto.randomUUID()}`
-    const urls = buildUrls(ns)
-    const waitId = `wait-${crypto.randomUUID()}`
-
-    const outcome = await Effect.runPromise(
-      runGeneration(
-        {
-          urls,
-          workflowLayers: [buildWaitForFactLayer()],
-          catalog: makeCatalog([WaitForFactWorkflow]),
-        },
-        (_services) =>
-          (WaitForFactWorkflow.execute({
-            channelTarget: "test.never",
-            factKey: peerEventKey("test.never", "never"),
-            factTable: "peerEvents",
-            timeoutMs: 200,
-            waitId,
-          }) as Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine>),
-      ),
-    )
-    expect(outcome.matched).toBe(false)
-    expect(outcome.timedOut).toBe(true)
-  }, 10_000)
-})
-
-// ── 2. Permission roundtrip ─────────────────────────────────────────────────
-
-describe("P3.2 — PermissionRoundtripWorkflow", () => {
+describe("P3.1 — PermissionRoundtripWorkflow", () => {
   it("body parks until host updates permission row to responded; returns decision", async () => {
     const ns = `p3-perm-${crypto.randomUUID()}`
     const urls = buildUrls(ns)
@@ -242,9 +132,9 @@ describe("P3.2 — PermissionRoundtripWorkflow", () => {
   }, 15_000)
 })
 
-// ── 3. Tool dispatch ────────────────────────────────────────────────────────
+// ── Tool dispatch ───────────────────────────────────────────────────────────
 
-describe("P3.3 — ToolDispatchWorkflow", () => {
+describe("P3.2 — ToolDispatchWorkflow", () => {
   it("idempotency: same toolUseId across two executes invokes the executor ONCE", async () => {
     const ns = `p3-tool-once-${crypto.randomUUID()}`
     const urls = buildUrls(ns)
@@ -289,7 +179,8 @@ describe("P3.3 — ToolDispatchWorkflow", () => {
     )
 
     expect(outcome.invocations).toBe(1)
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    /* eslint-disable @typescript-eslint/no-unsafe-member-access */
     expect(outcome.result1.resultJson).toBe(outcome.result2.resultJson)
+    /* eslint-enable @typescript-eslint/no-unsafe-member-access */
   }, 15_000)
 })
