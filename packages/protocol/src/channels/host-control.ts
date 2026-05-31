@@ -1,19 +1,14 @@
 import { Context, Schema } from "effect"
 import {
   PermissionRespondInputSchema,
-  PermissionRespondOutputSchema,
 } from "../agent-tools/schema.ts"
 import {
   PublicLaunchRuntimeIntentSchema,
   RuntimeContextSchema,
 } from "../launch/schema.ts"
 import type { RuntimeRunEventSchema } from "../launch/schema.ts"
-import {
-  RuntimeStartRequestAckSchema,
-} from "../launch/control-request.ts"
 import type {
   PublicPromptRequestSchema,
-  RuntimeInputIntentRowSchema,
 } from "../runtime-ingress/schema.ts"
 import {
   RuntimeAgentOutputObservationSchema,
@@ -23,7 +18,7 @@ import type { SessionHandlePromptInputSchema } from "../session-facade/schema.ts
 import {
   makeChannelTarget,
   type CallableChannel,
-  type EgressChannel,
+  type DurableEventChannel,
   type IngressChannel,
 } from "./core.ts"
 
@@ -48,6 +43,9 @@ export type HostContextsCreateResponse = Schema.Schema.Type<
   typeof HostContextsCreateResponseSchema
 >
 
+// Synchronous derivation — returns a `SessionHandleReference` derived
+// from the externalKey/contextId. Stays as `CallableChannel`; not an
+// input-delivery operation.
 export type HostContextsCreateChannelService = CallableChannel<
   typeof HostContextsCreateRequestSchema,
   typeof HostContextsCreateResponseSchema
@@ -57,10 +55,12 @@ export class HostContextsCreateChannel extends Context.Tag(
   "firegrid/protocol/channels/host.contexts.create",
 )<HostContextsCreateChannel, HostContextsCreateChannelService>() {}
 
+// ── Input-delivery channels — `DurableEventChannel<P>` ─────────────
+// Per SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION.
+
 export const HostPromptChannelTarget = makeChannelTarget("host.prompt")
-export type HostPromptChannelService = EgressChannel<
-  typeof PublicPromptRequestSchema,
-  Schema.Schema.Type<typeof RuntimeInputIntentRowSchema>
+export type HostPromptChannelService = DurableEventChannel<
+  typeof PublicPromptRequestSchema
 >
 
 export class HostPromptChannel extends Context.Tag(
@@ -71,10 +71,7 @@ export const SessionPromptChannelTarget = makeChannelTarget("session.prompt")
 export interface SessionPromptChannelService {
   readonly forSession: (
     sessionId: string,
-  ) => EgressChannel<
-    typeof SessionHandlePromptInputSchema,
-    Schema.Schema.Type<typeof RuntimeInputIntentRowSchema>
-  >
+  ) => DurableEventChannel<typeof SessionHandlePromptInputSchema>
 }
 
 export class SessionPromptChannel extends Context.Tag(
@@ -95,14 +92,8 @@ export type HostSessionsStartRequest = Schema.Schema.Type<
   typeof HostSessionsStartRequestSchema
 >
 
-export const HostSessionsStartResponseSchema = RuntimeStartRequestAckSchema
-export type HostSessionsStartResponse = Schema.Schema.Type<
-  typeof HostSessionsStartResponseSchema
->
-
-export type HostSessionsStartChannelService = CallableChannel<
-  typeof HostSessionsStartRequestSchema,
-  typeof HostSessionsStartResponseSchema
+export type HostSessionsStartChannelService = DurableEventChannel<
+  typeof HostSessionsStartRequestSchema
 >
 
 export class HostSessionsStartChannel extends Context.Tag(
@@ -198,14 +189,8 @@ export const HostPermissionRespondChannelRequestSchema =
 export type HostPermissionRespondChannelRequest = Schema.Schema.Type<
   typeof HostPermissionRespondChannelRequestSchema
 >
-export const HostPermissionRespondChannelResponseSchema =
-  PermissionRespondOutputSchema
-export type HostPermissionRespondChannelResponse = Schema.Schema.Type<
-  typeof HostPermissionRespondChannelResponseSchema
->
-export type HostPermissionRespondChannelService = CallableChannel<
-  typeof HostPermissionRespondChannelRequestSchema,
-  typeof HostPermissionRespondChannelResponseSchema
+export type HostPermissionRespondChannelService = DurableEventChannel<
+  typeof HostPermissionRespondChannelRequestSchema
 >
 
 export class HostPermissionRespondChannel extends Context.Tag(

@@ -1,8 +1,23 @@
 import type {
   Firegrid,
 } from "@firegrid/client-sdk/firegrid"
-import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
+import type {
+  CurrentHostSession,
+  RuntimeControlPlaneTable,
+  RuntimeOutputTable,
+  RuntimeStartCapability,
+} from "@firegrid/protocol/launch"
+import type { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
+import type { RuntimeChannelRouter } from "@firegrid/runtime/channels/router/live"
 import type { Effect, Layer } from "effect"
+
+export type FiregridHost =
+  | RuntimeStartCapability
+  | SessionAgentOutputChannel
+  | CurrentHostSession
+  | RuntimeControlPlaneTable
+  | RuntimeOutputTable
+  | RuntimeChannelRouter
 
 export interface TinyFiregridStopSignal {
   readonly complete: Effect.Effect<void>

@@ -96,15 +96,10 @@ export const RuntimeIngressInputRowSchema = Schema.Struct({
 })
 export type RuntimeIngressInputRow = Schema.Schema.Type<typeof RuntimeIngressInputRowSchema>
 
-export const RuntimeInputIntentRowSchema = Schema.Struct({
-  intentId: Schema.String.pipe(DurableTable.primaryKey),
-  ...runtimeIngressPayloadFields,
-  createdAt: Schema.String,
-  // firegrid-row-otel-propagation.ROW_OTEL.1 — optional W3C trace context;
-  // legacy/external producers omit it and consumers treat that as "no parent".
-  _otel: Schema.optional(RowOtelContextSchema),
-})
-export type RuntimeInputIntentRow = Schema.Schema.Type<typeof RuntimeInputIntentRowSchema>
+// `RuntimeInputIntentRowSchema` deleted per SDD_FIREGRID_PROTOCOL_
+// RESPONSE_UNIFICATION phase 2. Input delivery now flows as signals
+// to signal-based subscribers in `@firegrid/runtime/unified/`. The
+// channel append receipt collapsed to `EventOffset`.
 
 export const RuntimeIngressDeliveryRowSchema = Schema.Struct({
   key: RuntimeInputDeliveryKey.pipe(DurableTable.primaryKey),
@@ -176,29 +171,5 @@ export const makeRuntimeIngressInputRow = (
   }
 }
 
-export const makeRuntimeInputIntentRow = (
-  request: RuntimeIngressRequest,
-  options?: {
-    readonly intentId?: string
-    readonly createdAt?: string
-  },
-): RuntimeInputIntentRow => {
-  const intentId = options?.intentId ?? inputIdForRuntimeIngressRequest(request)
-  const createdAt = options?.createdAt ?? nowIso()
-  return {
-    intentId,
-    ...runtimeIngressPayloadFromRequest(request),
-    createdAt,
-  }
-}
-
-export const runtimeInputIntentToRuntimeIngressRequest = (
-  intent: RuntimeInputIntentRow,
-): RuntimeIngressRequest => ({
-  inputId: intent.intentId,
-  contextId: intent.contextId,
-  kind: intent.kind,
-  authoredBy: intent.authoredBy,
-  payload: intent.payload,
-  ...optionalRuntimeIngressPayloadFields(intent),
-})
+// `makeRuntimeInputIntentRow` / `runtimeInputIntentToRuntimeIngressRequest`
+// deleted with `RuntimeInputIntentRowSchema` (phase 2).

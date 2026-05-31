@@ -11,7 +11,7 @@
  * C / DurableDeferred control-plane bindings).
  */
 
-import type { FiregridHost } from "@firegrid/runtime/composition/host-live"
+import type { FiregridHost } from "../../types.ts"
 import { durableStreamUrl } from "@firegrid/protocol/launch"
 import { Effect, Layer } from "effect"
 import type { TinyFiregridHostEnv } from "../../types.ts"

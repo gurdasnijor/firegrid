@@ -1,5 +1,4 @@
 packages:
   - packages/*
-  - experiments/*
   # Local dev tooling: vendored durable-streams stream-inspector UI (reads :4437).
   - tools/durable-streams-ui

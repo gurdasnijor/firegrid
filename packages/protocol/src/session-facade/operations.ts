@@ -1,15 +1,11 @@
-import {
-  RuntimeInputIntentRowSchema,
-} from "../runtime-ingress/schema.ts"
+import { EventOffsetSchema, type EventOffset } from "../channels/core.ts"
 import {
   PermissionDecisionSchema,
   PermissionRespondInputSchema,
-  PermissionRespondOutputSchema,
   SessionPromptToolInputSchema,
   SessionPromptToolOutputSchema,
   type PermissionDecision,
   type PermissionRespondInput,
-  type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "../agent-tools/schema.ts"
@@ -33,10 +29,10 @@ import {
 export {
   FiregridRuntimeObservationSourceNames,
   PermissionDecisionSchema,
+  type EventOffset,
   type FiregridRuntimeObservationSourceName,
   type PermissionDecision,
   type PermissionRespondInput,
-  type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 }
@@ -57,7 +53,7 @@ export const FiregridClientOperations = {
     ),
     promptScoped: defineFiregridOperation(
       SessionHandlePromptInputSchema,
-      RuntimeInputIntentRowSchema,
+      EventOffsetSchema,
     ),
   },
   wait: {
@@ -73,11 +69,11 @@ export const FiregridClientOperations = {
   permissions: {
     respond: defineFiregridOperation(
       PermissionRespondInputSchema,
-      PermissionRespondOutputSchema,
+      EventOffsetSchema,
     ),
     respondScoped: defineFiregridOperation(
       SessionPermissionRespondInputSchema,
-      PermissionRespondOutputSchema,
+      EventOffsetSchema,
     ),
   },
 } as const

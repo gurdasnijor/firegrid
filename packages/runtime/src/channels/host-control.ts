@@ -82,4 +82,6 @@ export const hostSessionLifecycleStream = (
     Stream.filter(row => row.contextId === sessionId),
   )
 
-export * from "./host-control-routes.ts"
+// `host-control-routes.ts` deleted per SDD_FIREGRID_PROTOCOL_RESPONSE_
+// UNIFICATION phase 2. Channel bindings live in
+// `@firegrid/runtime/unified/channel-bindings`.

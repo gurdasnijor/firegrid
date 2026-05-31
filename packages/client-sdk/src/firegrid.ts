@@ -26,19 +26,17 @@ import {
   type RuntimeEventRow,
   type RuntimeLogLineRow,
   type RuntimeRunEventRow,
-  type RuntimeStartRequestAck,
 } from "@firegrid/protocol/launch"
 import {
   type PermissionRespondInput,
-  type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "@firegrid/protocol/session-facade"
 import {
   PublicPromptRequestSchema,
   type PublicPromptRequest,
-  type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
+import type { EventOffset } from "@firegrid/protocol/channels"
 import {
   makeIngressChannel,
   SessionAgentOutputChannelTarget,
@@ -80,8 +78,6 @@ import {
   SessionPromptChannel,
 } from "@firegrid/protocol/channels"
 import { Clock, Context, Data, Duration, Effect, Exit, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
-import { HostControlChannelsStandaloneLive } from "./channels/host-control-default.ts"
-import { HostSessionsCreateOrLoadChannelStandaloneLive } from "./channels/host-sessions-create-or-load-default.ts"
 import { projectionWait } from "./internal/projection-wait.ts"
 import { FiregridClientOperations } from "./operations.ts"
 import {
@@ -97,7 +93,7 @@ export type {
   SessionAgentOutputWaitInput,
   SessionAgentOutputWaitOutput,
 } from "@firegrid/protocol/session-facade"
-export type { RuntimeStartRequestAck } from "@firegrid/protocol/launch"
+export type { EventOffset } from "@firegrid/protocol/channels"
 export { FiregridClientOperations } from "./operations.ts"
 
 export interface ClientOptions {
@@ -242,7 +238,7 @@ export interface FiregridSessionPermissionsClient {
   readonly respond: (
     request: SessionPermissionRespondInput,
   ) => Effect.Effect<
-    PermissionRespondOutput,
+    EventOffset,
     LaunchInputError | AppendError
   >
   readonly autoApprove: <E = never, R = never>(
@@ -259,9 +255,9 @@ export interface FiregridSessionHandle {
   // snapshot) own a bounded materialization barrier internally.
   readonly prompt: (
     request: SessionHandlePromptInput,
-  ) => Effect.Effect<RuntimeInputIntentRow, PromptInputError | AppendError>
+  ) => Effect.Effect<EventOffset, PromptInputError | AppendError>
   readonly start: () => Effect.Effect<
-    RuntimeStartRequestAck,
+    EventOffset,
     AppendError
   >
   readonly snapshot: () => Effect.Effect<RuntimeContextSnapshot, PreloadError>
@@ -295,7 +291,7 @@ export interface FiregridPermissionsClient {
   readonly respond: (
     request: PermissionRespondInput,
   ) => Effect.Effect<
-    PermissionRespondOutput,
+    EventOffset,
     LaunchInputError | AppendError
   >
 }
@@ -309,7 +305,7 @@ export interface FiregridService {
   >
   readonly prompt: (
     request: PublicPromptRequest,
-  ) => Effect.Effect<RuntimeInputIntentRow, PromptInputError | AppendError>
+  ) => Effect.Effect<EventOffset, PromptInputError | AppendError>
   readonly sessions: FiregridSessionsClient
   readonly permissions: FiregridPermissionsClient
   readonly channels: FiregridChannelsClient
@@ -1112,7 +1108,7 @@ const make = (
 
     const appendHostPrompt = (
       request: PublicPromptRequest,
-    ): Effect.Effect<RuntimeInputIntentRow, AppendError> =>
+    ): Effect.Effect<EventOffset, AppendError> =>
       hostPromptChannel.binding.append(request).pipe(
         Effect.mapError(cause =>
           new AppendError({ contextId: request.contextId, cause })),
@@ -1131,7 +1127,7 @@ const make = (
     const appendSessionPrompt = (
       sessionId: string,
       request: SessionHandlePromptInput,
-    ): Effect.Effect<RuntimeInputIntentRow, AppendError> => {
+    ): Effect.Effect<EventOffset, AppendError> => {
       const channel = sessionPromptChannel.forSession(sessionId)
       return channel.binding.append(request).pipe(
         Effect.mapError(cause => new AppendError({ contextId: sessionId, cause })),
@@ -1199,7 +1195,7 @@ const make = (
         const respond = (
           request: SessionPermissionRespondInput,
         ): Effect.Effect<
-          PermissionRespondOutput,
+          EventOffset,
           LaunchInputError | AppendError
         > =>
           Effect.gen(function* () {
@@ -1207,7 +1203,7 @@ const make = (
             // host-scoped HostPermissionRespondChannel, supplying the
             // handle's sessionId as contextId.
             const decoded = yield* decodeSessionPermissionRespondInput(request)
-            return yield* hostPermissionRespondChannel.binding.call({
+            return yield* hostPermissionRespondChannel.binding.append({
               contextId: sessionId,
               permissionRequestId: decoded.permissionRequestId,
               decision: decoded.decision,
@@ -1248,7 +1244,7 @@ const make = (
               "firegrid.context.id": sessionId,
             }, Effect.gen(function*() {
               yield* awaitContextMaterialized(sessionId)
-              return yield* hostSessionsStartChannel.binding.call({ sessionId }).pipe(
+              return yield* hostSessionsStartChannel.binding.append({ sessionId }).pipe(
                 Effect.mapError(cause => new AppendError({ contextId: sessionId, cause })),
               )
             })),
@@ -1341,7 +1337,7 @@ const make = (
             "firegrid.context.id": decoded.sessionId,
             "firegrid.input.id": inputId,
           })
-          const intent = yield* appendSessionPrompt(decoded.sessionId, {
+          yield* appendSessionPrompt(decoded.sessionId, {
             payload: decoded.prompt,
             inputId,
             idempotencyKey: inputId,
@@ -1350,7 +1346,7 @@ const make = (
           return {
             appended: true,
             sessionId: decoded.sessionId,
-            inputId: intent.intentId,
+            inputId,
           }
         })),
       },
@@ -1359,7 +1355,7 @@ const make = (
           // tf-aago: dispatch through HostPermissionRespondChannel (callable,
           // host-scoped — contextId travels in the request).
           const decoded = yield* decodePermissionRespondInput(request)
-          return yield* hostPermissionRespondChannel.binding.call({
+          return yield* hostPermissionRespondChannel.binding.append({
             contextId: decoded.contextId,
             permissionRequestId: decoded.permissionRequestId,
             decision: decoded.decision,
@@ -1422,10 +1418,12 @@ const firegridServiceLayer = Layer.scoped(
  * Standalone consumers can fall back to `FiregridControlPlaneTableLive`
  * for the table Tag.
  */
-export const FiregridLive = firegridServiceLayer.pipe(
-  Layer.provide(HostSessionsCreateOrLoadChannelStandaloneLive),
-  Layer.provide(HostControlChannelsStandaloneLive),
-)
+// `FiregridLive` no longer provides standalone channel defaults — the
+// host-side `@firegrid/runtime/unified/channel-bindings` is the
+// canonical source of the channel Tags. Standalone client composition
+// must compose the unified bindings explicitly (or run against a
+// real host).
+export const FiregridLive = firegridServiceLayer
 
 /**
  * Standalone wiring: FiregridLive plus its own control-plane layer.

@@ -2,6 +2,7 @@ import {
   FiregridConfig,
   FiregridStandaloneLive,
 } from "@firegrid/client-sdk/firegrid"
+import { UnifiedChannelBindingsLive } from "@firegrid/runtime/unified"
 import {
   Console,
   Config,
@@ -96,6 +97,7 @@ const firegridClientLayer = (
   namespace: string,
 ) =>
   FiregridStandaloneLive.pipe(
+    Layer.provide(UnifiedChannelBindingsLive),
     Layer.provide(
       Layer.succeed(FiregridConfig, {
         durableStreamsBaseUrl,

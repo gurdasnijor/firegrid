@@ -30,6 +30,7 @@ import {
   FiregridStandaloneLive,
 } from "@firegrid/client-sdk/firegrid"
 import type { ChannelRegistration } from "@firegrid/protocol/channels"
+import { UnifiedChannelBindingsLive } from "@firegrid/runtime/unified"
 import { WorkflowEngine } from "@effect/workflow"
 import { Effect, Layer, Ref } from "effect"
 import { makeChannels, type PermissionHandle, type SessionHandle } from "./channels.ts"
@@ -150,6 +151,7 @@ const buildFiregridClientLayer = (
       makeChannels(signals, unified, engine),
     ) as ReadonlyArray<ChannelRegistration>
     return FiregridStandaloneLive.pipe(
+      Layer.provide(UnifiedChannelBindingsLive),
       Layer.provide(
         Layer.succeed(FiregridConfig, {
           durableStreamsBaseUrl: baseUrl,

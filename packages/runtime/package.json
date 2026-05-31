@@ -21,14 +21,6 @@
       "types": "./src/tables/per-context-output.ts",
       "default": "./src/tables/per-context-output.ts"
     },
-    "./tool-executor": {
-      "types": "./src/subscribers/tool-dispatch/index.ts",
-      "default": "./src/subscribers/tool-dispatch/index.ts"
-    },
-    "./control-plane": {
-      "types": "./src/subscribers/runtime-control/index.ts",
-      "default": "./src/subscribers/runtime-control/index.ts"
-    },
     "./runtime-output": {
       "types": "./src/tables/runtime-output-public.ts",
       "default": "./src/tables/runtime-output-public.ts"
@@ -36,10 +28,6 @@
     "./streams": {
       "types": "./src/channels/observation-streams/index.ts",
       "default": "./src/channels/observation-streams/index.ts"
-    },
-    "./runtime-keyed-subscriber": {
-      "types": "./src/subscribers/keyed-dispatch/index.ts",
-      "default": "./src/subscribers/keyed-dispatch/index.ts"
     },
     "./verified-webhook-ingest": {
       "types": "./src/verified-webhook-ingest/index.ts",
@@ -97,21 +85,9 @@
       "types": "./src/channels/session-self/live.ts",
       "default": "./src/channels/session-self/live.ts"
     },
-    "./channels/host-control/live": {
-      "types": "./src/channels/host-control/live.ts",
-      "default": "./src/channels/host-control/live.ts"
-    },
     "./channels/session-agent-output/live": {
       "types": "./src/channels/session-agent-output/live.ts",
       "default": "./src/channels/session-agent-output/live.ts"
-    },
-    "./channels/session-permission/live": {
-      "types": "./src/channels/session-permission/live.ts",
-      "default": "./src/channels/session-permission/live.ts"
-    },
-    "./channels/host-sessions-create-or-load/live": {
-      "types": "./src/channels/host-sessions-create-or-load/live.ts",
-      "default": "./src/channels/host-sessions-create-or-load/live.ts"
     },
     "./channels/verified-webhook/live": {
       "types": "./src/channels/verified-webhook/live.ts",
@@ -125,18 +101,6 @@
       "types": "./src/channels/state-changes/live.ts",
       "default": "./src/channels/state-changes/live.ts"
     },
-    "./composition/host-public": {
-      "types": "./src/composition/host-public.ts",
-      "default": "./src/composition/host-public.ts"
-    },
-    "./composition/host-substrate": {
-      "types": "./src/composition/host-substrate.ts",
-      "default": "./src/composition/host-substrate.ts"
-    },
-    "./composition/per-context-host-live": {
-      "types": "./src/composition/per-context-host-live.ts",
-      "default": "./src/composition/per-context-host-live.ts"
-    },
     "./sources/codecs/agent-adapters": {
       "types": "./src/sources/codecs/agent-adapters/index.ts",
       "default": "./src/sources/codecs/agent-adapters/index.ts"
@@ -149,97 +113,13 @@
       "types": "./src/sources/sandbox/index.ts",
       "default": "./src/sources/sandbox/index.ts"
     },
-    "./tables/runtime-context-state": {
-      "types": "./src/tables/runtime-context-state.ts",
-      "default": "./src/tables/runtime-context-state.ts"
-    },
-    "./tables/runtime-context-input-facts": {
-      "types": "./src/tables/runtime-context-input-facts.ts",
-      "default": "./src/tables/runtime-context-input-facts.ts"
-    },
-    "./tables/runtime-control-plane": {
-      "types": "./src/tables/runtime-control-plane.ts",
-      "default": "./src/tables/runtime-control-plane.ts"
-    },
-    "./tables/runtime-control-lifecycle-evidence": {
-      "types": "./src/tables/runtime-control-lifecycle-evidence.ts",
-      "default": "./src/tables/runtime-control-lifecycle-evidence.ts"
-    },
-    "./subscribers/runtime-context-session": {
-      "types": "./src/subscribers/runtime-context-session/index.ts",
-      "default": "./src/subscribers/runtime-context-session/index.ts"
-    },
-    "./subscribers/keyed-dispatch": {
-      "types": "./src/subscribers/keyed-dispatch/index.ts",
-      "default": "./src/subscribers/keyed-dispatch/index.ts"
-    },
-    "./subscribers/tool-dispatch": {
-      "types": "./src/subscribers/tool-dispatch/index.ts",
-      "default": "./src/subscribers/tool-dispatch/index.ts"
-    },
-    "./subscribers/wait-router": {
-      "types": "./src/subscribers/wait-router/index.ts",
-      "default": "./src/subscribers/wait-router/index.ts"
-    },
-    "./subscribers/scheduled-prompt": {
-      "types": "./src/subscribers/scheduled-prompt/index.ts",
-      "default": "./src/subscribers/scheduled-prompt/index.ts"
-    },
-    "./subscribers/runtime-context/host-lookup": {
-      "types": "./src/subscribers/runtime-context/host-lookup.ts",
-      "default": "./src/subscribers/runtime-context/host-lookup.ts"
-    },
-    "./subscribers/runtime-control": {
-      "types": "./src/subscribers/runtime-control/index.ts",
-      "default": "./src/subscribers/runtime-control/index.ts"
-    },
-    "./composition/host-live": {
-      "types": "./src/composition/host-live.ts",
-      "default": "./src/composition/host-live.ts"
-    },
-    "./composition/host-workflow-engine": {
-      "types": "./src/composition/host-workflow-engine.ts",
-      "default": "./src/composition/host-workflow-engine.ts"
-    },
-    "./composition/runtime-host-config": {
-      "types": "./src/channels/runtime-host-config.ts",
-      "default": "./src/channels/runtime-host-config.ts"
-    },
     "./channels/runtime-host-config": {
       "types": "./src/channels/runtime-host-config.ts",
       "default": "./src/channels/runtime-host-config.ts"
     },
-    "./composition/sync-run": {
-      "types": "./src/composition/sync-run.ts",
-      "default": "./src/composition/sync-run.ts"
-    },
     "./transforms": {
       "types": "./src/transforms/index.ts",
       "default": "./src/transforms/index.ts"
-    },
-    "./sources/codecs/mcp": {
-      "types": "./src/composition/mcp-host.ts",
-      "default": "./src/composition/mcp-host.ts"
-    },
-    "./producers/codecs/mcp": {
-      "types": "./src/composition/mcp-host.ts",
-      "default": "./src/composition/mcp-host.ts"
-    },
-    "./composition/mcp-host": {
-      "types": "./src/composition/mcp-host.ts",
-      "default": "./src/composition/mcp-host.ts"
-    },
-    "./composition/runtime-context-mcp-base-url": {
-      "types": "./src/composition/runtime-context-mcp-base-url.ts",
-      "default": "./src/composition/runtime-context-mcp-base-url.ts"
-    },
-    "./sources/codecs/mcp/base-url": {
-      "types": "./src/composition/runtime-context-mcp-base-url.ts",
-      "default": "./src/composition/runtime-context-mcp-base-url.ts"
-    },
-    "./producers/codecs/mcp/base-url": {
-      "types": "./src/composition/runtime-context-mcp-base-url.ts",
-      "default": "./src/composition/runtime-context-mcp-base-url.ts"
     },
     "./sources/codecs/acp/stdio-edge": {
       "types": "./src/sources/codecs/acp/stdio-edge.ts",
