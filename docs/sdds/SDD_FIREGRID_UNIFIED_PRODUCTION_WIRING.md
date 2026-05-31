@@ -133,9 +133,9 @@ Added per design-partner request: prove the production loop works end-to-end bef
 
 **Acceptance result:** `production flow (e2e) ... session=true inputs=4 codecSends=3 dereg=1 tool=1× auto-relay=true`. The full loop **codec → journal → observer → workflow → relay → session** is now structurally proven and regression-locked.
 
-### Phase E — Production codec adapter Live (deferred from this SDD)
+### Phase E — Production codec adapter Live ✅ (scaffolding)
 
-The recorder + fake codec are sufficient to prove the wiring works end-to-end. Wrapping the real `AcpSessionLive` / `StdioJsonlSessionLive` into a `RuntimeContextSessionAdapter` Live with process registry + output-stream-to-journal pump is genuine work (~500 LoC) and will land in a follow-up SDD now that Phase A-D.5 has fully validated the Tag contract, the journal-observer pattern, and the auto-relay feedback loops. The Phase 3 SDD's acceptance gate is structural (the Tag, the factory, the observer pattern, the e2e loop); the codec wrapping is mechanical given those.
+Landed under follow-up SDD `SDD_FIREGRID_UNIFIED_PRODUCTION_CODEC_ADAPTER.md`. `ProductionCodecAdapterLive` in `runtime/src/unified/codec-adapter.ts` wraps both `AcpSessionLive` and `StdioJsonlSessionLive` behind the `RuntimeContextSessionAdapter` Tag with per-context process registry, output-stream-to-journal drain, and `ContextResolverTag` seam for context resolution. End-to-end agent run pending an integration-test harness; sim 7/7 + 17/17 green confirms no regression.
 
 ## Acceptance criteria
 
