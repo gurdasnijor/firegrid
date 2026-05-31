@@ -20,10 +20,18 @@
  * sibling workflows perform their own feedback `sendSignal` back to
  * the originating session workflow (§D, §E), so the observer's job
  * ends at "execute the workflow".
+ *
+ * Implementation note: the observer captures the FULL service context
+ * at Layer-build time via `Effect.context()` and provides it back when
+ * forking workflow.execute(). The workflow's body Layer is registered
+ * with the engine, but the engine resolves the body's R-channel from
+ * the surrounding scope at execute-time — without re-providing the
+ * captured context, `SignalTable` / `UnifiedTable` / `WorkflowEngine`
+ * are not reachable from the forked effect's own scope.
  */
 
 import { WorkflowEngine } from "@effect/workflow"
-import { Effect, Layer, Stream } from "effect"
+import { Context, Effect, Layer, Stream } from "effect"
 import {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
@@ -32,9 +40,16 @@ import {
   PermissionRoundtripWorkflow,
   ToolDispatchWorkflow,
 } from "./subscribers/permission-and-tool.ts"
+import { SignalTable } from "./signal.ts"
+import { UnifiedTable } from "./tables.ts"
+
+type CapturedServices =
+  | WorkflowEngine.WorkflowEngine
+  | SignalTable
+  | UnifiedTable
 
 const triggerForObservation = (
-  engine: WorkflowEngine.WorkflowEngine["Type"],
+  captured: Context.Context<CapturedServices>,
 ) =>
 (observation: import("@firegrid/protocol/session-facade").RuntimeAgentOutputObservation) => {
   switch (observation._tag) {
@@ -46,7 +61,7 @@ const triggerForObservation = (
           permissionRequestId: observation.event.permissionRequestId,
           toolUseId: observation.event.toolUseId,
         }).pipe(
-          Effect.provideService(WorkflowEngine.WorkflowEngine, engine),
+          Effect.provide(captured),
           Effect.orDie,
         ),
       )
@@ -60,7 +75,7 @@ const triggerForObservation = (
           toolName: observation.event.part.name,
           inputJson: JSON.stringify(observation.event.part.params),
         }).pipe(
-          Effect.provideService(WorkflowEngine.WorkflowEngine, engine),
+          Effect.provide(captured),
           Effect.orDie,
         ),
       )
@@ -71,23 +86,20 @@ const triggerForObservation = (
 }
 
 /**
- * Daemon Layer. Acquires the observation stream at scope, forks a
- * daemon fiber consuming it indefinitely, triggers the appropriate
- * sibling workflow per observation. Layer scope ends → daemon fiber
- * is interrupted; no manual teardown required.
+ * Daemon Layer. Acquires the observation stream at scope, captures the
+ * service context needed to satisfy sibling-workflow bodies' R-channels,
+ * forks a daemon fiber consuming the stream indefinitely. Layer scope
+ * ends → daemon fiber is interrupted; no manual teardown required.
  */
 export const JournalObserverLive = Layer.scopedDiscard(
   Effect.gen(function*() {
-    const engine = yield* WorkflowEngine.WorkflowEngine
+    const captured = yield* Effect.context<CapturedServices>()
     const observations = yield* RuntimeAgentOutputEvents
-    const trigger = triggerForObservation(engine)
+    const trigger = triggerForObservation(captured)
     yield* observations.pipe(
       Stream.tap(trigger),
       Stream.runDrain,
       Effect.forkScoped,
-      Effect.withSpan("firegrid.unified.journal_observer.daemon", {
-        kind: "consumer",
-      }),
     )
   }),
 ).pipe(Layer.provide(RuntimeAgentOutputEventsLayer))

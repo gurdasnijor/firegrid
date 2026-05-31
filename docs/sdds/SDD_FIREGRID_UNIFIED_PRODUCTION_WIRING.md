@@ -107,9 +107,11 @@ Foundational. Everything downstream depends on the Tag existing.
 - [x] On PermissionRequest: `PermissionRoundtripWorkflow.execute({contextId, attempt, permissionRequestId, toolUseId})`
 - [x] On ToolUse: `ToolDispatchWorkflow.execute({contextId, attempt, toolUseId, toolName, inputJson})`
 - [x] Forked as daemon at Layer scope via `Layer.scopedDiscard` + `Effect.forkScoped`; one observer per host
-- [ ] Sim coverage: deferred. The existing scenarios drive the sibling workflows directly via channels (testing the workflow → relay path). Observer-triggered firing requires a codec that emits `PermissionRequest`/`ToolUse` rows into the journal — covered when Phase E lands the production codec adapter.
+- [x] **Sim coverage: scenario 7 (production-flow) exercises the full loop end-to-end via the fake codec — see Phase D.5 below.**
 
 **Design note:** workflow-level idempotency (`Workflow.idempotencyKey`) deduplicates across observer fires — the observer is allowed to be naïve about "have I seen this before". Same `(contextId, permissionRequestId)` or same `toolUseId` collapses to one execution regardless of how many times the journal stream replays.
+
+**Production wiring discovery:** the observer must capture the full service context (`SignalTable | UnifiedTable | WorkflowEngine`) at Layer-build time via `Effect.context()` and `Effect.provide` it back when forking `workflow.execute()`. The engine resolves the workflow body's R-channel from the calling scope, NOT from the workflow Layer's build context — without re-providing the captured context, the body fails with "Service not found: SignalTable". Found via the production-flow scenario; fix lives in `observers.ts`.
 
 ### Phase D — Composition factory ✅
 
@@ -121,13 +123,23 @@ Foundational. Everything downstream depends on the Tag existing.
 
 **Surface:** one function with a small options bag (`{adapter, durableStreamsBaseUrl, namespace, headers?, toolExecutor?}`) returns `Layer.Layer<FiregridHostServices, never, never>`. R-channel is never; composition is self-contained. Users override individual Tags via standard `Layer.provide`.
 
+### Phase D.5 — Production-shape end-to-end simulation scenario ✅
+
+Added per design-partner request: prove the production loop works end-to-end before deferring real-codec work.
+
+- [x] `FakeCodecAdapter` Live in `tiny-firegrid/.../fake-codec.ts` — implements the `RuntimeContextSessionAdapter` Tag with deterministic agent output simulation. `startOrAttach` writes `Ready`; `send(prompt)` writes `ToolUse`; `send(tool-result)` writes `PermissionRequest`; `send(permission-response)` writes `TurnComplete`. All rows go to `RuntimeOutputTable.events`.
+- [x] `productionFlowScenario` in `tiny-firegrid/.../production-flow-scenario.ts` — hand-composes the substrate (shares `RuntimeOutputTable` between codec and observer via `Layer.provideMerge` rather than two independent `Layer.provide`s, which would create separate in-memory instances).
+- [x] Driver scenario 7 lands in `driver.ts` with assertions on the full loop: session reaches terminal with `inputsConsumed >= 4` (prompt + auto-tool-result + auto-permission-response + terminal), codec saw the relayed tool-result and permission-response inputs, exactly 1 spawn + 1 deregister, exactly 1 tool invocation.
+
+**Acceptance result:** `production flow (e2e) ... session=true inputs=4 codecSends=3 dereg=1 tool=1× auto-relay=true`. The full loop **codec → journal → observer → workflow → relay → session** is now structurally proven and regression-locked.
+
 ### Phase E — Production codec adapter Live (deferred from this SDD)
 
-The recorder is sufficient to prove the wiring works end-to-end. Wrapping the real `AcpSessionLive` / `StdioJsonlSessionLive` into a `RuntimeContextSessionAdapter` Live with process registry + output-stream-to-journal pump is genuine work (~500 LoC) and will land in a follow-up SDD once Phase A-D is settled and the adapter Tag contract has been exercised in the simulation. The Phase 3 SDD's acceptance gate is structural (the Tag, the factory, the observer pattern); the codec wrapping is mechanical given those.
+The recorder + fake codec are sufficient to prove the wiring works end-to-end. Wrapping the real `AcpSessionLive` / `StdioJsonlSessionLive` into a `RuntimeContextSessionAdapter` Live with process registry + output-stream-to-journal pump is genuine work (~500 LoC) and will land in a follow-up SDD now that Phase A-D.5 has fully validated the Tag contract, the journal-observer pattern, and the auto-relay feedback loops. The Phase 3 SDD's acceptance gate is structural (the Tag, the factory, the observer pattern, the e2e loop); the codec wrapping is mechanical given those.
 
 ## Acceptance criteria
 
-1. ✅ **`unified-kernel-validation` simulation passes 6/6 scenarios + 17/17 invariants** with the new Tag-based adapter (recorder Live) and the new in-body feedback signals (no driver-side relay).
+1. ✅ **`unified-kernel-validation` simulation passes 7/7 scenarios + 17/17 invariants** including the production-flow end-to-end scenario that closes the codec → journal → observer → workflow → relay → session loop.
 2. ✅ **`pnpm -r exec tsc --noEmit` clean** across the workspace.
 3. ✅ **A user can construct a working host with one call**: `FiregridHost({adapter, durableStreamsBaseUrl, namespace})` returns a composable Layer satisfying the runtime substrate + channel + workflow + observer tags.
 4. ✅ **`I17 — session workflow body consumes adapter via Context.Tag`** landed in `invariants.ts`; structurally rejects regression to closure-built layer factories.
@@ -150,3 +162,4 @@ The recorder is sufficient to prove the wiring works end-to-end. Wrapping the re
 | 2026-05-31 | B | `PermissionRoundtripWorkflow` and `ToolDispatchWorkflow` bodies extended to relay results back to session via `sendSignal` as terminal Activity. Payloads gained `attempt: number`. Driver-side relay sends removed; session `inputsConsumed` increased from 3 → 4 (auto-tool-result + auto-permission-response + prompt + terminal). |
 | 2026-05-31 | C | `JournalObserverLive` daemon Layer landed in `runtime/src/unified/observers.ts`. Watches `RuntimeAgentOutputEvents` for `PermissionRequest`/`ToolUse` and forks sibling workflows. Workflow idempotencyKey handles dedup across replays. |
 | 2026-05-31 | D | `FiregridHost({adapter, durableStreamsBaseUrl, namespace, ...})` factory landed in `runtime/src/unified/host.ts`. Returns `Layer<FiregridHostServices, never, never>`. Override pattern: `.pipe(Layer.provide(MyCustomLive))`. I17 invariant landed enforcing adapter-via-Tag. Acceptance: 6/6 scenarios + 17/17 invariants green. |
+| 2026-05-31 | D.5 | Production-flow end-to-end scenario landed: `FakeCodecAdapter` + `productionFlowScenario` close the codec → journal → observer → workflow → relay → session loop with no driver-side relay. Discovered Phase C latent bug: observer must `Effect.context` capture and `Effect.provide` back the workflow body's R-channel (`SignalTable \| UnifiedTable \| WorkflowEngine`) when forking — engine resolves body deps from calling scope, not the workflow Layer's build scope. Fixed in `observers.ts`. Acceptance: **7/7 scenarios + 17/17 invariants green**. |

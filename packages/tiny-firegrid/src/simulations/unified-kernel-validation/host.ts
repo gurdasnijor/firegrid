@@ -31,6 +31,11 @@ import {
   endToEndViaFiregridClient,
   type FiregridClientE2EResult,
 } from "./firegrid-client-scenarios.ts"
+import {
+  productionFlowScenario,
+  productionFlowUrlsFor,
+  type ProductionFlowResult,
+} from "./production-flow-scenario.ts"
 import type { GenerationUrls } from "./substrate.ts"
 
 export interface UnifiedKernelRuntime {
@@ -40,6 +45,7 @@ export interface UnifiedKernelRuntime {
   readonly runWebhookBadHmac: Effect.Effect<WebhookBadHmacResult, unknown>
   readonly runBoundedOwnership: Effect.Effect<BoundedOwnershipResult, unknown>
   readonly runEndToEndViaFiregridClient: Effect.Effect<FiregridClientE2EResult, unknown>
+  readonly runProductionFlow: Effect.Effect<ProductionFlowResult, unknown>
 }
 
 const runtimeLatch = (() => {
@@ -81,6 +87,12 @@ export const unifiedKernelValidationHost = (
         runEndToEndViaFiregridClient: endToEndViaFiregridClient(
           urlsFor(env, "firegrid-client-e2e"),
           `${env.namespace}.ukv-fg.${env.runId}`,
+        ),
+        runProductionFlow: productionFlowScenario(
+          productionFlowUrlsFor(
+            { durableStreamsBaseUrl: env.durableStreamsBaseUrl, namespace: env.namespace },
+            env.runId,
+          ),
         ),
       })
     }),
