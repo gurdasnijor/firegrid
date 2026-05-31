@@ -36,10 +36,12 @@
  * canonical test stand-in.
  */
 
-import { Effect, Layer } from "effect"
+import { IdGenerator } from "@effect/ai"
+import { NodeContext } from "@effect/platform-node"
 import {
   WorkflowEngine,
 } from "@effect/workflow"
+import { Effect, Layer } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
   RuntimeControlPlaneTable,
@@ -47,10 +49,22 @@ import {
   runtimeControlPlaneStreamUrl,
 } from "@firegrid/protocol/launch"
 import { DurableStreamsWorkflowEngine } from "../engine/durable-streams-workflow-engine.ts"
+import {
+  LocalProcessSandboxProvider,
+  RuntimeEnvResolverPolicy,
+} from "../sources/sandbox/index.ts"
 import { RuntimeContextSessionAdapter } from "./adapter.ts"
+import {
+  ContextResolverFromControlPlaneTableLive,
+  ProductionCodecAdapterLive,
+} from "./codec-adapter.ts"
+import { buildCurrentHostSessionLayer } from "./host-identity.ts"
 import { SignalTable } from "./signal.ts"
 import { UnifiedTable } from "./tables.ts"
-import { UnifiedChannelBindingsLive } from "./channel-bindings.ts"
+import {
+  UnifiedChannelBindingsLive,
+  UnifiedSignalingChannelBindingsLive,
+} from "./channel-bindings.ts"
 import {
   RuntimeContextSessionWorkflowLayer,
 } from "./subscribers/runtime-context.ts"
@@ -67,18 +81,7 @@ import {
 } from "./subscribers/scheduled-webhook-peer.ts"
 import { JournalObserverLive } from "./observers.ts"
 
-export interface FiregridHostOptions {
-  /**
-   * Required. The codec-or-test adapter the session workflow body uses.
-   * May require any substrate Tag FiregridHost provides
-   * (`RuntimeOutputTable`, `RuntimeControlPlaneTable`, `SignalTable`,
-   * `UnifiedTable`) — the factory wires those in. Production hosts
-   * typically compose `ProductionCodecAdapterLive` with its
-   * `SandboxProvider` + `ContextResolverTag` + `IdGenerator` deps;
-   * sims pass a fake adapter Layer.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  readonly adapter: Layer.Layer<RuntimeContextSessionAdapter, never, any>
+export interface FiregridHostOptionsBase {
   /** Durable-streams base URL (e.g. `http://durable-streams:4437`). */
   readonly durableStreamsBaseUrl: string
   /** Namespace prefix for all this host's durable streams. */
@@ -86,12 +89,68 @@ export interface FiregridHostOptions {
   /** Optional auth headers for durable-streams writes/reads. */
   readonly headers?: DurableTableHeaders
   /**
+   * Optional explicit host id (single dot-free segment). Default:
+   * derived from the namespace (`${namespace}-host` with `.` → `_`).
+   */
+  readonly hostId?: string
+  /**
    * Optional override for the tool executor. Default echoes the input —
    * suitable for sims, not production. Production hosts MUST supply a
    * real executor Layer.
    */
   readonly toolExecutor?: Layer.Layer<ToolExecutor>
 }
+
+export interface FiregridHostOptionsWithAdapter extends FiregridHostOptionsBase {
+  /**
+   * Compose the session adapter Layer yourself. Required for sims or
+   * non-ACP hosts; use the `codec: "acp"` sugar option below for the
+   * default production path.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly adapter: Layer.Layer<RuntimeContextSessionAdapter, never, any>
+}
+
+export interface FiregridHostOptionsWithCodecSugar extends FiregridHostOptionsBase {
+  /**
+   * Sugar option — composes the canonical production stack for the
+   * named codec:
+   *
+   *   - `ProductionCodecAdapterLive` (codec wrapper)
+   *   - `LocalProcessSandboxProvider` + `NodeContext.layer`
+   *   - `IdGenerator.defaultIdGenerator`
+   *   - `ContextResolverFromControlPlaneTableLive`
+   *   - `RuntimeEnvResolverPolicy.denyAll` (override for env bindings)
+   *
+   * The codec is selected at session.startOrAttach via the resolved
+   * context's `runtime.config.agentProtocol` field. Today only `"acp"`
+   * is supported as a sugar option; `"stdio-jsonl"` works through the
+   * same adapter for raw protocols.
+   */
+  readonly codec: "acp"
+}
+
+export type FiregridHostOptions =
+  | FiregridHostOptionsWithAdapter
+  | FiregridHostOptionsWithCodecSugar
+
+const hasAdapter = (
+  options: FiregridHostOptions,
+): options is FiregridHostOptionsWithAdapter => "adapter" in options
+
+const defaultProductionAdapterLayer = () =>
+  ProductionCodecAdapterLive.pipe(
+    Layer.provide(
+      LocalProcessSandboxProvider.layer().pipe(
+        Layer.provide(NodeContext.layer),
+      ),
+    ),
+    Layer.provide(
+      Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
+    ),
+    Layer.provide(ContextResolverFromControlPlaneTableLive),
+    Layer.provide(RuntimeEnvResolverPolicy.denyAll),
+  )
 
 const streamUrl = (baseUrl: string, segment: string): string =>
   `${baseUrl.replace(/\/+$/, "")}/v1/stream/${encodeURIComponent(segment)}`
@@ -156,27 +215,36 @@ const engineLayer = (options: FiregridHostOptions) =>
  * Override any individual Tag via `.pipe(Layer.provide(MyLive))`.
  */
 export const FiregridHost = (options: FiregridHostOptions) => {
-  // Tool executor as a closure-built value (per the existing
-  // `buildToolDispatchLayer(executor)` shape). Production hosts that
-  // need a Tag-backed executor can override `toolExecutor` and the
-  // Layer.provide below picks it up.
   const toolExecutorEffect = makeToolExecutor((p) =>
     JSON.stringify({ tool: p.toolName, input: JSON.parse(p.inputJson) }),
   )
+
+  const adapterLayer = hasAdapter(options)
+    ? options.adapter
+    : defaultProductionAdapterLayer()
+  const hostSessionLayer = buildCurrentHostSessionLayer({
+    namespace: options.namespace,
+    ...(options.hostId === undefined ? {} : { hostId: options.hostId }),
+  })
 
   return Layer.unwrapEffect(
     Effect.gen(function*() {
       const toolExecutor = yield* toolExecutorEffect
       const workflowLayers = Layer.mergeAll(
-        RuntimeContextSessionWorkflowLayer.pipe(Layer.provide(options.adapter)),
+        RuntimeContextSessionWorkflowLayer.pipe(Layer.provide(adapterLayer)),
         buildPermissionRoundtripLayer(),
         buildToolDispatchLayer(toolExecutor),
         buildScheduledPromptLayer(),
         buildWebhookFactObserverLayer(),
         buildPeerEventObserverLayer(),
       )
+      // Two-layer channel composition: stub Lives satisfy every Tag at
+      // build time; the signaling Lives REPLACE the four input-delivery
+      // stubs with real signal-sending implementations. Tag-identity
+      // merge dedup — last Live wins per Tag.
       const channelsAndObserver = Layer.mergeAll(
         UnifiedChannelBindingsLive,
+        UnifiedSignalingChannelBindingsLive,
         JournalObserverLive,
       )
       return Layer.mergeAll(
@@ -184,6 +252,7 @@ export const FiregridHost = (options: FiregridHostOptions) => {
         channelsAndObserver,
       ).pipe(
         Layer.provideMerge(engineLayer(options)),
+        Layer.provideMerge(hostSessionLayer),
         Layer.provideMerge(tableLayer(options)),
       )
     }),

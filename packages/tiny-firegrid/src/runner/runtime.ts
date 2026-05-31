@@ -1,8 +1,12 @@
 import {
   FiregridConfig,
-  FiregridStandaloneLive,
+  FiregridControlPlaneTableLive,
+  FiregridLive,
 } from "@firegrid/client-sdk/firegrid"
-import { UnifiedChannelBindingsLive } from "@firegrid/runtime/unified"
+import {
+  buildCurrentHostSessionLayer,
+  UnifiedChannelBindingsLive,
+} from "@firegrid/runtime/unified"
 import {
   Console,
   Config,
@@ -95,16 +99,28 @@ const latestPath = path.join(simulateRoot, "latest.json")
 const firegridClientLayer = (
   durableStreamsBaseUrl: string,
   namespace: string,
-) =>
-  FiregridStandaloneLive.pipe(
+) => {
+  const configLayer = Layer.succeed(FiregridConfig, {
+    durableStreamsBaseUrl,
+    namespace,
+  })
+  const hostSessionLayer = buildCurrentHostSessionLayer({ namespace })
+  // Compose the substrate first (control-plane table) so it's visible
+  // to both the channel bindings and the Firegrid client below.
+  // `provideMerge` keeps the provided service exposed in the resulting
+  // Layer's output set; subsequent consumers see one shared instance.
+  const substrate = Layer.mergeAll(
+    FiregridControlPlaneTableLive,
+    hostSessionLayer,
+  ).pipe(Layer.provide(configLayer))
+  // Channel bindings on top of substrate; HostContextsCreateChannelLive
+  // resolves RuntimeControlPlaneTable + CurrentHostSession from here.
+  return FiregridLive.pipe(
     Layer.provide(UnifiedChannelBindingsLive),
-    Layer.provide(
-      Layer.succeed(FiregridConfig, {
-        durableStreamsBaseUrl,
-        namespace,
-      }),
-    ),
+    Layer.provideMerge(substrate),
+    Layer.provide(configLayer),
   )
+}
 
 interface RunOptions {
   readonly timeoutMs: number

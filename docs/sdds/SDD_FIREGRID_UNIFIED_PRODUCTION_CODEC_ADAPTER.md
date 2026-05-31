@@ -52,29 +52,25 @@ This decouples the codec adapter from the table — the adapter file does not de
 
 These dependencies aren't yet wired into a host that would actually call the adapter end-to-end:
 
-### 1. Context insertion via channels
+### 1. Context insertion via channels — DONE (Phase H)
 
-`HostContextsCreateChannelLive` and `HostSessionsCreateOrLoadChannelLive` in `channel-bindings.ts` currently STUB the response — they don't write to `RuntimeControlPlaneTable.contexts`. Production hosts need these to actually persist contexts so `ContextResolverFromControlPlaneTableLive` can find them.
+`HostContextsCreateChannelLive` now persists context rows to `RuntimeControlPlaneTable.contexts` with proper host binding constructed via `CurrentHostSession`. `buildCurrentHostSessionLayer` in `host-identity.ts` handles the brand-validated host id + stream prefix derivation. `FiregridHost` provides `CurrentHostSession` automatically — production hosts get persistent contexts free.
 
-**Why deferred:** the host-binding fields (`hostId`, `streamPrefix`, `hostSessionId`) have strict schema validation tied to `CurrentHostSession`. Populating them properly requires a host-identity layer that the unified composition doesn't currently provide. Adding it is its own focused increment.
+### 2. `FiregridHost` integration — DONE (Phase H)
 
-### 2. `FiregridHost` integration
-
-The factory in `host.ts` currently requires `adapter` from the caller (any Layer satisfying `RuntimeContextSessionAdapter`). It does NOT wire `ProductionCodecAdapterLive` as an option. To compose with the factory, callers do:
+`FiregridHost({codec: "acp", durableStreamsBaseUrl, namespace})` is the one-line production stack:
 
 ```ts
 FiregridHost({
-  adapter: ProductionCodecAdapterLive.pipe(
-    Layer.provide(LocalProcessSandboxProvider.layer()),
-    Layer.provide(ContextResolverFromControlPlaneTableLive),
-    Layer.provide(IdGenerator.layerDefaults), // or similar
-  ),
-  durableStreamsBaseUrl: "...",
-  namespace: "...",
+  codec: "acp",
+  durableStreamsBaseUrl: "http://durable-streams:4437",
+  namespace: "my-host",
 })
 ```
 
-This works structurally. Whether to add a sugar option like `FiregridHost({ codec: "acp", ... })` is a follow-up ergonomic question.
+Composes: `ProductionCodecAdapterLive` + `LocalProcessSandboxProvider` + `NodeContext.layer` + `IdGenerator.defaultIdGenerator` + `ContextResolverFromControlPlaneTableLive` + `RuntimeEnvResolverPolicy.denyAll` + the full unified substrate. The signaling channel bindings (`UnifiedSignalingChannelBindingsLive`) are layered over the stub `UnifiedChannelBindingsLive` so `firegrid.prompt/session.prompt/sessions.start/permissions.respond` actually deliver signals to the workflow bodies. `hostId` is optionally configurable; defaults to `${namespace}-host`.
+
+The original `adapter:` discriminated-union option still works for sims and non-ACP hosts. The two shapes share `FiregridHostOptionsBase` so options like `headers`, `hostId`, `toolExecutor` work for both.
 
 ### 3. Env binding resolution
 
@@ -124,3 +120,4 @@ A future iteration could express this declaratively (codec capability flag optin
 | 2026-05-31 | `ProductionCodecAdapterLive` scaffolding landed. Context resolver Tag introduced. ACP + stdio-jsonl both supported via `agentProtocol` discriminator. Existing sim 7/7 + 17/17 green; no regression. |
 | 2026-05-31 | Phase F: scenario 8 (`production-flow-acp`) lands end-to-end through the **REAL ACP codec** via in-process `FixtureAgent` (lifted from runtime test prior art). Drives `ProductionCodecAdapterLive` with a fake `SandboxProvider` returning a `TransformStream`-backed `AgentByteStream` — same code path production uses with `LocalProcessSandboxProvider`, only the byte transport is in-process. Proves: (a) the adapter Layer builds with real deps (SandboxProvider + IdGenerator + ContextResolverTag), (b) `AcpSessionLive` decodes real JSON-RPC framing correctly, (c) the per-context process registry + scope-bound output drain work against the real codec, (d) `agent_message_chunk`, `tool_call`, `tool_call_update` ACP protocol events all flow through into `RuntimeOutputTable.events` as typed observations. **Sim: 8/8 scenarios + 17/17 invariants green; seam coverage: 21/21 (added 5 codec-layer ACP seams)**. |
 | 2026-05-31 | Phase G: scenario 9 (`production-flow-acp-live`) lands behind `FIREGRID_UKV_RUN_ACP_LIVE=1`. **Real subprocess** via `LocalProcessSandboxProvider` running `src/bin/fake-acp-agent-process.ts` — a Node binary that bootstraps `FixtureAgent` over `process.stdin` / `process.stdout` (web-stream-wrapped via `node:stream.Readable.toWeb`). Same production code path that runs `claude-agent-acp` in production; the fake binary stands in to skip API credentials. Proves the full real-process stack: `LocalProcessSandboxProvider.openBytePipe` + real Node `spawn` + real stdio bytes + `AcpSessionLive` JSON-RPC framing over those bytes + `ProductionCodecAdapterLive` registry + scope-bound output drain. **Sim with flag: 9/9 scenarios + 17/17 invariants green; seam coverage: 22/22 including the env-gated subprocess seam.** Default sim still 8/8 + 21/21 mandatory + 1 optional skipped. |
+| 2026-05-31 | Phase H: `FiregridHost` ergonomics + production wiring closure. New options: `codec: "acp"` (sugar that composes `ProductionCodecAdapterLive` + `LocalProcessSandboxProvider` + `IdGenerator.defaultIdGenerator` + `ContextResolverFromControlPlaneTableLive` + `RuntimeEnvResolverPolicy.denyAll`); `hostId?` (derived from namespace by default). `buildCurrentHostSessionLayer` introduced in `host-identity.ts` — constructs valid `CurrentHostSession` rows with brand-validated `hostId` + derived stream prefix. `HostContextsCreateChannelLive` now actually persists rows to `RuntimeControlPlaneTable.contexts` (was a stub returning the input contextId). Channel bindings split: `UnifiedChannelBindingsLive` (stub, builds without `SignalTable`/`WorkflowEngine`) and `UnifiedSignalingChannelBindingsLive` (production override that wires `HostPrompt`/`SessionPrompt`/`HostSessionsStart`/`HostPermissionRespond` to real `sendSignal` calls). `FiregridHost` composes both — last-Live-wins per Tag means production gets the signaling versions automatically. Smoke test `test/unified-firegrid-host-compose.test.ts` verifies the factory builds with `codec: "acp"` and exposes every public Tag. |
