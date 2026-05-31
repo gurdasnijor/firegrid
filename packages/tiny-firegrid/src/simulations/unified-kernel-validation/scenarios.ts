@@ -1,30 +1,45 @@
 /**
- * Runtime scenarios driven through the `UnifiedChannels` product
- * surface. Each scenario is a thin recipe: open one or more channels,
- * exchange messages, observe outcomes through the channel's response
- * shape. No scenario reaches into SignalTable / UnifiedTable / engine
- * tables directly (with the deliberate exception of the crash-
- * recovery and bounded-ownership scenarios, which probe the
- * primitive's recovery boundary).
+ * Runtime scenarios driven through the standard `HostPlaneChannelRouter`
+ * target-string dispatch surface (per
+ * `SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION`, phase 1 increment).
  *
- *   - endToEndScenario: walks the full product surface in one driver.
- *   - crashRecoveryScenario: gen-1 starts a session and records a
- *     terminal signal without resuming; gen-2 rebuilds the host
- *     generation and awaits the session terminal — recovery fires.
+ * The driver-side surface is identical to what production Firegrid
+ * clients use over durable streams: `router.dispatch({ target, verb,
+ * payload })`. This buys us the production `firegrid.channel.dispatch`
+ * span automatically (target + direction + verb attributes), which
+ * the gate predicates can assert against without any per-scenario
+ * instrumentation.
+ *
+ * `DurableEventChannel<P>` is dispatched with `verb: "send"`;
+ * `CallableChannel<Req, Res>` with `verb: "call"`. The router decodes
+ * payloads against each channel's request schema at the dispatch
+ * boundary, just as it does in production.
+ *
+ * Scenarios:
+ *   - endToEndScenario: walks the full product surface via router.
+ *   - crashRecoveryScenario: gen-1 records a terminal signal without
+ *     resuming; gen-2 rebuilds and awaits the session terminal
+ *     through the router.
  *   - toolIdempotencyScenario: same toolUseId across concurrent
- *     `toolDispatch` channel calls invokes the executor once.
- *   - webhookBadHmacScenario: webhook ingest with an invalid HMAC
- *     returns `_tag: "Rejected"`.
- *   - boundedOwnershipScenario: a `DurableDeferred.await`-only
- *     workflow stays parked across signal recovery (signal recovery
- *     replays only its own signal log, never a generic sweep).
+ *     `unified.tool.dispatch` calls invokes the executor once.
+ *   - webhookBadHmacScenario: invalid HMAC fails the
+ *     `unified.webhook.ingest` dispatch via `VerifiedWebhookError`.
+ *   - boundedOwnershipScenario: signal recovery is bounded to its
+ *     own log (signal-level, not via channels).
  */
 
 import { DurableDeferred, Workflow, type WorkflowEngine } from "@effect/workflow"
+import {
+  HostPlaneChannelRouter,
+  type RuntimeChannelRouterService,
+} from "@firegrid/runtime/channels"
 import { Cause, Effect, Option, Ref, Schema } from "effect"
-import { VerifiedWebhookError } from "./subscribers/scheduled-webhook-peer.ts"
-import type { UnifiedChannelsShape } from "./channels.ts"
-import { UnifiedChannels, UnifiedChannelsLive } from "./channels.ts"
+import {
+  HostPlaneChannelRouterLive,
+  type PermissionHandle,
+  type SessionHandle,
+} from "./channels.ts"
+import type { EventOffset } from "./durable-event-channel.ts"
 import {
   recordSignal,
   SignalTable,
@@ -50,6 +65,7 @@ import {
   buildWebhookFactObserverLayer,
   PeerEventObserverWorkflow,
   ScheduledPromptWorkflow,
+  VerifiedWebhookError,
   WebhookFactObserverWorkflow,
 } from "./subscribers/scheduled-webhook-peer.ts"
 import {
@@ -57,7 +73,6 @@ import {
   makeCatalog,
   runGeneration,
 } from "./substrate.ts"
-import type { UnifiedTable } from "./tables.ts"
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -92,19 +107,36 @@ const fullCatalog: WorkflowCatalog = makeCatalog([
 ])
 
 /**
- * Run a scenario body inside a fresh generation with all subscribers
- * registered and `UnifiedChannels` available in context. The recorder
- * and tool executor are exposed to the body for observability —
- * production code wouldn't have them, but scenarios occasionally need
- * to assert "the host-side side effect ran N times."
+ * Typed router-dispatch helpers. The cast on the dispatch result
+ * mirrors the Firegrid client SDK shape (`channels.call(target, payload)`
+ * returns `Effect<unknown, FiregridChannelError>` — caller widens
+ * to the expected response shape). The router has already decoded
+ * the payload against the channel's request schema.
  */
-const runChannelScenario = <A>(
+interface DispatchHelpers {
+  readonly router: RuntimeChannelRouterService
+  readonly call: <T>(target: string, payload: unknown) => Effect.Effect<T, unknown>
+  readonly send: <T>(target: string, payload: unknown) => Effect.Effect<T, unknown>
+}
+
+const makeDispatchHelpers = (router: RuntimeChannelRouterService): DispatchHelpers => ({
+  router,
+  call: <T>(target: string, payload: unknown) =>
+    router.dispatch({ target, verb: "call", payload }).pipe(
+      Effect.map((r) => r as T),
+    ) as Effect.Effect<T, unknown>,
+  send: <T>(target: string, payload: unknown) =>
+    router.dispatch({ target, verb: "send", payload }).pipe(
+      Effect.map((r) => r as T),
+    ) as Effect.Effect<T, unknown>,
+})
+
+const runRouterScenario = <A>(
   urls: GenerationUrls,
-  body: (env: {
-    readonly channels: UnifiedChannelsShape
+  body: (env: DispatchHelpers & {
     readonly recorder: RuntimeContextRecorder
     readonly toolExecutor: ToolExecutor
-  }) => Effect.Effect<A, unknown, UnifiedChannels | SignalTable | UnifiedTable>,
+  }) => Effect.Effect<A, unknown, HostPlaneChannelRouter | SignalTable>,
 ): Effect.Effect<A, unknown> =>
   Effect.gen(function*() {
     const recorder = yield* makeRuntimeContextRecorder()
@@ -127,13 +159,34 @@ const runChannelScenario = <A>(
       },
       () =>
         Effect.gen(function*() {
-          const channels = yield* UnifiedChannels
-          return yield* body({ channels, recorder, toolExecutor })
+          const router = yield* HostPlaneChannelRouter
+          const helpers = makeDispatchHelpers(router)
+          return yield* body({ ...helpers, recorder, toolExecutor })
         }).pipe(
-          Effect.provide(UnifiedChannelsLive),
+          Effect.provide(HostPlaneChannelRouterLive),
         ) as Effect.Effect<A, unknown, WorkflowEngine.WorkflowEngine>,
     )
   })
+
+// ── Channel target catalog (single source of truth for dispatch) ────────────
+
+const T = {
+  sessionStart: "unified.session.start",
+  sessionSendInput: "unified.session.send_input",
+  sessionAwaitTerminal: "unified.session.await_terminal",
+  permissionOpen: "unified.permission.open",
+  permissionReadRequest: "unified.permission.read_request",
+  permissionRespond: "unified.permission.respond",
+  permissionAwaitDecision: "unified.permission.await_decision",
+  toolDispatch: "unified.tool.dispatch",
+  schedulePrompt: "unified.schedule.prompt",
+  webhookIngest: "unified.webhook.ingest",
+  webhookObserverStart: "unified.webhook.observer.start",
+  webhookObserverAwait: "unified.webhook.observer.await",
+  peerEmit: "unified.peer.emit",
+  peerObserverStart: "unified.peer.observer.start",
+  peerObserverAwait: "unified.peer.observer.await",
+} as const
 
 // ── End-to-end scenario ─────────────────────────────────────────────────────
 
@@ -158,52 +211,61 @@ export interface EndToEndResult {
 export const endToEndScenario = (
   urls: GenerationUrls,
 ): Effect.Effect<EndToEndResult, unknown> =>
-  runChannelScenario(urls, ({ channels, recorder, toolExecutor }) =>
+  runRouterScenario(urls, ({ call, send, recorder, toolExecutor }) =>
     Effect.gen(function*() {
       const contextId = "ctx-e2e"
       const attempt = 1
-      const session = yield* channels.sessionStart.binding.call({ contextId, attempt })
+      const session = yield* call<SessionHandle>(T.sessionStart, { contextId, attempt })
 
       yield* Effect.sleep("50 millis")
-      yield* channels.sessionSendInput.binding.append({
+      yield* send<EventOffset>(T.sessionSendInput, {
         session, inputId: "prompt-1", kind: "prompt",
         payloadJson: JSON.stringify({ text: "hello" }),
       })
 
       const toolUseId = "tu-1"
-      const toolResult = yield* channels.toolDispatch.binding.call({
-        contextId, toolUseId, toolName: "echo",
-        inputJson: JSON.stringify({ word: "hi" }),
-      })
+      const toolResult = yield* call<{ readonly toolUseId: string; readonly resultJson: string }>(
+        T.toolDispatch,
+        { contextId, toolUseId, toolName: "echo", inputJson: JSON.stringify({ word: "hi" }) },
+      )
       const toolInvocations = yield* Ref.get(toolExecutor.state.invocationCount)
 
-      const permission = yield* channels.permissionOpen.binding.call({
+      const permission = yield* call<PermissionHandle>(T.permissionOpen, {
         contextId, permissionRequestId: "perm-1", toolUseId,
       })
       yield* Effect.sleep("100 millis")
-      const requestRow = yield* channels.permissionReadRequest.binding.call({
-        contextId, permissionRequestId: "perm-1",
-      })
-      yield* channels.permissionRespond.binding.append({
+      const requestRow = yield* call<{ readonly toolUseId: string } | null>(
+        T.permissionReadRequest,
+        { contextId, permissionRequestId: "perm-1" },
+      )
+      yield* send<EventOffset>(T.permissionRespond, {
         handle: permission, decision: "allow",
       })
-      const decision = yield* channels.permissionAwaitDecision.binding.call(permission)
+      const decision = yield* call<{ readonly permissionRequestId: string; readonly decision: "allow" | "deny" | "cancelled" }>(
+        T.permissionAwaitDecision,
+        permission,
+      )
 
-      yield* channels.sessionSendInput.binding.append({
+      yield* send<EventOffset>(T.sessionSendInput, {
         session, inputId: "perm-response-1", kind: "permission-response",
         payloadJson: JSON.stringify({
           permissionRequestId: "perm-1", decision: decision.decision,
         }),
       })
 
-      const schedResult = yield* channels.schedulePrompt.binding.call({
-        contextId, scheduleId: "sched-1",
-        fireAtMs: Date.now() + 100,
-        payloadJson: JSON.stringify({ self_prompt: "wake" }),
-      })
+      const schedResult = yield* call<{ readonly scheduleId: string; readonly firedAt: string }>(
+        T.schedulePrompt,
+        {
+          contextId, scheduleId: "sched-1",
+          fireAtMs: Date.now() + 100,
+          payloadJson: JSON.stringify({ self_prompt: "wake" }),
+        },
+      )
 
-      // Webhook: start observer, then ingest with arming.
-      const webhookObserver = yield* channels.webhookObserverStart.binding.call({
+      const webhookObserver = yield* call<{
+        readonly source: string; readonly deliveryId: string;
+        readonly observerId: string; readonly executionId: string
+      }>(T.webhookObserverStart, {
         source: "linear", deliveryId: "delivery-1", observerId: "obs-1",
       })
       yield* Effect.sleep("50 millis")
@@ -212,7 +274,7 @@ export const endToEndScenario = (
         action: "create", type: "Issue", webhookId: "delivery-1",
       }))
       const webhookSig = yield* hmacSign(webhookSecret, webhookBody)
-      const webhookOutcome = yield* channels.webhookIngest.binding.append({
+      const webhookOffset = yield* send<EventOffset>(T.webhookIngest, {
         verify: {
           source: "linear", deliveryId: "delivery-1",
           eventType: "Issue.create",
@@ -221,15 +283,19 @@ export const endToEndScenario = (
         },
         armObserver: webhookObserver,
       })
-      const webhookObservation =
-        yield* channels.webhookObserverAwait.binding.call(webhookObserver)
+      const webhookObservation = yield* call<{
+        readonly source: string; readonly deliveryId: string;
+        readonly factKey: string; readonly eventType: string
+      }>(T.webhookObserverAwait, webhookObserver)
 
-      // Peer event: start observer, then emit with arming.
-      const peerObserver = yield* channels.peerObserverStart.binding.call({
+      const peerObserver = yield* call<{
+        readonly name: string; readonly eventId: string;
+        readonly observerId: string; readonly executionId: string
+      }>(T.peerObserverStart, {
         name: "plan.ready", eventId: "ev-1", observerId: "peer-obs-1",
       })
       yield* Effect.sleep("50 millis")
-      const peerOutcome = yield* channels.peerEmit.binding.append({
+      const peerOffset = yield* send<EventOffset>(T.peerEmit, {
         payload: {
           name: "plan.ready", eventId: "ev-1",
           emitterContextId: contextId,
@@ -237,13 +303,19 @@ export const endToEndScenario = (
         },
         armObserver: peerObserver,
       })
-      const peerObservation = yield* channels.peerObserverAwait.binding.call(peerObserver)
+      const peerObservation = yield* call<{
+        readonly name: string; readonly eventId: string;
+        readonly factKey: string; readonly emitterContextId: string
+      }>(T.peerObserverAwait, peerObserver)
 
-      yield* channels.sessionSendInput.binding.append({
+      yield* send<EventOffset>(T.sessionSendInput, {
         session, inputId: "terminal", kind: "terminal",
         payloadJson: JSON.stringify({ reason: "done" }),
       })
-      const sessionResult = yield* channels.sessionAwaitTerminal.binding.call(session)
+      const sessionResult = yield* call<{
+        readonly contextId: string; readonly attempt: number;
+        readonly inputsConsumed: number; readonly reachedTerminal: boolean
+      }>(T.sessionAwaitTerminal, session)
       const recorderSnapshot = yield* recorder.snapshot
 
       return {
@@ -253,11 +325,11 @@ export const endToEndScenario = (
         permissionDecision: decision.decision,
         permissionRequestRowSeen: requestRow !== null,
         scheduleFiredAt: schedResult.firedAt,
-        webhookOffset: webhookOutcome.offset,
-        webhookDeduplicated: webhookOutcome.deduplicated ?? false,
+        webhookOffset: webhookOffset.offset,
+        webhookDeduplicated: webhookOffset.deduplicated ?? false,
         webhookObservationEventType: webhookObservation.eventType,
-        peerOffset: peerOutcome.offset,
-        peerDeduplicated: peerOutcome.deduplicated ?? false,
+        peerOffset: peerOffset.offset,
+        peerDeduplicated: peerOffset.deduplicated ?? false,
         peerObservationName: peerObservation.name,
         toolInvocations,
         recorderSpawns: recorderSnapshot.spawns.length,
@@ -280,14 +352,10 @@ export const crashRecoveryScenario = (
     const attempt = 1
     let sessionExecutionId = ""
 
-    // Gen-1: start the session via the channel, then simulate
-    // "producer recorded the terminal signal but crashed before
-    // engine.resume" — recordSignal writes the signal row without
-    // arming. Generation closes; signal recovery must close the gap.
-    yield* runChannelScenario(urls, ({ channels }) =>
+    yield* runRouterScenario(urls, ({ call }) =>
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       Effect.gen(function*() {
-        const session = yield* channels.sessionStart.binding.call({ contextId, attempt })
+        const session = yield* call<SessionHandle>(T.sessionStart, { contextId, attempt })
         sessionExecutionId = session.executionId
         const signals = yield* SignalTable
         yield* recordSignal({
@@ -305,11 +373,10 @@ export const crashRecoveryScenario = (
         yield* Effect.sleep("50 millis")
       }))
 
-    // Gen-2: rebuild. Driver awaits the session terminal through the
-    // channel; the only way it can return reachedTerminal=true is if
-    // signal recovery armed the body from the gen-1 terminal signal.
-    const result = yield* runChannelScenario(urls, ({ channels }) =>
-      channels.sessionAwaitTerminal.binding.call({
+    const result = yield* runRouterScenario(urls, ({ call }) =>
+      call<{
+        readonly inputsConsumed: number; readonly reachedTerminal: boolean
+      }>(T.sessionAwaitTerminal, {
         contextId, attempt, executionId: sessionExecutionId,
       }))
 
@@ -329,7 +396,7 @@ export interface ToolIdempotencyResult {
 export const toolIdempotencyScenario = (
   urls: GenerationUrls,
 ): Effect.Effect<ToolIdempotencyResult, unknown> =>
-  runChannelScenario(urls, ({ channels, toolExecutor }) =>
+  runRouterScenario(urls, ({ call, toolExecutor }) =>
     Effect.gen(function*() {
       const payload = {
         contextId: "ctx-tool-idem",
@@ -339,8 +406,8 @@ export const toolIdempotencyScenario = (
       }
       const [r1, r2] = yield* Effect.all(
         [
-          channels.toolDispatch.binding.call(payload),
-          channels.toolDispatch.binding.call(payload),
+          call<{ readonly resultJson: string }>(T.toolDispatch, payload),
+          call<{ readonly resultJson: string }>(T.toolDispatch, payload),
         ],
         { concurrency: 2 },
       ).pipe(Effect.orDie)
@@ -361,15 +428,15 @@ export interface WebhookBadHmacResult {
 export const webhookBadHmacScenario = (
   urls: GenerationUrls,
 ): Effect.Effect<WebhookBadHmacResult, unknown> =>
-  runChannelScenario(urls, ({ channels }) =>
+  runRouterScenario(urls, ({ send }) =>
     Effect.gen(function*() {
       const rawBody = encoder.encode(JSON.stringify({ action: "create" }))
       const wrongSig = yield* hmacSign("WRONG-secret", rawBody)
       // Under the unified shape, signature failure is a transport-level
-      // failure on the append — caller observes via Effect.exit/either,
-      // not a tagged response field. The channel append fails with a
-      // `VerifiedWebhookError { op: "signature/invalid" }`.
-      const exit = yield* Effect.exit(channels.webhookIngest.binding.append({
+      // failure on the dispatch — caller observes via Effect.exit/either,
+      // not a tagged response field. The router wraps the channel
+      // failure in `ChannelRouteInvocationFailed.cause`.
+      const exit = yield* Effect.exit(send<EventOffset>(T.webhookIngest, {
         verify: {
           source: "linear", deliveryId: "delivery-bad",
           eventType: "Issue.create",
@@ -382,10 +449,19 @@ export const webhookBadHmacScenario = (
         return { rejected: false, errorOp: undefined }
       }
       const failure = Cause.failureOption(exit.cause)
+      // The router wraps invocation failures as
+      // `ChannelRouteInvocationFailed { cause }` — peel one layer.
+      const findOp = (err: unknown): string | undefined => {
+        if (err instanceof VerifiedWebhookError) return err.op
+        if (typeof err === "object" && err !== null) {
+          const obj = err as { readonly cause?: unknown }
+          if (obj.cause !== undefined) return findOp(obj.cause)
+        }
+        return undefined
+      }
       const errorOp = Option.match(failure, {
         onNone: () => undefined,
-        onSome: (err) =>
-          err instanceof VerifiedWebhookError ? err.op : undefined,
+        onSome: findOp,
       })
       return {
         rejected: true,

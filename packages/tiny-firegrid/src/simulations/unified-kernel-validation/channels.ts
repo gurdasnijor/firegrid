@@ -17,6 +17,11 @@ import {
   type CallableChannel,
   makeCallableChannel,
 } from "@firegrid/protocol/channels"
+import {
+  HostPlaneChannelRouter,
+  makeRuntimeChannelRouter,
+  runtimeRoutesFromChannels,
+} from "@firegrid/runtime/channels"
 import { WorkflowEngine } from "@effect/workflow"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import {
@@ -469,5 +474,31 @@ export const UnifiedChannelsLive = Layer.effect(
     const unified = yield* UnifiedTable
     const engine = yield* WorkflowEngine.WorkflowEngine
     return makeChannels(signals, unified, engine)
+  }),
+)
+
+/**
+ * `HostPlaneChannelRouter` Live Layer — composes the unified channels
+ * into the production target-string-dispatched router. Driving via
+ * `router.dispatch({ target, verb, payload })` is what production
+ * Firegrid clients do via durable streams; the simulation gets the
+ * same OTel instrumentation (`firegrid.channel.dispatch` span with
+ * `firegrid.channel.target` + `firegrid.channel.direction` attrs) for
+ * free.
+ *
+ * The router accepts any `ChannelRegistration`. `DurableEventChannel<P>`
+ * is structurally `EgressChannel<P, EventOffset>`, so the router
+ * routes it via `case "egress" → channel.binding.append(payload)`
+ * with no router-side changes.
+ */
+export const HostPlaneChannelRouterLive = Layer.effect(
+  HostPlaneChannelRouter,
+  Effect.gen(function*() {
+    const signals = yield* SignalTable
+    const unified = yield* UnifiedTable
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    const channels = makeChannels(signals, unified, engine)
+    const routes = runtimeRoutesFromChannels(Object.values(channels))
+    return makeRuntimeChannelRouter(routes)
   }),
 )

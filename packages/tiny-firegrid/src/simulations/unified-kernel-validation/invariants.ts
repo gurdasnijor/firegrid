@@ -215,6 +215,28 @@ export const runStructuralChecks = (): StructuralCheckResult => {
         /\binserted:\s*Schema\.Boolean/.test(f.text) ||
         /Schema\.Literal\(\s*"Inserted",\s*"Duplicate",\s*"Rejected"\s*\)/.test(f.text)),
     },
+    {
+      // Scenarios drive the product surface through the production
+      // `HostPlaneChannelRouter` target-string dispatch, not through
+      // direct named-record access on a `ChannelRegistration`. This is
+      // what gives us the production `firegrid.channel.dispatch` span
+      // (with target / verb / direction attributes) automatically —
+      // the same instrumentation production emits over the wire.
+      id: "I15-scenarios-dispatch-via-router",
+      title: "scenarios dispatch via `router.dispatch` / `call` / `send`, never direct `binding.{call,append}`",
+      offenders: (() => {
+        const scenariosFile = files.find((f) => /\/scenarios\.ts$/.test(f.path))
+        if (scenariosFile === undefined) return ["scenarios.ts missing"]
+        const offenses: Array<string> = []
+        if (/\.binding\.call\(/.test(scenariosFile.text)) {
+          offenses.push("scenarios.ts: direct `binding.call(...)` — should route via router.dispatch")
+        }
+        if (/\.binding\.append\(/.test(scenariosFile.text)) {
+          offenses.push("scenarios.ts: direct `binding.append(...)` — should route via router.dispatch")
+        }
+        return offenses
+      })(),
+    },
   ]
 
   let passed = 0
