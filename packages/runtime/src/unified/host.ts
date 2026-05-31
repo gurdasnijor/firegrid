@@ -68,8 +68,17 @@ import {
 import { JournalObserverLive } from "./observers.ts"
 
 export interface FiregridHostOptions {
-  /** Required. The codec-or-test adapter the session workflow body uses. */
-  readonly adapter: Layer.Layer<RuntimeContextSessionAdapter>
+  /**
+   * Required. The codec-or-test adapter the session workflow body uses.
+   * May require any substrate Tag FiregridHost provides
+   * (`RuntimeOutputTable`, `RuntimeControlPlaneTable`, `SignalTable`,
+   * `UnifiedTable`) — the factory wires those in. Production hosts
+   * typically compose `ProductionCodecAdapterLive` with its
+   * `SandboxProvider` + `ContextResolverTag` + `IdGenerator` deps;
+   * sims pass a fake adapter Layer.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly adapter: Layer.Layer<RuntimeContextSessionAdapter, never, any>
   /** Durable-streams base URL (e.g. `http://durable-streams:4437`). */
   readonly durableStreamsBaseUrl: string
   /** Namespace prefix for all this host's durable streams. */

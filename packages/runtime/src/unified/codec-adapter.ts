@@ -260,11 +260,20 @@ export const ProductionCodecAdapterLive = Layer.scoped(
           next.set(contextId, entry)
           return next
         })
-      })
+      }).pipe(
+        Effect.withSpan("firegrid.unified.adapter.start_or_attach", {
+          kind: "internal",
+          attributes: {
+            "firegrid.context.id": contextId,
+            "firegrid.unified.attempt": attempt,
+            "firegrid.unified.adapter.kind": "production-codec",
+          },
+        }),
+      )
 
     const send = (
       contextId: string,
-      _attempt: number,
+      attempt: number,
       input: SessionInputPayload,
     ): Effect.Effect<void, AdapterError> =>
       Effect.gen(function*() {
@@ -283,7 +292,17 @@ export const ProductionCodecAdapterLive = Layer.scoped(
             adapterError("send", contextId, "codec send failed", cause),
           ),
         )
-      })
+      }).pipe(
+        Effect.withSpan("firegrid.unified.adapter.send", {
+          kind: "internal",
+          attributes: {
+            "firegrid.context.id": contextId,
+            "firegrid.unified.attempt": attempt,
+            "firegrid.unified.input.kind": input.kind,
+            "firegrid.unified.adapter.kind": "production-codec",
+          },
+        }),
+      )
 
     const deregister = (
       contextId: string,
@@ -299,7 +318,15 @@ export const ProductionCodecAdapterLive = Layer.scoped(
           next.delete(contextId)
           return next
         })
-      })
+      }).pipe(
+        Effect.withSpan("firegrid.unified.adapter.deregister", {
+          kind: "internal",
+          attributes: {
+            "firegrid.context.id": contextId,
+            "firegrid.unified.adapter.kind": "production-codec",
+          },
+        }),
+      )
 
     return {
       startOrAttach,

@@ -131,7 +131,16 @@ export const buildFakeCodecAdapter = (): Effect.Effect<{
                   },
                 }),
               )
-            }),
+            }).pipe(
+              Effect.withSpan("firegrid.unified.adapter.start_or_attach", {
+                kind: "internal",
+                attributes: {
+                  "firegrid.context.id": contextId,
+                  "firegrid.unified.attempt": attempt,
+                  "firegrid.unified.adapter.kind": "fake-codec",
+                },
+              }),
+            ),
 
           send: (contextId, attempt, input) =>
             Effect.gen(function*() {
@@ -181,13 +190,31 @@ export const buildFakeCodecAdapter = (): Effect.Effect<{
                   )
                   break
               }
-            }),
+            }).pipe(
+              Effect.withSpan("firegrid.unified.adapter.send", {
+                kind: "internal",
+                attributes: {
+                  "firegrid.context.id": contextId,
+                  "firegrid.unified.attempt": attempt,
+                  "firegrid.unified.input.kind": input.kind,
+                  "firegrid.unified.adapter.kind": "fake-codec",
+                },
+              }),
+            ),
 
           deregister: (contextId) =>
             Ref.update(log, (l) => [
               ...l,
               { op: "deregister", contextId } satisfies LogEntry,
-            ]),
+            ]).pipe(
+              Effect.withSpan("firegrid.unified.adapter.deregister", {
+                kind: "internal",
+                attributes: {
+                  "firegrid.context.id": contextId,
+                  "firegrid.unified.adapter.kind": "fake-codec",
+                },
+              }),
+            ),
         }
         return service
       }),

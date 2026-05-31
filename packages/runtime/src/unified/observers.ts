@@ -99,6 +99,12 @@ export const JournalObserverLive = Layer.scopedDiscard(
     yield* observations.pipe(
       Stream.tap(trigger),
       Stream.runDrain,
+      Effect.withSpan("firegrid.unified.journal_observer.daemon", {
+        kind: "consumer",
+        attributes: {
+          "firegrid.unified.observer.kind": "journal-to-sibling-workflows",
+        },
+      }),
       Effect.forkScoped,
     )
   }),
