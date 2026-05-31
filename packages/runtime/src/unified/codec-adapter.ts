@@ -42,10 +42,11 @@ import {
   RuntimeControlPlaneTable,
 } from "@firegrid/protocol/launch"
 import { encodeRuntimeAgentOutputEnvelope } from "@firegrid/protocol/session-facade"
-import { Context, Effect, Exit, ExecutionStrategy, Layer, Option, Ref, Scope, Stream } from "effect"
-import type {
-  AgentInputEvent,
-  AgentOutputEvent,
+import { Context, Effect, Exit, ExecutionStrategy, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
+import {
+  AgentInputEventSchema,
+  type AgentInputEvent,
+  type AgentOutputEvent,
 } from "../events/contract.ts"
 import { AcpSessionLive } from "../sources/codecs/acp/index.ts"
 import { StdioJsonlSessionLive } from "../sources/codecs/stdio-jsonl/index.ts"
@@ -94,17 +95,27 @@ interface RegistryEntry {
 // envelopes reach the codec (terminal short-circuits inside the workflow body;
 // peer-event / scheduled-fire are body-level concerns and don't go to codec).
 
-const decodeAgentInputEvent = (
-  input: SessionInputPayload,
-): Option.Option<AgentInputEvent> => {
+const decodeAgentInputEventFromUnknown = Schema.decodeUnknownEither(AgentInputEventSchema)
+
+type DecodeOutcome =
+  | { readonly _tag: "Skip" }
+  | { readonly _tag: "Decoded"; readonly event: AgentInputEvent }
+  | { readonly _tag: "MalformedJson" }
+  | { readonly _tag: "SchemaReject"; readonly message: string }
+
+const decodeAgentInputEvent = (input: SessionInputPayload): DecodeOutcome => {
   if (input.kind === "terminal" || input.kind === "peer-event" || input.kind === "scheduled-fire") {
-    return Option.none()
+    return { _tag: "Skip" }
   }
+  let parsed: unknown
   try {
-    return Option.some(JSON.parse(input.payloadJson) as AgentInputEvent)
+    parsed = JSON.parse(input.payloadJson)
   } catch {
-    return Option.none()
+    return { _tag: "MalformedJson" }
   }
+  const decoded = decodeAgentInputEventFromUnknown(parsed)
+  if (decoded._tag === "Right") return { _tag: "Decoded", event: decoded.right }
+  return { _tag: "SchemaReject", message: decoded.left.message }
 }
 
 // ── Output pump ────────────────────────────────────────────────────────────
@@ -206,16 +217,21 @@ const buildSessionForContext = (
       ? StdioJsonlSessionLive(byteStream)
       : AcpSessionLive(byteStream)
 
-    const session: AgentSessionService = yield* Effect.scoped(
-      Effect.provide(AgentSession, codecLayer).pipe(
-        Effect.provideService(IdGenerator.IdGenerator, idGenerator),
+    // Build the codec Layer INTO ctxScope so the AgentSession stays
+    // alive across send/recv. `Effect.scoped` would close the codec
+    // immediately. `Layer.buildWithScope` ties the codec's resources
+    // to ctxScope — they release when deregister closes ctxScope.
+    const codecContext = yield* Layer.buildWithScope(
+      codecLayer.pipe(
+        Layer.provide(Layer.succeed(IdGenerator.IdGenerator, idGenerator)),
       ),
+      ctxScope,
     ).pipe(
-      Scope.extend(ctxScope),
       Effect.mapError((cause) =>
         adapterError("startOrAttach", contextId, "codec session build failed", cause),
       ),
     )
+    const session: AgentSessionService = Context.get(codecContext, AgentSession)
 
     const sequenceRef = yield* Ref.make(0)
     yield* drainOutputsToJournal(
@@ -285,13 +301,42 @@ export const ProductionCodecAdapterLive = Layer.scoped(
             adapterError("send", contextId, "session not registered"),
           )
         }
-        const maybeEvent = decodeAgentInputEvent(input)
-        if (Option.isNone(maybeEvent)) return
-        yield* entry.session.send(maybeEvent.value).pipe(
-          Effect.mapError((cause) =>
-            adapterError("send", contextId, "codec send failed", cause),
-          ),
-        )
+        const outcome = decodeAgentInputEvent(input)
+        switch (outcome._tag) {
+          case "Skip":
+            yield* Effect.annotateCurrentSpan({
+              "firegrid.unified.adapter.send.outcome": "skip",
+            })
+            return
+          case "MalformedJson":
+            return yield* Effect.fail(
+              adapterError("send", contextId, "input payloadJson is not valid JSON"),
+            )
+          case "SchemaReject":
+            yield* Effect.annotateCurrentSpan({
+              "firegrid.unified.adapter.send.outcome": "schema_reject",
+              "firegrid.unified.adapter.send.payload_excerpt": input.payloadJson.slice(0, 400),
+              "firegrid.unified.adapter.send.decode_error": outcome.message.slice(0, 400),
+            })
+            return yield* Effect.fail(
+              adapterError(
+                "send",
+                contextId,
+                `input payloadJson failed AgentInputEvent decode: ${outcome.message}`,
+              ),
+            )
+          case "Decoded":
+            yield* Effect.annotateCurrentSpan({
+              "firegrid.unified.adapter.send.outcome": "decoded",
+              "firegrid.unified.adapter.send.event_tag": outcome.event._tag,
+            })
+            yield* entry.session.send(outcome.event).pipe(
+              Effect.mapError((cause) =>
+                adapterError("send", contextId, "codec send failed", cause),
+              ),
+            )
+            return
+        }
       }).pipe(
         Effect.withSpan("firegrid.unified.adapter.send", {
           kind: "internal",

@@ -86,7 +86,21 @@ This works structurally. Whether to add a sugar option like `FiregridHost({ code
 
 ### 5. End-to-end test against a real agent
 
-The simulation's `production-flow` scenario uses a fake codec that proves the architectural loop. A real-codec test requires running `claude-agent-acp` or similar; that's an integration-test concern (a separate fixture / harness), not a sim concern. Phase E's structural acceptance is "layer builds; tycecheck clean; existing 7/7 + 17/17 sim still green".
+Phase F landed scenario 8 — drives the real `AcpSessionLive` codec through an in-process `FixtureAgent` over `TransformStream` byte pipes. Sees the full ACP wire flow (initialize → newSession → prompt → session_updates → exit) and confirms the production adapter handles it cleanly. Sample run: 8/8 scenarios + 21/21 OTel seams (the 5 codec-level seams added: `acp.initialize`, `acp.new_session`, `acp.prompt`, `acp.session_update`, `acp.exit`).
+
+A **live-canary** scenario 9 that spawns the actual `claude-agent-acp` npm binary via `LocalProcessSandboxProvider` is a follow-up — same scenario shape, swap fake `SandboxProvider` for real one, guard with `FIREGRID_UKV_RUN_ACP_LIVE=1` so CI doesn't pull the binary by default.
+
+### 6. Architectural finding: tool-result feedback is codec-specific
+
+Scenario 8 surfaced a real architectural constraint: **ACP rejects `ToolResult` as a free-standing input** (`ACP ToolResult input is out-of-band for this codec slice`). ACP agents execute tools internally; the codec writes `ToolUse` observations to the journal so other observers can see what the agent did, but the agent has already executed and there's nothing to feed back.
+
+This means `JournalObserverLive`'s tool-dispatch trigger + auto-relay pattern is valid for codecs that **delegate tool dispatch externally** (the unified-kernel-validation `FakeCodecAdapter` does this, scenario 7 proves the loop). For ACP-style codecs that **own tool dispatch internally**, scenario 8 demonstrates the host should NOT compose `JournalObserverLive` (or the observer should filter `ToolUse` rows by codec capability).
+
+The host composition therefore has two reasonable shapes:
+- **External-tool-dispatch codecs** (e.g. raw byte stream, custom protocols): `FiregridHost({adapter, ...}).pipe(Layer.provide(JournalObserverLive))` — the observer triggers tool dispatch + relay.
+- **Internal-tool-dispatch codecs** (ACP, future MCP-bridged agents): `FiregridHost({adapter, ...})` without the observer. The agent owns tool execution; the observer's tool-dispatch trigger isn't needed.
+
+A future iteration could express this declaratively (codec capability flag opting in/out of external dispatch), but the manual composition is currently sufficient and documents the choice at the call site.
 
 ## Acceptance criteria
 
@@ -108,3 +122,4 @@ The simulation's `production-flow` scenario uses a fake codec that proves the ar
 | Date | Note |
 |---|---|
 | 2026-05-31 | `ProductionCodecAdapterLive` scaffolding landed. Context resolver Tag introduced. ACP + stdio-jsonl both supported via `agentProtocol` discriminator. Existing sim 7/7 + 17/17 green; no regression. |
+| 2026-05-31 | Phase F: scenario 8 (`production-flow-acp`) lands end-to-end through the **REAL ACP codec** via in-process `FixtureAgent` (lifted from runtime test prior art). Drives `ProductionCodecAdapterLive` with a fake `SandboxProvider` returning a `TransformStream`-backed `AgentByteStream` — same code path production uses with `LocalProcessSandboxProvider`, only the byte transport is in-process. Proves: (a) the adapter Layer builds with real deps (SandboxProvider + IdGenerator + ContextResolverTag), (b) `AcpSessionLive` decodes real JSON-RPC framing correctly, (c) the per-context process registry + scope-bound output drain work against the real codec, (d) `agent_message_chunk`, `tool_call`, `tool_call_update` ACP protocol events all flow through into `RuntimeOutputTable.events` as typed observations. **Sim: 8/8 scenarios + 17/17 invariants green; seam coverage: 21/21 (added 5 codec-layer ACP seams)**. |

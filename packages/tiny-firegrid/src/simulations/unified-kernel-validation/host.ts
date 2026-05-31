@@ -36,6 +36,11 @@ import {
   productionFlowUrlsFor,
   type ProductionFlowResult,
 } from "./production-flow-scenario.ts"
+import {
+  productionFlowAcpScenario,
+  productionFlowAcpUrlsFor,
+  type ProductionFlowAcpResult,
+} from "./production-flow-acp-scenario.ts"
 import type { GenerationUrls } from "./substrate.ts"
 
 export interface UnifiedKernelRuntime {
@@ -46,6 +51,7 @@ export interface UnifiedKernelRuntime {
   readonly runBoundedOwnership: Effect.Effect<BoundedOwnershipResult, unknown>
   readonly runEndToEndViaFiregridClient: Effect.Effect<FiregridClientE2EResult, unknown>
   readonly runProductionFlow: Effect.Effect<ProductionFlowResult, unknown>
+  readonly runProductionFlowAcp: Effect.Effect<ProductionFlowAcpResult, unknown>
 }
 
 const runtimeLatch = (() => {
@@ -90,6 +96,12 @@ export const unifiedKernelValidationHost = (
         ),
         runProductionFlow: productionFlowScenario(
           productionFlowUrlsFor(
+            { durableStreamsBaseUrl: env.durableStreamsBaseUrl, namespace: env.namespace },
+            env.runId,
+          ),
+        ),
+        runProductionFlowAcp: productionFlowAcpScenario(
+          productionFlowAcpUrlsFor(
             { durableStreamsBaseUrl: env.durableStreamsBaseUrl, namespace: env.namespace },
             env.runId,
           ),

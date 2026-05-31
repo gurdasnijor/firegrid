@@ -49,6 +49,11 @@ Every place where one architectural tier hands off to another is a seam. The uni
 | `journal.observer.daemon` | `firegrid.unified.journal_observer.daemon` | `JournalObserverLive` is alive |
 | `workflow.engine.execute` | `firegrid.workflow_engine.execution.execute` | Engine running a workflow |
 | `workflow.engine.resume` | `firegrid.workflow_engine.execution.resume.body` | Engine waking a parked body |
+| `codec.acp.initialize` | `firegrid.agent_event_pipeline.acp.initialize` | Real ACP codec: connection.initialize fired |
+| `codec.acp.new_session` | `firegrid.codec.sdk.call` | Real ACP codec: newSession SDK call fired |
+| `codec.acp.prompt` | `firegrid.agent_event_pipeline.acp.prompt` | Real ACP codec: connection.prompt fired |
+| `codec.acp.session_update` | `firegrid.agent_event_pipeline.acp.session_update` | Real ACP codec: incoming agent updates (tool_call etc.) |
+| `codec.acp.exit` | `firegrid.agent_event_pipeline.acp.exit` | Real ACP codec: clean teardown |
 
 A run that misses any of these has a wiring regression — the architecture is no longer end-to-end. The check is hard.
 

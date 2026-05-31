@@ -135,6 +135,25 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
       prod,
     )
 
+    // ── Scenario 8 — production-flow against REAL ACP codec ────
+    // Drives `ProductionCodecAdapterLive` end-to-end through a
+    // `PermissionFixtureAgent` speaking real ACP over an in-memory
+    // TransformStream byte pipe. The codec, sandbox provider
+    // (fake), and adapter are exactly what production uses; only
+    // the byte transport is in-process. Proves AcpSessionLive
+    // decodes real wire bytes and the journal drain writes typed
+    // AgentOutputObservations.
+    const prodAcp = yield* runtime.runProductionFlowAcp
+    yield* assertInvariant(
+      prodAcp.sessionTerminal &&
+        prodAcp.fixtureSawPrompt &&
+        prodAcp.journalRowsWritten >= 3 && // Ready + TextChunk + ToolUse + TurnComplete at minimum
+        prodAcp.sawToolUse &&
+        prodAcp.sawTurnComplete,
+      "production-flow-acp: real ACP codec end-to-end loop did not surface expected observations",
+      prodAcp,
+    )
+
     // ── Structural collapse invariants ──────────────────────────
     const structural = runStructuralChecks()
     for (const check of structural.checks) {
@@ -147,7 +166,7 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
 
     const verdict: UnifiedKernelVerdict = {
       verdict: "GREEN",
-      scenarios: 7,
+      scenarios: 8,
       structuralChecks: structural.checks.length,
     }
 
@@ -164,10 +183,11 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
         "  Three primitives — Workflow + DurableTable + Signal — are sufficient",
         "  to deliver the entire product surface, exposed as channels.",
         "",
-        "  Channel-driven scenarios (7/7 green):",
+        "  Channel-driven scenarios (8/8 green):",
         `    end-to-end (router) ...... session=${e2e.sessionTerminal} inputs=${e2e.sessionInputsConsumed} tool=${e2e.toolInvocations}× perm=${e2e.permissionDecision} schedule=${e2e.scheduleFiredAt.length > 0}`,
         `    end-to-end (Firegrid SDK) session=${fgClient.sessionTerminal} inputs=${fgClient.sessionInputsConsumed} tool=${fgClient.toolInvocations}× perm=${fgClient.permissionDecision} webhook=${fgClient.webhookObservationEventType} peer=${fgClient.peerObservationName}`,
         `    production flow (e2e) ... session=${prod.sessionTerminal} inputs=${prod.sessionInputsConsumed} codecSends=${prod.codecSendCount} dereg=${prod.codecDeregisterCount} tool=${prod.toolInvocations}× auto-relay=${prod.codecSawToolResult && prod.codecSawPermissionResponse}`,
+        `    production flow (ACP) ... session=${prodAcp.sessionTerminal} journalRows=${prodAcp.journalRowsWritten} sawTool=${prodAcp.sawToolUse} sawPerm=${prodAcp.sawPermissionRequest} fixtureSawPrompt=${prodAcp.fixtureSawPrompt}`,
         `    crash recovery .......... gen2Terminal=${recovery.gen2ReachedTerminal} gen2Inputs=${recovery.gen2InputsConsumed}`,
         `    tool idempotency ........ invocations=${idempotency.executorInvocations} match=${idempotency.bothResultsMatch}`,
         `    webhook bad HMAC ........ rejected=${badHmac.rejected} op=${badHmac.errorOp ?? "-"}`,

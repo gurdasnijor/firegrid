@@ -19,6 +19,7 @@
  * the relay into the workflow itself — no driver-side send required.
  */
 
+import { Prompt } from "@effect/ai"
 import {
   Activity,
   Workflow,
@@ -33,6 +34,11 @@ import {
 import {
   type SessionInputPayload,
 } from "../adapter.ts"
+import {
+  AgentInputEventSchema,
+} from "../../events/contract.ts"
+
+const encodeAgentInputEvent = Schema.encodeSync(AgentInputEventSchema)
 
 // ── Shared: session relay payload ───────────────────────────────────────────
 //
@@ -110,12 +116,24 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
       contextId: payload.contextId,
       attempt: payload.attempt,
     })
+    // Auto-relay shape per SDD §E: payload is a Schema-encoded
+    // AgentInputEvent (PermissionResponse variant). Maps the channel
+    // decision strings ("allow"/"deny"/"cancelled") onto the typed
+    // PermissionDecision discriminated union the codec expects.
+    const decision: { readonly _tag: "Allow" } | { readonly _tag: "Deny" } | { readonly _tag: "Cancelled" } =
+      decisionPayload.decision === "allow"
+        ? { _tag: "Allow" }
+        : decisionPayload.decision === "deny"
+          ? { _tag: "Deny" }
+          : { _tag: "Cancelled" }
+    const permissionResponseEvent = {
+      _tag: "PermissionResponse" as const,
+      permissionRequestId: payload.permissionRequestId,
+      decision,
+    }
     const relayPayload: SessionInputPayload = {
       kind: "permission-response",
-      payloadJson: JSON.stringify({
-        permissionRequestId: payload.permissionRequestId,
-        decision: decisionPayload.decision,
-      }),
+      payloadJson: JSON.stringify(encodeAgentInputEvent(permissionResponseEvent as never)),
     }
     yield* Activity.make({
       name: `unified.permission.relay/${key}`,
@@ -220,12 +238,25 @@ const toolDispatchBody = (executor: ToolExecutor) =>
         contextId: payload.contextId,
         attempt: payload.attempt,
       })
+      // Auto-relay shape per SDD §D: payload is a Schema-encoded
+      // AgentInputEvent (ToolResult variant) so the production codec
+      // adapter can decode it back to a typed value and forward to
+      // the codec's session.send. Wrapping the resultJson as the
+      // `ToolResult.part.result` lets the agent receive structured
+      // tool output that round-trips through the codec wire format.
+      const toolResultEvent = {
+        _tag: "ToolResult" as const,
+        part: Prompt.toolResultPart({
+          id: payload.toolUseId,
+          name: payload.toolName,
+          isFailure: false,
+          providerExecuted: false,
+          result: JSON.parse(resultJson) as never,
+        }),
+      }
       const relayPayload: SessionInputPayload = {
         kind: "tool-result",
-        payloadJson: JSON.stringify({
-          toolUseId: payload.toolUseId,
-          resultJson,
-        }),
+        payloadJson: JSON.stringify(encodeAgentInputEvent(toolResultEvent as never)),
       }
       yield* Activity.make({
         name: `unified.tool.relay/${payload.toolUseId}`,

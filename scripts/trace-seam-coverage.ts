@@ -114,6 +114,31 @@ const SEAMS = [
       n.startsWith("firegrid.workflow_engine.execution.resume"),
     description: "WorkflowEngine.resume — engine waking a parked body",
   },
+  {
+    id: "codec.acp.initialize",
+    match: (n: string) => n === "firegrid.agent_event_pipeline.acp.initialize",
+    description: "Real ACP codec — connection.initialize",
+  },
+  {
+    id: "codec.acp.new_session",
+    match: (n: string) => n === "firegrid.codec.sdk.call",
+    description: "Real ACP codec — newSession (codec SDK call)",
+  },
+  {
+    id: "codec.acp.prompt",
+    match: (n: string) => n === "firegrid.agent_event_pipeline.acp.prompt",
+    description: "Real ACP codec — connection.prompt",
+  },
+  {
+    id: "codec.acp.session_update",
+    match: (n: string) => n === "firegrid.agent_event_pipeline.acp.session_update",
+    description: "Real ACP codec — incoming agent session updates (tool_call etc.)",
+  },
+  {
+    id: "codec.acp.exit",
+    match: (n: string) => n === "firegrid.agent_event_pipeline.acp.exit",
+    description: "Real ACP codec — process exit (clean teardown)",
+  },
 ] as const
 
 interface Coverage {
