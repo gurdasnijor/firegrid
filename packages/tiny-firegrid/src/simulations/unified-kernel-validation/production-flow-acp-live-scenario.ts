@@ -168,6 +168,25 @@ const tsxBin = join(
   dirname(requireFromScenario.resolve("tsx/package.json")),
   "dist/cli.mjs",
 )
+// Real `claude-agent-acp` binary (installed as a devDependency of
+// `@firegrid/runtime`). When `FIREGRID_UKV_USE_REAL_CLAUDE_ACP=1` is
+// set alongside `FIREGRID_UKV_RUN_ACP_LIVE=1`, scenario 9 spawns this
+// real binary instead of the FixtureAgent bootstrap. Requires API
+// credentials (ANTHROPIC_API_KEY etc.) in the host env — those have
+// to be authorized through `envPolicy` on the FiregridHost composition;
+// scenario 9's standalone composition uses denyAll, so the live binary
+// won't get credentials this way and will exit with an auth error.
+// Provided as a structural toggle for users wiring their own host with
+// proper credential authorization.
+const realClaudeAcpBin = (() => {
+  try {
+    return requireFromScenario.resolve("@agentclientprotocol/claude-agent-acp/dist/acp-agent.js")
+  } catch {
+    return undefined
+  }
+})()
+const useRealClaudeAcp = process.env["FIREGRID_UKV_USE_REAL_CLAUDE_ACP"] === "1"
+  && realClaudeAcpBin !== undefined
 
 const staticContextResolver = (
   contextId: string,
@@ -188,7 +207,12 @@ const staticContextResolver = (
                   // tsx CLI mjs entry as absolute paths. The sandbox
                   // provider's env allowlist doesn't include
                   // node_modules/.bin so PATH lookup won't find tsx.
-                  argv: [process.execPath, tsxBin, fakeAgentBin] as ReadonlyArray<string>,
+                  // FIREGRID_UKV_USE_REAL_CLAUDE_ACP=1 swaps in the
+                  // real claude-agent-acp binary (requires credentials
+                  // + envPolicy authorization to work).
+                  argv: useRealClaudeAcp && realClaudeAcpBin !== undefined
+                    ? [process.execPath, realClaudeAcpBin] as ReadonlyArray<string>
+                    : [process.execPath, tsxBin, fakeAgentBin] as ReadonlyArray<string>,
                   agentProtocol: "acp" as const,
                 },
                 journal: [],

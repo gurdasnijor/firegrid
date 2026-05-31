@@ -40,6 +40,8 @@ import {
   RuntimeOutputTable,
   type RuntimeContext,
   RuntimeControlPlaneTable,
+  isMcpServerHeaderRef,
+  type McpServerDeclaration,
 } from "@firegrid/protocol/launch"
 import { encodeRuntimeAgentOutputEnvelope } from "@firegrid/protocol/session-facade"
 import { Context, Effect, Exit, ExecutionStrategy, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
@@ -48,13 +50,21 @@ import {
   type AgentInputEvent,
   type AgentOutputEvent,
 } from "../events/contract.ts"
-import { AcpSessionLive } from "../sources/codecs/acp/index.ts"
+import {
+  AcpSessionLive,
+  type AcpMcpServerDeclaration,
+  type AcpSessionOptions,
+} from "../sources/codecs/acp/index.ts"
 import { StdioJsonlSessionLive } from "../sources/codecs/stdio-jsonl/index.ts"
 import {
   AgentSession,
   type AgentSessionService,
   type AgentCodecError,
 } from "../sources/codecs/contract.ts"
+import {
+  RuntimeEnvResolverPolicy,
+  resolveSpawnEnvVars,
+} from "../sources/sandbox/secrets.ts"
 import {
   SandboxProvider,
   type Sandbox,
@@ -161,12 +171,51 @@ const sandboxConfigForContext = (
   cwd: context.runtime.config.cwd,
 })
 
-// Env binding resolution is deferred. `RuntimeEnvBinding` carries
-// `{name, ref}` where `ref` points to a secret resolver (Vault, KMS,
-// etc.). Production hosts compose a secrets-resolving Layer ahead of
-// this adapter; the resolved `envVars: Record<string,string>` enters
-// the sandbox provider's command. For now, env bindings are left
-// unresolved — the sandbox runs with the host process's env.
+/**
+ * Convert protocol-shaped `McpServerDeclaration[]` to the ACP codec's
+ * `AcpMcpServerDeclaration[]` shape. The protocol allows header values
+ * to be `{ref: "env:X"}` (secret references); these need separate
+ * secret resolution before they can be passed to ACP, which expects
+ * literal strings. For now we drop ref-typed headers — production
+ * hosts that need refs should resolve them ahead and inject the
+ * literal values via a host-side preprocessor. Logged via span
+ * attribute when this happens so it's diagnosable from a trace.
+ */
+const mcpServersForAcp = (
+  declarations: ReadonlyArray<McpServerDeclaration> | undefined,
+): {
+  readonly servers: ReadonlyArray<AcpMcpServerDeclaration>
+  readonly droppedRefCount: number
+} => {
+  if (declarations === undefined || declarations.length === 0) {
+    return { servers: [], droppedRefCount: 0 }
+  }
+  let dropped = 0
+  const out: AcpMcpServerDeclaration[] = []
+  for (const decl of declarations) {
+    const headers: Array<{ readonly name: string; readonly value: string }> = []
+    if (decl.server.headers !== undefined) {
+      for (const [name, value] of Object.entries(decl.server.headers)) {
+        if (isMcpServerHeaderRef(value)) {
+          dropped += 1
+          continue
+        }
+        if (typeof value === "string") {
+          headers.push({ name, value })
+        }
+      }
+    }
+    out.push({
+      name: decl.name,
+      server: {
+        type: "url",
+        url: decl.server.url,
+        ...(headers.length === 0 ? {} : { headers }),
+      },
+    })
+  }
+  return { servers: out, droppedRefCount: dropped }
+}
 
 // ── The adapter Live ───────────────────────────────────────────────────────
 
@@ -190,14 +239,31 @@ const buildSessionForContext = (
   table: RuntimeOutputTable["Type"],
   sandboxProvider: SandboxProvider["Type"],
   idGenerator: IdGenerator.IdGenerator["Type"],
+  envResolverPolicy: RuntimeEnvResolverPolicy["Type"],
 ): Effect.Effect<RegistryEntry, AdapterError> =>
   Effect.gen(function*() {
     const contextId = context.contextId
     const ctxScope = yield* Scope.fork(hostScope, ExecutionStrategy.sequential)
 
     const { argv, cwd } = sandboxConfigForContext(context)
+    const envBindings = context.runtime.config.envBindings ?? []
+    const envVars = envBindings.length === 0
+      ? {}
+      : yield* resolveSpawnEnvVars(envBindings).pipe(
+        Effect.provideService(RuntimeEnvResolverPolicy, envResolverPolicy),
+        Effect.mapError((cause) =>
+          adapterError(
+            "startOrAttach",
+            contextId,
+            "env binding resolution failed",
+            cause,
+          ),
+        ),
+      )
+
     const sandbox: Sandbox = yield* sandboxProvider.create({
       ...(cwd === undefined ? {} : { workingDir: cwd }),
+      ...(Object.keys(envVars).length === 0 ? {} : { envVars }),
     }).pipe(
       Effect.mapError((cause: SandboxProviderError) =>
         adapterError("startOrAttach", contextId, "sandbox create failed", cause),
@@ -206,6 +272,7 @@ const buildSessionForContext = (
     const byteStream = yield* sandboxProvider.openBytePipe(sandbox, {
       argv,
       ...(cwd === undefined ? {} : { cwd }),
+      ...(Object.keys(envVars).length === 0 ? {} : { envVars }),
     }).pipe(
       Scope.extend(ctxScope),
       Effect.mapError((cause: SandboxProviderError) =>
@@ -213,9 +280,25 @@ const buildSessionForContext = (
       ),
     )
 
+    // ACP receives MCP server declarations via AcpSessionOptions so the
+    // claude-agent-sdk loads them at session start. Drop ref-typed
+    // headers; they require separate secret resolution (see
+    // `mcpServersForAcp` doc). Stdio-jsonl codec has no MCP slot.
+    const { servers: acpMcpServers, droppedRefCount } = mcpServersForAcp(
+      context.runtime.config.mcpServers,
+    )
+    if (droppedRefCount > 0) {
+      yield* Effect.annotateCurrentSpan({
+        "firegrid.unified.adapter.mcp.headers_dropped_ref_count": droppedRefCount,
+      })
+    }
+    const acpOptions: AcpSessionOptions = {
+      ...(cwd === undefined ? {} : { cwd }),
+      ...(acpMcpServers.length === 0 ? {} : { mcpServers: acpMcpServers }),
+    }
     const codecLayer = context.runtime.config.agentProtocol === "raw"
       ? StdioJsonlSessionLive(byteStream)
-      : AcpSessionLive(byteStream)
+      : AcpSessionLive(byteStream, acpOptions)
 
     // Build the codec Layer INTO ctxScope so the AgentSession stays
     // alive across send/recv. `Effect.scoped` would close the codec
@@ -249,6 +332,7 @@ export const ProductionCodecAdapterLive = Layer.scoped(
     const sandboxProvider = yield* SandboxProvider
     const idGenerator = yield* IdGenerator.IdGenerator
     const resolver = yield* ContextResolverTag
+    const envResolverPolicy = yield* RuntimeEnvResolverPolicy
 
     const registry = yield* Ref.make<Map<string, RegistryEntry>>(new Map())
 
@@ -269,7 +353,7 @@ export const ProductionCodecAdapterLive = Layer.scoped(
           )
         }
         const entry = yield* buildSessionForContext(
-          hostScope, ctx.value, attempt, table, sandboxProvider, idGenerator,
+          hostScope, ctx.value, attempt, table, sandboxProvider, idGenerator, envResolverPolicy,
         )
         yield* Ref.update(registry, (m) => {
           const next = new Map(m)

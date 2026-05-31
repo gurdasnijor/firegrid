@@ -99,6 +99,20 @@ export interface FiregridHostOptionsBase {
    * real executor Layer.
    */
   readonly toolExecutor?: Layer.Layer<ToolExecutor>
+  /**
+   * Optional override for the env-binding resolver policy. Used by
+   * `ProductionCodecAdapterLive` to resolve `RuntimeEnvBinding.ref`
+   * pairs to env values before spawning the agent process. Default is
+   * `RuntimeEnvResolverPolicy.denyAll` — any context that declares
+   * envBindings fails fast at startOrAttach unless this override
+   * supplies a policy that authorizes the pair.
+   *
+   * For production, compose `RuntimeEnvResolverPolicy.withPolicy({
+   *   authorizedBindings: [["MY_VAR", "HOST_MY_VAR"]],
+   *   lookupEnv: (name) => process.env[name],
+   * })` to allow named (binding, host-env-var) pairs.
+   */
+  readonly envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>
 }
 
 export interface FiregridHostOptionsWithAdapter extends FiregridHostOptionsBase {
@@ -138,7 +152,9 @@ const hasAdapter = (
   options: FiregridHostOptions,
 ): options is FiregridHostOptionsWithAdapter => "adapter" in options
 
-const defaultProductionAdapterLayer = () =>
+const defaultProductionAdapterLayer = (
+  envPolicy: Layer.Layer<RuntimeEnvResolverPolicy> = RuntimeEnvResolverPolicy.denyAll,
+) =>
   ProductionCodecAdapterLive.pipe(
     Layer.provide(
       LocalProcessSandboxProvider.layer().pipe(
@@ -149,7 +165,7 @@ const defaultProductionAdapterLayer = () =>
       Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
     ),
     Layer.provide(ContextResolverFromControlPlaneTableLive),
-    Layer.provide(RuntimeEnvResolverPolicy.denyAll),
+    Layer.provide(envPolicy),
   )
 
 const streamUrl = (baseUrl: string, segment: string): string =>
@@ -221,7 +237,7 @@ export const FiregridHost = (options: FiregridHostOptions) => {
 
   const adapterLayer = hasAdapter(options)
     ? options.adapter
-    : defaultProductionAdapterLayer()
+    : defaultProductionAdapterLayer(options.envPolicy)
   const hostSessionLayer = buildCurrentHostSessionLayer({
     namespace: options.namespace,
     ...(options.hostId === undefined ? {} : { hostId: options.hostId }),

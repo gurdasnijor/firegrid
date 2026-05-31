@@ -74,6 +74,7 @@ import {
 import {
   buildAcpFakeSandboxProvider,
 } from "./acp-sandbox-fake.ts"
+import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import type { EventOffset } from "./durable-event-channel.ts"
 import {
   buildPeerEventObserverLayer,
@@ -240,6 +241,7 @@ export const productionFlowAcpScenario = (
       Layer.provide(sandboxLayer),
       Layer.provide(Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator)),
       Layer.provide(staticContextResolver(contextId)),
+      Layer.provide(RuntimeEnvResolverPolicy.denyAll),
     )
 
     // ── Workflow + adapter on shared substrate.
