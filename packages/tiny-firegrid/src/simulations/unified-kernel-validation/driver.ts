@@ -43,9 +43,11 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
         e2e.toolInvocations === 1 &&
         e2e.toolResultJson.length > 0 &&
         e2e.scheduleFiredAt.length > 0 &&
-        e2e.webhookOutcome === "Inserted" &&
+        e2e.webhookOffset.length > 0 &&
+        !e2e.webhookDeduplicated &&
         e2e.webhookObservationEventType === "Issue.create" &&
-        e2e.peerOutcome === "Inserted" &&
+        e2e.peerOffset.length > 0 &&
+        !e2e.peerDeduplicated &&
         e2e.peerObservationName === "plan.ready" &&
         e2e.recorderSpawns === 1 &&
         e2e.recorderSends >= 3,
@@ -72,7 +74,7 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
     // ── Scenario 4 — webhook bad-HMAC rejection ─────────────────
     const badHmac = yield* runtime.runWebhookBadHmac
     yield* assertInvariant(
-      badHmac.outcomeTag === "Rejected" && badHmac.errorOp === "signature/invalid",
+      badHmac.rejected && badHmac.errorOp === "signature/invalid",
       "webhook bad-HMAC: ingest did not reject invalid signature",
       badHmac,
     )
@@ -115,10 +117,10 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
         "  to deliver the entire product surface, exposed as channels.",
         "",
         "  Channel-driven scenarios (5/5 green):",
-        `    end-to-end .............. session=${e2e.sessionTerminal} inputs=${e2e.sessionInputsConsumed} tool=${e2e.toolInvocations}× perm=${e2e.permissionDecision} schedule=${e2e.scheduleFiredAt.length > 0} webhook=${e2e.webhookOutcome}/${e2e.webhookObservationEventType} peer=${e2e.peerOutcome}/${e2e.peerObservationName}`,
+        `    end-to-end .............. session=${e2e.sessionTerminal} inputs=${e2e.sessionInputsConsumed} tool=${e2e.toolInvocations}× perm=${e2e.permissionDecision} schedule=${e2e.scheduleFiredAt.length > 0} webhook=${e2e.webhookObservationEventType}@${e2e.webhookOffset} peer=${e2e.peerObservationName}@${e2e.peerOffset}`,
         `    crash recovery .......... gen2Terminal=${recovery.gen2ReachedTerminal} gen2Inputs=${recovery.gen2InputsConsumed}`,
         `    tool idempotency ........ invocations=${idempotency.executorInvocations} match=${idempotency.bothResultsMatch}`,
-        `    webhook bad HMAC ........ outcome=${badHmac.outcomeTag} op=${badHmac.errorOp ?? "-"}`,
+        `    webhook bad HMAC ........ rejected=${badHmac.rejected} op=${badHmac.errorOp ?? "-"}`,
         `    bounded ownership ....... deferredParked=${bounded.deferredStillParkedAfterRecovery} replayed=${bounded.signalsReplayed}`,
         "",
         `  Structural collapse invariants (${structural.passed}/${structural.checks.length} green):`,

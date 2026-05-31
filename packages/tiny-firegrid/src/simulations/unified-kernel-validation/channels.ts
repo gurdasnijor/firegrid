@@ -20,6 +20,11 @@ import {
 import { WorkflowEngine } from "@effect/workflow"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import {
+  type DurableEventChannel,
+  eventOffset,
+  makeDurableEventChannel,
+} from "./durable-event-channel.ts"
+import {
   sendSignal,
   SignalTable,
   type SignalTableService,
@@ -138,12 +143,6 @@ export const WebhookIngestRequestSchema = Schema.Struct({
   armObserver: Schema.optional(WebhookObserverHandleSchema),
 })
 
-export const WebhookIngestOutcomeSchema = Schema.Struct({
-  _tag: Schema.Literal("Inserted", "Duplicate", "Rejected"),
-  factKey: Schema.optional(Schema.String),
-  errorOp: Schema.optional(Schema.String),
-})
-
 export const PeerEmitPayloadSchema = Schema.Struct({
   name: Schema.String,
   eventId: Schema.String,
@@ -166,22 +165,41 @@ export const PeerEmitRequestSchema = Schema.Struct({
 
 // ── UnifiedChannels service ─────────────────────────────────────────────────
 
+/**
+ * The unified product surface as channels. Input-delivery operations
+ * are `DurableEventChannel<P>` (per SDD_FIREGRID_PROTOCOL_RESPONSE_
+ * UNIFICATION): they return only `EventOffset`, the wire-level append
+ * receipt — no application-shaped response fields, no `inserted`
+ * boolean, no row-id cross-references. Synchronous derivations and
+ * workflow-result awaits stay as `CallableChannel<Req, Res>`.
+ *
+ * Phase-1 mapping back to the seven historical Firegrid Tags:
+ *   sessionSendInput      ⇐ HostPromptChannel + SessionPromptChannel
+ *   permissionRespond     ⇐ HostPermissionRespondChannel
+ *   webhookIngest         ⇐ (new — no production analog yet)
+ *   peerEmit              ⇐ (new — no production analog yet)
+ */
 export interface UnifiedChannelsShape {
+  // ── Synchronous derivations ─────────────────────────────────────
   readonly sessionStart: CallableChannel<typeof RuntimeContextSessionPayloadSchema, typeof SessionHandleSchema>
-  readonly sessionSendInput: CallableChannel<typeof SendInputRequestSchema, typeof Schema.Void>
-  readonly sessionAwaitTerminal: CallableChannel<typeof SessionHandleSchema, typeof RuntimeContextSessionResultSchema>
   readonly permissionOpen: CallableChannel<typeof PermissionOpenRequestSchema, typeof PermissionHandleSchema>
   readonly permissionReadRequest: CallableChannel<typeof PermissionRequestQuerySchema, typeof PermissionRequestRecordOptionSchema>
-  readonly permissionRespond: CallableChannel<typeof PermissionRespondRequestSchema, typeof Schema.Void>
+  readonly webhookObserverStart: CallableChannel<typeof WebhookFactObserverPayloadSchema, typeof WebhookObserverHandleSchema>
+  readonly peerObserverStart: CallableChannel<typeof PeerEventObserverPayloadSchema, typeof PeerObserverHandleSchema>
+
+  // ── Workflow result awaits (idempotent execute) ─────────────────
+  readonly sessionAwaitTerminal: CallableChannel<typeof SessionHandleSchema, typeof RuntimeContextSessionResultSchema>
   readonly permissionAwaitDecision: CallableChannel<typeof PermissionHandleSchema, typeof PermissionDecisionResultSchema>
   readonly toolDispatch: CallableChannel<typeof ToolDispatchPayloadSchema, typeof ToolDispatchResultSchema>
   readonly schedulePrompt: CallableChannel<typeof ScheduledPromptPayloadSchema, typeof ScheduledPromptResultSchema>
-  readonly webhookIngest: CallableChannel<typeof WebhookIngestRequestSchema, typeof WebhookIngestOutcomeSchema>
-  readonly webhookObserverStart: CallableChannel<typeof WebhookFactObserverPayloadSchema, typeof WebhookObserverHandleSchema>
   readonly webhookObserverAwait: CallableChannel<typeof WebhookObserverHandleSchema, typeof WebhookFactObserverResultSchema>
-  readonly peerEmit: CallableChannel<typeof PeerEmitRequestSchema, typeof WebhookIngestOutcomeSchema>
-  readonly peerObserverStart: CallableChannel<typeof PeerEventObserverPayloadSchema, typeof PeerObserverHandleSchema>
   readonly peerObserverAwait: CallableChannel<typeof PeerObserverHandleSchema, typeof PeerEventObserverResultSchema>
+
+  // ── Durable input-delivery events ───────────────────────────────
+  readonly sessionSendInput: DurableEventChannel<typeof SendInputRequestSchema>
+  readonly permissionRespond: DurableEventChannel<typeof PermissionRespondRequestSchema>
+  readonly webhookIngest: DurableEventChannel<typeof WebhookIngestRequestSchema>
+  readonly peerEmit: DurableEventChannel<typeof PeerEmitRequestSchema>
 }
 
 export class UnifiedChannels extends Context.Tag(
@@ -220,11 +238,10 @@ const makeChannels = (
         })),
     }),
 
-    sessionSendInput: makeCallableChannel({
+    sessionSendInput: makeDurableEventChannel({
       target: "unified.session.send_input",
-      requestSchema: SendInputRequestSchema,
-      responseSchema: Schema.Void,
-      call: (request) =>
+      schema: SendInputRequestSchema,
+      append: (request) =>
         lower(sendSignal({
           signals,
           workflow: RuntimeContextSessionWorkflow,
@@ -236,7 +253,12 @@ const makeChannels = (
             payloadJson: request.payloadJson,
           } satisfies SessionInputPayload,
           serializeValue: (v) => JSON.stringify(v),
-        })).pipe(Effect.orDie, Effect.asVoid),
+        })).pipe(
+          Effect.orDie,
+          Effect.as(eventOffset(
+            `${request.session.executionId}|${request.inputId}`,
+          )),
+        ),
     }),
 
     sessionAwaitTerminal: makeCallableChannel({
@@ -288,11 +310,10 @@ const makeChannels = (
         ),
     }),
 
-    permissionRespond: makeCallableChannel({
+    permissionRespond: makeDurableEventChannel({
       target: "unified.permission.respond",
-      requestSchema: PermissionRespondRequestSchema,
-      responseSchema: Schema.Void,
-      call: (request) =>
+      schema: PermissionRespondRequestSchema,
+      append: (request) =>
         lower(sendSignal({
           signals,
           workflow: PermissionRoundtripWorkflow,
@@ -301,7 +322,12 @@ const makeChannels = (
           write: () => Effect.void,
           value: { decision: request.decision } satisfies PermissionDecisionPayload,
           serializeValue: (v) => JSON.stringify(v),
-        })).pipe(Effect.orDie, Effect.asVoid),
+        })).pipe(
+          Effect.orDie,
+          Effect.as(eventOffset(
+            `${request.handle.executionId}|${PERMISSION_DECISION_SIGNAL}`,
+          )),
+        ),
     }),
 
     permissionAwaitDecision: makeCallableChannel({
@@ -332,11 +358,14 @@ const makeChannels = (
         lower(ScheduledPromptWorkflow.execute(payload)).pipe(Effect.orDie),
     }),
 
-    webhookIngest: makeCallableChannel({
+    webhookIngest: makeDurableEventChannel({
       target: "unified.webhook.ingest",
-      requestSchema: WebhookIngestRequestSchema,
-      responseSchema: WebhookIngestOutcomeSchema,
-      call: (request) =>
+      schema: WebhookIngestRequestSchema,
+      // Bad-HMAC propagates as Effect failure (`VerifiedWebhookError`)
+      // — under the unified shape there is no "Rejected" application
+      // response tag; rejection is a transport-level error the caller
+      // observes via Effect.exit / Effect.either.
+      append: (request) =>
         lower(verifyAndIngestWebhookHelper({
           unified,
           verify: request.verify,
@@ -350,10 +379,9 @@ const makeChannels = (
             }
             : {}),
         })).pipe(
-          Effect.map((r) => ({ _tag: r._tag, factKey: r.factKey })),
-          Effect.catchAll((err) =>
-            Effect.succeed({ _tag: "Rejected" as const, errorOp: err.op }),
-          ),
+          Effect.map((r) => eventOffset(r.factKey, {
+            deduplicated: r._tag === "Duplicate",
+          })),
         ),
     }),
 
@@ -381,11 +409,10 @@ const makeChannels = (
         })).pipe(Effect.orDie),
     }),
 
-    peerEmit: makeCallableChannel({
+    peerEmit: makeDurableEventChannel({
       target: "unified.peer.emit",
-      requestSchema: PeerEmitRequestSchema,
-      responseSchema: WebhookIngestOutcomeSchema,
-      call: (request) =>
+      schema: PeerEmitRequestSchema,
+      append: (request) =>
         lower(emitPeerEventHelper({
           unified,
           name: request.payload.name,
@@ -402,7 +429,9 @@ const makeChannels = (
             }
             : {}),
         })).pipe(
-          Effect.map((r) => ({ _tag: r._tag, factKey: r.factKey })),
+          Effect.map((r) => eventOffset(r.factKey, {
+            deduplicated: r._tag === "Duplicate",
+          })),
           Effect.orDie,
         ),
     }),

@@ -178,6 +178,43 @@ export const runStructuralChecks = (): StructuralCheckResult => {
         /PermissionRequestRowSchema[\s\S]{0,400}?status:/.test(f.text) ||
         /ScheduledRowSchema[\s\S]{0,400}?status:/.test(f.text)),
     },
+    {
+      // SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION: input-delivery
+      // channels collapse to `DurableEventChannel<P>` returning
+      // `EventOffset` — no bespoke response shapes, no
+      // `_tag: "Inserted" | "Duplicate" | "Rejected"` tagged unions,
+      // no `inserted: boolean`, no row-id cross-references in append
+      // responses.
+      id: "I13-input-delivery-channels-are-durable-events",
+      title: "every input-delivery channel uses `DurableEventChannel<P>` (no bespoke response shapes)",
+      offenders: (() => {
+        const channelsFile = files.find((f) => /\/channels\.ts$/.test(f.path))
+        if (channelsFile === undefined) return ["channels.ts missing"]
+        // Each input-delivery operation must be makeDurableEventChannel.
+        const inputDeliveryOps = [
+          "sessionSendInput",
+          "permissionRespond",
+          "webhookIngest",
+          "peerEmit",
+        ]
+        return inputDeliveryOps.flatMap((op) => {
+          const re = new RegExp(`${op}:\\s*makeDurableEventChannel`)
+          return re.test(channelsFile.text)
+            ? []
+            : [`channels.ts: ${op} is not a makeDurableEventChannel`]
+        })
+      })(),
+    },
+    {
+      // SDD: `inserted: boolean` and `_tag: "Inserted"|"Duplicate"|"Rejected"`
+      // shapes do not exist in channel response schemas. Wire-level
+      // dedup is exposed (if at all) only via `EventOffset.deduplicated`.
+      id: "I14-no-application-level-insertion-status",
+      title: "no `inserted: boolean` or `_tag: \"Inserted\"|\"Duplicate\"|\"Rejected\"` in channel responses",
+      offenders: offendersFor(files, (f) =>
+        /\binserted:\s*Schema\.Boolean/.test(f.text) ||
+        /Schema\.Literal\(\s*"Inserted",\s*"Duplicate",\s*"Rejected"\s*\)/.test(f.text)),
+    },
   ]
 
   let passed = 0

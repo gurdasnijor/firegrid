@@ -21,7 +21,8 @@
  */
 
 import { DurableDeferred, Workflow, type WorkflowEngine } from "@effect/workflow"
-import { Effect, Option, Ref, Schema } from "effect"
+import { Cause, Effect, Option, Ref, Schema } from "effect"
+import { VerifiedWebhookError } from "./subscribers/scheduled-webhook-peer.ts"
 import type { UnifiedChannelsShape } from "./channels.ts"
 import { UnifiedChannels, UnifiedChannelsLive } from "./channels.ts"
 import {
@@ -143,9 +144,11 @@ export interface EndToEndResult {
   readonly permissionDecision: "allow" | "deny" | "cancelled"
   readonly permissionRequestRowSeen: boolean
   readonly scheduleFiredAt: string
-  readonly webhookOutcome: "Inserted" | "Duplicate" | "Rejected"
+  readonly webhookOffset: string
+  readonly webhookDeduplicated: boolean
   readonly webhookObservationEventType: string
-  readonly peerOutcome: "Inserted" | "Duplicate" | "Rejected"
+  readonly peerOffset: string
+  readonly peerDeduplicated: boolean
   readonly peerObservationName: string
   readonly toolInvocations: number
   readonly recorderSpawns: number
@@ -162,7 +165,7 @@ export const endToEndScenario = (
       const session = yield* channels.sessionStart.binding.call({ contextId, attempt })
 
       yield* Effect.sleep("50 millis")
-      yield* channels.sessionSendInput.binding.call({
+      yield* channels.sessionSendInput.binding.append({
         session, inputId: "prompt-1", kind: "prompt",
         payloadJson: JSON.stringify({ text: "hello" }),
       })
@@ -181,12 +184,12 @@ export const endToEndScenario = (
       const requestRow = yield* channels.permissionReadRequest.binding.call({
         contextId, permissionRequestId: "perm-1",
       })
-      yield* channels.permissionRespond.binding.call({
+      yield* channels.permissionRespond.binding.append({
         handle: permission, decision: "allow",
       })
       const decision = yield* channels.permissionAwaitDecision.binding.call(permission)
 
-      yield* channels.sessionSendInput.binding.call({
+      yield* channels.sessionSendInput.binding.append({
         session, inputId: "perm-response-1", kind: "permission-response",
         payloadJson: JSON.stringify({
           permissionRequestId: "perm-1", decision: decision.decision,
@@ -209,7 +212,7 @@ export const endToEndScenario = (
         action: "create", type: "Issue", webhookId: "delivery-1",
       }))
       const webhookSig = yield* hmacSign(webhookSecret, webhookBody)
-      const webhookOutcome = yield* channels.webhookIngest.binding.call({
+      const webhookOutcome = yield* channels.webhookIngest.binding.append({
         verify: {
           source: "linear", deliveryId: "delivery-1",
           eventType: "Issue.create",
@@ -226,7 +229,7 @@ export const endToEndScenario = (
         name: "plan.ready", eventId: "ev-1", observerId: "peer-obs-1",
       })
       yield* Effect.sleep("50 millis")
-      const peerOutcome = yield* channels.peerEmit.binding.call({
+      const peerOutcome = yield* channels.peerEmit.binding.append({
         payload: {
           name: "plan.ready", eventId: "ev-1",
           emitterContextId: contextId,
@@ -236,7 +239,7 @@ export const endToEndScenario = (
       })
       const peerObservation = yield* channels.peerObserverAwait.binding.call(peerObserver)
 
-      yield* channels.sessionSendInput.binding.call({
+      yield* channels.sessionSendInput.binding.append({
         session, inputId: "terminal", kind: "terminal",
         payloadJson: JSON.stringify({ reason: "done" }),
       })
@@ -250,9 +253,11 @@ export const endToEndScenario = (
         permissionDecision: decision.decision,
         permissionRequestRowSeen: requestRow !== null,
         scheduleFiredAt: schedResult.firedAt,
-        webhookOutcome: webhookOutcome._tag,
+        webhookOffset: webhookOutcome.offset,
+        webhookDeduplicated: webhookOutcome.deduplicated ?? false,
         webhookObservationEventType: webhookObservation.eventType,
-        peerOutcome: peerOutcome._tag,
+        peerOffset: peerOutcome.offset,
+        peerDeduplicated: peerOutcome.deduplicated ?? false,
         peerObservationName: peerObservation.name,
         toolInvocations,
         recorderSpawns: recorderSnapshot.spawns.length,
@@ -349,7 +354,7 @@ export const toolIdempotencyScenario = (
 // ── Webhook bad-HMAC rejection scenario ─────────────────────────────────────
 
 export interface WebhookBadHmacResult {
-  readonly outcomeTag: "Inserted" | "Duplicate" | "Rejected"
+  readonly rejected: boolean
   readonly errorOp: string | undefined
 }
 
@@ -360,7 +365,11 @@ export const webhookBadHmacScenario = (
     Effect.gen(function*() {
       const rawBody = encoder.encode(JSON.stringify({ action: "create" }))
       const wrongSig = yield* hmacSign("WRONG-secret", rawBody)
-      const outcome = yield* channels.webhookIngest.binding.call({
+      // Under the unified shape, signature failure is a transport-level
+      // failure on the append — caller observes via Effect.exit/either,
+      // not a tagged response field. The channel append fails with a
+      // `VerifiedWebhookError { op: "signature/invalid" }`.
+      const exit = yield* Effect.exit(channels.webhookIngest.binding.append({
         verify: {
           source: "linear", deliveryId: "delivery-bad",
           eventType: "Issue.create",
@@ -368,10 +377,19 @@ export const webhookBadHmacScenario = (
           rawBody,
           receivedSignatureHex: wrongSig,
         },
+      }))
+      if (exit._tag === "Success") {
+        return { rejected: false, errorOp: undefined }
+      }
+      const failure = Cause.failureOption(exit.cause)
+      const errorOp = Option.match(failure, {
+        onNone: () => undefined,
+        onSome: (err) =>
+          err instanceof VerifiedWebhookError ? err.op : undefined,
       })
       return {
-        outcomeTag: outcome._tag,
-        errorOp: outcome.errorOp,
+        rejected: true,
+        errorOp,
       } satisfies WebhookBadHmacResult
     }))
 
