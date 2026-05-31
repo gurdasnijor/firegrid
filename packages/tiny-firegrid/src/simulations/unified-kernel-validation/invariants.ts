@@ -10,11 +10,21 @@
  * driving could mask the regression.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const simRoot = fileURLToPath(new URL(".", import.meta.url))
+
+// Phase 2 of SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION lifted the
+// signal primitive + subscribers into `@firegrid/runtime/src/unified/`.
+// The invariants scan BOTH locations so the same structural shape is
+// enforced wherever the code lives (sim re-exports, production source).
+//
+// simRoot is `.../packages/tiny-firegrid/src/simulations/unified-kernel-
+// validation/`. Walk up four segments to `packages/`, then into
+// `runtime/src/unified/`.
+const runtimeUnifiedRoot = join(simRoot, "../../../../runtime/src/unified")
 
 const stripComments = (source: string): string => {
   const noBlock = source.replace(/\/\*[\s\S]*?\*\//g, "")
@@ -50,6 +60,7 @@ const readAllSimFiles = (): ReadonlyArray<SimFile> => {
     }
   }
   walk(simRoot)
+  if (existsSync(runtimeUnifiedRoot)) walk(runtimeUnifiedRoot)
   return acc
 }
 
@@ -118,9 +129,16 @@ export const runStructuralChecks = (): StructuralCheckResult => {
       id: "I6-tool-dispatch-via-idempotencyKey",
       title: "tool dispatch idempotency via `Workflow.idempotencyKey`, no separate result table",
       offenders: (() => {
-        const toolFile = files.find((f) => f.path.includes("permission-and-tool.ts"))
+        // The canonical permission-and-tool subscriber lives in
+        // @firegrid/runtime/src/unified/subscribers/. The sim's
+        // sibling at subscribers/permission-and-tool.ts is a thin
+        // re-export. Look for the pattern in ANY matching file —
+        // succeeds as long as one of them defines the workflow.
+        const toolFiles = files.filter((f) => f.path.includes("permission-and-tool.ts"))
         const offenders: Array<string> = []
-        if (toolFile === undefined || !/idempotencyKey:\s*\(p\)\s*=>\s*p\.toolUseId/.test(toolFile.text)) {
+        const anyHasIdempotency = toolFiles.some((f) =>
+          /idempotencyKey:\s*\(p\)\s*=>\s*p\.toolUseId/.test(f.text))
+        if (!anyHasIdempotency) {
           offenders.push("permission-and-tool.ts: missing idempotencyKey: (p) => p.toolUseId")
         }
         offenders.push(...offendersFor(files, (f) =>

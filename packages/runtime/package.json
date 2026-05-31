@@ -49,6 +49,10 @@
       "types": "./src/engine/durable-streams-workflow-engine.ts",
       "default": "./src/engine/durable-streams-workflow-engine.ts"
     },
+    "./unified": {
+      "types": "./src/unified/index.ts",
+      "default": "./src/unified/index.ts"
+    },
     "./events": {
       "types": "./src/events/index.ts",
       "default": "./src/events/index.ts"
