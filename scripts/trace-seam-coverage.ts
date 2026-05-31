@@ -139,13 +139,20 @@ const SEAMS = [
     match: (n: string) => n === "firegrid.agent_event_pipeline.acp.exit",
     description: "Real ACP codec — process exit (clean teardown)",
   },
+  {
+    id: "sandbox.local_process.open_byte_pipe",
+    match: (n: string) => n === "firegrid.agent_event_pipeline.source.local_process.open_byte_pipe",
+    description: "LocalProcessSandboxProvider — real subprocess spawn (scenario 9, env-gated)",
+    optional: true,
+  },
 ] as const
 
 interface Coverage {
   readonly id: string
   readonly description: string
   readonly count: number
-  readonly status: "pass" | "fail"
+  readonly optional: boolean
+  readonly status: "pass" | "fail" | "skipped"
 }
 
 const findLatestRun = (runsRoot: string): string => {
@@ -181,16 +188,24 @@ const main = (): void => {
 
   const coverage: ReadonlyArray<Coverage> = SEAMS.map((seam) => {
     const matched = spans.filter((s) => seam.match(s.name))
+    const optional = "optional" in seam ? Boolean(seam.optional) : false
+    const status: "pass" | "fail" | "skipped" = matched.length > 0
+      ? "pass"
+      : optional
+        ? "skipped"
+        : "fail"
     return {
       id: seam.id,
       description: seam.description,
       count: matched.length,
-      status: matched.length > 0 ? "pass" : "fail",
+      optional,
+      status,
     }
   })
 
   const passing = coverage.filter((c) => c.status === "pass").length
   const failing = coverage.filter((c) => c.status === "fail").length
+  const skipped = coverage.filter((c) => c.status === "skipped").length
 
   const summary = {
     runDir,
@@ -206,11 +221,11 @@ const main = (): void => {
 
   console.log(`OTel seam coverage — ${runDir}`)
   console.log(`Total spans in trace: ${spans.length}`)
-  console.log(`Seams: ${passing}/${SEAMS.length} covered`)
+  console.log(`Seams: ${passing}/${SEAMS.length} covered${skipped > 0 ? ` (${skipped} optional skipped)` : ""}`)
   console.log("")
   for (const c of coverage) {
-    const mark = c.status === "pass" ? "✓" : "✗"
-    console.log(`  ${mark} ${c.id.padEnd(30)} ${String(c.count).padStart(4)}× — ${c.description}`)
+    const mark = c.status === "pass" ? "✓" : c.status === "skipped" ? "⊘" : "✗"
+    console.log(`  ${mark} ${c.id.padEnd(38)} ${String(c.count).padStart(4)}× — ${c.description}`)
   }
   console.log("")
   console.log(`Wrote: ${outputPath}`)

@@ -54,8 +54,9 @@ Every place where one architectural tier hands off to another is a seam. The uni
 | `codec.acp.prompt` | `firegrid.agent_event_pipeline.acp.prompt` | Real ACP codec: connection.prompt fired |
 | `codec.acp.session_update` | `firegrid.agent_event_pipeline.acp.session_update` | Real ACP codec: incoming agent updates (tool_call etc.) |
 | `codec.acp.exit` | `firegrid.agent_event_pipeline.acp.exit` | Real ACP codec: clean teardown |
+| `sandbox.local_process.open_byte_pipe` ⊘ | `firegrid.agent_event_pipeline.source.local_process.open_byte_pipe` | `LocalProcessSandboxProvider`: real subprocess spawned (optional — env-gated scenario 9) |
 
-A run that misses any of these has a wiring regression — the architecture is no longer end-to-end. The check is hard.
+A run that misses any non-optional seam has a wiring regression — the architecture is no longer end-to-end. The optional `sandbox.local_process.open_byte_pipe` seam only fires when `FIREGRID_UKV_RUN_ACP_LIVE=1` is set; default runs report it as skipped (`⊘`).
 
 ## Sample coverage (from a real sim run)
 
