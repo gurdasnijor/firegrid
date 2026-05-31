@@ -177,19 +177,13 @@ No synthesis of `RuntimeInputIntentRow`. No `inserted: boolean` decision. No `in
 
 ## Migration strategy
 
-The collapse touches `@firegrid/protocol/channels/*` (response schemas), `@firegrid/protocol/launch/host-control-request.ts` (binding factories), and any consumer reading the now-removed fields. Sequenced for safe rollout:
+This is a greenfield codebase. Historical phased rollouts in this repo have consistently bogged down on parallel-path observability and "we'll deprecate later" Tags that linger as load-bearing surfaces for months. The aggressive shape is preferred: build the target architecture directly in the simulation, verify the desired properties through OTel trace analysis, then delete the historical baggage in one cut.
 
-**Phase 1 — Response shape decoupling.** Introduce `DurableEventChannel<P>` as a sibling to `EgressChannel<S, Receipt>` in `@firegrid/protocol/channels/core.ts`. Existing channels stay untouched. The new shape returns `void` or `{ offset, deduplicated }`. Document the durable-streams alignment.
+**Phase 1 — Build the target in `unified-kernel-validation`.** Land `DurableEventChannel<P>` and the supporting types in the simulation folder (self-contained, no production protocol-package changes yet). Rebind every standard Firegrid channel Tag (`HostPromptChannel`, `HostPermissionRespondChannel`, `HostSessionsStartChannel`, etc.) to the unified shape, backed by signal-based subscribers. The simulation's driver becomes pure `Firegrid` client SDK usage. The simulation's `gate` command reads `trace.jsonl` and asserts the desired properties — signal subscriber bodies executed, no `inputIntents` rows touched on the input-delivery path, no `RuntimeStartRequest` rows on session start, idempotency observed at the wire (Producer-Seq), per-execution event streams replaced the monolithic table families. The simulation passes if and only if the target architecture's properties hold under realistic load.
 
-**Phase 2 — Per-channel migration.** For each of the seven shapes above, introduce a sibling Tag (`HostPromptDurableEventChannel`, etc.) using `DurableEventChannel<PayloadSchema>`. Both old and new Tags coexist; consumers opt into the new shape. Old Tags marked deprecated.
+**Phase 2 — Cutover.** When phase 1's trace-driven validation is green and stable, the simulation's bindings move into `@firegrid/protocol/channels/core.ts` (as the new `DurableEventChannel<P>` plus rebound channel Tags), and the Shape C subscriber loop, `RuntimeControlPlaneTable.inputIntents` / `permissionRequests` / `startRequests` row families, and the bespoke response schemas (`RuntimeInputIntentRow`, `PermissionRespondOutput`, `RuntimeStartRequestAck`) are deleted in one cut. The `contexts` family (a derivation index) stays. Migration beads (`tf-c9r9`, `tf-vrz6`, `tf-jpcg`, `tf-vfq9`) become a single coordinated PR rather than four sequential ones. There is no compat shim, no deprecated Tag, no dual-route observability. The simulation's traces are the proof that the target works; production rip-and-replace is a mechanical move.
 
-**Phase 3 — Signal-based bindings land.** The new Tags' Live Layers use signal-based subscribers (the simulation's pattern). The old Tags continue to route through Shape C / `RuntimeControlPlaneTable.inputIntents`. Production runs both paths in parallel; observability captures which path each call took.
-
-**Phase 4 — Consumer migration.** Update `firegrid.prompt`, `firegrid.permissions.respond`, etc. to dispatch through the new Tags. Old Tags become unreachable from the public client surface.
-
-**Phase 5 — Remove the old Tags + Shape C subscribers + the monolithic table families.** Delete `inputIntents`, `permissionRequests`, `startRequests` from `RuntimeControlPlaneTable`. The `contexts` family stays (it's a small derivation index, not an event log). Per-execution event streams replace the per-row-family storage.
-
-Each phase is independently shippable. Phases 1–3 establish the unified abstraction in parallel with the existing system; phase 4 flips production to the new path; phase 5 is cleanup.
+The phase 1 deliverable is therefore both the rebuild base AND the validation harness — when the trace gate is green, the production cut is a code move, not an architectural risk.
 
 ## Strategic claim
 
