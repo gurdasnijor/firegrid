@@ -13,9 +13,9 @@ Everything `@firegrid/runtime` does is built from three durable-execution primit
 
 ```mermaid
 graph LR
-    W[Workflow.make<br/>+ Activity.make<br/><i>@effect/workflow</i>]
-    T[DurableTable<br/><i>effect-durable-operators</i>]
-    S[Signal<br/><i>@firegrid/runtime/unified</i>]
+    W["Workflow.make + Activity.make<br/>(@effect/workflow)"]
+    T["DurableTable<br/>(effect-durable-operators)"]
+    S["Signal<br/>(@firegrid/runtime/unified)"]
 
     W -.->|memoizes side effects| Out([outbound seam])
     S -.->|wakes parked bodies| In([inbound seam])
@@ -44,18 +44,18 @@ graph TB
         direction TB
         E1[events] --> CA1[capabilities]
         CA1 --> T1[tables]
-        T1 --> S1[sources/producers/transforms/channels]
+        T1 --> S1["sources / producers / transforms / channels"]
         S1 --> SU1[subscribers]
         SU1 --> CO1[composition]
     end
 
     subgraph After["AFTER — unified architecture"]
         direction TB
-        E2[events<br/><i>schema only</i>]
-        T2[tables<br/><i>output observation</i>]
-        SR2[sources<br/><i>codecs + sandbox</i>]
-        CH2[channels<br/><i>router + Live layers</i>]
-        U2[<b>unified</b><br/><i>signal + workflow bodies +<br/>channel bindings</i>]
+        E2["events<br/>(schema only)"]
+        T2["tables<br/>(output observation)"]
+        SR2["sources<br/>(codecs + sandbox)"]
+        CH2["channels<br/>(router + Live layers)"]
+        U2["unified<br/>signal + workflow bodies +<br/>channel bindings"]
         E2 --> U2
         T2 --> U2
         SR2 -.adapter.-> U2
@@ -83,16 +83,16 @@ sequenceDiagram
     autonumber
     participant App as Driver / App
     participant FG as Firegrid client SDK
-    participant CH as HostPromptChannel<br/>(DurableEventChannel<P>)
+    participant CH as HostPromptChannel
     participant SIG as SignalTable
-    participant WF as RuntimeContextSessionWorkflow<br/>(parked)
+    participant WF as Session workflow (parked)
     participant ENG as WorkflowEngine
-    participant ADP as Codec adapter<br/><i>(production)</i>
+    participant ADP as Codec adapter
     participant AG as Agent process
 
-    App->>FG: firegrid.prompt({contextId, payload})
+    App->>FG: firegrid.prompt(contextId, payload)
     FG->>CH: binding.append(payload)
-    CH->>SIG: insertOrGet({key, executionId, payloadJson})
+    CH->>SIG: insertOrGet signal row
     CH->>ENG: workflow.resume(executionId)
     CH-->>FG: EventOffset
     FG-->>App: EventOffset
@@ -100,12 +100,12 @@ sequenceDiagram
     ENG->>WF: wake body
     WF->>SIG: readSignalsFor(executionId)
     SIG-->>WF: ordered signal rows
-    WF->>WF: decode payload → AgentInputEvent
-    WF->>ADP: Activity.make({execute: adapter.send(...)})
+    WF->>WF: decode payload to AgentInputEvent
+    WF->>ADP: Activity.make wrapping adapter.send
     ADP->>AG: write to stdin (codec-specific)
     AG-->>ADP: ack
     ADP-->>WF: void
-    WF->>WF: cursor++ ; loop or suspend
+    WF->>WF: cursor++, loop or suspend
 ```
 
 Three things to notice:
@@ -122,11 +122,11 @@ The reason the architecture is small is that the engine and the signal primitive
 graph TB
     subgraph Crash["Scenario: host crashes between input N and input N+1"]
         direction LR
-        C1[Signal table:<br/>N rows committed] -->|host restart| C2[Engine reconstruction]
-        C2 --> C3[recoverPendingSignals<br/>walks signal table]
-        C3 --> C4[For each unique executionId:<br/>workflow.resume]
+        C1["Signal table:<br/>N rows committed"] -->|host restart| C2[Engine reconstruction]
+        C2 --> C3["recoverPendingSignals<br/>walks signal table"]
+        C3 --> C4["For each unique executionId:<br/>workflow.resume"]
         C4 --> C5[Body wakes, re-reads signals]
-        C5 --> C6[Activities 1..N already memoized<br/>→ skip, no re-spawn, no re-send]
+        C5 --> C6["Activities 1..N already memoized<br/>skip — no re-spawn, no re-send"]
         C6 --> C7[Suspend, await signal N+1]
     end
 
@@ -150,9 +150,9 @@ This is what a user assembling their own production host has to provide. It's th
 graph TB
     subgraph App["User-provided"]
         direction TB
-        UADP[Codec adapter Live<br/><i>startOrAttach + send</i>]
-        UPOL[Policy layers<br/><i>permission, env, sandbox</i>]
-        UCFG[Config<br/><i>baseUrl, namespace</i>]
+        UADP["Codec adapter Live<br/>(startOrAttach + send)"]
+        UPOL["Policy layers<br/>(permission, env, sandbox)"]
+        UCFG["Config<br/>(baseUrl, namespace)"]
     end
 
     subgraph Workflows["Workflow Layers"]
@@ -165,7 +165,7 @@ graph TB
         W6[PeerEventObserverWorkflow.toLayer]
     end
 
-    subgraph Substrate["Substrate Layers (from @firegrid/runtime)"]
+    subgraph Substrate["Substrate Layers (from firegrid/runtime)"]
         direction TB
         SUB1[WorkflowEngine + WorkflowEngineTable]
         SUB2[SignalTable.layer]
