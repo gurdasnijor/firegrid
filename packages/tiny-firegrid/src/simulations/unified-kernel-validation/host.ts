@@ -27,6 +27,10 @@ import {
   webhookBadHmacScenario,
   type WebhookBadHmacResult,
 } from "./scenarios.ts"
+import {
+  endToEndViaFiregridClient,
+  type FiregridClientE2EResult,
+} from "./firegrid-client-scenarios.ts"
 import type { GenerationUrls } from "./substrate.ts"
 
 export interface UnifiedKernelRuntime {
@@ -35,6 +39,7 @@ export interface UnifiedKernelRuntime {
   readonly runToolIdempotency: Effect.Effect<ToolIdempotencyResult, unknown>
   readonly runWebhookBadHmac: Effect.Effect<WebhookBadHmacResult, unknown>
   readonly runBoundedOwnership: Effect.Effect<BoundedOwnershipResult, unknown>
+  readonly runEndToEndViaFiregridClient: Effect.Effect<FiregridClientE2EResult, unknown>
 }
 
 const runtimeLatch = (() => {
@@ -73,6 +78,10 @@ export const unifiedKernelValidationHost = (
         runToolIdempotency: toolIdempotencyScenario(urlsFor(env, "tool-idempotency")),
         runWebhookBadHmac: webhookBadHmacScenario(urlsFor(env, "webhook-bad-hmac")),
         runBoundedOwnership: boundedOwnershipScenario(urlsFor(env, "bounded-ownership")),
+        runEndToEndViaFiregridClient: endToEndViaFiregridClient(
+          urlsFor(env, "firegrid-client-e2e"),
+          `${env.namespace}.ukv-fg.${env.runId}`,
+        ),
       })
     }),
   ) as unknown as Layer.Layer<FiregridHost, unknown, never>

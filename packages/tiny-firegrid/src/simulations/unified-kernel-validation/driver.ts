@@ -87,6 +87,30 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
       bounded,
     )
 
+    // ── Scenario 6 — end-to-end via Firegrid client SDK ─────────
+    // Production-shaped driver: imports `Firegrid` from @firegrid/
+    // client-sdk and dispatches through `firegrid.channels.call/send`
+    // against channels registered via FiregridConfig.channels. The
+    // unified signal-based subscribers serve those channels — same
+    // dispatch flow a real production consumer would use.
+    const fgClient = yield* runtime.runEndToEndViaFiregridClient
+    yield* assertInvariant(
+      fgClient.sessionTerminal &&
+        fgClient.sessionInputsConsumed >= 3 &&
+        fgClient.toolInvocations === 1 &&
+        fgClient.toolResultJson.length > 0 &&
+        fgClient.permissionDecision === "allow" &&
+        fgClient.scheduleFiredAt.length > 0 &&
+        fgClient.webhookOffset.length > 0 &&
+        fgClient.webhookObservationEventType === "Issue.create" &&
+        fgClient.peerOffset.length > 0 &&
+        fgClient.peerObservationName === "plan.ready" &&
+        fgClient.recorderSpawns === 1 &&
+        fgClient.recorderSends >= 3,
+      "Firegrid client e2e: production-shaped driver via firegrid.channels.call/send did not settle every capability",
+      fgClient,
+    )
+
     // ── Structural collapse invariants ──────────────────────────
     const structural = runStructuralChecks()
     for (const check of structural.checks) {
@@ -99,7 +123,7 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
 
     const verdict: UnifiedKernelVerdict = {
       verdict: "GREEN",
-      scenarios: 5,
+      scenarios: 6,
       structuralChecks: structural.checks.length,
     }
 
@@ -116,8 +140,9 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
         "  Three primitives — Workflow + DurableTable + Signal — are sufficient",
         "  to deliver the entire product surface, exposed as channels.",
         "",
-        "  Channel-driven scenarios (5/5 green):",
-        `    end-to-end .............. session=${e2e.sessionTerminal} inputs=${e2e.sessionInputsConsumed} tool=${e2e.toolInvocations}× perm=${e2e.permissionDecision} schedule=${e2e.scheduleFiredAt.length > 0} webhook=${e2e.webhookObservationEventType}@${e2e.webhookOffset} peer=${e2e.peerObservationName}@${e2e.peerOffset}`,
+        "  Channel-driven scenarios (6/6 green):",
+        `    end-to-end (router) ...... session=${e2e.sessionTerminal} inputs=${e2e.sessionInputsConsumed} tool=${e2e.toolInvocations}× perm=${e2e.permissionDecision} schedule=${e2e.scheduleFiredAt.length > 0}`,
+        `    end-to-end (Firegrid SDK) session=${fgClient.sessionTerminal} inputs=${fgClient.sessionInputsConsumed} tool=${fgClient.toolInvocations}× perm=${fgClient.permissionDecision} webhook=${fgClient.webhookObservationEventType} peer=${fgClient.peerObservationName}`,
         `    crash recovery .......... gen2Terminal=${recovery.gen2ReachedTerminal} gen2Inputs=${recovery.gen2InputsConsumed}`,
         `    tool idempotency ........ invocations=${idempotency.executorInvocations} match=${idempotency.bothResultsMatch}`,
         `    webhook bad HMAC ........ rejected=${badHmac.rejected} op=${badHmac.errorOp ?? "-"}`,

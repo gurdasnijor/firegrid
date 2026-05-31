@@ -213,7 +213,7 @@ export class UnifiedChannels extends Context.Tag(
 
 // ── Live bindings ───────────────────────────────────────────────────────────
 
-const makeChannels = (
+export const makeChannels = (
   signals: SignalTableService,
   unified: UnifiedTableService,
   engine: WorkflowEngine.WorkflowEngine["Type"],

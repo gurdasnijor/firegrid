@@ -237,6 +237,32 @@ export const runStructuralChecks = (): StructuralCheckResult => {
         return offenses
       })(),
     },
+    {
+      // The simulation includes a production-shaped scenario driven
+      // from the standard Firegrid client SDK — `firegrid.channels.call/send`
+      // against channels registered via `FiregridConfig.channels`.
+      // This is the surface a real production consumer uses; the
+      // scenario proves the unified signal-based subscribers serve
+      // it correctly. Removing it would lose the "drop-in via Firegrid
+      // SDK" proof point.
+      id: "I16-firegrid-client-driver-present",
+      title: "production-shaped driver uses `firegrid.channels.call/send` from `@firegrid/client-sdk`",
+      offenders: (() => {
+        const fgFile = files.find((f) => /firegrid-client-scenarios\.ts$/.test(f.path))
+        if (fgFile === undefined) return ["firegrid-client-scenarios.ts missing"]
+        const offenses: Array<string> = []
+        if (!/from "@firegrid\/client-sdk\/firegrid"/.test(fgFile.text)) {
+          offenses.push("firegrid-client-scenarios.ts: should import from @firegrid/client-sdk/firegrid")
+        }
+        if (!/firegrid\.channels\.(call|send)\(/.test(fgFile.text)) {
+          offenses.push("firegrid-client-scenarios.ts: driver should use firegrid.channels.call/send")
+        }
+        if (!/FiregridConfig[\s\S]{0,200}channels[,:}\s]/.test(fgFile.text)) {
+          offenses.push("firegrid-client-scenarios.ts: channels should register via FiregridConfig.channels")
+        }
+        return offenses
+      })(),
+    },
   ]
 
   let passed = 0
