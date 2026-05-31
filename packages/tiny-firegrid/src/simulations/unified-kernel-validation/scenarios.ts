@@ -33,7 +33,7 @@ import {
   HostPlaneChannelRouter,
   type RuntimeChannelRouterService,
 } from "@firegrid/runtime/channels"
-import { Cause, Effect, Option, Ref, Schema } from "effect"
+import { Cause, Effect, Layer, Option, Ref, Schema } from "effect"
 import {
   HostPlaneChannelRouterLive,
   type PermissionHandle,
@@ -54,9 +54,10 @@ import {
   ToolDispatchWorkflow,
 } from "./subscribers/permission-and-tool.ts"
 import {
-  buildRuntimeContextSessionLayer,
-  makeRuntimeContextRecorder,
-  type RuntimeContextRecorder,
+  makeRecorderAdapter,
+  type RecorderAdapter,
+  RuntimeContextSessionAdapter,
+  RuntimeContextSessionWorkflowLayer,
   RuntimeContextSessionWorkflow,
 } from "./subscribers/runtime-context.ts"
 import {
@@ -134,12 +135,16 @@ const makeDispatchHelpers = (router: RuntimeChannelRouterService): DispatchHelpe
 const runRouterScenario = <A>(
   urls: GenerationUrls,
   body: (env: DispatchHelpers & {
-    readonly recorder: RuntimeContextRecorder
+    readonly recorder: RecorderAdapter
     readonly toolExecutor: ToolExecutor
   }) => Effect.Effect<A, unknown, HostPlaneChannelRouter | SignalTable>,
 ): Effect.Effect<A, unknown> =>
   Effect.gen(function*() {
-    const recorder = yield* makeRuntimeContextRecorder()
+    const recorder = yield* makeRecorderAdapter()
+    const adapterLayer = Layer.succeed(
+      RuntimeContextSessionAdapter,
+      recorder.service,
+    )
     const toolExecutor = yield* makeToolExecutor(
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       (p) => JSON.stringify({ tool: p.toolName, echoed: JSON.parse(p.inputJson) }),
@@ -148,7 +153,7 @@ const runRouterScenario = <A>(
       {
         urls,
         workflowLayers: [
-          buildRuntimeContextSessionLayer(recorder),
+          RuntimeContextSessionWorkflowLayer.pipe(Layer.provide(adapterLayer)),
           buildPermissionRoundtripLayer(),
           buildToolDispatchLayer(toolExecutor),
           buildScheduledPromptLayer(),
@@ -206,6 +211,7 @@ export interface EndToEndResult {
   readonly toolInvocations: number
   readonly recorderSpawns: number
   readonly recorderSends: number
+  readonly recorderDeregistrations: number
 }
 
 export const endToEndScenario = (
@@ -226,12 +232,12 @@ export const endToEndScenario = (
       const toolUseId = "tu-1"
       const toolResult = yield* call<{ readonly toolUseId: string; readonly resultJson: string }>(
         T.toolDispatch,
-        { contextId, toolUseId, toolName: "echo", inputJson: JSON.stringify({ word: "hi" }) },
+        { contextId, attempt, toolUseId, toolName: "echo", inputJson: JSON.stringify({ word: "hi" }) },
       )
       const toolInvocations = yield* Ref.get(toolExecutor.state.invocationCount)
 
       const permission = yield* call<PermissionHandle>(T.permissionOpen, {
-        contextId, permissionRequestId: "perm-1", toolUseId,
+        contextId, attempt, permissionRequestId: "perm-1", toolUseId,
       })
       yield* Effect.sleep("100 millis")
       const requestRow = yield* call<{ readonly toolUseId: string } | null>(
@@ -246,12 +252,9 @@ export const endToEndScenario = (
         permission,
       )
 
-      yield* send<EventOffset>(T.sessionSendInput, {
-        session, inputId: "perm-response-1", kind: "permission-response",
-        payloadJson: JSON.stringify({
-          permissionRequestId: "perm-1", decision: decision.decision,
-        }),
-      })
+      // Phase 3: PermissionRoundtripWorkflow + ToolDispatchWorkflow now
+      // automatically relay their results back to the session as input
+      // signals. No driver-side send required.
 
       const schedResult = yield* call<{ readonly scheduleId: string; readonly firedAt: string }>(
         T.schedulePrompt,
@@ -334,6 +337,7 @@ export const endToEndScenario = (
         toolInvocations,
         recorderSpawns: recorderSnapshot.spawns.length,
         recorderSends: recorderSnapshot.sends.length,
+        recorderDeregistrations: recorderSnapshot.deregistrations.length,
       } satisfies EndToEndResult
     }))
 
@@ -400,6 +404,7 @@ export const toolIdempotencyScenario = (
     Effect.gen(function*() {
       const payload = {
         contextId: "ctx-tool-idem",
+        attempt: 1,
         toolUseId: "tool-once-1",
         toolName: "echo",
         inputJson: JSON.stringify({ a: 1 }),

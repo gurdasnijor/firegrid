@@ -281,6 +281,34 @@ export const runStructuralChecks = (): StructuralCheckResult => {
         return offenses
       })(),
     },
+    {
+      // Per SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING §A acceptance #4: the
+      // session workflow body MUST consume `RuntimeContextSessionAdapter`
+      // via Context.Tag, not via closure-captured argument. This is the
+      // architectural commitment that lets production swap in a real
+      // codec adapter without rebuilding the workflow Layer. Regression:
+      // anyone re-introducing `buildRuntimeContextSessionLayer(recorder)`
+      // or a `(recorder: X) => Workflow.toLayer(body(recorder))` factory
+      // breaks the contract.
+      id: "I17-session-body-consumes-adapter-via-tag",
+      title: "session workflow body consumes RuntimeContextSessionAdapter via Context.Tag, not closure",
+      offenders: (() => {
+        const sessionBody = files.find((f) =>
+          /unified\/subscribers\/runtime-context\.ts$/.test(f.path),
+        )
+        if (sessionBody === undefined) return ["runtime/unified/subscribers/runtime-context.ts missing"]
+        const offenses: Array<string> = []
+        // Must yield* the Tag inside the body (proves Context-consumption).
+        if (!/yield\*\s+RuntimeContextSessionAdapter/.test(sessionBody.text)) {
+          offenses.push("runtime-context.ts: body should `yield* RuntimeContextSessionAdapter` (Tag-based consumption)")
+        }
+        // Must NOT export a recorder-taking layer builder (regression to closure pattern).
+        if (/buildRuntimeContextSessionLayer\s*=\s*\(\s*\w+\s*:\s*RuntimeContextRecorder/.test(sessionBody.text)) {
+          offenses.push("runtime-context.ts: closure-built layer builder reintroduced — should be static `RuntimeContextSessionWorkflowLayer`")
+        }
+        return offenses
+      })(),
+    },
   ]
 
   let passed = 0

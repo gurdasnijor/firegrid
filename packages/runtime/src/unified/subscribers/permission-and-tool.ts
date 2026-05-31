@@ -12,20 +12,43 @@
  * execution table records each body's final result. The `permissions`
  * row holds only what the UI needs to render an open request — no
  * lifecycle status flag.
+ *
+ * Phase 3 feedback loop (SDD §D / §E): each workflow ends with a
+ * terminal `Activity.make` that `sendSignal`s the result back to the
+ * originating session workflow as a `SessionInputPayload`. This bakes
+ * the relay into the workflow itself — no driver-side send required.
  */
 
 import {
   Activity,
   Workflow,
+  WorkflowEngine,
 } from "@effect/workflow"
 import { Effect, Ref, Schema } from "effect"
-import { awaitSignal, type SignalTable } from "../signal.ts"
+import { awaitSignal, sendSignal, SignalTable } from "../signal.ts"
 import { UnifiedTable, permissionKey } from "../tables.ts"
+import {
+  RuntimeContextSessionWorkflow,
+} from "./runtime-context.ts"
+import {
+  type SessionInputPayload,
+} from "../adapter.ts"
+
+// ── Shared: session relay payload ───────────────────────────────────────────
+//
+// Both sibling workflows target a specific (contextId, attempt) session
+// execution. Carried in the workflow payload so the body can compute the
+// session executionId and relay its result via `recordSignal`.
+const SessionTargetSchema = Schema.Struct({
+  contextId: Schema.String,
+  attempt: Schema.Number,
+})
 
 // ── PermissionRoundtripWorkflow ─────────────────────────────────────────────
 
 export const PermissionRoundtripPayloadSchema = Schema.Struct({
   contextId: Schema.String,
+  attempt: Schema.Number,
   permissionRequestId: Schema.String,
   toolUseId: Schema.String,
 })
@@ -57,6 +80,7 @@ export type PermissionDecisionPayload = Schema.Schema.Type<typeof PermissionDeci
 const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
   Effect.gen(function*() {
     const table = yield* UnifiedTable
+    const signals = yield* SignalTable
     const key = permissionKey(payload.contextId, payload.permissionRequestId)
 
     // Activity-memoized: record the open-request row so the host UI
@@ -79,6 +103,34 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
       name: PERMISSION_DECISION_SIGNAL,
     })
 
+    // Feedback signal: deliver the decision back to the originating
+    // session workflow as a `permission-response` input. Activity-memoized;
+    // runs exactly once even across replay. Per SDD §E.
+    const sessionExecutionId = yield* RuntimeContextSessionWorkflow.executionId({
+      contextId: payload.contextId,
+      attempt: payload.attempt,
+    })
+    const relayPayload: SessionInputPayload = {
+      kind: "permission-response",
+      payloadJson: JSON.stringify({
+        permissionRequestId: payload.permissionRequestId,
+        decision: decisionPayload.decision,
+      }),
+    }
+    yield* Activity.make({
+      name: `unified.permission.relay/${key}`,
+      success: Schema.Void,
+      execute: sendSignal({
+        signals,
+        workflow: RuntimeContextSessionWorkflow,
+        executionId: sessionExecutionId,
+        name: `permission-response:${payload.permissionRequestId}`,
+        write: () => Effect.void,
+        value: relayPayload,
+        serializeValue: (v) => JSON.stringify(v),
+      }).pipe(Effect.orDie, Effect.asVoid),
+    })
+
     return {
       permissionRequestId: payload.permissionRequestId,
       decision: decisionPayload.decision,
@@ -86,7 +138,7 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
   }) as Effect.Effect<
     Schema.Schema.Type<typeof PermissionRoundtripResultSchema>,
     never,
-    SignalTable | UnifiedTable
+    SignalTable | UnifiedTable | WorkflowEngine.WorkflowEngine
   >
 
 export const buildPermissionRoundtripLayer = () =>
@@ -99,9 +151,13 @@ export const buildPermissionRoundtripLayer = () =>
 // No `toolResults` table — the engine activity record IS the durable
 // result, and the workflow execution's `finalResult` is the durable
 // return value.
+//
+// Phase 3 (SDD §D): after executing the tool, relay the result back to
+// the originating session workflow as a `tool-result` input signal.
 
 export const ToolDispatchPayloadSchema = Schema.Struct({
   contextId: Schema.String,
+  attempt: Schema.Number,
   toolUseId: Schema.String,
   toolName: Schema.String,
   inputJson: Schema.String,
@@ -150,16 +206,46 @@ export const makeToolExecutor = (
 const toolDispatchBody = (executor: ToolExecutor) =>
   (payload: ToolDispatchPayload) =>
     Effect.gen(function*() {
+      const signals = yield* SignalTable
       const resultJson = yield* Activity.make({
         name: `unified.tool.execute/${payload.toolUseId}`,
         success: Schema.String,
         execute: executor.execute(payload),
       })
+
+      // Feedback signal: deliver tool result back to the originating
+      // session workflow as a `tool-result` input. Activity-memoized;
+      // runs exactly once. Per SDD §D.
+      const sessionExecutionId = yield* RuntimeContextSessionWorkflow.executionId({
+        contextId: payload.contextId,
+        attempt: payload.attempt,
+      })
+      const relayPayload: SessionInputPayload = {
+        kind: "tool-result",
+        payloadJson: JSON.stringify({
+          toolUseId: payload.toolUseId,
+          resultJson,
+        }),
+      }
+      yield* Activity.make({
+        name: `unified.tool.relay/${payload.toolUseId}`,
+        success: Schema.Void,
+        execute: sendSignal({
+          signals,
+          workflow: RuntimeContextSessionWorkflow,
+          executionId: sessionExecutionId,
+          name: `tool-result:${payload.toolUseId}`,
+          write: () => Effect.void,
+          value: relayPayload,
+          serializeValue: (v) => JSON.stringify(v),
+        }).pipe(Effect.orDie, Effect.asVoid),
+      })
+
       return { toolUseId: payload.toolUseId, resultJson }
     }) as Effect.Effect<
       Schema.Schema.Type<typeof ToolDispatchResultSchema>,
       never,
-      never
+      SignalTable | WorkflowEngine.WorkflowEngine
     >
 
 export const buildToolDispatchLayer = (executor: ToolExecutor) =>

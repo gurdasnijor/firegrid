@@ -86,6 +86,7 @@ export const SendInputRequestSchema = Schema.Struct({
 
 export const PermissionHandleSchema = Schema.Struct({
   contextId: Schema.String,
+  attempt: Schema.Number,
   permissionRequestId: Schema.String,
   toolUseId: Schema.String,
   executionId: Schema.String,
@@ -94,6 +95,7 @@ export type PermissionHandle = Schema.Schema.Type<typeof PermissionHandleSchema>
 
 export const PermissionOpenRequestSchema = Schema.Struct({
   contextId: Schema.String,
+  attempt: Schema.Number,
   permissionRequestId: Schema.String,
   toolUseId: Schema.String,
 })
@@ -287,6 +289,7 @@ export const makeChannels = (
           yield* Effect.fork(PermissionRoundtripWorkflow.execute(payload))
           return {
             contextId: payload.contextId,
+            attempt: payload.attempt,
             permissionRequestId: payload.permissionRequestId,
             toolUseId: payload.toolUseId,
             executionId,
@@ -342,6 +345,7 @@ export const makeChannels = (
       call: (handle) =>
         lower(PermissionRoundtripWorkflow.execute({
           contextId: handle.contextId,
+          attempt: handle.attempt,
           permissionRequestId: handle.permissionRequestId,
           toolUseId: handle.toolUseId,
         })).pipe(Effect.orDie),

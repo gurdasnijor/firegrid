@@ -50,7 +50,11 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
         !e2e.peerDeduplicated &&
         e2e.peerObservationName === "plan.ready" &&
         e2e.recorderSpawns === 1 &&
-        e2e.recorderSends >= 3,
+        // Adapter sees prompt + permission-response. Terminal does NOT
+        // produce an adapter.send (it triggers deregister, recorded
+        // separately). Per SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING §A.
+        e2e.recorderSends >= 2 &&
+        e2e.recorderDeregistrations >= 1,
       "end-to-end: product surface did not settle every capability through the channels",
       e2e,
     )
@@ -106,7 +110,8 @@ export const unifiedKernelValidationDriver: Effect.Effect<UnifiedKernelVerdict, 
         fgClient.peerOffset.length > 0 &&
         fgClient.peerObservationName === "plan.ready" &&
         fgClient.recorderSpawns === 1 &&
-        fgClient.recorderSends >= 3,
+        fgClient.recorderSends >= 2 &&
+        fgClient.recorderDeregistrations >= 1,
       "Firegrid client e2e: production-shaped driver via firegrid.channels.call/send did not settle every capability",
       fgClient,
     )

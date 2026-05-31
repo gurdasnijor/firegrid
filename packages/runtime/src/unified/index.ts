@@ -28,7 +28,10 @@
 
 export * from "./signal.ts"
 export * from "./tables.ts"
+export * from "./adapter.ts"
 export * from "./subscribers/runtime-context.ts"
 export * from "./subscribers/permission-and-tool.ts"
 export * from "./subscribers/scheduled-webhook-peer.ts"
 export * from "./channel-bindings.ts"
+export * from "./observers.ts"
+export * from "./host.ts"

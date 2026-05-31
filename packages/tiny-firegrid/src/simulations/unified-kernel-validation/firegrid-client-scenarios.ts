@@ -48,9 +48,10 @@ import {
   ToolDispatchWorkflow,
 } from "./subscribers/permission-and-tool.ts"
 import {
-  buildRuntimeContextSessionLayer,
-  makeRuntimeContextRecorder,
-  type RuntimeContextRecorder,
+  makeRecorderAdapter,
+  type RecorderAdapter,
+  RuntimeContextSessionAdapter,
+  RuntimeContextSessionWorkflowLayer,
   RuntimeContextSessionWorkflow,
 } from "./subscribers/runtime-context.ts"
 import {
@@ -177,6 +178,7 @@ export interface FiregridClientE2EResult {
   readonly toolInvocations: number
   readonly recorderSpawns: number
   readonly recorderSends: number
+  readonly recorderDeregistrations: number
 }
 
 export const endToEndViaFiregridClient = (
@@ -184,7 +186,11 @@ export const endToEndViaFiregridClient = (
   fgNamespace: string,
 ): Effect.Effect<FiregridClientE2EResult, unknown> =>
   Effect.gen(function*() {
-    const recorder = yield* makeRuntimeContextRecorder()
+    const recorder = yield* makeRecorderAdapter()
+    const adapterLayer = Layer.succeed(
+      RuntimeContextSessionAdapter,
+      recorder.service,
+    )
     const toolExecutor: ToolExecutor = yield* makeToolExecutor(
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       (p) => JSON.stringify({ tool: p.toolName, echoed: JSON.parse(p.inputJson) }),
@@ -193,7 +199,7 @@ export const endToEndViaFiregridClient = (
       {
         urls,
         workflowLayers: [
-          buildRuntimeContextSessionLayer(recorder),
+          RuntimeContextSessionWorkflowLayer.pipe(Layer.provide(adapterLayer)),
           buildPermissionRoundtripLayer(),
           buildToolDispatchLayer(toolExecutor),
           buildScheduledPromptLayer(),
@@ -228,7 +234,7 @@ export const endToEndViaFiregridClient = (
  * SDK surface. Nothing simulation-specific in the dispatch flow.
  */
 const driverBody = (
-  recorder: RuntimeContextRecorder,
+  recorder: RecorderAdapter,
   toolExecutor: ToolExecutor,
 ): Effect.Effect<FiregridClientE2EResult, unknown, Firegrid> =>
   Effect.gen(function*() {
@@ -253,14 +259,14 @@ const driverBody = (
     const toolUseId = "tu-firegrid-1"
     const toolResult = (yield* firegrid.channels.call(
       T.toolDispatch,
-      { contextId, toolUseId, toolName: "echo", inputJson: JSON.stringify({ word: "hi" }) },
+      { contextId, attempt, toolUseId, toolName: "echo", inputJson: JSON.stringify({ word: "hi" }) },
     )) as { readonly toolUseId: string; readonly resultJson: string }
     const toolInvocations = yield* Ref.get(toolExecutor.state.invocationCount)
 
     // ── 4. Permission roundtrip ───────────────────────────────────
     const permission = (yield* firegrid.channels.call(
       T.permissionOpen,
-      { contextId, permissionRequestId: "perm-firegrid-1", toolUseId },
+      { contextId, attempt, permissionRequestId: "perm-firegrid-1", toolUseId },
     )) as PermissionHandle
     yield* Effect.sleep("100 millis")
     yield* firegrid.channels.send(T.permissionRespond, {
@@ -271,11 +277,9 @@ const driverBody = (
       permission,
     )) as { readonly permissionRequestId: string; readonly decision: "allow" | "deny" | "cancelled" }
 
-    // ── 5. Permission response feeds back to session ──────────────
-    yield* firegrid.channels.send(T.sessionSendInput, {
-      session, inputId: "perm-response-1", kind: "permission-response",
-      payloadJson: JSON.stringify({ permissionRequestId: "perm-firegrid-1", decision: decision.decision }),
-    })
+    // Phase 3: PermissionRoundtripWorkflow + ToolDispatchWorkflow now
+    // automatically relay their results back to the session as input
+    // signals. No driver-side send required.
 
     // ── 6. Scheduled prompt ───────────────────────────────────────
     const schedResult = (yield* firegrid.channels.call(
@@ -355,5 +359,6 @@ const driverBody = (
       toolInvocations,
       recorderSpawns: recorderSnapshot.spawns.length,
       recorderSends: recorderSnapshot.sends.length,
+      recorderDeregistrations: recorderSnapshot.deregistrations.length,
     } satisfies FiregridClientE2EResult
   })
