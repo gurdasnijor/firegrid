@@ -27,7 +27,7 @@
  * The body consumes `RuntimeContextSessionAdapter` via Context.Tag,
  * NOT via closure (per SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING §A).
  * Workflow Layer is static; users provide the adapter Live separately
- * (production: codec-wrapping Live; tests: `makeRecorderAdapter`).
+ * (production: codec-wrapping Live; tests: test-local adapter layers).
  */
 
 import {

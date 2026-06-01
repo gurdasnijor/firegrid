@@ -32,8 +32,8 @@
  *
  * Phase E deferred: production codec adapter Lives wrapping
  * `sources/codecs/{acp,stdio-jsonl}`. Today users provide their own
- * `RuntimeContextSessionAdapter` Live; `makeRecorderAdapter` is the
- * canonical test stand-in.
+ * `RuntimeContextSessionAdapter` Live; tests provide their own stand-ins
+ * from test helper modules.
  */
 
 import { IdGenerator } from "@effect/ai"
