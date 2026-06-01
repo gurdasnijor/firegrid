@@ -177,8 +177,7 @@ export const awaitSignal = <T>(options: {
         const parse = options.parse ?? ((s) => JSON.parse(s) as T)
         return parse(row.value.payloadJson)
       }
-      yield* WorkflowNamespace.suspend(instance)
-      return yield* Effect.never
+      return yield* WorkflowNamespace.suspend(instance)
     }
   }) as Effect.Effect<T, never, SignalTable | WorkflowEngine.WorkflowInstance>
 
