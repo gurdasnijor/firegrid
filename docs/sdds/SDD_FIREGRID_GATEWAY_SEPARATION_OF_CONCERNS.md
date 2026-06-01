@@ -59,7 +59,7 @@ Two concrete enabling moves carry the split:
 And one structural debt-payoff: **promote the orphaned `AcpStdioEdge` into `FiregridHost`**, wiring its three
 unimplemented methods (`cancel`/`authenticate`/`loadSession`) to durable kernel signals.
 
-This single refactor is the shared enabler for the acpx adapter fleet (§6), non-ACP agents (§6.5), the
+This single refactor is the shared enabler for the acpx adapter fleet (RFC §6), non-ACP agents (RFC §6.5), the
 local→remote handoff (§4.5), and the agent-face conformance gate (Direction B) — so its leverage is high, but
 it must not land before D1 resolves whether #765 is cutover-bound or a validation artifact.
 
@@ -192,6 +192,47 @@ fan-out semantics are tf-r06u.13's.
 creds**; the unbuilt path is hit only by an OAuth-required adapter. Design: a single shared `authenticate` flow
 (not per-dialect), reachable from the agent face — lowest priority of the three, no current forcing function.
 
+### 6.5 Read-side channels — snapshot ⟂ stream must not drift (one shared projection)
+
+The agent face's `loadSession`/`session/list`/`history` (and acpx/Zed parity) consume the gateway's **read-side**
+channels — and #765 exposes that read surface in **two channel shapes over the same durable tables**:
+
+| Channel (`channel-bindings.ts`) | Kind | Response/element | Backing rows |
+|---|---|---|---|
+| `HostContextsChannelLive` (`:439`) | `makeIngressChannel` (stream) | `RuntimeContextSchema` | `RuntimeControlPlaneTable.contexts` |
+| `SessionLifecycleChannelLive` (`:482`) | `makeIngressChannel` (stream, `forSession`) | `RuntimeRunEventSchema` | `RuntimeControlPlaneTable.runs` |
+| `HostContextSnapshotChannelLive` (`:448`) | `makeCallableChannel` (current-state) | `RuntimeContextSnapshotSchema` = `{contextId, runs, events, logs, agentOutputs}` | `RuntimeControlPlaneTable` (contexts+runs) **+** `RuntimeOutputTable` (events+logs+agentOutputs) |
+| `HostSessionSnapshotChannelLive` (`:465`) | `makeCallableChannel` | `RuntimeContextSnapshotSchema` | same |
+
+All four are stubbed today (empty arrays / `Stream.empty`, `:440-505`) — so the wiring contract is still open, and
+this is the moment to lock it.
+
+**DESIGN RULE (drift-free read-side — A2 / tf-r06u.6 wiring contract):** the snapshot CallableChannel MUST be
+computed by folding the **same projection** the ingress streams expose — **one shared projection function over the
+tables, never a parallel read path.** Concretely, the read-side wiring defines a single
+`project(contextId) → {runs, events, logs, agentOutputs}` over `RuntimeControlPlaneTable` + `RuntimeOutputTable`;
+the **ingress streams emit that projection incrementally** (row-by-row, cursored), and the **snapshot returns the
+fold of it** at the current frontier. There must be exactly one place that reads the tables.
+
+**Invariant (the falsifier, see §9):** `snapshot(ctx) ≡ fold(stream(ctx))` for every `ctx`. If the snapshot has an
+independent query that can diverge from the stream's projection, the design is violated — that divergence is
+precisely the class of bug (current-state says X, replayed history says Y) the gateway exists to prevent, and it
+is what ACP `session/load` (conformance C1, the transcript-fold) cannot tolerate.
+
+**Snapshot: distinct channel, derived implementation (resolves the RFC "third read shape" flag).** The RFC
+channel-discipline note (RFC §8, and the read-side RFC §5.1) flags `HostContextSnapshot` as a *suspect third read
+shape* — "justify on
+ergonomics or derive from the events fold." Resolution: **keep it as a distinct `CallableChannel`** (it earns its
+surface: a synchronous "current state at the frontier" read is a real ergonomic need a stream subscription serves
+awkwardly) **but implement it as `fold(projection(ctx))`, not a parallel point-read.** So: distinct *channel
+surface*, single *projection source*. This is the both/and that satisfies the litmus — the snapshot is justified
+*and* derived, so it cannot drift. (If a future reviewer finds the snapshot adds no ergonomic value over a
+bounded stream read, the cheaper move is to drop the channel and derive on the client — but the no-drift rule
+holds either way because there is still one projection.)
+
+This pins the **read-side wiring contract for A2 / tf-r06u.6**: that bead must land the single `project(...)`
+function consumed by both the ingress streams and the snapshot callable — not two table readers.
+
 ## 7. Q5 resolution — two orthogonal registries (closes tf-r06u.2)
 
 RFC Q5: *should "agent protocol" (ACP vs raw) and "runtime/process backend" be one key or independent
@@ -285,6 +326,9 @@ Net: everything *designable* is in this SDD now; everything *buildable* waits on
   signaling tf-r06u.13), the keystone boundary is wrong.
 - **`newSessionMeta` is load-bearing for non-MCP behavior.** If the field turns out to carry dialect behavior
   beyond MCP-surfacing, leaving it a typed TODO blocks more than the B1 spike — re-scope.
+- **Read-side snapshot ⟂ stream drift (§6.5).** Property test: for every `ctx`, `snapshot(ctx) ≡ fold(stream(ctx))`.
+  If they can differ, the snapshot has a second, independent table read and the one-projection rule is violated —
+  the design (and the `session/load` transcript-fold, conformance C1) is wrong until they share one `project(...)`.
 
 ## 10. Cross-references
 
@@ -292,7 +336,8 @@ Net: everything *designable* is in this SDD now; everything *buildable* waits on
 - Companion `2026-05-31-acp-durability-conformance.md` — C1 (loadSession transcript-fold), C4 (cancel fan-out),
   C8 (MCP-surfacing gate).
 - Beads: **closes tf-r06u.2** (Q5); cross-refs **tf-r06u.13** (cancel keystone), **tf-r06u.12 / B1** (MCP-surfacing
-  spike — `newSessionMeta` gate), and the D1 disposition + the three completeness beads (read-side / parent→child
+  spike — `newSessionMeta` gate), **A2 / tf-r06u.6** (read-side wiring — the §6.5 one-projection / no-drift
+  contract this SDD pins), and the D1 disposition + the three completeness beads (read-side / parent→child
   agent_output / choreography-tool dispatch) in the D1 memo.
 - Existing SDDs: `SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING.md`, `SDD_FIREGRID_UNIFIED_PRODUCTION_CODEC_ADAPTER.md`
   (the §B/Phase-E wiring this refactor restructures).
