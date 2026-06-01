@@ -400,6 +400,11 @@ export const HostContextsCreateChannelLive = Layer.effect(
             contextId: request.contextId,
             createdAt: new Date(nowMs).toISOString(),
             ...(request.createdBy === undefined ? {} : { createdBy: request.createdBy }),
+            // tf-r06u.9: persist the delegation FK when the creator passed one
+            // (the parent→child agent-output authority record, tf-r06u.8).
+            ...(request.parentContextId === undefined
+              ? {}
+              : { parentContextId: request.parentContextId }),
             runtime: {
               provider: request.runtime.provider,
               config: request.runtime.config,

@@ -30,6 +30,12 @@ export const HostContextsCreateRequestSchema = Schema.Struct({
   contextId: Schema.String.pipe(Schema.minLength(1)),
   runtime: PublicLaunchRuntimeIntentSchema,
   createdBy: Schema.optional(Schema.String),
+  // tf-r06u.9: when a context is created by another context (delegation —
+  // e.g. the future `spawn`/`spawn_all` handler, tf-r06u.48), the creator's
+  // contextId is recorded as the child's `parentContextId` FK. This is the
+  // durable authority record consumed by the parent→child agent-output
+  // observation check (tf-r06u.8). Absent for top-level contexts.
+  parentContextId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
 }).annotations({
   identifier: "firegrid.channel.hostContextsCreate.request",
   title: "Host contexts create request",

@@ -148,10 +148,17 @@ const RuntimeOutputLogLinePrimaryKeySchema = Schema.transformOrFail(
 // Durable RuntimeContext rows carry the host binding inline so context
 // lookup yields a row that is self-sufficient for prompt-routing and
 // MCP local-context checks without joining through a host directory.
+// NB: this durable `contexts` collection row mirrors `RuntimeContextSchema`
+// (launch/schema.ts) field-for-field (the primary key is the only delta). Keep
+// the two in sync — both carry `createdBy` provenance and, since tf-r06u.8/.9,
+// the optional `parentContextId` delegation FK (the parent→child agent-output
+// authority record). Declaring it here makes the FK a typed, validated part of
+// the durable index rather than an untyped JSON passthrough.
 const RuntimeContextRowSchema = Schema.Struct({
   contextId: Schema.String.pipe(DurableTable.primaryKey),
   createdAt: Schema.String,
   createdBy: Schema.optional(Schema.String),
+  parentContextId: Schema.optional(Schema.String),
   runtime: RuntimeContextIntentSchema,
   host: RuntimeContextHostBindingSchema,
 })
