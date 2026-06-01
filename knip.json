@@ -91,6 +91,8 @@
         "src/prototypes/target-topology/**/*.ts"
       ],
       "ignoreDependencies": [
+        "@effect/ai",
+        "@effect/workflow",
         "@firegrid/runtime",
         "effect-durable-operators"
       ]
