@@ -6,13 +6,15 @@
  * (`firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6`): pure protocol-schema →
  * Effect AI `Tool`/`Toolkit` values, the MCP-facing failure schema, and
  * the bridge-scoped routing-context tag. No host execution, lowering, or
- * durable side effects live here — that is the `../execution` module.
+ * durable side effects live here — that is `./tool-dispatch.ts`
+ * (`FiregridAgentToolExecutor`, which drives the unified
+ * `ToolDispatchWorkflow`).
  *
  * Adding a tool requires (a) a protocol Effect Schema in
  * `@firegrid/protocol/agent-tools`, (b) a new `Tool.make(...)` here with
  * `setParameters` / `setSuccess` pointing at that schema, (c) inclusion
  * in `Toolkit.make(...)`, and (d) a handler in `FiregridAgentToolkitLayer`
- * (in `../execution`) routing through `toolUseToEffect`.
+ * (in `./toolkit-layer.ts`) routing through `ToolDispatch.call`.
  *
  * Implements (feature spec):
  *  - firegrid-workflow-driven-runtime.PHASE_6_AGENT_TOOLS.1..5
@@ -86,12 +88,18 @@ export class FiregridAgentToolContext extends Context.Tag(
 // ---------------------------------------------------------------------------
 
 /**
- * Each Firegrid tool routes its execution through `ToolCallWorkflow`
- * (defined in `../execution`), which gives the underlying
- * `toolUseToEffect` body a `WorkflowEngine.WorkflowInstance`.
+ * Each Firegrid tool routes its execution through the unified
+ * `ToolDispatchWorkflow` (`../subscribers/permission-and-tool.ts`),
+ * idempotency-keyed on `toolUseId`. The toolkit handler
+ * (`./toolkit-layer.ts`) resolves the `ToolDispatch` facade
+ * (`./tool-dispatch.ts`) and calls it; the facade drives the workflow,
+ * whose injected `FiregridAgentToolExecutor` maps each tool name onto a
+ * unified substrate primitive. (Option B: reuse #765's unified dispatch,
+ * NOT main's deleted `ToolCallWorkflow` / `toolUseToEffect`.)
  *
- * The execution layer resolves the route-scoped runtime context and runs the
- * tool-call workflow on that context's active host-scoped RuntimeContext engine.
+ * The handler resolves the route-scoped runtime context from
+ * `FiregridAgentToolContext` and never accepts it as an agent-visible
+ * argument.
  */
 const FiregridToolDependencies: Array<
   | typeof FiregridAgentToolContext
@@ -118,7 +126,8 @@ const schemaDescription = (
 
 /**
  * `sleep` — durably suspend until a duration elapses.
- * Lowers onto `DurableClock.sleep` in `toolUseToEffect`.
+ * Maps onto the unified durable clock (`DurableClock.sleep`) in
+ * `FiregridAgentToolExecutor` (`./tool-dispatch.ts`).
  */
 export const SleepTool = Tool.make(schemaToolName(AgentToolSchemas.SleepToolInputSchema, "sleep"), {
   description: schemaDescription(AgentToolSchemas.SleepToolInputSchema, "sleep"),
@@ -130,7 +139,8 @@ export const SleepTool = Tool.make(schemaToolName(AgentToolSchemas.SleepToolInpu
 
 /**
  * `wait_for` — wait until a matching durable event appears.
- * Lowers onto the runtime-owned `WaitForWorkflow` surface in `toolUseToEffect`.
+ * Maps onto an ingress channel + `awaitSignal` (`../signal.ts`,
+ * `../channel-bindings.ts`) in `FiregridAgentToolExecutor`.
  */
 export const WaitForTool = Tool.make(schemaToolName(AgentToolSchemas.WaitForToolInputSchema, "wait_for"), {
   description: schemaDescription(AgentToolSchemas.WaitForToolInputSchema, "wait_for"),
@@ -167,8 +177,9 @@ export const WaitForAnyTool = Tool.make(schemaToolName(AgentToolSchemas.WaitForA
 
 /**
  * `spawn` — run a child RuntimeContextWorkflow and await its terminal
- * state. Lowers onto `AgentToolHost.spawnChildContext` in
- * `toolUseToEffect`.
+ * state. Maps onto `RuntimeContextSessionWorkflow`
+ * (`../subscribers/runtime-context.ts`) + signal in
+ * `FiregridAgentToolExecutor`.
  */
 export const SpawnTool = Tool.make(schemaToolName(AgentToolSchemas.SpawnToolInputSchema, "spawn"), {
   description: schemaDescription(AgentToolSchemas.SpawnToolInputSchema, "spawn"),
@@ -180,7 +191,8 @@ export const SpawnTool = Tool.make(schemaToolName(AgentToolSchemas.SpawnToolInpu
 
 /**
  * `spawn_all` — fan out child workflows and await every terminal state.
- * Lowers onto `AgentToolHost.spawnChildContexts` in `toolUseToEffect`.
+ * Maps onto a fan-out of `RuntimeContextSessionWorkflow` executions in
+ * `FiregridAgentToolExecutor`.
  */
 export const SpawnAllTool = Tool.make(schemaToolName(AgentToolSchemas.SpawnAllToolInputSchema, "spawn_all"), {
   description: schemaDescription(AgentToolSchemas.SpawnAllToolInputSchema, "spawn_all"),
@@ -192,8 +204,8 @@ export const SpawnAllTool = Tool.make(schemaToolName(AgentToolSchemas.SpawnAllTo
 
 /**
  * `session_new` — create a child RuntimeContext-backed session.
- * Lowers onto the internal `AgentToolHost.spawnChildContext` seam in
- * `toolUseToEffect`.
+ * Maps onto `RuntimeContextSessionWorkflow`
+ * (`../subscribers/runtime-context.ts`) in `FiregridAgentToolExecutor`.
  */
 export const SessionNewTool = Tool.make(schemaToolName(AgentToolSchemas.SessionNewToolInputSchema, "session_new"), {
   description: schemaDescription(AgentToolSchemas.SessionNewToolInputSchema, "session_new"),
@@ -239,9 +251,10 @@ export const SessionCloseTool = Tool.make(schemaToolName(AgentToolSchemas.Sessio
 
 /**
  * `schedule_me` — schedule a future prompt to the same agent context.
- * Lowers through `DurableClock.sleep` and the canonical host prompt append
- * seam; the active host-scoped RuntimeContext engine or startup reconciliation owns runtime
- * input delivery.
+ * Maps onto the unified `ScheduledPromptWorkflow`
+ * (`../subscribers/scheduled-webhook-peer.ts`), which owns the
+ * `DurableClock.sleep` + idempotent prompt append, in
+ * `FiregridAgentToolExecutor`.
  */
 export const ScheduleMeTool = Tool.make(schemaToolName(AgentToolSchemas.ScheduleMeToolInputSchema, "schedule_me"), {
   description: schemaDescription(AgentToolSchemas.ScheduleMeToolInputSchema, "schedule_me"),
@@ -253,8 +266,8 @@ export const ScheduleMeTool = Tool.make(schemaToolName(AgentToolSchemas.Schedule
 
 /**
  * `execute` — invoke a SandboxProvider-backed tool by sandbox-neutral
- * reference. Lowers onto `AgentToolHost.executeSandboxTool` in
- * `toolUseToEffect`.
+ * reference. Maps onto the unified sandbox/codec path
+ * (`../codec-adapter.ts`) in `FiregridAgentToolExecutor`.
  */
 export const ExecuteTool = Tool.make(schemaToolName(AgentToolSchemas.ExecuteToolInputSchema, "execute"), {
   description: schemaDescription(AgentToolSchemas.ExecuteToolInputSchema, "execute"),
@@ -266,7 +279,8 @@ export const ExecuteTool = Tool.make(schemaToolName(AgentToolSchemas.ExecuteTool
 
 /**
  * `call` — invoke an approval call channel.
- * Lowers onto `AgentToolHost.callApprovalChannel` in `toolUseToEffect`.
+ * Maps onto an egress call channel request/response
+ * (`../channel-bindings.ts`) in `FiregridAgentToolExecutor`.
  */
 export const CallTool = Tool.make(schemaToolName(AgentToolSchemas.CallToolInputSchema, "call"), {
   description: schemaDescription(AgentToolSchemas.CallToolInputSchema, "call"),
@@ -279,11 +293,12 @@ export const CallTool = Tool.make(schemaToolName(AgentToolSchemas.CallToolInputS
 /**
  * Canonical Firegrid agent toolkit. The single source of truth for tool
  * exposure: codecs publish this set, MCP `tools/list` projects this
- * set, and `toolUseToEffect` switches on `event.part.name` against the
- * same `@firegrid/protocol/agent-tools` Effect Schemas these `Tool.make`
- * values bind. The toolkit value and the lowering's name-switch share
- * one schema source of truth (`@firegrid/protocol/agent-tools`); they
- * do not maintain parallel registries.
+ * set, and `FiregridAgentToolExecutor` (`./tool-dispatch.ts`) switches on
+ * the tool name against the same `@firegrid/protocol/agent-tools` Effect
+ * Schemas these `Tool.make` values bind. The toolkit value and the
+ * executor's name-switch share one schema source of truth
+ * (`@firegrid/protocol/agent-tools`); they do not maintain parallel
+ * registries.
  */
 export const FiregridAgentToolkit = Toolkit.make(
   SleepTool,
