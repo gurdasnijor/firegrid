@@ -756,6 +756,49 @@ export default tseslint.config(
     },
   },
   {
+    // tf-r06u.24 R4 — no standalone-script shape in tiny-firegrid/src. A sim is
+    // a folder exporting a host(env)+driver run BY the runner (→ trace → prose
+    // finding), never a script that self-runs an Effect and prints a verdict.
+    // `Effect.runPromise*`/`runSync*` is the standalone-script signal and has
+    // zero legitimate use in src (the CLI entry uses NodeRuntime.runMain), so
+    // it is banned src-wide. (`process.exit` is banned only under simulations/
+    // below — bin/ spawn targets and the runner legitimately exit.)
+    files: ["packages/tiny-firegrid/src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
+          message:
+            "tiny-firegrid/src must not self-run effects. Export a host(env)+driver; the runner executes the sim (simulate run) and emits the trace. A spike that needs to drive a private seam belongs in the owning package's test/ (docs/findings/tf-r06u-25-tiny-firegrid-asset-inventory.md).",
+        },
+      ],
+    },
+  },
+  {
+    // tf-r06u.24 R4 (cont.) — no process.exit inside a sim. Drivers signal
+    // completion by returning; the runner owns process lifecycle. (bin/ spawn
+    // targets + runner/ are infra and may exit, so this is simulations-scoped.)
+    files: ["packages/tiny-firegrid/src/simulations/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
+          message:
+            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+        },
+        {
+          selector: "MemberExpression[object.name='process'][property.name='exit']",
+          message:
+            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+        },
+      ],
+    },
+  },
+  {
     files: ["packages/substrate/src/**/*.ts"],
     rules: {
       "no-restricted-imports": [
