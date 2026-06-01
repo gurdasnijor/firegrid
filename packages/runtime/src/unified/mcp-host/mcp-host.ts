@@ -21,10 +21,16 @@
  * `./toolkit.ts` / `./toolkit-layer.ts`. `ToolDispatch` and
  * `ContextResolverTag` are left on the R-channel for the host composer.
  *
- * DEFERRED from this slice (tracked; verify at slice-4 live codex-acp):
- *  - the custom single-response JSON-RPC serializer (MCP_TRANSPORT_COMPAT.1,
- *    for strict single-message clients) — `layerHttp` uses the default
- *    `layerJsonRpc`;
+ * MCP_TRANSPORT_COMPAT.1 — re-added on EVIDENCE (tf-rgdt verdict): the slice-4
+ * acceptance test (`test/mcp-host/mcp-host-http-acceptance.test.ts`) found the
+ * default `RpcSerialization.layerJsonRpc` (which `McpServer.layerHttp` bundles)
+ * returns a single non-batch response array-wrapped as `[response]`. Strict
+ * single-message clients (codex-acp) break on that. So we inline-replicate
+ * `layerHttp` (`McpServer.layer` + `RpcServer.layerProtocolHttp` + a JSON-RPC
+ * serializer that unwraps the one-element array). This was NOT pre-emptive —
+ * the round-trip actually broke.
+ *
+ * STILL DEFERRED (tracked tf-rgdt; not exercised here):
  *  - the OAuth-discovery 404 probe routes;
  *  - host base-URL late-binding (`FiregridRuntimeContextMcpBaseUrl`) — the
  *    unified `codec-adapter` has no reader yet.
@@ -33,6 +39,7 @@
 import { IdGenerator, McpServer } from "@effect/ai"
 import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
+import { RpcSerialization, RpcServer } from "@effect/rpc"
 import { ContextNotFound } from "@firegrid/protocol/launch"
 import { Config, Effect, Layer, Logger, Option } from "effect"
 // The MCP HTTP server lifetime is Effect-owned via McpServer.layerHttp +
@@ -53,6 +60,32 @@ import {
 } from "./toolkit-layer.ts"
 
 const runtimeContextMcpRouterMaxParamLength = 4096
+
+// MCP_TRANSPORT_COMPAT.1 — `RpcServer.layerProtocolHttp` collects non-framed
+// HTTP responses into an array before serializing, so the default JSON-RPC
+// serializer emits `[response]` even for one non-batch request. Keep normal
+// JSON-RPC parsing, but unwrap exactly that one-element array so strict
+// single-message clients (codex-acp) receive `{...}`. (tf-rgdt verdict:
+// the slice-4 acceptance round-trip confirmed the array-wrapping.)
+const firegridMcpJsonRpcSerialization = RpcSerialization.RpcSerialization.of({
+  contentType: "application/json",
+  includesFraming: false,
+  unsafeMake: () => {
+    const parser = RpcSerialization.jsonRpc().unsafeMake()
+    return {
+      decode: parser.decode,
+      encode: (response) =>
+        parser.encode(Array.isArray(response) && response.length === 1
+          ? response[0]
+          : response),
+    }
+  },
+})
+
+const firegridMcpRpcSerializationLayer = Layer.succeed(
+  RpcSerialization.RpcSerialization,
+  firegridMcpJsonRpcSerialization,
+)
 
 /**
  * Effect Config for the host-owned MCP HTTP server's listener topology.
@@ -180,12 +213,19 @@ export const FiregridMcpServerLayer = (
   return HttpRouter.Default.serve().pipe(
     // tf-x3sv: registration completes before the router serves.
     Layer.provide(registerToolkitLayer),
+    // Inline-replicate `McpServer.layerHttp` so we keep `McpServer.layer +
+    // RpcServer.layerProtocolHttp` and only swap the non-framed JSON-RPC
+    // serializer for the single-response unwrap (MCP_TRANSPORT_COMPAT.1).
     Layer.provide(
-      McpServer.layerHttp({
+      McpServer.layer({
         name: "firegrid.agent-tools",
         version: "0.0.0",
-        path: runtimeContextMcpPath(options.path),
-      }),
+      }).pipe(
+        Layer.provide(RpcServer.layerProtocolHttp({
+          path: runtimeContextMcpPath(options.path),
+        })),
+        Layer.provide(firegridMcpRpcSerializationLayer),
+      ),
     ),
     // `provideMerge` keeps the bound `HttpServer` service in the output
     // Layer so the host can log its address (or tests can resolve the
