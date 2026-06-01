@@ -28,12 +28,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/ai": "^0.35.0",
     "@effect/cli": "0.75.1",
     "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",
     "@effect/rpc": "0.75.1",
-    "@effect/workflow": "0.18.1",
     "@firegrid/observability": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",

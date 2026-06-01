@@ -47,13 +47,13 @@ const probeAttributes = (
       probe.status === "public-surface-blocked",
     ).length,
   }
-  for (const [index, probe] of probes.entries()) {
+  probes.forEach((probe, index) => {
     const prefix = `firegrid.ukv.migrated_probe.${index + 1}`
     attributes[`${prefix}.id`] = probe.id
     attributes[`${prefix}.legacy_probe`] = probe.legacyProbe
     attributes[`${prefix}.status`] = probe.status
     attributes[`${prefix}.evidence`] = probe.evidence
-  }
+  })
   return attributes
 }
 
