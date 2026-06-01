@@ -79,11 +79,18 @@ the check produced one extra finding. Grounded at the engine.
   C5 permits **only** once kernel-owned write+arm exists. The engine's startup recovery runs **only**
   `recoverPendingClockWakeups` (`engine/internal/engine-runtime.ts:527`; def :149) — there is **no**
   recovery for domain-signal-suspended workflows (the exact gap the doc cites). The intended sweep,
-  `recoverPendingSignals` (`unified/signal.ts:197`), is **defined + sim-validated but has zero
-  non-test callers and is not wired into `FiregridHost`** (verified). Live operation re-arms via
+  `recoverPendingSignals` (`unified/signal.ts:197`, "walks the signal table deduped by executionId;
+  re-issues `engine.resume` for executions whose bodies are still unresolved"), **is correct and
+  proven** — exported on the unified surface (`unified/index.ts`) and exercised by the sim's
+  restart-recovery harness (`unified-kernel-validation/substrate.ts:126` `runGeneration` runs it once
+  per generation; the production-flow scenarios call it too). But it has **zero production callers**:
+  it is **not invoked by `FiregridHost` nor by engine startup**, and **no SDD mentions wiring or
+  deferring it** (verified — whole-repo grep + SDD grep). Live operation re-arms via
   `resume(executionId)` on signal-send (`engine-runtime.ts:290/339/484`); **restart does not
   proactively re-arm a domain-signal-parked body.** D1: **HIGH** (durability/recovery), **SILENT**.
-  This is the substrate-level reason the validation-skeleton posture must not be cutover as-is.
+  This is the cleanest single instance of the audit's thesis — *substrate proven in the sim,
+  production wiring absent and untracked* — and the substrate-level reason the validation-skeleton
+  posture must not be cut over as-is.
 - **Doc-hygiene nit:** `shape-c-vs-shape-d.md` lines 155-168 ("Ground Truth / Production
   subscribers") still reference the `subscribers/{tool-dispatch,scheduled-prompt,wait-router,runtime-
   control,runtime-context,runtime-context-session}/` paths that #765 deleted — stale, worth scrubbing.
