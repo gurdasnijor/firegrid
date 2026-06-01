@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-<<<<<<< Updated upstream
 # task-enter — start a lane task in a dedicated worktree off the integration
 # trunk (origin/sim/unified-kernel-validation until PR #765 lands; revert the
 # BASE default to origin/main once #765 is merged — see DEFAULT_BASE below).
-=======
-# task-enter — start a lane task in a dedicated worktree off the base branch.
->>>>>>> Stashed changes
 # NEVER squats the primary checkout. Deterministic on the bead id (lanes get
 # renamed mid-session; beads don't).
 #
@@ -15,7 +11,6 @@
 # PR #765 lands, set DEFAULT_BASE back to origin/main (or unset).
 #
 # Usage:
-<<<<<<< Updated upstream
 #   bash scripts/task-enter.sh <bead-id> <slug> [--class codex|sidecar]
 #   bash scripts/task-enter.sh <bead-id> <slug> --base <ref>   # fork base override
 #   bash scripts/task-enter.sh <bead-id> <slug> --resume   # attach EXISTING
@@ -24,13 +19,6 @@
 #       resume can never silently orphan committed work.
 #
 # Fork base precedence: --base <ref>  >  $FIREGRID_TASK_BASE  >  DEFAULT_BASE.
-=======
-#   bash scripts/task-enter.sh <bead-id> <slug> [--class codex|sidecar] [--base <ref>]
-#   bash scripts/task-enter.sh <bead-id> <slug> --resume   # attach EXISTING
-#       branch (e.g. resume PR #326 — preserves its commits; does NOT fork
-#       off the base). Default refuses if the branch already exists, so a resume
-#       can never silently orphan committed work.
->>>>>>> Stashed changes
 #
 set -eu
 # POST-#765: revert DEFAULT_BASE to "origin/main". Until #765 lands,
@@ -41,12 +29,6 @@ BEAD="${1:?usage: task-enter.sh <bead-id> <slug> [--class codex|sidecar] [--base
 SLUG="${2:?need a short slug}"
 CLASS="codex"
 RESUME=0
-<<<<<<< Updated upstream
-=======
-# INTEGRATION WINDOW: fork off the unified-kernel trunk by default (main lacks
-# the kernel). When PR #765 lands, set this back to "origin/main" (or unset).
-DEFAULT_BASE="origin/sim/unified-kernel-validation"
->>>>>>> Stashed changes
 BASE="${FIREGRID_TASK_BASE:-$DEFAULT_BASE}"
 shift 2 || true
 while [ $# -gt 0 ]; do case "$1" in
@@ -64,13 +46,9 @@ PARENT="$(dirname "$RR")"
 WT="$PARENT/firegrid-worktrees/${BEAD}-${SLUG}"
 BR="${CLASS}/${BEAD}-${SLUG}"
 
-<<<<<<< Updated upstream
 # Fetch the fork base (strip a leading "origin/" to get the remote branch).
 BASE_REMOTE_REF="${BASE#origin/}"
 git -C "$RR" fetch -q origin "$BASE_REMOTE_REF" 2>/dev/null || true
-=======
-git -C "$RR" fetch -q origin "${BASE#origin/}" 2>/dev/null || true
->>>>>>> Stashed changes
 git -C "$RR" fetch -q origin "$BR" 2>/dev/null || true
 
 # Does the branch already exist (local ref or on origin)?
@@ -90,11 +68,7 @@ elif [ "$RESUME" = 1 ]; then
   echo "✓ worktree: $WT  (RESUMED branch $BR — existing commits preserved, not forked off main)"
 elif [ "$branch_exists" = 1 ]; then
   echo "✋ task-enter: branch '$BR' already exists (local or origin)." >&2
-<<<<<<< Updated upstream
   echo "   A fresh start off $BASE would ORPHAN its commits. To continue that" >&2
-=======
-  echo "   A fresh start off the base would ORPHAN its commits. To continue that" >&2
->>>>>>> Stashed changes
   echo "   work pass --resume; to truly start over, delete the branch first." >&2
   exit 1
 else

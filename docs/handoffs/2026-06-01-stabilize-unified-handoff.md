@@ -4,9 +4,17 @@
 - **Trunk verified at:** `sim/unified-kernel-validation` HEAD `f74f0750b` (= PR #765 integration branch → `main`)
 - **For:** the next agent driving the unified kernel to a green, merged, production-cutover-ready state
 - **Epic (single source of truth):** **`tf-ll90`** (label `stabilize-unified`). The old `tf-r06u` epic is **superseded** — do not drive work from it.
+- **Fire-ready lane briefs:** **`docs/handoffs/2026-06-01-stabilize-lane-briefs.md`** — four session-start dispatch bodies (Lane 1 trunk-green · Lane 2 kernel-lifecycle sims-first · Lane 3 harness/sim-enforcement+real-agent+proofs · Lane 4 enforcement-surface audit), ready for `scripts/cmux-dispatch.sh`. **HARD GATE:** `tf-ll90.1` (CI-green) is blocked-by `tf-ll90.15` (sim-enforcement) — false-green over a forgeable sim harness is not allowed.
 - **Why this reset exists:** the prior coordination drove off a polluted bead backlog + a half-tracked SDD corpus, and asserted several constraints that turned out fabricated (see §8). This handoff is re-grounded in **verified git/code/CI/doc state** (three independent read passes), not bead assumptions.
 
 ---
+
+## 0. ★ THE META-PROCESS RULE (governs everything — the cause of every failure in the prior session)
+**Do not make assumptions in the absence of data.** When you don't know: (1) locate exactly where the data gap is, (2) instrument/trace that boundary, (3) **run a simulation to GATHER the data**, (4) only then conclude — *from the data*. Inference is a hypothesis to be instrumented, never a conclusion to act on. **A confident conclusion with no captured evidence is the bug, not the finding.**
+
+Every failure in the prior session was the *same* violation — a data gap filled with an assumption instead of a trace: the invented merge-gate, the non-existent `failureMode`/classification mechanisms, the non-airgapped spikes that "proved" nothing, "no lost proofs," the over-built bridges. When you catch yourself or a lane writing *"this is because…"*, *"X can't…"*, *"it's terminal/an ACP limitation"*, or a comment asserting third-party behavior — **STOP. Name the data gap. Instrument it. Run the sim. Then write the conclusion with the artifact that proves it.** This is the entire reason tiny-firegrid exists: generate trace data to drive an experiment. (Source: `docs/handoffs/COORDINATOR_HANDOFF_s6_dark_factory.md`.)
+
+**Operationalized by** `docs/runbooks/firegrid-effect-tracing.md`: tiny-firegrid is a **simulation harness, not a test harness** — a sim is a registry entry (`makeHost`/`driver`-requiring-only-`Firegrid`/`summarize`), **run** by `simulate:run`, producing an OTLP/DuckDB trace bundle; evidence is *querying that trace*, not `vitest expect()`. `vitest` and the `test/` `probe.test.ts` tree are an anti-pattern being removed (`tf-ll90.15`). All sim rebuilds (`tf-ll90.11`/`.14`) take this form.
 
 ## 1. Read first (in order)
 1. This doc.
@@ -15,7 +23,9 @@
 4. `docs/architecture/2026-05-31-unified-architecture-mental-model.md` — the post-collapse architecture in one head (3 primitives: Workflow+Activity, DurableTable, Signal).
 5. `docs/sdds/SDD_FIREGRID_GATEWAY_SEPARATION_OF_CONCERNS.md` — authority for the §4 kernel/gateway/sandbox split, read-side no-drift invariant, MCP port-forward, misuse-resistance. **Design only; no code landed.**
 6. `docs/sdds/SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION(_PREFLIGHT).md` — the schema-collapse (largely executed by #765, sanctioned).
-7. Caveat: `unified-subscriber-kernel.md` "What stays" wrongly retains `composition/`+`capabilities/` (#765 deleted both), and `shape-c-vs-shape-d.md` Ground-Truth cites deleted `subscribers/*` paths. Treat `unified/` docstrings as **aspirational, not evidence of wiring** (e.g. `host.ts:13-24` claims recovery wiring that does not exist).
+7. **`packages/tiny-firegrid/docs/methodology.md`** + **`docs/runbooks/firegrid-effect-tracing.md`** — the simulation discipline (airgapped driver, trace-as-evidence, no vitest verdicts). Required before touching any sim (`tf-ll90.11`/`.14`/`.15`).
+8. **`docs/recipes/README.md`** (+ `agent-to-agent-observation.md`, `runtime-permission-resume.md`, `durable-webhook-facts-and-wait-for.md`) — the **composability canon**: before building ANY wrapper/connector/channel/auth/observer, check here — most are a `ChannelTarget`+`IngressChannel` binding on existing primitives ("Do Not Reimplement"). **`docs/recipes/_lift-candidates.md`** — the catalog of CORE sim patterns to rebuild + their homes (`tf-ll90.11` reference). And `docs/proposals/SDD_FIREGRID_DURABLE_TOOLS.md` for schedule_me/wait_for *shapes* + the "no new coordination primitives" review bar — **caveat: pre-unified; mine its shapes, not its `RuntimeIngressTable`/`DurableDeferred` mechanisms (superseded by the signal primitive).**
+9. Caveat: `unified-subscriber-kernel.md` "What stays" wrongly retains `composition/`+`capabilities/` (#765 deleted both), and `shape-c-vs-shape-d.md` Ground-Truth cites deleted `subscribers/*` paths. Treat `unified/` docstrings as **aspirational, not evidence of wiring** (e.g. `host.ts:13-24` claims recovery wiring that does not exist).
 
 ## 2. The honest state, one paragraph
 `sim/unified-kernel-validation` is a **validation skeleton, not a production cutover** (the branch's own framing + the audit). **Nothing is merged** — #765 is an open draft → `main`; 11 feature/spike PRs (#770–#781) are open drafts against the trunk, all CI-red (`UNSTABLE`), several stacked on each other. `main` and the trunk are **both unprotected** (merges are *not* CI-gated; the drafts are just author-WIP). The substrate shape is pinned + sim-validated; **the remaining work is almost entirely production wiring the skeleton never lifted** — plus finishing the green-up and merging the stack. There is **no hidden decision gate**; the path is ordinary engineering.
@@ -47,19 +57,22 @@
 - **`#765` → `main`: not merged** (validation-skeleton; D1 = not until the backlog below lands).
 
 ## 5. The backlog — epic `tf-ll90` (tiered; `br list` it)
-**S0 — make the trunk green + readable**
-- `tf-ll90.1` (P0) finish green-up (lint/semgrep/effect-diag remainder + the offset test) — handoff at `project_tf_r06u5_trunk_greenup.md`; PR #772.
+**S0 — make the trunk *honestly* green (the green milestone; hard-gated on sim-honesty)**
+- `tf-ll90.1` (P0) finish green-up (lint/semgrep/effect-diag remainder + the offset test) — `project_tf_r06u5_trunk_greenup.md`; PR #772. **blocked-by `.15`** — see §12.
 - `tf-ll90.2` (P1) read-side relocation `unified/`→`channels/` (clears R4/R5 + the table-discipline semgrep at once).
+- `tf-ll90.15` (P1) **★ sim-enforcement CI gate** (shape/entry/import locks + remove vitest + R2/R3 fix) — **hard-gates `.1`**; without it "green" is forgeable. Lane 3, critical-path-first.
+- `tf-ll90.16` (P1) **enforcement-surface audit** (`scripts/` + `.dependency-cruiser.cjs` + `.effect-diagnostics-baseline.json` + eslint/semgrep) → ALIGNED/STALE/REALIGN; **tells `.1` which red gates to SATISFY vs RETIRE** (don't grind a dead gate green). Lane 4, read-only.
 
-**S1 — build the dropped capabilities (share the kernel-write-arm shape; plan in PR #776; spikes #773/#775 proved it)**
+**S1 — build the dropped capabilities (share the kernel-write-arm shape; plan in PR #776)** — *NOTE: #773/#775 were NON-airgapped and did NOT prove it; build with real airgapped sims (`.11`/`.14`) per `tf-ll90.15`.*
 - `tf-ll90.3` (P0) recoverPendingSignals → FiregridHost + shared terminal-emit foundation (CANNON, R14).
 - `tf-ll90.4` (P0) cancel/close control plane + HostKernelWorkflow (R2).
 - `tf-ll90.5` (P0) terminal-completion relay — fix the process leak (R3). *Shares the emit surface with .4 — build once.*
 - `tf-ll90.6` (P0) schedule_me delivery (R1).
+- `tf-ll90.14` (P0) **real-agent e2e proof** on the unified kernel (env-gated live ACP/codec; the kernel has only run against fake-codec) — the definition of done.
 - *(parent→child output R7 was here — **moved to the deferred VISION epic `tf-qne2`**; it's multi-agent coordination, not core single-agent stabilization.)*
 
 **S2 — separation + completeness**
-- `tf-ll90.8` (P1) §4 kernel/gateway/sandbox split + ProductionCodecAdapter tri-section + two registries + AcpStdioEdge promotion (also clears the workflow-classification semgrep).
+- `tf-ll90.8` (P1) §4 kernel/gateway/sandbox split + ProductionCodecAdapter tri-section + two registries + AcpStdioEdge promotion (also clears the workflow-classification semgrep). **Scope incl. reconciling ALL `runtime/src/` sibling dirs vs the mental-model** — delete the pre-unified residue still present (`capabilities/`(1), `producers/`(1); classify `events/`/`transforms/`/`_archive/`), fold survivors into the 3 tiers. Couples Lane 4's dep-cruiser tier-rule audit (`.16`) — a stale dir's tier-rule retires with it.
 - `tf-ll90.9` (P1) mcp-host port-forward — land #770 (R6).
 - `tf-ll90.10` (P2) loadSession transcript-fold + flip `loadSession:true`.
 
@@ -81,10 +94,11 @@
 - **Don't say "shipped" for unmerged drafts.** Distinguish merged / drafted-unmerged / spiked-in-isolation / designed-only / unbuilt. The prior digest called a stack of red draft PRs "shipped."
 - **The bead store is a graveyard** (490 issues, 392 closed) with stale pre-unified entries mixed in. Treat `br` as a tracking aid, **not** authoritative current state; re-derive from code. The `stabilize-unified` epic (`tf-ll90`) is the curated live view.
 - **Stale-checkout hazard** (from the 2026-05-22 OLA handoff, bit twice there too): `git show <branch>:<path>` or sync before asserting code state.
+- **Don't run a big autonomous fan-out.** The prior session's unattended multi-agent loop (6+ check-ins, 4 lanes) produced mostly unreviewed / wrong-layer / non-airgapped output — *every* PR the user spot-checked had a defect; the value came from the human audits, not the autonomy. Drive the 3 lanes in tight verified increments: confirm-plan-before-build, critically review each output, no fire-and-forget. Resist re-arming a long check-in loop.
 - **Keep research separate from decisions; falsify requirements before satisfying them** (OLA handoff). Don't manufacture a decision queue for the human.
 
 ## 9. Operating mechanics (carry forward)
-- **Worktree discipline:** one bead = one worktree = one branch off the trunk (`origin/sim/unified-kernel-validation`, NOT `main`); never the primary checkout. `bash scripts/task-enter.sh <bead> <slug>`.
+- **Worktree discipline:** one bead = one worktree = one branch off the trunk (`origin/sim/unified-kernel-validation`, NOT `main`); never the primary checkout. `bash scripts/task-enter.sh <bead> <slug>`. **Note:** the primary checkout may currently be on `sim/unified-kernel-validation` (guard-blocks commits) — revert it to `main` and work in worktrees.
 - **Dispatch:** `bash scripts/cmux-dispatch.sh <lane> - < brief.txt` (stdin, never inline `$()`/backticks — zsh substitutes them). Brief = READ / SCOPE / ACCEPTANCE, named files only, grep/lint proof in acceptance.
 - **Lane sweep:** `bash scripts/lane-sweep.sh --workspace workspace:2`. `running=false` + identical state across sweeps = a stalled (queued-unsubmitted) lane → re-dispatch (the script submit-and-verifies).
 - **Prefer reuse/relocation over new substrate** (the FK-not-table, relocate-to-channels lessons). **Don't reinvent `@effect/ai`/`@effect/rpc`** (the McpServer lesson).
@@ -101,7 +115,7 @@ git log --oneline -15 sim/unified-kernel-validation # what's actually landed
 ```
 
 ## 12. Single next action
-Finish `tf-ll90.1` (green-up, fresh session per `project_tf_r06u5_trunk_greenup.md`) and `tf-ll90.2` (read-side relocation) — together they get the trunk to green and clear the table-discipline semgrep. Then S1 (the kernel-write-arm cluster, build the shared terminal-emit once per PR #776). Everything is engineering; nothing waits on a decision.
+**The "green trunk" milestone is HARD-GATED on sim-honesty.** `tf-ll90.1` (green-up) is now **blocked-by `tf-ll90.15`** (the sim-enforcement CI gate) **blocked-by `tf-ll90.11`** (rebuild the sims to pass it). A green trunk on top of a forgeable sim harness is a *false green* — so "make CI green" is not done until the enforcement is a CI gate AND every sim conforms to the `index/driver/host` shape with a client-sdk-only driver. So the first critical work is **both**: the production gate-fixes (`.1` mechanical + `.2` read-side relocation) **and** the sim-enforcement + rebuild (`.15` + `.11`) — they land together as "honest green." Only then S1 (the kernel-write-arm cluster per PR #776), built sims-first on a trunk whose evidence model is finally trustworthy. Nothing waits on a decision — it's all engineering — but the order now puts sim-enforcement on the critical path, not in parallel cleanup.
 
 ## 13. Draft-PR disposition + deferred VISION (scope discipline — READ THIS)
 The prior session conflated **core single-agent kernel stabilization** with the **multi-agent / gateway VISION**. They are separated now. A single durable agent session serving Zed/ACP needs **none** of the vision work.
@@ -110,7 +124,7 @@ The prior session conflated **core single-agent kernel stabilization** with the 
 
 **Core drafts — review critically (do NOT assume-good), then merge as their beads land:**
 - **#770** mcp-host (agent reaches its tools) · **#772** green-up · **#776** kernel-write-arm cutover SDD/plan.
-- **#773 / #775** — tiny-firegrid "spikes" (wire-path relay / cancel-mediation) that **VIOLATE the airgap methodology and are NOT valid evidence.** #773 imports `effect-durable-operators` + `@durable-streams/server` directly (it's a raw `test/` file, not even a sim); #775 wires `@effect/workflow` + a `fake-codec` + the stream server. **Neither imports `@firegrid/client-sdk`** — neither drives over the public client↔durable-streams seam. They prove hand-wired internals behave, NOT the composed system (methodology §"What counts as a simulation" + §"Static airgap enforcement"). **Do NOT cite them as de-risk for S1.** The dep-cruiser airgap gate should reject #773; check why it didn't. The kernel-write-arm cluster (S1) is therefore **NOT actually de-risked** — build it with *real* evidence: a proper airgapped sim (client-sdk driver + composed host, only durable-streams between) OR real tests in the owning package. PR #776 (the cutover plan) inherits this — its "spike-proved" basis is invalid.
+- **#773 / #775** — tiny-firegrid "spikes" (wire-path relay / cancel-mediation) that **VIOLATE the airgap methodology and are NOT valid evidence.** #773 imports `effect-durable-operators` + `@durable-streams/server` directly (it's a raw `test/` file, not even a sim); #775 wires `@effect/workflow` + a `fake-codec` + the stream server. **Neither imports `@firegrid/client-sdk`** — neither drives over the public client↔durable-streams seam. They prove hand-wired internals behave, NOT the composed system (methodology §"What counts as a simulation" + §"Static airgap enforcement"). **Do NOT cite them as de-risk for S1.** The dep-cruiser airgap gate has HOLES that let them through (verified `.dependency-cruiser.cjs:657-726`): R3 test-airgap's `to`-list omits `effect-durable-operators`/`@durable-streams/server`, R2 sim-airgap omits `@effect/workflow`, there's no verdict-shape/vitest gate, and the main `unified-kernel-validation` sim is grandfathered out entirely — fix all of it in `tf-ll90.15` (the anti-cheat is leaky, not absent; "sims are evidence" is only as trustworthy as this). **The un-cheatable mechanism is specced on `tf-ll90.15`:** a sim is *exactly* `{index.ts, driver.ts, host.ts}` (shape-lock via the layout-check), `index.ts` must `export default defineSimulation({host, driver})` (the only entry `runSimulation` runs), and per-file eslint import-locks — critically **`driver.ts` forbids ALL relative imports** (only `@firegrid/client-sdk`+`effect`), which closes the value-import cheat where `driver.ts` reaches `./host.ts` for a substrate handle (the `Effect<…, Firegrid>` type-airgap doesn't catch a concrete value-import). None of the 5 current sims follow this shape — rebuilding them to it (with `tf-ll90.11`) *is* the enforcement. The kernel-write-arm cluster (S1) is therefore **NOT actually de-risked** — build it with *real* evidence: a proper airgapped sim (client-sdk driver + composed host, only durable-streams between) OR real tests in the owning package. PR #776 (the cutover plan) inherits this — its "spike-proved" basis is invalid.
 
 **VISION drafts — SHELVE (do NOT merge). Tracked under deferred epic `tf-qne2`:**
 - **#774 / #778** — parent→child agent_output (multi-agent coordination). Not core; never a shipped capability (in-progress `#746/#748` coordination work that #765 deleted).
