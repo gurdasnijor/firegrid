@@ -96,6 +96,10 @@ re-introducing a violation turns the build **red**:
 - **Sim airgap** (dep-cruiser, whole sim, `host.ts` carved out): no non-`host.ts`
   sim file may import `@firegrid/{runtime,host-sdk}/src`, protocol internals, or
   `effect-durable-operators`.
+- **Host factory lock** (eslint, `host.ts`): the host may reach substrate, but
+  must import and call the real `FiregridHost` factory from
+  `@firegrid/runtime/unified`, and must not import `@firegrid/client-sdk`.
+  This keeps driver/client behavior and host/substrate composition separated.
 - **Test airgap** (dep-cruiser, `test/`): tests are public-surface
   (`@firegrid/client-sdk` allowed); a test reaching runtime/host-sdk/protocol
   internals belongs in the owning package's `test/`.
@@ -106,6 +110,13 @@ re-introducing a violation turns the build **red**:
 Existing pre-airgap violators are grandfathered through explicit,
 **bead-owned** excludes (never anonymous) that shrink over time — same
 discipline as the Semgrep baseline ledger. New code gets no exemption.
+
+`host.ts` is still the simulation trust boundary: eslint can prove that the
+real host factory is present and called, but it cannot prove every Layer
+composed around that call is semantically honest. Reviewers must still inspect
+host composition for inline fake adapters, stub channel bindings, no-op Layers,
+or other overrides that would replace production Tags before the real factory
+path executes.
 
 ## Stopping a simulation
 

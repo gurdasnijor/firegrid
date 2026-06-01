@@ -450,6 +450,60 @@ const local = {
         }
       },
     },
+    "simulation-host-real-firegrid-host": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Require tiny-firegrid simulation hosts to compose the real @firegrid/runtime FiregridHost factory.",
+        },
+        schema: [],
+        messages: {
+          missingFactoryImport:
+            "Simulation host.ts must import FiregridHost from @firegrid/runtime/unified and compose that real factory.",
+          missingFactoryCall:
+            "Simulation host.ts must call the imported @firegrid/runtime/unified FiregridHost factory.",
+        },
+      },
+      create(context) {
+        let importedFactoryLocalName
+        let calledFactory = false
+
+        return {
+          ImportDeclaration(node) {
+            if (node.source.value !== "@firegrid/runtime/unified") {
+              return
+            }
+
+            for (const specifier of node.specifiers) {
+              if (
+                specifier.type === "ImportSpecifier" &&
+                specifier.imported.type === "Identifier" &&
+                specifier.imported.name === "FiregridHost"
+              ) {
+                importedFactoryLocalName = specifier.local.name
+              }
+            }
+          },
+          CallExpression(node) {
+            if (
+              importedFactoryLocalName !== undefined &&
+              node.callee.type === "Identifier" &&
+              node.callee.name === importedFactoryLocalName
+            ) {
+              calledFactory = true
+            }
+          },
+          "Program:exit"(node) {
+            if (importedFactoryLocalName === undefined) {
+              context.report({ node, messageId: "missingFactoryImport" })
+            } else if (!calledFactory) {
+              context.report({ node, messageId: "missingFactoryCall" })
+            }
+          },
+        }
+      },
+    },
     // firegrid-remediation-hardening.STATIC_QUALITY.10
     // firegrid-remediation-hardening.EFFECT_CONSISTENCY.2
     "no-extends-error": {
@@ -748,6 +802,18 @@ export default tseslint.config(
   {
     files: ["packages/tiny-firegrid/src/simulations/*/host.ts"],
     rules: {
+      "local/simulation-host-real-firegrid-host": "error",
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@firegrid/client-sdk", "@firegrid/client-sdk/*"],
+              message: "Hosts do not use the client. They provide it.",
+            },
+          ],
+        },
+      ],
       "no-restricted-syntax": [
         "error",
         {
