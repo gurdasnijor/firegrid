@@ -13,7 +13,7 @@ Base: `sim/unified-kernel-validation` (#765 trunk).
 |---|---|---|---|
 | (a) | NEGATIVE `@ts-expect-error` footgun corpus | `packages/runtime/test/misuse-resistance-footguns.test.ts` | `pnpm typecheck` (runtime) |
 | (b) | POSITIVE full-lifecycle expressibility + composition proof | `packages/runtime/test/misuse-resistance-positive-lifecycle.test.ts` | `pnpm typecheck` + `vitest` (real server) |
-| (c) | STRUCTURAL substrate-leak guard | `scripts/public-surface-substrate-leak-check.mjs` | wired into `pnpm lint` (+ `lint:public-surface-leak`) |
+| (c) | STRUCTURAL substrate-leak gate | the F3 block of the corpus (the **type checker**) — no bespoke script | `pnpm typecheck` (runtime) |
 
 ### Placement decision (important)
 The corpus lives in **`packages/runtime/test/`**, NOT `tiny-firegrid/test/` as
@@ -68,18 +68,38 @@ read-side + choreography-dispatch wiring tracked as the #765 completeness beads.
 Coupling this proof to that incomplete wiring would weaken it; the value here is
 the surface proof.
 
-## (c) Structural guard — substrate cannot leak onto the public barrels
+## (c) Structural gate — substrate cannot leak onto the public barrels
 
-`public-surface-substrate-leak-check.mjs` scans the public barrels
-(`client-sdk` + `host-sdk`) and fails if a banned substrate symbol is
-re-exported, with an explicit ALLOWLIST for documented escape hatches (each
-tied to its tracking bead). Verified: clean run passes (reporting the tracked
-debt); a negative control (re-exporting `SignalTable` from `host-sdk`) fails the
-gate. Wired into `pnpm lint`.
+**The type checker IS the structural gate** (the F3 block of the negative
+corpus), not a bespoke script. An earlier draft hand-rolled a regex
+`public-surface-substrate-leak-check.mjs`; per review ("better static tooling
+solutions available here") it was **removed**. The reasons the type system is
+the right tool here:
 
-Scope: guards re-EXPORTED NAMES (the common leak vector). Deep transitive
-signature analysis (a substrate type inside an exported function signature) is a
-future enhancement that would use the TS compiler API.
+- **It is symbol-aware and resolution-correct.** F3 asserts `SignalTable`,
+  `UnifiedTable`, `WorkflowEngine`, `DurableTable`, `RuntimeControlPlaneTable`,
+  `RuntimeOutputTable` are not on the `@firegrid/client-sdk` barrel via
+  `@ts-expect-error ClientSdk.<Name>`. This catches `as`-aliased and `export *`
+  re-exports that a regex or a semgrep export-pattern would miss.
+- **dependency-cruiser does NOT reliably cover this.** I tested the existing
+  `client-sdk-no-runtime` rule as a control: appending
+  `export { SignalTable } from "@firegrid/runtime/unified"` to the client barrel
+  and running the full CI cruise (`depcruise … packages`) produced **no
+  violation** — workspace packages resolve through the `node_modules` symlink
+  under `doNotFollow: node_modules`, so the `^packages/runtime/src` `to` path
+  never matches. (A pre-existing rule limitation, flagged, not fixed here.) The
+  type checker has no such blind spot — it resolves the package `exports` → src
+  and knows the symbol isn't there.
+
+The module-boundary intent of dep-cruiser still holds for *intra-package* tiers
+(it gates runtime's own folder tiers well); it's the cross-workspace barrel
+re-export that needs the type gate.
+
+Residual (honest): F3 enumerates the key substrate symbols rather than a fully
+generic net. A generic "no substrate-named export on the barrel" rule would need
+an escape-hatch allowlist regardless of tool (semgrep/ast-grep/regex), because
+the tf-8oaq escape hatches are legitimately present today — so it buys little
+over the enumerated type gate. Adding symbols to F3 is a one-line change.
 
 ## What still compiles that arguably SHOULDN'T (gaps the suite surfaced)
 
@@ -94,19 +114,18 @@ The proof suite is also a measurement. Two misuses are **not yet** non-compiling
    bead.
 2. **Documented substrate escape hatches still on the client barrel (tf-8oaq).**
    `FiregridRuntimeTables` / `firegridRuntimeTableTags` /
-   `runtimeControlPlaneStreamUrl` re-export `RuntimeControlPlaneTable` /
-   `RuntimeOutputTable`. The guard ALLOWLISTS them (tracked debt) rather than
-   passing them silently; narrowing them behind channels is tf-8oaq.
+   `runtimeControlPlaneStreamUrl` are escape-hatch VALUES wrapping
+   `RuntimeControlPlaneTable` / `RuntimeOutputTable`. F3 asserts the substrate
+   TYPE names are not on the barrel; narrowing the value escape hatches behind
+   channels is tf-8oaq.
 
 ## How to run
 
 ```
-# (a) negative corpus + (b) positive — typecheck gate:
+# (a) negative corpus + (b) positive + (c) F3 type gate — all via typecheck:
 pnpm --filter @firegrid/runtime typecheck
 # (b) positive runtime proof:
 pnpm --filter @firegrid/runtime exec vitest run test/misuse-resistance-positive-lifecycle.test.ts
-# (c) structural guard:
-pnpm run lint:public-surface-leak
 ```
 
 Pairs with the discipline PR (R1–R4 + methodology workbench / misuse-resistance
