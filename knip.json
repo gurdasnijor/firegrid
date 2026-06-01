@@ -115,6 +115,16 @@
       "project": [
         "src/**/*.ts"
       ]
+    },
+    "tooling": {
+      "entry": [
+        "src/preflight.ts",
+        "analysis/**/*.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "analysis/**/*.ts"
+      ]
     }
   },
   "ignore": [
