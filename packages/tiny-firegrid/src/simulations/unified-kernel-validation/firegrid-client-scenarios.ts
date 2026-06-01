@@ -32,7 +32,7 @@ import {
 import type { ChannelRegistration } from "@firegrid/protocol/channels"
 import { UnifiedChannelBindingsLive } from "@firegrid/runtime/unified"
 import { WorkflowEngine } from "@effect/workflow"
-import { Effect, Layer, Ref } from "effect"
+import { Clock, Effect, Layer, Ref } from "effect"
 import { makeChannels, type PermissionHandle, type SessionHandle } from "./channels.ts"
 import type { EventOffset } from "./durable-event-channel.ts"
 import {
@@ -286,7 +286,7 @@ const driverBody = (
       T.schedulePrompt,
       {
         contextId, scheduleId: "sched-firegrid-1",
-        fireAtMs: Date.now() + 100,
+        fireAtMs: (yield* Clock.currentTimeMillis) + 100,
         payloadJson: JSON.stringify({ self_prompt: "wake" }),
       },
     )) as { readonly scheduleId: string; readonly firedAt: string }

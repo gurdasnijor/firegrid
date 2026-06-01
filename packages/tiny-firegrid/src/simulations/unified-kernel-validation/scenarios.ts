@@ -33,7 +33,7 @@ import {
   HostPlaneChannelRouter,
   type RuntimeChannelRouterService,
 } from "@firegrid/runtime/channels"
-import { Cause, Effect, Layer, Option, Ref, Schema } from "effect"
+import { Cause, Clock, Effect, Layer, Option, Ref, Schema } from "effect"
 import {
   HostPlaneChannelRouterLive,
   type PermissionHandle,
@@ -260,7 +260,7 @@ export const endToEndScenario = (
         T.schedulePrompt,
         {
           contextId, scheduleId: "sched-1",
-          fireAtMs: Date.now() + 100,
+          fireAtMs: (yield* Clock.currentTimeMillis) + 100,
           payloadJson: JSON.stringify({ self_prompt: "wake" }),
         },
       )
