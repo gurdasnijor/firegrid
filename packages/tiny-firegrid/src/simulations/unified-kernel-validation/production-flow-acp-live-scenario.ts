@@ -66,7 +66,7 @@ import {
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import { Prompt } from "@effect/ai"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Config, Effect, Layer, Option, Schema } from "effect"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
@@ -185,11 +185,9 @@ const realClaudeAcpBin = (() => {
     return undefined
   }
 })()
-const useRealClaudeAcp = process.env["FIREGRID_UKV_USE_REAL_CLAUDE_ACP"] === "1"
-  && realClaudeAcpBin !== undefined
-
 const staticContextResolver = (
   contextId: string,
+  useRealClaudeAcp: boolean,
 ): Layer.Layer<ContextResolverTag> =>
   Layer.succeed(
     ContextResolverTag,
@@ -230,19 +228,25 @@ const staticContextResolver = (
 
 export const productionFlowAcpLiveScenario = (
   urls: ProductionFlowAcpLiveUrls,
-): Effect.Effect<ProductionFlowAcpLiveResult, unknown> => {
-  const enabled = process.env["FIREGRID_UKV_RUN_ACP_LIVE"] === "1"
-  if (!enabled) {
-    return Effect.succeed({
-      enabled: false,
-      skipped: "set FIREGRID_UKV_RUN_ACP_LIVE=1 to run scenario 9 (real subprocess via LocalProcessSandboxProvider)",
-    } satisfies ProductionFlowAcpLiveResult)
-  }
+): Effect.Effect<ProductionFlowAcpLiveResult, unknown> =>
+  Effect.gen(function*() {
+    // Opt-in env gates read through Effect Config (boundary-injected config),
+    // not raw process.env in app/sim code.
+    const enabled = yield* Config.boolean("FIREGRID_UKV_RUN_ACP_LIVE").pipe(
+      Config.withDefault(false),
+    )
+    if (!enabled) {
+      return {
+        enabled: false,
+        skipped: "set FIREGRID_UKV_RUN_ACP_LIVE=1 to run scenario 9 (real subprocess via LocalProcessSandboxProvider)",
+      } satisfies ProductionFlowAcpLiveResult
+    }
+    const useRealClaudeAcp = (yield* Config.boolean("FIREGRID_UKV_USE_REAL_CLAUDE_ACP").pipe(
+      Config.withDefault(false),
+    )) && realClaudeAcpBin !== undefined
 
-  return Effect.gen(function*() {
     const toolExecutor: ToolExecutor = yield* makeToolExecutor(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      (p) => JSON.stringify({ tool: p.toolName, echoed: JSON.parse(p.inputJson) }),
+      (p) => JSON.stringify({ tool: p.toolName, echoed: JSON.parse(p.inputJson) as unknown }),
     )
     const contextId = "ctx-prod-acp-live"
     const attempt = 1
@@ -267,7 +271,7 @@ export const productionFlowAcpLiveScenario = (
     const adapterLayer = ProductionCodecAdapterLive.pipe(
       Layer.provide(sandboxLayer),
       Layer.provide(Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator)),
-      Layer.provide(staticContextResolver(contextId)),
+      Layer.provide(staticContextResolver(contextId, useRealClaudeAcp)),
       Layer.provide(RuntimeEnvResolverPolicy.denyAll),
     )
 
@@ -387,4 +391,3 @@ export const productionFlowAcpLiveScenario = (
       ),
     ) as Effect.Effect<ProductionFlowAcpLiveResult, unknown, never>)
   })
-}

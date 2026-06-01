@@ -1305,4 +1305,14 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // process.env belongs at the binary entry boundary: bin/ entry points
+    // (spawn targets, CLI mains) read boundary configuration from env. Mirrors
+    // the semgrep `firegrid-no-process-env-outside-bin` path exclusion of
+    // `packages/*/src/bin/**` and the rule's own stated intent.
+    files: ["packages/*/src/bin/**/*.ts"],
+    rules: {
+      "local/no-process-env-outside-bin": "off",
+    },
+  },
 )
