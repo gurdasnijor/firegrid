@@ -6,12 +6,26 @@ active in-progress build (tf-r06u.28).
 
 ## TL;DR — where to pick up
 
-**Continue tf-r06u.28 (PR #770) at slice 4/4: the HTTP acceptance tests.**
-Slices 1 (toolkit definition), 2 (the rewire), and 3 (mcp-host server) are
-landed + green, all reshaped to **library-owned MCP semantics** (Gurdas review
-r3333339003: don't reinvent `@effect/ai`). The plan is in
-`docs/findings/tf-r06u-28-mcp-host-port-plan.md`; the executor/body-boundary
-finding is `docs/findings/tf-r06u-28-sleep-spike-suspension-boundary.md`.
+**All 4 slices of tf-r06u.28 (PR #770) are landed + green.** The MCP-host tier
+#765 deleted is ported forward onto the unified substrate, library-owned
+(Gurdas review r3333339003: don't reinvent `@effect/ai`). PR is still **draft**;
+next is review / un-draft + the separate wire-path follow-ons. Plan:
+`docs/findings/tf-r06u-28-mcp-host-port-plan.md`; spike finding:
+`docs/findings/tf-r06u-28-sleep-spike-suspension-boundary.md`.
+
+**Slice 4 (acceptance, green):** `test/mcp-host/mcp-host-http-acceptance.test.ts`
+drives the REAL bound HTTP endpoint (initialize → tools/list → tools/call). tf-x3sv
+holds (first `tools/list` complete: full=11, primitive=4); `sleep` e2e →
+`{slept:true}`. **tf-rgdt verdict:** the default `layerJsonRpc` array-wraps a
+single response (`[response]`) → strict clients (codex-acp) break → re-added the
+byte-identical #224 single-response wrapper (`MCP_TRANSPORT_COMPAT.1`, anchored by
+the live `firegrid-effect-ai-native-agents` constraint). OAuth-404 probes +
+base-URL late-binding stay deferred (neither broke the round-trip). NO `ndJsonRpc`
+swap. 5/5 green across both mcp-host test files.
+
+**Remaining (separate milestones, not blocking #770):** un-draft/review #770;
+wire-path durable sleep (**tf-qmkn**); `wait_for`/signal-blocking tools
+(tf-12q9/tf-c9r9); a live env-gated codex-acp reach check if desired.
 
 **Slices 2+3 outcome (2026-06-01, green, pushed b4836305b):**
 - **Shared unit = the typed per-tool arm** `(input)=>Effect<Output,ToolError>`
