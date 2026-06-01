@@ -28,27 +28,37 @@ the codec ternary (`codec-adapter.ts:299`). The agent-face half of the gateway (
 `sources/codecs/acp/stdio-edge.ts`) is **orphaned** — it has no production consumer and is never composed
 into `FiregridHost`.
 
-This SDD specifies the clean three-tier split that the RFC §4 calls for:
+**This SDD *finishes* a separation #765 started — it does not re-fragment what #765 collapsed.** Those are two
+different axes, and conflating them is the likely reviewer misread to head off. #765's collapse removed the
+Shape-C **per-input-kind duplication**: the per-input subscriber workflows + composition that repeated
+near-identical claim/await/dispatch logic for each input kind were folded into one signal kernel — one rendezvous
+primitive, one subscriber set, one journal observer. That de-duplication is a real win; **keep it.** This SDD
+addresses the **orthogonal** axis: the collapse left **three distinct *concerns* muddled together** in
+`codec-adapter.ts` / `host.ts` — durable session-coordination, protocol edges, and process/runtime management.
+Separating those concerns is not undoing the de-duplication; it completes the job the collapse left half-done.
+Read this as *finish the separation*, not *re-shatter the kernel*.
+
+This SDD specifies the clean three-tier split (named by **concern**, see §4.1) that RFC §4 calls for:
 
 ```
-┌─ Tier 1 · Durable substrate ───────────────────────────────────────────────┐
-│  Channel + DurableTable + Workflow + signal + the unified subscribers       │
-│  Consumes the runtime ONLY through the RuntimeContextSessionAdapter Tag.     │
-│  Knows nothing about ACP or OS processes.                                    │
+┌─ Tier 1 · kernel/  — durable session-coordination kernel ───────────────────┐
+│  Channel + DurableTable + Workflow + signal + subscriber workflows +        │
+│  journal observer + host composition + the RuntimeContextSessionAdapter Tag.│
+│  (This IS what "unified" was reaching for.) Knows nothing about ACP/processes│
 └───────────────────────────┬─────────────────────────────────────────────────┘
                             │  RuntimeContextSessionAdapter  (startOrAttach/send/deregister)
 ┌───────────────────────────┴─────────────────────────────────────────────────┐
-│  Tier 2 · ACP gateway edges (BOTH roles, symmetric, first-class)             │
-│   · agent face  — AcpStdioEdge  (promoted from orphan into FiregridHost)     │
-│   · client face — AcpSessionLive / StdioJsonlSessionLive (codecs)            │
+│  Tier 2 · gateway/  — ACP protocol edges (BOTH roles, symmetric)             │
+│   · agent face  — AcpStdioEdge  (promoted from orphan into the kernel host)  │
+│   · client face — AcpSessionLive / StdioJsonlSessionLive codecs + bindings   │
 │  Owns protocol edges + the durable session binding. Does NOT spawn processes.│
 └───────────────────────────┬─────────────────────────────────────────────────┘
                             │  SandboxProvider  (create/openBytePipe/lifecycle)
 ┌───────────────────────────┴─────────────────────────────────────────────────┐
-│  Tier 3 · Pluggable agent-runtime / process management                       │
+│  Tier 3 · sources/sandbox/  — pluggable agent-runtime / process management   │
 │  LocalProcessSandboxProvider + the spawn/env/lifecycle half of the adapter.  │
 │  A swappable backend (local process, remote sandbox, persistent service)     │
-│  behind a stable contract; blind to ACP.                                      │
+│  behind a stable contract; blind to ACP. (Existing folder — NOT a new tier.) │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -115,6 +125,26 @@ Dependency rule (the design invariant): **Tier 1 may name only the `RuntimeConte
 may name Tier 1 Tags + the `SandboxProvider` Tag; Tier 3 names neither ACP nor substrate.** A reviewer can
 falsify the split mechanically: grep Tier 1 for `acp`/`Sandbox`/`process` imports (should be none), and grep
 Tier 3 for `Acp`/`Channel`/`Workflow` imports (should be none).
+
+### 4.1 Naming: retire `unified/`; name tiers by concern
+
+`unified` was a **transitional migration name** — it named *what it replaced* (the fragmented Shape-C
+subscribers/composition it collapsed), not *what it is*. Now that the collapse has landed, the name has caused
+real confusion (it reads as "everything lives here," which is exactly the muddle this SDD unwinds). **Retire it as
+part of the split** and name each resulting tier by its concern. The rename should land *with* the split, not as a
+follow-up — the whole point is that the folder name communicates the concern boundary the dependency rule enforces.
+
+| Concern (tier) | Target folder | What moves there (current → target) | Why this name |
+|---|---|---|---|
+| Durable session-coordination **kernel** | `runtime/src/kernel/` | `unified/{host,signal,tables,adapter,observers,channel-bindings*}.ts` + `unified/subscribers/*` (the substrate half) | This is the genuine "what `unified` meant" — signal rendezvous + subscriber workflows + journal observer + host composition + the adapter Tag. Keep the de-duplicated kernel together; just name it for the concern |
+| ACP protocol **gateway** edges (both roles) | `runtime/src/gateway/` | the channel **bindings** + the codec **client-face** (`sources/codecs/{acp,stdio-jsonl}`) + the `AcpStdioEdge` **agent-face** + the codec registry + the `bind-codec` stage | Names the protocol-edge concern: everything that speaks ACP/raw on the wire, both the role Firegrid presents (agent face) and the role it drives (client face) |
+| Pluggable agent-runtime / process | **existing** `runtime/src/sources/sandbox/` | `SandboxProvider` + `LocalProcessSandboxProvider` + the `spawn-runtime` stage + the runtime-row registry | **Fold into the existing sandbox tier — do NOT mint a new top-level `runtime/` folder.** `runtime/` would collide with the `@firegrid/runtime` package name and re-introduce the ambiguity we are removing. `sources/sandbox` already *is* the process/runtime tier; the spawn half of the adapter belongs there |
+
+Naming rule for reviewers: **a folder names a concern, not a migration era.** `kernel/` = durable coordination,
+`gateway/` = protocol edges, `sources/sandbox/` = process/runtime. If a symbol's home folder doesn't match the
+dependency tier it sits in (§4), that is the smell the rename exists to surface. (File:line citations elsewhere in
+this SDD use the *current* `unified/…` paths since they ground against the #765 branch as it stands today; the
+table above is the target mapping the split applies.)
 
 ## 5. The `ProductionCodecAdapterLive` split
 
