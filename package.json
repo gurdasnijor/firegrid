@@ -43,7 +43,7 @@
     "lint:semgrep:test": "semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts && semgrep --test --config .semgrep.yml semgrep-tests/wave-a-runtime-boundary.ts",
     "lint:host-sdk-imports": "node scripts/host-sdk-runtime-import-baseline.mjs",
     "lint:host-sdk-imports:baseline": "node scripts/host-sdk-runtime-import-baseline.mjs --write-baseline > host-sdk-runtime-import-baseline.json.new && mv host-sdk-runtime-import-baseline.json.new host-sdk-runtime-import-baseline.json",
-    "preflight": "node scripts/preflight.mjs",
+    "preflight": "pnpm --filter tooling run preflight",
     "arch:deps": "node scripts/tooling.mjs arch deps all",
     "arch:deps:detail": "node scripts/tooling.mjs arch deps detail",
     "arch:deps:workspace": "node scripts/tooling.mjs arch deps workspace",

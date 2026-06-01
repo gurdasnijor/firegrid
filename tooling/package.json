@@ -1,0 +1,17 @@
+{
+  "name": "tooling",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "preflight": "node ./src/preflight.ts"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@effect/platform": "^0.96.1",
+    "@effect/platform-node": "^0.106.0",
+    "effect": "^3.21.2"
+  }
+}
