@@ -29,14 +29,12 @@ root package exposes `pnpm firegrid:host` as the single live host command.
 
 ## Host SDK decision
 
-`packages/host-sdk/src/index.ts` is currently `export {}`. Recommendation:
-delete or formally deprecate `@firegrid/host-sdk` rather than refill it in this
-slice. The active host composition surface is `@firegrid/runtime/unified`
-(`FiregridHost`), and refilling host-sdk risks reintroducing the package
-boundary that the delete-first cutover intentionally emptied.
-
-This recommendation is parked for Gurdas; this slice does not delete the
-package.
+Gurdas decided not to delete `@firegrid/host-sdk`. It is the public
+host-composition surface, while `@firegrid/runtime` is the private substrate.
+The refill is intentionally thin: `packages/host-sdk/src/index.ts` re-exports
+`FiregridHost` and the codec-sugar host option types from
+`@firegrid/runtime/unified`, without restoring the old DurableTable-backed
+host-sdk bodies.
 
 ## R10 / R12 confirmation
 
