@@ -107,8 +107,7 @@ const body = (
           "firegrid.unified.body.decision": "suspend",
           "firegrid.unified.cursor": consumed,
         })
-        yield* Workflow.suspend(instance)
-        return yield* Effect.never
+        return yield* Workflow.suspend(instance)
       }
       while (consumed < rows.length && !reachedTerminal) {
         const row = rows[consumed]!
