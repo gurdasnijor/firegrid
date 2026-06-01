@@ -198,6 +198,11 @@ binds none of `HostPlaneChannelRouter` / `SessionAgentOutputChannel`** (verified
 binds neither). So promotion is not just "add it to the mergeAll"; it has a hard dependency on wiring those
 channels.
 
+> **Verification note (§6 / §6.5).** The "verified" structural premises in §6 (the binding-absence above) and §6.5
+> (the four read-side channels stubbed at `:440-505`) are point-in-time reads of the #765 branch; unlike §6.6's
+> mcp-host claim (which has a standing git falsifier — present on `origin/main`, absent on `sim/unified-kernel-validation`),
+> these have no durable falsifier and their **file:line citations will drift**. Re-verify at cutover before acting on them.
+
 ### 6.1 Promotion shape
 - Add the agent-face tier to `FiregridHost` composition (`host.ts:259-271`) as an **optional, first-class** Layer
   (an `apps/`-style binary composes the real stdio streams; the Layer itself is host-resident).
