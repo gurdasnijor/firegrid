@@ -38,10 +38,12 @@
     },
     "packages/runtime": {
       "entry": [
-        "src/index.ts"
+        "src/index.ts",
+        "test/**/*.test.ts"
       ],
       "project": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "test/**/*.ts"
       ],
       "ignoreDependencies": [
         "@agentclientprotocol/claude-agent-acp"

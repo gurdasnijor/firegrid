@@ -3,12 +3,6 @@
   "findings": [
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/prototypes/target-topology/subscribers/shape-d/tool-call-workflow.ts",
-      "line": 25,
-      "justification": "Pre-existing prototype workflow-make finding; still present in this branch's Semgrep scan, so keep baselined until Lane 3 deletes or relocates the prototype tree."
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/unified/subscribers/runtime-context.ts",
       "line": 66,
       "justification": "Owned durable runtime-context session workflow: one execution per context attempt, parks on Workflow.suspend while waiting for session input signals, owns adapter lifecycle start/send/deregister."
