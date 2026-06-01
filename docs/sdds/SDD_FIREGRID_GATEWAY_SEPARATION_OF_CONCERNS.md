@@ -66,8 +66,10 @@ Two concrete enabling moves carry the split:
 1. **Split `ProductionCodecAdapterLive`** along its own latent seams: `{resolve-context} ⟂ {spawn-runtime} ⟂ {bind-codec}`.
 2. **Replace the codec ternary with two orthogonal registries** (Q5): `protocol → codec` and `name → runtime-row`.
 
-And one structural debt-payoff: **promote the orphaned `AcpStdioEdge` into `FiregridHost`**, wiring its three
-unimplemented methods (`cancel`/`authenticate`/`loadSession`) to durable kernel signals.
+And two structural debt-payoffs the gateway tier must own: **promote the orphaned `AcpStdioEdge` into
+`FiregridHost`** (wiring its three unimplemented methods `cancel`/`authenticate`/`loadSession` to durable kernel
+signals, §6), and **rebuild the host-owned MCP-surfacing server** #765 deleted — the transport that projects
+Firegrid's own choreography toolkit to the adapter LLM, the root cause of the §5.5 reach gap (§6.6).
 
 This single refactor is the shared enabler for the acpx adapter fleet (RFC §6), non-ACP agents (RFC §6.5), the
 local→remote handoff (§4.5), and the agent-face conformance gate (Direction B) — so its leverage is high, but
@@ -137,7 +139,7 @@ follow-up — the whole point is that the folder name communicates the concern b
 | Concern (tier) | Target folder | What moves there (current → target) | Why this name |
 |---|---|---|---|
 | Durable session-coordination **kernel** | `runtime/src/kernel/` | `unified/{host,signal,tables,adapter,observers,channel-bindings*}.ts` + `unified/subscribers/*` (the substrate half) | This is the genuine "what `unified` meant" — signal rendezvous + subscriber workflows + journal observer + host composition + the adapter Tag. Keep the de-duplicated kernel together; just name it for the concern |
-| ACP protocol **gateway** edges (both roles) | `runtime/src/gateway/` | the channel **bindings** + the codec **client-face** (`sources/codecs/{acp,stdio-jsonl}`) + the `AcpStdioEdge` **agent-face** + the codec registry + the `bind-codec` stage | Names the protocol-edge concern: everything that speaks ACP/raw on the wire, both the role Firegrid presents (agent face) and the role it drives (client face) |
+| ACP protocol **gateway** edges (both roles) | `runtime/src/gateway/` | the channel **bindings** + the codec **client-face** (`sources/codecs/{acp,stdio-jsonl}`) + the `AcpStdioEdge` **agent-face** + the codec registry + the `bind-codec` stage + the **host-owned MCP-surfacing** server (the `mcp-host.ts` rebuild, §6.6) | Names the protocol-edge concern: everything that speaks ACP/raw on the wire — the role Firegrid presents (agent face), the role it drives (client face), and the transport that surfaces Firegrid's own toolkit to the adapter LLM |
 | Pluggable agent-runtime / process | **existing** `runtime/src/sources/sandbox/` | `SandboxProvider` + `LocalProcessSandboxProvider` + the `spawn-runtime` stage + the runtime-row registry | **Fold into the existing sandbox tier — do NOT mint a new top-level `runtime/` folder.** `runtime/` would collide with the `@firegrid/runtime` package name and re-introduce the ambiguity we are removing. `sources/sandbox` already *is* the process/runtime tier; the spawn half of the adapter belongs there |
 
 Naming rule for reviewers: **a folder names a concern, not a migration era.** `kernel/` = durable coordination,
@@ -263,6 +265,53 @@ holds either way because there is still one projection.)
 This pins the **read-side wiring contract for A2 / tf-r06u.6**: that bead must land the single `project(...)`
 function consumed by both the ingress streams and the snapshot callable — not two table readers.
 
+### 6.6 Host-owned MCP-surfacing — rebuild the deleted `mcp-host.ts` (the gateway OWNS this concern)
+
+**Root cause of the §5.5 host-dispatch-reach gap, found by git archaeology (verified).** #765's cutover commit
+`e5ff012ab` ("phase2(3/8): cutover — delete Shape C subscribers, tables, composition, bins") **deleted
+`composition/mcp-host.ts` + `composition/mcp-channel-metadata.ts` and did not replace them.** That file was the
+**host-owned MCP server that projected Firegrid's OWN choreography toolkit** (`wait_for`/`sleep`/`spawn`/
+`schedule_me`, the `FiregridAgentToolkit`) to the agent: an `@effect/ai` `McpServer.layerHttp` +
+`McpServer.registerToolkit(FiregridAgentToolkit)`, mounted per-context at `/mcp/runtime-context/:contextId` (the
+route param is the contextId), with `@effect/ai` owning `tools/list` and `mcp-channel-metadata.ts` enriching it.
+It is gone on origin/main → #765 (verified: present on `origin/main`, absent on `sim/unified-kernel-validation`).
+
+**What #765 kept is only the forward-*external* path:** `codec-adapter.ts mcpServersForAcp` (`:184`) passes
+`context.runtime.config.mcpServers` to the adapter on `session/new` — i.e. it forwards *third-party* MCP servers,
+but nothing projects *Firegrid's own* toolkit anymore.
+
+**NET (the precise root cause):** the choreography tools are **schema-present** (`agent-tools/schema.ts`) and
+**channel-routable** (the channel architecture), but have **no production transport** exposing them to a
+downstream adapter's LLM. This *is* the §5.5 host-dispatch-reach gap — and it is why Agent2's B1 spike has to
+**rebuild a throwaway stand-in**: the production transport was deleted, not merely unwired.
+
+**SDD action — the gateway-edges tier (Tier 2, `gateway/`) must explicitly own an MCP-surfacing concern.** The
+split must **rebuild the host-owned MCP server** as a first-class gateway edge: project the `FiregridAgentToolkit`
+over `@effect/ai McpServer`, per-context-routed (the `mcp-host.ts` replacement), and **declare it in the
+`session/new` `mcpServers` set** alongside the forwarded external servers. So the gateway owns *two* MCP
+responsibilities, not one:
+1. **forward external** MCP servers (existing `mcpServersForAcp`), and
+2. **project the host's own choreography toolkit** (the rebuild) — the missing half.
+
+The §7.4 `newSessionMeta` registry field is **the per-dialect config of this surfacing** (how each adapter is
+coaxed to actually load + expose the projected toolkit to its LLM) — gated on **B1**'s reach verdict
+(`tf-r06u.12`). So §6.6 (the transport) and §7.4 (the per-dialect surfacing config) are the two halves of closing
+the §5.5 reach gap: rebuild the transport here; let B1 settle the per-dialect coax there.
+
+**Go-forward model = three distinct layers (do not re-merge them):**
+
+| Layer | Owns | Where |
+|---|---|---|
+| **Channels** | *projection* — the interaction-contract layer (which routes/observations exist) | substrate/kernel + gateway bindings |
+| **agent-tools schema** (`agent-tools/schema.ts`) | *contract* — the typed tool surface | protocol |
+| **Host-owned MCP-surfacing** (this §6.6) | *transport* — actually exposing the toolkit to the adapter LLM | gateway edge |
+
+The **old schema-projection model is NOT go-forward.** `SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT` is re-scoped
+**subordinate/slim** — *absorbed by the channel architecture; channels solve projection at the interaction-contract
+layer.* Do not resurrect a parallel schema-projection mechanism; projection is channels, contract is the
+agent-tools schema, and transport is this host-owned MCP-surfacing edge. (This SDD only *notes* that re-scope; it
+does not edit that doc.)
+
 ## 7. Q5 resolution — two orthogonal registries (closes tf-r06u.2)
 
 RFC Q5: *should "agent protocol" (ACP vs raw) and "runtime/process backend" be one key or independent
@@ -316,7 +365,10 @@ Per the divergence spike, the per-dialect cost is one row; the only per-dialect 
 // stabilize its schema, and do not let any consumer depend on its shape.
 ```
 Defining the rest of `RuntimeRow` while leaving this one field as a typed TODO is exactly the "config not code"
-verdict's boundary: the design is settled except the one measurement-gap field.
+verdict's boundary: the design is settled except the one measurement-gap field. **`newSessionMeta` is the
+per-dialect surfacing config for the host-owned MCP transport (§6.6):** §6.6 rebuilds the transport that projects
+the choreography toolkit; this field is how each adapter is coaxed to actually load + expose it. The two together
+close the §5.5 reach gap.
 
 ### 7.5 Composition
 `FiregridHost` resolves `(agentProtocol, runtimeName)` from the context's `runtime.config` and looks up
@@ -359,6 +411,11 @@ Net: everything *designable* is in this SDD now; everything *buildable* waits on
 - **Read-side snapshot ⟂ stream drift (§6.5).** Property test: for every `ctx`, `snapshot(ctx) ≡ fold(stream(ctx))`.
   If they can differ, the snapshot has a second, independent table read and the one-projection rule is violated —
   the design (and the `session/load` transcript-fold, conformance C1) is wrong until they share one `project(...)`.
+- **MCP-surfacing transport missing (§6.6).** Drive an agent through the gateway and assert the downstream
+  adapter's LLM can *see and call* a Firegrid choreography tool (`wait_for`/`schedule_me`). If it can't, the
+  host-owned MCP projection (the `mcp-host.ts` replacement) was not rebuilt and the §5.5 reach gap is still open —
+  schema-present + channel-routable ≠ reachable. (If a reviewer claims #765 already exposes the toolkit, the
+  falsifier is git: `mcp-host.ts` is absent on `sim/unified-kernel-validation`, present on `origin/main`.)
 
 ## 10. Cross-references
 
@@ -369,6 +426,11 @@ Net: everything *designable* is in this SDD now; everything *buildable* waits on
   spike — `newSessionMeta` gate), **A2 / tf-r06u.6** (read-side wiring — the §6.5 one-projection / no-drift
   contract this SDD pins), and the D1 disposition + the three completeness beads (read-side / parent→child
   agent_output / choreography-tool dispatch) in the D1 memo.
+- Deleted infra (§6.6 rebuild target): `composition/mcp-host.ts` + `composition/mcp-channel-metadata.ts`, removed by
+  cutover commit `e5ff012ab` (present on `origin/main`, absent on `sim/unified-kernel-validation`).
+- Re-scoped subordinate: `SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT` — *absorbed by the channel architecture* (channels
+  solve projection at the interaction-contract layer); not go-forward as a standalone mechanism (§6.6). This SDD
+  only notes the re-scope; it does not edit that doc.
 - Existing SDDs: `SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING.md`, `SDD_FIREGRID_UNIFIED_PRODUCTION_CODEC_ADAPTER.md`
   (the §B/Phase-E wiring this refactor restructures).
 
