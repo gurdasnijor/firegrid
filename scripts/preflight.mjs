@@ -19,6 +19,7 @@ const gates = [
   ["lint:deps", "Dependency cruiser boundaries"],
   ["lint:effect-quality", "Effect-quality metrics ratchet"],
   ["lint:ast-grep", "ast-grep style guardrails"],
+  ["trace:seams:ukv", "UKV production trace seam gate"],
   ["lint:semgrep:test", "Semgrep rule fixtures"],
   ["lint:semgrep", "Semgrep ERROR baseline gate"],
   ["lint:host-sdk-imports", "host-sdk runtime-import quarantine (Wave C)"],

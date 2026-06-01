@@ -48,3 +48,27 @@ The **canonical committed run** (same trunk code) **did** create the run and exe
 ## Recommendation
 1. Root-cause the engine's **first start/prompt signal → run creation** path (`tf-ll90.11.2`), with the live-subscription vs `recoverPendingSignals` (`tf-ll90.3`) wiring in scope.
 2. Until the body executes deterministically on a fresh checkout, treat the UKV sim as **not yet a reliable real-agent proof** — `tf-ll90.14` must show a created run + `open_byte_pipe` + `adapter.start_or_attach` + real ACP spans, not just `DriverCompleted`.
+## Outcome B addendum — not a rebase regression
+
+Agent3 reran the decisive cross-environment check on 2026-06-01 after PR #783
+was rebased onto the #772 convergence head. The previously canonical
+433-span run is **not reproducible today**; the same branch now fails before
+the workflow body starts.
+
+Data:
+
+| Check | Runs | Result |
+|---|---:|---|
+| #783 combined head `0405ab8e1` | 5 | 0/5 executed: `workflow_engine.execution.execute=0`, `adapter.start_or_attach=0`, `open_byte_pipe=0`, `snapshot_run_count=0` |
+| Dep-restore hypothesis (`@effect/workflow` + `@effect/ai` restored, `pnpm install`) | 5 | 0/5 executed: dependency removal is refuted as the trigger |
+| Clean `5918c0866` checkout + `pnpm install` | 1 local run plus coordinator rerun | 0 executed: run `2026-06-01T23-01-26-185Z__unified-kernel-validation` had 89 spans, driver/sdk/subprocess `27/61/0`, `workflow_engine.execution.execute=0`, `adapter.start_or_attach=0`, `open_byte_pipe=0`, `snapshot_run_count=0` |
+
+Classification: **Outcome B**. This is not a regression introduced by the
+rebase or by the dependency cleanup. The fork-based session start path was
+always carrying a latent "input-before-start dropped" race. Correctness-first
+fix target is `tf-ll90.3`'s kernel-owned write-arm (`kernelWriteArm`), not a
+timing fence around the existing false-ack path.
+
+Process consequence: future UKV evidence must be gated by host/substrate trace
+spans (`workflow_engine.execution.execute`, `adapter.start_or_attach`, and
+`open_byte_pipe`), not by `DriverCompleted` or by a public `startOffset` alone.
