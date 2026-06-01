@@ -22,6 +22,16 @@ export type AgentTextDeltaPart = Response.TextDeltaPart
 export const AgentToolCallPartSchema = Prompt.ToolCallPart
 export type AgentToolCallPart = Prompt.ToolCallPart
 
+// tf-r06u.41 / DECIDE-3 — the tool-result counterpart to the tool-call part,
+// reusing the same @effect/ai Prompt contract so the durable wire form stays
+// identical. `Prompt.ToolResultPart` carries {id, name, isFailure, result,
+// providerExecuted}; `isFailure` STRUCTURALLY distinguishes a successful
+// publish (carrying buildSha in `result`) from a failed one — which the bare
+// {toolUseId, resultJson} sketch could not. The lean view is DERIVED:
+// toolUseId === part.id, resultJson === JSON.stringify(part.result).
+export const AgentToolResultPartSchema = Prompt.ToolResultPart
+export type AgentToolResultPart = Prompt.ToolResultPart
+
 export const StopReasonSchema = Response.FinishReason
 export type StopReason = Response.FinishReason
 
@@ -62,6 +72,12 @@ export const AgentToolUseEventSchema = Schema.TaggedStruct("ToolUse", {
   // firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.2
   part: AgentToolCallPartSchema,
 })
+// tf-r06u.41 — mirrors AgentToolUseEventSchema. A ToolUse(x) is later followed
+// by a ToolResult(x) correlated by `part.id`. Replay-safe by offset/sequence
+// like every other arm; same @effect/ai wire form.
+export const AgentToolResultEventSchema = Schema.TaggedStruct("ToolResult", {
+  part: AgentToolResultPartSchema,
+})
 export const AgentPermissionRequestEventSchema = Schema.TaggedStruct(
   "PermissionRequest",
   {
@@ -93,6 +109,7 @@ export const AgentOutputEventSchema = Schema.Union(
   AgentReadyEventSchema,
   AgentTextChunkEventSchema,
   AgentToolUseEventSchema,
+  AgentToolResultEventSchema,
   AgentPermissionRequestEventSchema,
   AgentTurnCompleteEventSchema,
   AgentStatusEventSchema,

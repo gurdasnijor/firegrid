@@ -525,6 +525,14 @@ class FiregridAcpStdioAgent implements acp.Agent {
           },
         })
         return
+      case "ToolResult":
+        // tf-r06u.41: the ToolResult observation arm now exists; forwarding it
+        // to Zed as an ACP `tool_call_update` (status completed/failed +
+        // rawOutput from event.part.result) is the wire-path emission slice
+        // owned by tf-r06u.44 (Agent2). No ToolResult is produced yet, so a
+        // no-op forward is correct-for-now and keeps this exhaustive switch
+        // total without guessing the ACP update shape.
+        return
       case "Status":
         // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6
         return

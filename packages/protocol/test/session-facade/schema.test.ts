@@ -177,6 +177,47 @@ describe("session facade protocol schema", () => {
     })
   })
 
+  it("tf-r06u.41 projects a ToolResult observation, lifting part.id/.name into supplemental fields and preserving isFailure + result", () => {
+    const observation = runtimeAgentOutputObservationFromRow({
+      eventId: {
+        contextId: "ctx_projection",
+        activityAttempt: 1,
+        target: "events",
+        sequence: 7,
+      },
+      contextId: "ctx_projection",
+      activityAttempt: 1,
+      sequence: 7,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-06-01T00:00:00.000Z",
+      raw: encodeRuntimeAgentOutputEnvelope({
+        _tag: "ToolResult",
+        part: Prompt.toolResultPart({
+          id: "tool-1",
+          name: "publish",
+          isFailure: false,
+          result: { published: true, publishedVersion: 42, buildSha: "abc123" },
+          providerExecuted: false,
+        }),
+      }),
+    })
+
+    expect(Option.isSome(observation)).toBe(true)
+    if (Option.isNone(observation)) return
+    expect(observation.value).toMatchObject({
+      _tag: "ToolResult",
+      // correlates to its ToolUse by toolUseId, mirroring the ToolUse arm:
+      toolUseId: "tool-1",
+      toolName: "publish",
+    })
+    // DECIDE-3: success-vs-failure is structural, and the publish terminal
+    // carries buildSha in `result`.
+    if (observation.value._tag !== "ToolResult") return
+    expect(observation.value.event.part.isFailure).toBe(false)
+    expect(observation.value.event.part.result).toMatchObject({ buildSha: "abc123", publishedVersion: 42 })
+  })
+
   it("TFIND-047 exposes correlated agent-output observation narrowing from the outer tag", () => {
     const textDeltaFromObservation = (
       observation: RuntimeAgentOutputObservation,

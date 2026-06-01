@@ -14,6 +14,7 @@ import {
   AgentStatusEventSchema,
   AgentTerminatedEventSchema,
   AgentTextChunkEventSchema,
+  AgentToolResultEventSchema,
   AgentToolUseEventSchema,
   AgentTurnCompleteEventSchema,
   AgentUnknownEventSchema,
@@ -296,6 +297,18 @@ export const RuntimeAgentOutputObservationSchema = Schema.Union(
     _tag: Schema.Literal("ToolUse"),
     event: AgentToolUseEventSchema,
   }),
+  // tf-r06u.41 / DECIDE-3 — the tool-result arm mirrors ToolUse. The
+  // supplemental toolUseId/toolName are populated from event.part.id/.name by
+  // the emission path so a ToolResult correlates to its ToolUse without
+  // decoding the part. Carries isFailure + result (e.g. {buildSha,
+  // publishedVersion}) so a client-observable publish terminal is durable +
+  // replay-safe by offset/sequence.
+  Schema.Struct({
+    ...RuntimeAgentOutputObservationBaseFields,
+    ...RuntimeAgentOutputObservationSupplementalFields,
+    _tag: Schema.Literal("ToolResult"),
+    event: AgentToolResultEventSchema,
+  }),
   Schema.Struct({
     ...RuntimeAgentOutputObservationBaseFields,
     ...RuntimeAgentOutputObservationSupplementalFields,
@@ -535,6 +548,17 @@ export const runtimeAgentOutputObservationFromRow = (
         return Option.some({
           ...base,
           _tag: "ToolUse",
+          event,
+          toolUseId: event.part.id,
+          toolName: event.part.name,
+        })
+      case "ToolResult":
+        // tf-r06u.41 — mirror ToolUse: lift part.id/.name into the supplemental
+        // fields so a ToolResult correlates to its ToolUse by toolUseId without
+        // decoding the part. isFailure + result ride inside `event.part`.
+        return Option.some({
+          ...base,
+          _tag: "ToolResult",
           event,
           toolUseId: event.part.id,
           toolName: event.part.name,
