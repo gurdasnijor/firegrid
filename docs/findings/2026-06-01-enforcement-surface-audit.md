@@ -51,7 +51,7 @@ Legend: **ALIGNED** (real unified invariant → keep) · **STALE** (enforces a p
 
 ### 2A. CI gate-reach map (what actually gates the trunk)
 
-| CI job | Runs | 
+| CI job | Runs |
 |---|---|
 | **Lint** | `check:specs`, `check:docs`, `lint` (eslint + `effect-native-production-cutover-check` + `runtime-public-surface-check` + `legacy-runtime-roots-scoreboard` + `runtime-target-legacy-type-only-check` + `test-layout-check` + `tiny-firegrid-layout-check` + `effect:diagnostics`), `lint:dead`, `lint:dup`, `lint:deps`, `lint:effect-quality`, `lint:ast-grep` |
 | **Semgrep** | `lint:semgrep:test`, `lint:semgrep` |
