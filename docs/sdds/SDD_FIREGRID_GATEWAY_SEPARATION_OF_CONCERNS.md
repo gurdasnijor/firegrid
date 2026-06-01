@@ -246,7 +246,7 @@ tables, never a parallel read path.** Concretely, the read-side wiring defines a
 the **ingress streams emit that projection incrementally** (row-by-row, cursored), and the **snapshot returns the
 fold of it** at the current frontier. There must be exactly one place that reads the tables.
 
-**Invariant (the falsifier, see §9):** `snapshot(ctx) ≡ fold(stream(ctx))` for every `ctx`. If the snapshot has an
+**Invariant (the falsifier, see §10):** `snapshot(ctx) ≡ fold(stream(ctx))` for every `ctx`. If the snapshot has an
 independent query that can diverge from the stream's projection, the design is violated — that divergence is
 precisely the class of bug (current-state says X, replayed history says Y) the gateway exists to prevent, and it
 is what ACP `session/load` (conformance C1, the transcript-fold) cannot tolerate.
@@ -390,7 +390,63 @@ close the §5.5 reach gap.
 Net: everything *designable* is in this SDD now; everything *buildable* waits on D1, with three finer gates
 (read-side, cancel keystone, B1) on specific sub-parts.
 
-## 9. Falsifiers (how to prove this design wrong)
+## 9. Misuse-resistance — make illegal states unrepresentable (surface-design obligation)
+
+Design principle (Gurdas): the host + client API surface must be **misuse-resistant** — *hard to hold the hammer
+wrong.* Two moves: **make-illegal-states-unrepresentable** (the wrong call doesn't type-check) + **pit-of-success**
+(the easy path is the correct path). For a substrate this powerful, a surface that *lets* you mis-wire is a latent
+production incident — and the tier split (§4) is the moment to lock this in, because the tier boundaries are
+exactly the lines misuse crosses.
+
+### 9.1 The five surface obligations
+The split MUST satisfy all five; each converts a class of misuse into a compile/type error:
+
+1. **Total composition — a missing block is a compile error.** `FiregridHost(...)` resolves to
+   `Layer<…, never, never>`: self-contained, no unmet requirement. If a building block (codec, runtime backend,
+   channel binding) is missing, the program does not type-check — you cannot *run* a half-wired host. (The current
+   factory already targets R = `never`, `host.ts:25,227`; the obligation is to keep composition **total** across
+   the registry split. Seed: `unified-firegrid-host-compose.test.ts`.)
+2. **Pit-of-success defaults — the common host needs near-zero wiring.** Reasonable defaults so a default host is
+   ~one call: `durableStreamsBaseUrl` gains a sensible default (**tf-r06u.26**); the `codec: "acp"` sugar already
+   composes the canonical stack. The 14-piece composition stays an *escape hatch*, never the entry fee.
+3. **Pluggable blocks via Effect Tags — mis-wiring is a type error.** Codec / runtime / channels are swapped by
+   providing a `Layer` for a `Tag` (`RuntimeContextSessionAdapter`, `SandboxProvider`, the §7 codec/runtime
+   registries, each channel Tag). The wrong shape fails at the type level, not at runtime. "New backend/protocol =
+   register a typed entry," never "edit a body."
+4. **No substrate in public signatures.** `DurableTable` / `WorkflowEngine` / engine-internal Tags MUST NOT appear
+   in public host *options* or client *verb* signatures. Substrate stays behind **channel-target indirection** —
+   opaque, agent-meaningful names (`session.agent_output`, `firegrid.verifiedWebhooks`), never raw handles. This is
+   the §4 dependency rule expressed at the *public surface*: a caller can name a channel target, never a table.
+   (Guard seed: `runtime-public-surface-check.mjs`.) Extends the standing "don't leak substrate to the agent
+   surface" rule.
+5. **Direction- and role-typed channels.** A client verb cannot express a host-only op, and channel **direction**
+   is type-enforced: an `IngressChannel` can only be observed, an egress channel only appended, a `CallableChannel`
+   only called with its request→response types. You cannot `send` on an ingress or `observe` an egress — the types
+   forbid it. (`makeIngressChannel`/`makeCallableChannel`/`makeDurableEventChannel` are the direction-typed
+   constructors; the obligation is that the *public* channel surface preserves this so a held handle can't be
+   misused by direction.)
+
+### 9.2 Proof obligations (tf-r06u.27) — the design isn't done until misuse is provably non-compiling
+Naming the obligations is not enough; the split must ship the proofs:
+
+- **Positive — full-lifecycle public-surface sim.** Drive a complete session lifecycle (start → prompt →
+  permission → tool → terminal → read-side) **through the public surface only** (host options + client verbs +
+  channel targets), composing to `Layer<…, never, never>`. Proves the pit-of-success path works end-to-end with no
+  substrate access. (Extends `unified-firegrid-host-compose.test.ts`.)
+- **Negative — `@ts-expect-error` footgun corpus.** A type-level corpus where every *wrong* move is asserted **not
+  to compile**: a host missing a block; a client verb naming a host-only op; observing an egress / sending an
+  ingress; a public option referencing a substrate Tag; a `CallableChannel` called with the wrong request type.
+  Each is a `@ts-expect-error` — if any footgun *starts* compiling, CI fails. This is the operational meaning of
+  "make illegal states unrepresentable."
+- **Surface-leak guard.** Keep `runtime-public-surface-check.mjs` green across the split (documented-API ⊆
+  exported; no substrate/kernel/control-plane in the public surface) and **extend it to the new `kernel/` ⟂
+  `gateway/` boundary** so a substrate symbol cannot re-enter a public signature.
+
+**The bar:** the design is not done until the negative corpus exists and the wrong moves provably do not compile. A
+surface that merely *documents* the right way while still letting the wrong way type-check has not met the
+obligation.
+
+## 10. Falsifiers (how to prove this design wrong)
 
 - **Tier purity is unachievable.** If Tier 1 cannot be expressed without importing `acp`/`Sandbox`/`process`
   symbols (grep test, §4), the `RuntimeContextSessionAdapter` seam is insufficient and needs widening — falsifies
@@ -417,14 +473,16 @@ Net: everything *designable* is in this SDD now; everything *buildable* waits on
   schema-present + channel-routable ≠ reachable. (If a reviewer claims #765 already exposes the toolkit, the
   falsifier is git: `mcp-host.ts` is absent on `sim/unified-kernel-validation`, present on `origin/main`.)
 
-## 10. Cross-references
+## 11. Cross-references
 
 - RFC §4 (separation of concerns), §4.5 (local→remote handoff), §6/§6.5 (fleet + non-ACP), §12 Q4/Q5.
 - Companion `2026-05-31-acp-durability-conformance.md` — C1 (loadSession transcript-fold), C4 (cancel fan-out),
   C8 (MCP-surfacing gate).
 - Beads: **closes tf-r06u.2** (Q5); cross-refs **tf-r06u.13** (cancel keystone), **tf-r06u.12 / B1** (MCP-surfacing
   spike — `newSessionMeta` gate), **A2 / tf-r06u.6** (read-side wiring — the §6.5 one-projection / no-drift
-  contract this SDD pins), and the D1 disposition + the three completeness beads (read-side / parent→child
+  contract this SDD pins), **tf-r06u.26** (pit-of-success default `durableStreamsBaseUrl`, §9.1 obligation 2),
+  **tf-r06u.27** (misuse-resistance proof obligations — positive sim + `@ts-expect-error` corpus + surface-leak
+  guard, §9.2), and the D1 disposition + the three completeness beads (read-side / parent→child
   agent_output / choreography-tool dispatch) in the D1 memo.
 - Deleted infra (§6.6 rebuild target): `composition/mcp-host.ts` + `composition/mcp-channel-metadata.ts`, removed by
   cutover commit `e5ff012ab` (present on `origin/main`, absent on `sim/unified-kernel-validation`).
@@ -434,7 +492,7 @@ Net: everything *designable* is in this SDD now; everything *buildable* waits on
 - Existing SDDs: `SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING.md`, `SDD_FIREGRID_UNIFIED_PRODUCTION_CODEC_ADAPTER.md`
   (the §B/Phase-E wiring this refactor restructures).
 
-## 11. ACID anchor
+## 12. ACID anchor
 
 New behavior introduced by the *implementation* of this design should tie back to
 `features/firegrid/firegrid-workflow-driven-runtime.feature.yaml`
