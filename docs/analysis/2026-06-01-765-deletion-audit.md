@@ -56,44 +56,77 @@ Each finding carries a **Tracked?** column (SDD §, bead id, or `SILENT`) and a 
 
 ---
 
-## 1.5 Architectural-frame sanity check (Shape C / Shape D) — was the baseline stale?
+## 1.5 Reconciliation against the branch's own architecture docs (the cutover-vs-validation crux)
 
-A reviewer asked whether the audit graded against a **stale architectural frame** (Shape C
-vs Shape D, `docs/architecture/shape-c-vs-shape-d.md`). Checked — the baseline is correct, and
-the check produced one extra finding. Grounded at the engine.
+A reviewer walked the audit through the five governing docs (`shape-c-vs-shape-d.md`,
+`SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING.md`, `SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION(_PREFLIGHT)`,
+`unified-subscriber-kernel.md`) plus the engine and signal sources. The audit's baseline and verdict
+**hold and are strengthened**; two findings re-grade from SILENT to tracked-but-premature, and the
+crux sharpens to a single, doc-grounded sentence.
 
-- **Baseline used was the target, not the stale frame.** The audit graded against the 6 trunk
-  SDDs + `unified-subscriber-kernel.md` (the "every subscriber is a workflow" target).
-  `shape-c-vs-shape-d.md` is explicitly **transitional** and *defers to that same target* ("treat
-  the Shape C path as bridge state expected to collapse … once the kernel-owned write+arm primitive
-  lands, tf-c9r9"). It was last updated by the unified-kernel commit itself (`c379f0b65`). So the
-  sanctioned-collapse classifications (keyed-dispatch, wait-router, subscriber loops → §2) are right
-  under both frames; none was mis-graded as a regression against the obsolete Shape-C rules.
-- **The doc corroborates the findings.** Its scheduled-prompt Shape-D *falsifier* — "a scheduled
-  fact that needs to fire at a future instant with **no external producer to write a 'due' trigger
-  row**" — is exactly **R1**. Its `input-suspend-crash-recovery` falsifier — "a Shape-D body parked
-  on `Workflow.suspend` is **not** re-armed by reconstruction" — underpins **R3** and the item below.
-- **NEW finding R14 (engine-grounded): the production parked body is not re-armed on restart.**
-  The unified `RuntimeContextSessionWorkflow` *is* a context-lifetime body parked on
-  `Workflow.suspend` (`unified/subscribers/runtime-context.ts:103-138`) — which `shape-c-vs-shape-d`
-  C5 permits **only** once kernel-owned write+arm exists. The engine's startup recovery runs **only**
-  `recoverPendingClockWakeups` (`engine/internal/engine-runtime.ts:527`; def :149) — there is **no**
-  recovery for domain-signal-suspended workflows (the exact gap the doc cites). The intended sweep,
-  `recoverPendingSignals` (`unified/signal.ts:197`, "walks the signal table deduped by executionId;
-  re-issues `engine.resume` for executions whose bodies are still unresolved"), **is correct and
-  proven** — exported on the unified surface (`unified/index.ts`) and exercised by the sim's
-  restart-recovery harness (`unified-kernel-validation/substrate.ts:126` `runGeneration` runs it once
-  per generation; the production-flow scenarios call it too). But it has **zero production callers**:
-  it is **not invoked by `FiregridHost` nor by engine startup**, and **no SDD mentions wiring or
-  deferring it** (verified — whole-repo grep + SDD grep). Live operation re-arms via
-  `resume(executionId)` on signal-send (`engine-runtime.ts:290/339/484`); **restart does not
-  proactively re-arm a domain-signal-parked body.** D1: **HIGH** (durability/recovery), **SILENT**.
-  This is the cleanest single instance of the audit's thesis — *substrate proven in the sim,
-  production wiring absent and untracked* — and the substrate-level reason the validation-skeleton
-  posture must not be cut over as-is.
-- **Doc-hygiene nit:** `shape-c-vs-shape-d.md` lines 155-168 ("Ground Truth / Production
-  subscribers") still reference the `subscribers/{tool-dispatch,scheduled-prompt,wait-router,runtime-
-  control,runtime-context,runtime-context-session}/` paths that #765 deleted — stale, worth scrubbing.
+**The branch holds two migration philosophies in genuine, documented tension:**
+
+| | Cannon line | Aggressive-SDD line |
+|---|---|---|
+| Authority | `unified-subscriber-kernel.md` → `docs/cannon/architecture/kernel-owned-write-arm.md` (active, dispatchable) | `RESPONSE_UNIFICATION` + `…_PREFLIGHT` (both *"proposed"*), `WIRING` (*"in-progress"*) |
+| Scope | **subscriber-tier collapse only**; `composition/`, `capabilities/`, `tables/`, … **stay** | full collapse incl. `composition/`→`FiregridHost`, row families, schemas |
+| Sequencing | **bead-gated**; *"each collapse happens when its corresponding bead lands"*; **"Doing the deletions ahead of the kernel implementation breaks production"** | **one ≥5,000-line cut now**, justified by *"zero-user greenfield"*, validated by the sim |
+| Recovery gate | **tf-c9r9 (kernel write+arm) = `Open`** | not in the Phase-2 migration sequence (commits 1–8 swap Lives + delete; no kernel-wiring step) |
+
+**#765 executed the aggressive path — to the deletion stage — with the wiring/rewrite stages
+incomplete.** That is the precise cutover-vs-validation characterization, and the branch's *own*
+cannon names the risk: the subscriber/tier deletions ran **ahead of tf-c9r9 (Open)** and **beyond the
+cannon's subscriber-tier-only scope** (`composition/` + `capabilities/` were deleted though
+`unified-subscriber-kernel.md` "What stays" keeps them). *Fair mitigation:* "zero-user greenfield"
+means nothing **live** breaks today — but the recovery/control/relay/test-rewrite must land before
+real traffic, which is exactly the "validation skeleton, not cutover" verdict.
+
+**Baseline was correct (not stale).** The audit graded against the unified target, which
+`shape-c-vs-shape-d.md` *itself defers to* (it is explicitly **transitional** — "treat Shape C as
+bridge state expected to collapse"). The sanctioned-collapse classifications (keyed-dispatch,
+wait-router, subscriber loops → §2) are right; none was mis-graded against the obsolete Shape-C rules.
+
+**Re-grades (SILENT → tracked-but-premature):**
+- **R14 (parked-body restart recovery)** is tracked by **tf-c9r9** (the cannon's kernel-owned
+  write+arm; cannon pieces `kernelWriteArm`/`replayPendingWriteArm`/`KernelCommandTable`, whose unified
+  implementation is `recoverPendingSignals` over the SignalTable). It is **not silent** — it is the
+  Open bead the deletions ran ahead of. *Engine-grounded:* the engine's only startup recovery is
+  `recoverPendingClockWakeups` (`engine/internal/engine-runtime.ts:527`; def :149) — **no** recovery
+  for domain-signal-suspended workflows (the asymmetry `unified-subscriber-kernel.md` §"The asymmetry"
+  names). `recoverPendingSignals` (`unified/signal.ts:197`) is **correct and sim-proven**
+  (`unified-kernel-validation/substrate.ts:126` runs it per `runGeneration`) but has **zero production
+  callers** — not wired into `FiregridHost`. So live operation re-arms via `resume` on signal-send
+  (`engine-runtime.ts:290/339/484`); **restart does not** proactively re-arm a domain-signal-parked
+  body. D1 **HIGH**; status **tracked (tf-c9r9, Open)** — the cleanest instance of the thesis:
+  *substrate proven in the sim, production wiring not yet lifted.*
+- **R11 (replay-storm / output-cursor)** is tracked by **tf-aseo** (cannon work-mapping: "independent,
+  can proceed in parallel"). Not silent.
+
+**Findings that stay SILENT (outside every named bead/SDD scope):**
+- **R2 (cancel/close control plane):** `…_PREFLIGHT` §1 scoped `runtime-control/` as **"AUDIT + TRIM …
+  keep the parts that aren't inputIntents/startRequests/permissionRequests polling"** — cancel/close
+  is a non-polling lifecycle capability that should have survived the trim, but was deleted with **no
+  replacement** and no `HostKernelWorkflow`. Deletion **exceeded the PREFLIGHT's own scope.**
+- **R1 (scheduled-prompt delivery):** `…_PREFLIGHT` §1 says scheduled-prompt is **"DELETE — replaced
+  by the signal-based ScheduledPromptWorkflow"** — the replacement landed but **doesn't deliver** (no
+  relay/producer). The *replacement is incomplete*; no bead tracks the delivery half. Corroborated by
+  the `shape-c-vs-shape-d.md` Shape-D falsifier ("scheduled fact … no external producer to write a
+  'due' trigger row").
+- **R3 (terminal-relay leg):** diagrammed in `WIRING` decision §B (line 44, "observer → terminal
+  signal relay") but Phase C shipped only the PermissionRequest+ToolUse legs; **not in `WIRING`'s
+  explicit "Out of scope" list** (codec Live, host-sdk, CLI, tool-executor, permission-policy). No bead.
+- **R7 (parent→child output):** no bead, no SDD.
+
+**Coverage regressions (C1–C8) are the incomplete half of a *planned* migration step.** `…_PREFLIGHT`
+§5 + migration commit 7 explicitly plan **~1,500 lines of test *rewrite*** against the signal-based
+subscribers alongside the deletion (commit 6). The deletion landed; the rewrite is incomplete — so
+C1–C8 are "planned-but-not-done," not silently dropped. Still a real coverage gap to close before cutover.
+
+**Doc-hygiene nits:** (a) `shape-c-vs-shape-d.md` lines 155-168 ("Ground Truth / Production
+subscribers") still reference the `subscribers/{tool-dispatch,scheduled-prompt,wait-router,runtime-
+control,runtime-context,runtime-context-session}/` paths #765 deleted; (b) `unified-subscriber-kernel.md`
+"What stays" still lists `composition/` and `capabilities/` as retained, though #765 deleted both
+(the cannon-vs-aggressive divergence above) — both worth reconciling.
 
 ## 2. The sanctioned cutover (NOT regressions)
 
@@ -132,7 +165,7 @@ Capabilities the old tiers had that the unified tier neither demonstrably ports 
 | R10 | **Malformed-input handling** changed skip-and-continue → `Effect.orDie` (kills session body) | `subscribers/runtime-context-session-workflow/workflow.ts` | REPLACED-DIFFERENTLY (undocumented delta) | `runtime-context.ts:116-123` `orDie` on a bad payload; old path logged + advanced cursor past it. No SDD notes the behavior change. | SILENT | LOW-MED |
 
 Adjacent state-layer notes (corroborating, lower-severity):
-- **R11 — tf-aseo durable loop-state + tf-7kq8 output-scan storm guard** (`tables/runtime-context-state.ts`): the durable cursor/pending-permission/exit table and the `nextOutputObservation` gap-skip walker are gone; the new body redefines progress as "read own signals" (legitimate reshape) but the **O(outputs) replay invariant has no production guard** and is exercised only in tiny-firegrid. `unified/tables.ts:1-27` carries rationale prose but no bead re-asserts the invariant. **SILENT / MED.**
+- **R11 — tf-aseo durable loop-state + tf-7kq8 output-scan storm guard** (`tables/runtime-context-state.ts`): the durable cursor/pending-permission/exit table and the `nextOutputObservation` gap-skip walker are gone; the new body redefines progress as "read own signals" (legitimate reshape) but the **O(outputs) replay invariant has no production guard** and is exercised only in tiny-firegrid. `unified/tables.ts:1-27` carries rationale prose. **TRACKED by tf-aseo** (cannon work-mapping, "independent, parallel"); the *production guard for the new model* is the open part. **MED.**
 - **R12 — `runs` family half-cutover**: ledger says "keep only `contexts`," but `runs` survives in schema (`protocol/launch/table.ts:179`), is **read** by `channels/host-control.ts`+`session-self/live.ts`, yet has **no production writer**. Either dead legacy that should also have been cut, or a wiring gap. **SILENT / MED — author should confirm.**
 - **R13 — `claude session/new._meta alwaysLoad` coax**: ledger's unified/-only grep flagged this as gone, but it **EXISTS** at `sources/codecs/acp/index.ts:182-234` (`claudeAgentAcpMeta`). **NOT a drop** — reconciliation note, not a finding.
 
