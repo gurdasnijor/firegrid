@@ -1,0 +1,45 @@
+{
+  "name": "@firegrid/edge-auth",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./testkit": {
+      "types": "./src/testkit.ts",
+      "default": "./src/testkit.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "pnpm run typecheck && pnpm run test",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "@effect/platform": "^0.96.0",
+    "effect": "^3.18.0"
+  },
+  "dependencies": {
+    "@firegrid/protocol": "workspace:*",
+    "effect-durable-streams": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/platform": "^0.96.1",
+    "@types/node": "^22.10.0",
+    "effect": "^3.21.2",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}

@@ -363,6 +363,76 @@ export const runtimeContextOutputStreamName = (input: {
 }): string =>
   Schema.encodeSync(RuntimeContextOutputStreamNameSchema)(input)
 
+// Per-context INTENT (ingress) stream — the poll-only edge appends prompt /
+// permission-response intents here; the host intent-observer (tf-r06u.42)
+// tails it. Mirrors the output-stream codec so the name is derived from one
+// authority, never hand-built (edge-auth `open` mints the handle, .42 tails
+// the same name — they cannot drift). Brookhaven consumer-contract §2/§7.1.
+const RUNTIME_CONTEXT_INTENT_STREAM_MARKER = ".runtimeIngress.context."
+
+const RuntimeContextIntentStreamNamePartsSchema = Schema.Struct({
+  prefix: HostStreamPrefixWireSchema,
+  contextId: Schema.String.pipe(
+    Schema.filter((value) =>
+      value.length > 0 ? undefined : "runtime intent contextId must be non-empty"),
+  ),
+})
+
+export const RuntimeContextIntentStreamNameSchema = Schema.transformOrFail(
+  Schema.String,
+  RuntimeContextIntentStreamNamePartsSchema,
+  {
+    strict: false,
+    decode: (encoded, _options, ast) => {
+      const marker = encoded.indexOf(RUNTIME_CONTEXT_INTENT_STREAM_MARKER)
+      if (marker <= 0 || marker === encoded.length - RUNTIME_CONTEXT_INTENT_STREAM_MARKER.length) {
+        return ParseResult.fail(
+          new ParseResult.Type(
+            ast,
+            encoded,
+            "runtime context intent stream name must be {prefix}.runtimeIngress.context.{contextId}",
+          ),
+        )
+      }
+      const prefixWire = encoded.slice(0, marker)
+      const contextIdWire = encoded.slice(marker + RUNTIME_CONTEXT_INTENT_STREAM_MARKER.length)
+      const prefixValidation = validateHostStreamPrefixWire(prefixWire)
+      if (prefixValidation !== undefined) {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, prefixValidation),
+        )
+      }
+      let contextId: string
+      try {
+        contextId = decodeURIComponent(contextIdWire)
+      } catch {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, "runtime intent contextId is not valid URI encoding"),
+        )
+      }
+      if (contextId.length === 0) {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, "runtime intent contextId must be non-empty"),
+        )
+      }
+      return ParseResult.succeed({
+        prefix: prefixWire as HostStreamPrefix,
+        contextId,
+      })
+    },
+    encode: ({ prefix, contextId }) =>
+      ParseResult.succeed(
+        `${prefix}${RUNTIME_CONTEXT_INTENT_STREAM_MARKER}${encodeURIComponent(contextId)}`,
+      ),
+  },
+).pipe(streamAuthority)
+
+export const runtimeContextIntentStreamName = (input: {
+  readonly prefix: HostStreamPrefix
+  readonly contextId: string
+}): string =>
+  Schema.encodeSync(RuntimeContextIntentStreamNameSchema)(input)
+
 export const runtimeContextWorkflowStreamName = (input: {
   readonly namespace: string
   readonly contextId: string

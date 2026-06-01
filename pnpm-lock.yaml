@@ -57,30 +57,6 @@ importers:
         specifier: ^8.59.2
         version: 8.59.2(eslint@10.3.0(jiti@2.7.0))(typescript@5.9.3)
 
-  experiments/agent-coordination-patterns:
-    dependencies:
-      '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))
-      '@firegrid/client-sdk':
-        specifier: workspace:*
-        version: link:../../packages/client-sdk
-      '@firegrid/observability':
-        specifier: workspace:*
-        version: link:../../packages/observability
-      '@firegrid/protocol':
-        specifier: workspace:*
-        version: link:../../packages/protocol
-      '@firegrid/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
-      effect:
-        specifier: ^3.21.2
-        version: 3.21.2
-      effect-durable-operators:
-        specifier: workspace:*
-        version: link:../../packages/effect-durable-operators
-
   packages/cli:
     dependencies:
       tsx:
@@ -106,6 +82,31 @@ importers:
         specifier: ^3.21.2
         version: 3.21.2
     devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
+
+  packages/edge-auth:
+    dependencies:
+      '@firegrid/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      effect-durable-streams:
+        specifier: workspace:*
+        version: link:../effect-durable-streams
+    devDependencies:
+      '@effect/platform':
+        specifier: ^0.96.1
+        version: 0.96.1(effect@3.21.2)
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

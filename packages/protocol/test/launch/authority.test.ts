@@ -16,6 +16,7 @@ import {
   HostStreamPrefixSchema,
   HostStreamPrefixWireSchema,
   NamespaceRuntimeStreamNameSchema,
+  RuntimeContextIntentStreamNameSchema,
   RuntimeContextOutputStreamNameSchema,
   RuntimeContextHostBindingSchema,
   durableStreamUrl,
@@ -26,6 +27,7 @@ import {
   makeHostStreamPrefix,
   namespaceRuntimeStreamName,
   runtimeControlPlaneStreamUrl,
+  runtimeContextIntentStreamName,
   runtimeContextOutputStreamName,
   runtimeContextOutputStreamUrl,
   type HostId,
@@ -249,6 +251,48 @@ describe("RuntimeContextOutputStreamNameSchema", () => {
       "ns.firegrid.host.host_abc.runtimeOutput.context.",
     )
     expect(Either.isLeft(result)).toBe(true)
+  })
+})
+
+describe("RuntimeContextIntentStreamNameSchema", () => {
+  // tf-r06u.33: per-context intent (ingress) stream the edge appends to and
+  // the host intent-observer (tf-r06u.42) tails. Mirrors the output codec.
+  it("encodes per-context intent stream names (URI-encoding the contextId)", () => {
+    const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
+    expect(runtimeContextIntentStreamName({
+      prefix,
+      contextId: "ctx.with/slash",
+    })).toBe("ns.firegrid.host.host_abc.runtimeIngress.context.ctx.with%2Fslash")
+  })
+
+  it("round-trips encode -> decode", () => {
+    const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
+    const contextId = "ctx_ext_WyJicm9va2hhdmVu"
+    expect(Schema.decodeUnknownSync(RuntimeContextIntentStreamNameSchema)(
+      runtimeContextIntentStreamName({ prefix, contextId }),
+    )).toEqual({ prefix, contextId })
+  })
+
+  it("is marked as stream authority", () => {
+    expect(isStreamAuthorityAst(RuntimeContextIntentStreamNameSchema.ast)).toBe(true)
+  })
+
+  it("rejects malformed per-context intent names", () => {
+    expect(
+      Either.isLeft(
+        Schema.decodeUnknownEither(RuntimeContextIntentStreamNameSchema)(
+          "ns.firegrid.host.host_abc.runtimeIngress.context.",
+        ),
+      ),
+    ).toBe(true)
+  })
+
+  it("does NOT collide with the output stream name for the same context", () => {
+    const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
+    const contextId = "ctx_ext_abc"
+    expect(runtimeContextIntentStreamName({ prefix, contextId })).not.toBe(
+      runtimeContextOutputStreamName({ prefix, contextId }),
+    )
   })
 })
 
