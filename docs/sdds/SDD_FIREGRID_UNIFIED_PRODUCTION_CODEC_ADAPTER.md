@@ -1,11 +1,29 @@
 # SDD: Unified Production Codec Adapter (Phase E)
 
-Status: scaffolding landed, real-codec wiring pending end-to-end agent run
+Status: scaffolding + production wiring landed; real-path ACP proof now runs by default (post-#783)
 Created: 2026-05-31
+Updated: 2026-06-01 (status refresh — see callout below)
 Owner: Firegrid Runtime
 Predecessors:
 - `SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING.md` (Phase 3 — adapter Tag, observer, factory, sim-proven loop)
 - `docs/architecture/2026-05-31-unified-architecture-mental-model.md`
+
+> **★ Status refresh (2026-06-01, post-#783 / `tf-ll90.15`).** The scenario-based
+> status below (scenarios 1–9, the `FakeCodecAdapter` external-dispatch loop in
+> scenario 7, the `TransformStream`-fake-sandbox scenario 8, the env-gated
+> scenario 9) is **historical**: Lane 3's sim-enforcement gate (`tf-ll90.15`, PR
+> #783) **deleted the entire UKV scenario sprawl + the fake codec/sandbox
+> backdoors**. The `unified-kernel-validation` sim is now exactly
+> `{index.ts, driver.ts, host.ts}` and exercises the **real subprocess + real
+> `LocalProcessSandboxProvider` + production `AcpSessionLive` codec by DEFAULT**
+> (no env gate) — what was env-gated scenario 9 is now the only path. Probe
+> coverage re-expression onto that real path is tracked by `tf-ll90.11.2`
+> (blocking guard); the backdoor-removal manifest is `tf-ll90.11.1`. The §6
+> architectural finding below remains VALID and is the authority for its
+> resolution, now tracked as `tf-ll90.17` (condition `JournalObserverLive` on
+> codec tool-dispatch capability). Treat the "What landed / pending / progress
+> log" sections as a record of how the adapter got here, **not** as a current
+> description of the sim.
 
 ## Purpose
 
@@ -70,7 +88,16 @@ FiregridHost({
 
 Composes: `ProductionCodecAdapterLive` + `LocalProcessSandboxProvider` + `NodeContext.layer` + `IdGenerator.defaultIdGenerator` + `ContextResolverFromControlPlaneTableLive` + `RuntimeEnvResolverPolicy.denyAll` + the full unified substrate. The signaling channel bindings (`UnifiedSignalingChannelBindingsLive`) are layered over the stub `UnifiedChannelBindingsLive` so `firegrid.prompt/session.prompt/sessions.start/permissions.respond` actually deliver signals to the workflow bodies. `hostId` is optionally configurable; defaults to `${namespace}-host`.
 
-The original `adapter:` discriminated-union option still works for sims and non-ACP hosts. The two shapes share `FiregridHostOptionsBase` so options like `headers`, `hostId`, `toolExecutor` work for both.
+> **Decision (2026-06-01, Gurdas — `tf-ll90.8.1`):** the open `adapter:`
+> injection seam is being **REMOVED entirely** — `FiregridHost` takes ONLY the
+> closed codec-sugar shape (a known-codec enum). Sims compose via the codec sugar,
+> not an injected adapter (the recorder/Tag-swap backdoor it enabled is deleted —
+> `tf-ll90.11.1`). The legitimate non-ACP path returns as a **closed
+> `codec: "stdio-jsonl"` enum option** when stdio-jsonl is actually needed
+> (ACP-only is fine until then) — removing the open seam must not silently strand
+> stdio-jsonl capability. Until the option is physically removed (post-green-up,
+> in `unified/`), Lane 3's `tf-ll90.15` sim-ban on injecting a non-production
+> adapter stands as defense-in-depth.
 
 ### 3. Env binding resolution — DONE (Phase I)
 
@@ -102,11 +129,22 @@ The host composition therefore has two reasonable shapes:
 
 A future iteration could express this declaratively (codec capability flag opting in/out of external dispatch), but the manual composition is currently sufficient and documents the choice at the call site.
 
+> **Tracking (2026-06-01):** this finding is the authority for `tf-ll90.17` —
+> "condition `JournalObserverLive` on codec tool-dispatch capability." The
+> real-path ACP run (post-#783) reproduces the constraint outside any fake:
+> trace `2026-06-01T20-59-14-844Z__unified-kernel-validation` shows
+> `acp.tool_result` → `ACP ToolResult input is out-of-band for this codec slice`
+> → `codec send failed` (finding `docs/findings/tf-ll90-ukv-acp-tool-result-gap.md`).
+> The fix is the **internal-tool-dispatch composition shape above** (omit/condition
+> the observer for ACP), NOT a codec rewrite. The scenario-7/8 references in this
+> section are historical (those scenarios were deleted by #783); the finding holds
+> on the real path.
+
 ## Acceptance criteria
 
 1. ✅ `ProductionCodecAdapterLive` lands in `runtime/src/unified/codec-adapter.ts`.
 2. ✅ `ContextResolverTag` + `ContextResolverFromControlPlaneTableLive` provide a clean seam for context lookup.
-3. ✅ Existing `unified-kernel-validation` simulation passes 7/7 + 17/17 (no regression).
+3. ✅ Existing `unified-kernel-validation` simulation passes 7/7 + 17/17 (no regression). *(Superseded 2026-06-01: the scenario/invariant counts described the pre-#783 sim; the UKV is now a single real-path RUN sim — coverage re-expression tracked by `tf-ll90.11.2`.)*
 4. ✅ `pnpm -r exec tsc --noEmit` clean.
 5. ⏳ Integration test against a real ACP agent — deferred to a separate harness.
 
@@ -126,3 +164,4 @@ A future iteration could express this declaratively (codec capability flag optin
 | 2026-05-31 | Phase G: scenario 9 (`production-flow-acp-live`) lands behind `FIREGRID_UKV_RUN_ACP_LIVE=1`. **Real subprocess** via `LocalProcessSandboxProvider` running `src/bin/fake-acp-agent-process.ts` — a Node binary that bootstraps `FixtureAgent` over `process.stdin` / `process.stdout` (web-stream-wrapped via `node:stream.Readable.toWeb`). Same production code path that runs `claude-agent-acp` in production; the fake binary stands in to skip API credentials. Proves the full real-process stack: `LocalProcessSandboxProvider.openBytePipe` + real Node `spawn` + real stdio bytes + `AcpSessionLive` JSON-RPC framing over those bytes + `ProductionCodecAdapterLive` registry + scope-bound output drain. **Sim with flag: 9/9 scenarios + 17/17 invariants green; seam coverage: 22/22 including the env-gated subprocess seam.** Default sim still 8/8 + 21/21 mandatory + 1 optional skipped. |
 | 2026-05-31 | Phase H: `FiregridHost` ergonomics + production wiring closure. New options: `codec: "acp"` (sugar that composes `ProductionCodecAdapterLive` + `LocalProcessSandboxProvider` + `IdGenerator.defaultIdGenerator` + `ContextResolverFromControlPlaneTableLive` + `RuntimeEnvResolverPolicy.denyAll`); `hostId?` (derived from namespace by default). `buildCurrentHostSessionLayer` introduced in `host-identity.ts` — constructs valid `CurrentHostSession` rows with brand-validated `hostId` + derived stream prefix. `HostContextsCreateChannelLive` now actually persists rows to `RuntimeControlPlaneTable.contexts` (was a stub returning the input contextId). Channel bindings split: `UnifiedChannelBindingsLive` (stub, builds without `SignalTable`/`WorkflowEngine`) and `UnifiedSignalingChannelBindingsLive` (production override that wires `HostPrompt`/`SessionPrompt`/`HostSessionsStart`/`HostPermissionRespond` to real `sendSignal` calls). `FiregridHost` composes both — last-Live-wins per Tag means production gets the signaling versions automatically. Smoke test `test/unified-firegrid-host-compose.test.ts` verifies the factory builds with `codec: "acp"` and exposes every public Tag. |
 | 2026-05-31 | Phase I: production deployment configuration. (1) Env binding resolution: `ProductionCodecAdapterLive` now resolves `context.runtime.config.envBindings` via `resolveSpawnEnvVars` and passes the resolved `envVars` to sandbox spawn. `FiregridHost.envPolicy` exposes the resolver policy (default `denyAll`). (2) MCP server attachment: `mcpServersForAcp` converts protocol-shape declarations to ACP-shape, passed as `AcpSessionOptions.mcpServers`. Ref-typed headers dropped with span attribute for diagnosability. (3) Real `claude-agent-acp` binary toggle: `FIREGRID_UKV_USE_REAL_CLAUDE_ACP=1` in scenario 9 swaps the spawn argv to the real binary. **Sim: 8/8 default + 9/9 with live flag + 17/17 invariants + 21-22/22 OTel seams green. Smoke test green.** |
+| 2026-06-01 | **Supersession (`tf-ll90.15` / PR #783).** Lane 3's sim-enforcement gate deleted the entire UKV scenario sprawl + the fake codec/sandbox backdoors (`fake-codec.ts`, `acp-sandbox-fake.ts`, `scenarios.ts`, `production-flow-*.ts`, the recorder seam) and collapsed the sim to `{index.ts, driver.ts, host.ts}`. **The real subprocess + production ACP codec path that was env-gated scenario 9 is now the DEFAULT and only path** — no fake-codec scenario 7, no fake-sandbox scenario 8, no env gate. The earlier "8/8 default / 9/9 with flag" counts no longer describe the sim. Real-path trace evidence: run `2026-06-01T20-59-14-844Z__unified-kernel-validation`. Open follow-ons: probe-coverage re-expression on the real path (`tf-ll90.11.2`, blocking), backdoor-removal manifest on trunk (`tf-ll90.11.1`), §6 `JournalObserverLive`/codec-capability composition (`tf-ll90.17`). |
