@@ -1,4 +1,6 @@
 const hostSdkBoundaryModules = "^packages/host-sdk/src"
+const hostSdkPublicCompositionSurface = "^packages/host-sdk/src/index\\.ts$"
+const runtimeUnifiedPublicSurface = "^packages/runtime/src/unified/index\\.ts$"
 
 const sanctionedRuntimeCapabilitySubpaths = [
   // Runtime-owned capability tags and public observation/protocol projections
@@ -506,10 +508,24 @@ module.exports = {
         "Lane D hard guardrail: host-sdk binding/composition modules may import runtime only through sanctioned public capability subpaths. Existing substrate-debt files are carved out explicitly and must be removed as boundary refactors land.",
       from: {
         path: hostSdkBoundaryModules,
-        pathNot: currentHostSdkSubstrateDebt,
+        pathNot: [
+          ...currentHostSdkSubstrateDebt,
+          hostSdkPublicCompositionSurface,
+        ],
       },
       to: {
         path: `^packages/runtime/src/(?!${sanctionedRuntimeCapabilitySubpaths})`,
+      },
+    },
+    {
+      name: "host-sdk-public-composition-surface-only-unified",
+      severity: "error",
+      comment:
+        "The host-sdk root barrel is the public host-composition surface; it may re-export FiregridHost from runtime/unified but must not become a general runtime substrate barrel.",
+      from: { path: hostSdkPublicCompositionSurface },
+      to: {
+        path: "^packages/runtime/src",
+        pathNot: runtimeUnifiedPublicSurface,
       },
     },
     {
