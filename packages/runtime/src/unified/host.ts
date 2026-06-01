@@ -61,14 +61,21 @@ import {
   ContextResolverFromControlPlaneTableLive,
 } from "../tables/codec-adapter-providers.ts"
 import { buildCurrentHostSessionLayer } from "./host-identity.ts"
-import { SignalTable } from "./signal.ts"
+import {
+  armSession,
+  recoverPendingSignals,
+  SignalTable,
+  WorkflowEngineTable,
+} from "./signal.ts"
 import { UnifiedTable } from "./tables.ts"
 import {
-  UnifiedChannelBindingsLive,
   UnifiedSignalingChannelBindingsLive,
 } from "./channel-bindings.ts"
 import {
+  decodeRuntimeContextSessionPayloadJson,
+  RuntimeContextSessionWorkflow,
   RuntimeContextSessionWorkflowLayer,
+  RuntimeContextSessionWorkflowRegistered,
 } from "./subscribers/runtime-context.ts"
 import {
   buildPermissionRoundtripLayer,
@@ -231,6 +238,51 @@ const engineLayer = (options: FiregridHostOptions) =>
     ),
   })
 
+const RuntimeContextSessionSignalRecoveryLive = Layer.scopedDiscard(
+  Effect.gen(function*() {
+    yield* RuntimeContextSessionWorkflowRegistered
+    const signals = yield* SignalTable
+    const engineTable = yield* WorkflowEngineTable
+    const result = yield* recoverPendingSignals({
+      signals,
+      engineTable,
+      catalog: {
+        get: (name) =>
+          name === RuntimeContextSessionWorkflow.name
+            ? {
+              name: RuntimeContextSessionWorkflow.name,
+              resume: RuntimeContextSessionWorkflow.resume,
+              armFromSignal: (row, table) =>
+                Effect.gen(function*() {
+                  if (row.workflowPayloadJson === undefined) {
+                    yield* RuntimeContextSessionWorkflow.resume(row.executionId)
+                    return
+                  }
+                  const payload = yield* decodeRuntimeContextSessionPayloadJson(row.workflowPayloadJson)
+                  yield* armSession({
+                    engineTable: table,
+                    workflow: RuntimeContextSessionWorkflow,
+                    executionId: row.executionId,
+                    payload,
+                  })
+                }),
+            }
+            : undefined,
+      },
+    })
+    yield* Effect.logInfo("firegrid unified signal recovery complete").pipe(
+      Effect.annotateLogs({
+        replayed: result.replayed,
+        skipped: result.skipped,
+      }),
+    )
+  }).pipe(
+    Effect.withSpan("firegrid.unified.host.recover_pending_signals", {
+      kind: "internal",
+    }),
+  ),
+)
+
 /**
  * The production composition factory. Returns a single Layer that
  * satisfies the substrate + channel + workflow Tags a Firegrid host
@@ -262,20 +314,19 @@ export const FiregridHost = (options: FiregridHostOptions) => {
         buildWebhookFactObserverLayer(),
         buildPeerEventObserverLayer(),
       )
-      // Two-layer channel composition: stub Lives satisfy every Tag at
-      // build time; the signaling Lives REPLACE the four input-delivery
-      // stubs with real signal-sending implementations. Tag-identity
-      // merge dedup — last Live wins per Tag.
-      const channelsAndObserver = UnifiedChannelBindingsLive.pipe(
-        Layer.provideMerge(HostControlChannelBindingsLive({
+      const channelsAndObserver = Layer.mergeAll(
+        HostControlChannelBindingsLive({
           durableStreamsBaseUrl: options.durableStreamsBaseUrl,
           ...(options.headers === undefined ? {} : { headers: options.headers }),
-        })),
-        Layer.provideMerge(UnifiedSignalingChannelBindingsLive),
-        Layer.provideMerge(JournalObserverLive),
+        }),
+        UnifiedSignalingChannelBindingsLive,
+        JournalObserverLive,
+      )
+      const workflowLayersWithRecovery = RuntimeContextSessionSignalRecoveryLive.pipe(
+        Layer.provideMerge(workflowLayers),
       )
       return Layer.mergeAll(
-        workflowLayers,
+        workflowLayersWithRecovery,
         channelsAndObserver,
       ).pipe(
         Layer.provideMerge(engineLayer(options)),

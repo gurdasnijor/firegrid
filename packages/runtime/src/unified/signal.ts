@@ -24,9 +24,10 @@
  *
  *   `sendSignal<T>({ workflow, executionId, name, value })` — from a
  *     producer. Atomically: records the signal row, performs the
- *     optional companion row write, calls `engine.resume(executionId)`.
- *     The record-before-resume order is what makes the wakeup
- *     recoverable.
+ *     optional companion row write, then arms the owning execution. The
+ *     default arm is `engine.resume(executionId)`; callers that can
+ *     create the execution pass `arm` so input-before-start becomes
+ *     create-or-resume instead of resume-only.
  *
  *   `recordSignal<T>(...)` — record without resuming. Models "crash
  *     between durable record and engine resume" in tests + sims.
@@ -61,6 +62,8 @@ export const SignalRowSchema = Schema.Struct({
   name: Schema.String,
   /** JSON-encoded payload the workflow body consumes. */
   payloadJson: Schema.String,
+  /** Optional workflow payload needed to create the execution during recovery. */
+  workflowPayloadJson: Schema.optional(Schema.String),
   recordedAt: Schema.String,
 }).annotations({
   identifier: "firegrid.unified.signal",
@@ -83,18 +86,20 @@ const signalKeyFor = (executionId: string, name: string): string =>
 const insertSignalRow = (options: {
   readonly signals: SignalTableService
   readonly workflowName: string
-  readonly executionId: string
-  readonly name: string
-  readonly payloadJson: string
-}) =>
-  options.signals.signals.insertOrGet({
-    signalKey: signalKeyFor(options.executionId, options.name),
-    workflowName: options.workflowName,
-    executionId: options.executionId,
-    name: options.name,
-    payloadJson: options.payloadJson,
-    recordedAt: now(),
-  }).pipe(Effect.orDie)
+	  readonly executionId: string
+	  readonly name: string
+	  readonly payloadJson: string
+	  readonly workflowPayloadJson?: string
+	}) =>
+	  options.signals.signals.insertOrGet({
+	    signalKey: signalKeyFor(options.executionId, options.name),
+	    workflowName: options.workflowName,
+	    executionId: options.executionId,
+	    name: options.name,
+	    payloadJson: options.payloadJson,
+	    ...(options.workflowPayloadJson === undefined ? {} : { workflowPayloadJson: options.workflowPayloadJson }),
+	    recordedAt: now(),
+	  }).pipe(Effect.orDie)
 
 const signalSpanAttributes = (options: {
   readonly workflowName: string
@@ -119,14 +124,48 @@ interface SignalWriteOptions<Row, RowR> {
   readonly signals: SignalTableService
   readonly executionId: string
   readonly name: string
+  readonly workflowPayloadJson?: string
   readonly write: (value: Row) => Effect.Effect<void, unknown, RowR>
   readonly value: Row
   readonly serializeValue: (value: Row) => string
 }
 
+export interface ArmableWorkflow<Payload> extends ResumableWorkflow {
+  readonly execute: (
+    payload: Payload,
+    options: { readonly discard: true },
+  ) => Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine>
+}
+
+export const armSession = <Payload>(options: {
+  readonly engineTable: WorkflowEngineTableService
+  readonly workflow: ArmableWorkflow<Payload>
+  readonly executionId: string
+  readonly payload: Payload
+}): Effect.Effect<void, unknown, WorkflowEngine.WorkflowEngine> =>
+  Effect.gen(function*() {
+    const exec = yield* options.engineTable.executions.get(options.executionId).pipe(
+      Effect.map(Option.getOrUndefined),
+    )
+    if (exec?.finalResult !== undefined) return
+    if (exec === undefined) {
+      yield* options.workflow.execute(options.payload, { discard: true })
+      return
+    }
+    yield* options.workflow.resume(options.executionId)
+  }).pipe(
+    Effect.withSpan("firegrid.unified.signal.arm_session", {
+      kind: "internal",
+      attributes: {
+        "firegrid.workflow.name": options.workflow.name,
+        "firegrid.workflow.execution_id": options.executionId,
+      },
+    }),
+  )
+
 // ── Producer side ───────────────────────────────────────────────────────────
 
-export const recordSignal = <Row, RowR>(options: SignalWriteOptions<Row, RowR> & {
+const writeSignalRow = <Row, RowR>(options: SignalWriteOptions<Row, RowR> & {
   readonly workflowName: string
 }): Effect.Effect<void, unknown, RowR> =>
   Effect.gen(function*() {
@@ -136,9 +175,15 @@ export const recordSignal = <Row, RowR>(options: SignalWriteOptions<Row, RowR> &
       executionId: options.executionId,
       name: options.name,
       payloadJson: options.serializeValue(options.value),
+      ...(options.workflowPayloadJson === undefined ? {} : { workflowPayloadJson: options.workflowPayloadJson }),
     })
     yield* options.write(options.value)
-  }).pipe(
+  })
+
+export const recordSignal = <Row, RowR>(options: SignalWriteOptions<Row, RowR> & {
+  readonly workflowName: string
+}): Effect.Effect<void, unknown, RowR> =>
+  writeSignalRow(options).pipe(
     Effect.withSpan("firegrid.unified.signal.record", {
       kind: "internal",
       attributes: signalSpanAttributes(options),
@@ -147,17 +192,18 @@ export const recordSignal = <Row, RowR>(options: SignalWriteOptions<Row, RowR> &
 
 export const sendSignal = <Row, RowR>(options: SignalWriteOptions<Row, RowR> & {
   readonly workflow: ResumableWorkflow
+  readonly arm?: Effect.Effect<void, unknown, WorkflowEngine.WorkflowEngine>
 }): Effect.Effect<void, unknown, WorkflowEngine.WorkflowEngine | RowR> =>
   Effect.gen(function*() {
-    yield* insertSignalRow({
-      signals: options.signals,
+    yield* writeSignalRow({
+      ...options,
       workflowName: options.workflow.name,
-      executionId: options.executionId,
-      name: options.name,
-      payloadJson: options.serializeValue(options.value),
     })
-    yield* options.write(options.value)
-    yield* options.workflow.resume(options.executionId)
+    if (options.arm === undefined) {
+      yield* options.workflow.resume(options.executionId)
+    } else {
+      yield* options.arm
+    }
   }).pipe(
     Effect.withSpan("firegrid.unified.signal.send", {
       kind: "internal",
@@ -201,7 +247,14 @@ export const awaitSignal = <T>(options: {
 // ── Recovery sweep ──────────────────────────────────────────────────────────
 
 export interface WorkflowCatalog {
-  readonly get: (name: string) => ResumableWorkflow | undefined
+  readonly get: (name: string) => RecoverableWorkflow | undefined
+}
+
+export interface RecoverableWorkflow extends ResumableWorkflow {
+  readonly armFromSignal?: (
+    row: SignalRow,
+    engineTable: WorkflowEngineTableService,
+  ) => Effect.Effect<void, unknown, WorkflowEngine.WorkflowEngine>
 }
 
 export interface SignalRowRewriter {
@@ -241,7 +294,11 @@ export const recoverPendingSignals = (options: {
         skipped += 1
         continue
       }
-      yield* workflow.resume(row.executionId)
+      if (workflow.armFromSignal === undefined) {
+        yield* workflow.resume(row.executionId)
+      } else {
+        yield* workflow.armFromSignal(row, options.engineTable)
+      }
       replayed += 1
     }
     return { replayed, skipped }
