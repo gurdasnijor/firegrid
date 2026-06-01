@@ -52,8 +52,41 @@ Each finding carries a **Tracked?** column (SDD §, bead id, or `SILENT`) and a 
 5. **Host-owned runtime-context MCP server (`FiregridMcpServerLayer`) + toolkit surfacing gone** — agents can't reach Firegrid's own tools (`schedule_me`, `wait_for`, …) via MCP; only client-declared external `mcpServers` pass through. *(→ tracked by #767 §6.6 / tf-r06u.28.)*
 6. **Parent→child agent_output observation unwired** — route/channel survive but are imported only by tests; the unified host wires no `SessionAgentOutputChannel` router; resolver does no parent-child authority check.
 7–10. Host-locality guard, `bin`/CLI entrypoints (dangling), `@firegrid/host-sdk` fate, malformed-input fail-fast behavior change — see §3.
+11. **Parked body not re-armed on restart** — the engine recovers only clock wakeups; the unified context-lifetime body parks on a domain signal and `recoverPendingSignals` is defined-but-unwired. Engine-grounded; see **§1.5 / R14** (added after a Shape-C/Shape-D frame sanity check).
 
 ---
+
+## 1.5 Architectural-frame sanity check (Shape C / Shape D) — was the baseline stale?
+
+A reviewer asked whether the audit graded against a **stale architectural frame** (Shape C
+vs Shape D, `docs/architecture/shape-c-vs-shape-d.md`). Checked — the baseline is correct, and
+the check produced one extra finding. Grounded at the engine.
+
+- **Baseline used was the target, not the stale frame.** The audit graded against the 6 trunk
+  SDDs + `unified-subscriber-kernel.md` (the "every subscriber is a workflow" target).
+  `shape-c-vs-shape-d.md` is explicitly **transitional** and *defers to that same target* ("treat
+  the Shape C path as bridge state expected to collapse … once the kernel-owned write+arm primitive
+  lands, tf-c9r9"). It was last updated by the unified-kernel commit itself (`c379f0b65`). So the
+  sanctioned-collapse classifications (keyed-dispatch, wait-router, subscriber loops → §2) are right
+  under both frames; none was mis-graded as a regression against the obsolete Shape-C rules.
+- **The doc corroborates the findings.** Its scheduled-prompt Shape-D *falsifier* — "a scheduled
+  fact that needs to fire at a future instant with **no external producer to write a 'due' trigger
+  row**" — is exactly **R1**. Its `input-suspend-crash-recovery` falsifier — "a Shape-D body parked
+  on `Workflow.suspend` is **not** re-armed by reconstruction" — underpins **R3** and the item below.
+- **NEW finding R14 (engine-grounded): the production parked body is not re-armed on restart.**
+  The unified `RuntimeContextSessionWorkflow` *is* a context-lifetime body parked on
+  `Workflow.suspend` (`unified/subscribers/runtime-context.ts:103-138`) — which `shape-c-vs-shape-d`
+  C5 permits **only** once kernel-owned write+arm exists. The engine's startup recovery runs **only**
+  `recoverPendingClockWakeups` (`engine/internal/engine-runtime.ts:527`; def :149) — there is **no**
+  recovery for domain-signal-suspended workflows (the exact gap the doc cites). The intended sweep,
+  `recoverPendingSignals` (`unified/signal.ts:197`), is **defined + sim-validated but has zero
+  non-test callers and is not wired into `FiregridHost`** (verified). Live operation re-arms via
+  `resume(executionId)` on signal-send (`engine-runtime.ts:290/339/484`); **restart does not
+  proactively re-arm a domain-signal-parked body.** D1: **HIGH** (durability/recovery), **SILENT**.
+  This is the substrate-level reason the validation-skeleton posture must not be cutover as-is.
+- **Doc-hygiene nit:** `shape-c-vs-shape-d.md` lines 155-168 ("Ground Truth / Production
+  subscribers") still reference the `subscribers/{tool-dispatch,scheduled-prompt,wait-router,runtime-
+  control,runtime-context,runtime-context-session}/` paths that #765 deleted — stale, worth scrubbing.
 
 ## 2. The sanctioned cutover (NOT regressions)
 
@@ -139,7 +172,7 @@ A deleted test for a *sanctioned-cut* behavior is expected. A deleted test for a
 
 **Substrate shape: validated. Production re-port: materially incomplete and partly untracked.** Recommend Gurdas treat `sim/unified-kernel-validation` explicitly as a **validation skeleton, not a cutover**, and — per the transactional-cutover rule — convert each untracked silent drop into a **blocking bead** gating production cutover. Suggested owners/beads (new unless noted):
 
-- **P0 (functional gaps that fail silently):** R1 `schedule_me` delivery relay+producer · R2 cancel/close + `HostKernelWorkflow` control plane · R3 terminal-completion trigger (+ `deregister`/process-leak) · R7 parent→child agent_output wiring + authority check.
+- **P0 (functional gaps that fail silently):** R1 `schedule_me` delivery relay+producer · R2 cancel/close + `HostKernelWorkflow` control plane · R3 terminal-completion trigger (+ `deregister`/process-leak) · R7 parent→child agent_output wiring + authority check · **R14 wire `recoverPendingSignals` into `FiregridHost`** (the engine recovers only clock wakeups; domain-signal-parked bodies are not re-armed on restart — see §1.5).
 - **Already tracked:** R4/R5 read-side population (**tf-r06u.6 / A2**) · R6 host-owned MCP surfacing (**#767 §6.6 / tf-r06u.28**).
 - **P1 (correctness/operational):** R9 CLI/bin entrypoints (dangling launch) · R11/C5 tf-aseo replay-invariant guard on the new model · R12 `runs` family half-cutover (confirm dead-vs-gap) · R8 host-locality guard.
 - **Coverage beads (re-test surviving invariants):** C1 schedule_me true-future · C2 client-sdk session facade (incl. no-hang / no-orphan) · C3 agent-tool schema · C4 router rejection guards · C6 `wait_for_any` race (+ scope decision) · plus a standing item to give `runtime/src/unified/` dedicated `*.test.ts` coverage.
