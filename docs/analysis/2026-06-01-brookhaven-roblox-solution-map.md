@@ -30,6 +30,17 @@ source, not inferred). The four anchor surfaces:
   the durable-streams `PROTOCOL.md` (§5.2 append, §5.2.1 idempotent producers, §5.6 catch-up read,
   §5.7 long-poll, §12.1 auth-out-of-scope).
 
+> **Citation spot-check (verified on-branch).** `PROTOCOL.md` is the *external* durable-streams
+> spec (not vendored here), but the on-branch **implementation** corroborates every cited clause:
+> §5.6 catch-up offset read — `protocol/constants.ts` `QUERY_OFFSET="offset"`, `OFFSET_BEGIN="-1"`,
+> `STREAM_NEXT_OFFSET="stream-next-offset"` + `Reader.read({live:false, offset:BEGIN})`; §10.4
+> no-gap/ordering — `Reader.ts:41-48` `snapshotThenFollow` documents *"no-gap, no-duplicate … observed
+> either fully in `snapshot` or fully in `live`, never in both"*; §5.2.1 producer-fence —
+> `protocol/Producer.ts:87-89` *"New (200) or duplicate (204) success. Advance only on ack"* with the
+> `PRODUCER_ID/EPOCH/SEQ/EXPECTED_SEQ/RECEIVED_SEQ` constants, and the code itself cites *"§5.2.1"*
+> at `Producer.ts:96,117`; §12.1 auth-out-of-scope — the package carries no auth layer (headers
+> passthrough only). The verdict's foundation holds against the local source.
+
 ---
 
 ## 1. Executive verdict (read this first)
@@ -188,6 +199,18 @@ result be the terminal the client observes.
    annotation), bound via the host-owned runtime-context MCP server
    (`firegridRuntimeContextMcpName` + `RuntimeContextMcpMarkerSchema` — the URL-less marker the
    host fills in; `mcpServers` stays client-owned end-to-end).
+
+> **⚠ Cross-ref to #767 §6.6 / tf-r06u.28 — "buildable today" has one port-forward prerequisite.**
+> Distinguish two layers that share the name "runtime-context MCP": (a) the **protocol-side marker
+> + binding** — `RuntimeContextMcpMarkerSchema`, `firegridRuntimeContextMcpName`, and the codec-side
+> `mcpServersForAcp` (`unified/codec-adapter.ts`) — which **exist on-branch today**; and (b) the
+> **runtime-side host-owned MCP-surfacing Layer** (`FiregridMcpServerLayer`) that actually *serves*
+> Firegrid's own tools to the agent over MCP — which **#765 DELETED** and which #767 §6.6 schedules
+> for port-forward under tf-r06u.28 (independently confirmed by this session's #765 deletion audit,
+> finding R6). So `publish` is buildable on the *binding/marker* (a) today, but surfacing it to the
+> agent needs (b) restored first. If you instead bind `publish` via an **external/URL `mcpServer`
+> the client declares** (the path Phase I actually wired), no host-owned server is required and this
+> prerequisite does not apply — recommended for Brookhaven until tf-r06u.28 lands.
 
 ```ts
 // illustrative
@@ -398,7 +421,10 @@ What must be **built** (all additive, edge/host — none touch substrate primiti
 2. **A host-side intent-stream observer** (Part B-4) bridging poll-only appends → existing
    `SessionPromptChannel` / permission channels. Sibling to `JournalObserverLive`.
 3. **The `publish` MCP tool + a real `ToolExecutor`** (Part B-3 / C-3). Reuses
-   `ToolDispatchWorkflow`; optional `sideEffect.published` projection as polish.
+   `ToolDispatchWorkflow`; optional `sideEffect.published` projection as polish. **Prerequisite if
+   surfacing via the host-owned MCP server:** the `FiregridMcpServerLayer` was deleted by #765 and is
+   pending port-forward (#767 §6.6 / tf-r06u.28; see B-3 cross-ref). Until then, bind `publish` via a
+   client-declared external/URL `mcpServer` (the Phase-I-wired path), which needs no host-owned server.
 
 **Risks / caveats to surface loudly:**
 - **Stubbed read-side channels.** `host.context.snapshot`, `host.session.snapshot`, and
