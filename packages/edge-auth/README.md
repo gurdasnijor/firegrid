@@ -22,7 +22,8 @@ capability token) and **opaque handles** — never a stream name or DS URL.
 |---|---|---|
 | `POST /open` | `open` | `{ intent, output, startOffset }` — mints the handle pair (DECIDE-1) |
 | `POST /append/:handle` | `append` | `{ offset, deduplicated }` — prompts + permission responses (intent in) |
-| `GET /read/:handle?offset=` | `read` | `{ events, nextOffset, upToDate }` + `Stream-Next-Offset` (output out) |
+| `GET /read/:handle?offset=` | `read` | `{ events, nextOffset, upToDate }` + `Stream-Next-Offset` (output out). On retention-trim → `410 { error:"gone", snapshotOffset }` (recoverable) |
+| `GET /resync/:handle` | `read` | `{ snapshotOffset }` — current snapshot offset to jump to after a `410` / teleport-reload (tf-r06u.43, contract §5.2/§9-Q6) |
 
 ## Design
 
@@ -57,6 +58,11 @@ end-to-end against an in-memory durable-streams double
 - TLS / deployment.
 - Token issuance/rotation operator surface (`issueToken` ships as the minting
   primitive).
+- APPLYING the output retention floor as a stream `ttlSeconds` at creation
+  (tf-r06u.50): `outputRetentionFloorSeconds` config + the 410-resync entry
+  point ship in tf-r06u.43, but threading the TTL through `DurableStreamOptions`
+  + `DurableTable` create is a substrate follow-up. Resync makes `410`
+  recoverable regardless.
 
 ## Usage (sketch)
 

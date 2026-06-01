@@ -93,7 +93,19 @@ export interface EdgeAuthConfig {
   readonly externalKeySource: string
   readonly tokenSecret: Redacted.Redacted<string>
   readonly handleSecret: Redacted.Redacted<string>
+  /**
+   * The declared retention floor (seconds) for the agent-output projection
+   * (consumer-contract §5.2 / §9-Q6: "≥ minutes, ideally ~1h"). This is the
+   * canonical floor VALUE; actually applying it as a stream `ttlSeconds` at
+   * creation is a substrate follow-up (DurableTable does not yet thread create
+   * TTL). The 410-resync entry point (`resync`) makes correctness independent
+   * of retention regardless. Optional; defaults to {@link DEFAULT_OUTPUT_RETENTION_FLOOR_SECONDS}.
+   */
+  readonly outputRetentionFloorSeconds?: number
 }
+
+/** ~1 hour — generous enough that a `410 Gone` is rare for minutes-long runs. */
+export const DEFAULT_OUTPUT_RETENTION_FLOOR_SECONDS = 3600
 
 export class EdgeAuthConfigTag extends Context.Tag("edge-auth/EdgeAuthConfig")<
   EdgeAuthConfigTag,
@@ -121,6 +133,18 @@ export class EdgeAuthResolver extends Context.Tag("edge-auth/EdgeAuthResolver")<
       handle: OpaqueHandle,
       offset: Option.Option<string>,
     ) => Effect.Effect<ForwardReadResult, AuthError | ForwardError | ForwardGone>
+    /**
+     * The 410-resync entry point (consumer-contract §5.2 / §9-Q6). Returns the
+     * **current snapshot offset** of a read handle's stream — the offset the
+     * edge jumps to after a `410 Gone` (retention trimmed past its cursor) to
+     * resync-from-now, treating `410` as recoverable, not fatal. "From now"
+     * (head), not the trimmed past: per §5.3 a reload is a fresh interaction.
+     * `""` when the stream has no events yet (read from the beginning).
+     */
+    readonly resync: (
+      claims: TokenClaims,
+      handle: OpaqueHandle,
+    ) => Effect.Effect<{ readonly snapshotOffset: string }, AuthError | ForwardError>
   }
 >() {}
 
@@ -253,6 +277,16 @@ export const EdgeAuthResolverLive = Layer.effect(
         Effect.flatMap(({ streamName }) => forwarder.read(streamName, offset)),
       )
 
-    return EdgeAuthResolver.of({ verifyToken, open, append, read })
+    const resync = (
+      claims: TokenClaims,
+      handle: OpaqueHandle,
+    ): Effect.Effect<{ readonly snapshotOffset: string }, AuthError | ForwardError> =>
+      resolveHandle(claims, handle, "read").pipe(
+        Effect.flatMap(({ streamName }) => forwarder.head(streamName)),
+        // None (no events yet) -> "" = read from the beginning.
+        Effect.map((head) => ({ snapshotOffset: Option.getOrElse(head, () => "") })),
+      )
+
+    return EdgeAuthResolver.of({ verifyToken, open, append, read, resync })
   }),
 )

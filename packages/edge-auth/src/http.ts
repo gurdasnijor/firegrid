@@ -135,19 +135,52 @@ const readRoute = Effect.gen(function*() {
   const offset = yield* offsetParam
 
   return yield* resolver.verifyToken(token.value).pipe(
-    Effect.flatMap((claims) => resolver.read(claims, handle.value, offset)),
-    Effect.map((result) =>
-      HttpServerResponse.setHeader(
-        HttpServerResponse.unsafeJson(result),
-        STREAM_NEXT_OFFSET_HEADER,
-        result.nextOffset,
+    Effect.flatMap((claims) =>
+      resolver.read(claims, handle.value, offset).pipe(
+        Effect.map((result) =>
+          HttpServerResponse.setHeader(
+            HttpServerResponse.unsafeJson(result),
+            STREAM_NEXT_OFFSET_HEADER,
+            result.nextOffset,
+          )),
+        // 410 Gone (retention trimmed past the cursor) is NOT fatal: resync to
+        // the current snapshot offset and hand it back in the body so the edge
+        // jumps there in one round-trip (consumer-contract §5.2 / §9-Q6).
+        Effect.catchTag("edge-auth/ForwardGone", () =>
+          resolver.resync(claims, handle.value).pipe(
+            Effect.map(({ snapshotOffset }) =>
+              HttpServerResponse.unsafeJson(
+                { error: "gone", snapshotOffset },
+                { status: 410 },
+              )),
+            Effect.catchAll(() => Effect.succeed(denied(410, "gone"))),
+          )),
       )),
     Effect.catchTag("edge-auth/AuthError", (e) =>
       Effect.succeed(denied(authStatus(e), e.reason))),
-    // 410 Gone -> the edge resyncs from a fresh handle (consumer-contract §5.2;
-    // richer resync entry point is tf-r06u.43), NOT a fatal error.
-    Effect.catchTag("edge-auth/ForwardGone", () =>
-      Effect.succeed(denied(410, "gone"))),
+    Effect.catchTag("edge-auth/ForwardError", () =>
+      Effect.succeed(denied(502, "upstream-error"))),
+  )
+})
+
+/**
+ * Explicit resync probe (consumer-contract §5.2 / §9-Q6): given a read handle,
+ * return the current snapshot offset the edge should jump to. The edge calls
+ * this after a `410` (or proactively after a teleport-reload) to resume polling
+ * from "now" without replaying trimmed-past output.
+ */
+const resyncRoute = Effect.gen(function*() {
+  const resolver = yield* EdgeAuthResolver
+  const token = yield* bearer
+  if (Option.isNone(token)) return denied(401, "bad-token")
+  const handle = yield* handleParam
+  if (Option.isNone(handle)) return denied(400, "bad-handle")
+
+  return yield* resolver.verifyToken(token.value).pipe(
+    Effect.flatMap((claims) => resolver.resync(claims, handle.value)),
+    Effect.map((result) => HttpServerResponse.unsafeJson(result)),
+    Effect.catchTag("edge-auth/AuthError", (e) =>
+      Effect.succeed(denied(authStatus(e), e.reason))),
     Effect.catchTag("edge-auth/ForwardError", () =>
       Effect.succeed(denied(502, "upstream-error"))),
   )
@@ -162,6 +195,7 @@ export const EdgeAuthHttpRouter = HttpRouter.empty.pipe(
   HttpRouter.post("/open", openRoute),
   HttpRouter.post("/append/:handle", appendRoute),
   HttpRouter.get("/read/:handle", readRoute),
+  HttpRouter.get("/resync/:handle", resyncRoute),
 )
 
 /**

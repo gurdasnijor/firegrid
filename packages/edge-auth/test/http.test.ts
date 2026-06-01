@@ -161,3 +161,37 @@ describe("append + read over the binding", () => {
     expect(res.status).toBe(403)
   })
 })
+
+describe("410-resync entry point (tf-r06u.43)", () => {
+  it("GET /resync/:handle returns the current snapshot offset", async () => {
+    const bearer = token("brookhaven.prod", "tok_1")
+    const opened = (await (await post("/open", bearer, { playerId: "player1" })).json()) as {
+      output: string
+    }
+    forwarder.seed(outputStreamFor("brookhaven.prod", "player1"), ["a", "b", "c"])
+    const res = await get(`/resync/${opened.output}`, bearer)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { snapshotOffset: string }).snapshotOffset).toBe("3")
+  })
+
+  it("a read past a trimmed cursor returns 410 carrying snapshotOffset (recoverable, not fatal)", async () => {
+    const bearer = token("brookhaven.prod", "tok_1")
+    const opened = (await (await post("/open", bearer, { playerId: "player1" })).json()) as {
+      output: string
+    }
+    const stream = outputStreamFor("brookhaven.prod", "player1")
+    forwarder.seed(stream, ["a", "b", "c", "d", "e"])
+    forwarder.trim(stream, 5)
+    const res = await get(`/read/${opened.output}?offset=0`, bearer)
+    expect(res.status).toBe(410)
+    const body = (await res.json()) as { error: string; snapshotOffset: string }
+    expect(body.error).toBe("gone")
+    expect(body.snapshotOffset).toBe("5")
+  })
+
+  it("403 resync with another tenant's handle", async () => {
+    const foreign = mintIntent("other.game", "other.game:p")
+    const res = await get(`/resync/${foreign}`, token("brookhaven.prod", "tok_1"))
+    expect(res.status).toBe(403)
+  })
+})

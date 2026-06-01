@@ -307,3 +307,72 @@ describe("revocation + expiry (DECIDE-4)", () => {
     expect(claims.tenant).toBe("brookhaven.prod")
   })
 })
+
+describe("resync — 410 entry point (tf-r06u.43)", () => {
+  it("returns the current snapshot offset (head) of the output stream", async () => {
+    harness.forwarder.seed(outputStreamFor("brookhaven.prod", "player1"), ["e0", "e1", "e2"])
+    const result = await run(
+      Effect.gen(function*() {
+        const resolver = yield* EdgeAuthResolver
+        const claims = yield* resolver.verifyToken(token("brookhaven.prod", "tok_1"))
+        const opened = yield* resolver.open(claims, { playerId: "player1" })
+        return yield* resolver.resync(claims, opened.output)
+      }),
+    )
+    expect(result.snapshotOffset).toBe("3")
+  })
+
+  it("returns an empty offset (read-from-beginning) for a stream with no events yet", async () => {
+    const result = await run(
+      Effect.gen(function*() {
+        const resolver = yield* EdgeAuthResolver
+        const claims = yield* resolver.verifyToken(token("brookhaven.prod", "tok_1"))
+        const opened = yield* resolver.open(claims, { playerId: "fresh" })
+        return yield* resolver.resync(claims, opened.output)
+      }),
+    )
+    expect(result.snapshotOffset).toBe("")
+  })
+
+  it("a trimmed read fails ForwardGone; resync then yields a recoverable jump-to offset", async () => {
+    const stream = outputStreamFor("brookhaven.prod", "player1")
+    harness.forwarder.seed(stream, ["e0", "e1", "e2", "e3"])
+    harness.forwarder.trim(stream, 3) // retention trimmed everything before offset 3
+    const exit = await runExit(
+      Effect.gen(function*() {
+        const resolver = yield* EdgeAuthResolver
+        const claims = yield* resolver.verifyToken(token("brookhaven.prod", "tok_1"))
+        const opened = yield* resolver.open(claims, { playerId: "player1" })
+        // reading from a trimmed-past cursor (offset 0) -> Gone
+        return yield* resolver.read(claims, opened.output, Option.some("0"))
+      }),
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      expect((exit.cause.error as { _tag: string })._tag).toBe("edge-auth/ForwardGone")
+    }
+    const resynced = await run(
+      Effect.gen(function*() {
+        const resolver = yield* EdgeAuthResolver
+        const claims = yield* resolver.verifyToken(token("brookhaven.prod", "tok_1"))
+        const opened = yield* resolver.open(claims, { playerId: "player1" })
+        return yield* resolver.resync(claims, opened.output)
+      }),
+    )
+    expect(resynced.snapshotOffset).toBe("4")
+  })
+
+  it("denies resync without a read grant", async () => {
+    const exit = await runExit(
+      Effect.gen(function*() {
+        const resolver = yield* EdgeAuthResolver
+        const claims = yield* resolver.verifyToken(
+          token("brookhaven.prod", "tok_open_only", [{ verb: "open" }]),
+        )
+        const opened = yield* resolver.open(claims, { playerId: "player1" })
+        return yield* resolver.resync(claims, opened.output)
+      }),
+    )
+    expectAuthReason(exit, "grant-denied")
+  })
+})

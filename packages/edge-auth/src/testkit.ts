@@ -11,7 +11,7 @@
  * not a durable-streams reimplementation.
  */
 import { Effect, Layer, Option } from "effect"
-import { DurableStreamsForwarder } from "./forwarder.ts"
+import { DurableStreamsForwarder, ForwardGone } from "./forwarder.ts"
 
 export interface InMemoryForwarder {
   /** Layer providing {@link DurableStreamsForwarder} backed by memory. */
@@ -20,10 +20,14 @@ export interface InMemoryForwarder {
   readonly dump: () => ReadonlyMap<string, ReadonlyArray<unknown>>
   /** Directly seed an output stream (simulate agent emission for read tests). */
   readonly seed: (streamName: string, events: ReadonlyArray<unknown>) => void
+  /** Simulate retention trimming: a read whose offset is strictly before
+   * `beforeOffset` returns `ForwardGone` (durable-streams `410`). */
+  readonly trim: (streamName: string, beforeOffset: number) => void
 }
 
 export const makeInMemoryForwarder = (): InMemoryForwarder => {
   const streams = new Map<string, Array<unknown>>()
+  const trimmed = new Map<string, number>()
   const at = (name: string): Array<unknown> => {
     const existing = streams.get(name)
     if (existing !== undefined) return existing
@@ -49,7 +53,7 @@ export const makeInMemoryForwarder = (): InMemoryForwarder => {
           return { offset: String(arr.length), deduplicated: false }
         }),
       read: (streamName, offset) =>
-        Effect.sync(() => {
+        Effect.suspend(() => {
           const arr = streams.get(streamName) ?? []
           const from = Option.match(offset, {
             onNone: () => 0,
@@ -58,11 +62,15 @@ export const makeInMemoryForwarder = (): InMemoryForwarder => {
               return Number.isFinite(n) && n >= 0 ? n : 0
             },
           })
-          return {
+          const trimBefore = trimmed.get(streamName)
+          if (trimBefore !== undefined && from < trimBefore) {
+            return Effect.fail(new ForwardGone({ streamName }))
+          }
+          return Effect.succeed({
             events: arr.slice(from),
             nextOffset: String(arr.length),
             upToDate: true,
-          }
+          })
         }),
     }),
   )
@@ -72,6 +80,9 @@ export const makeInMemoryForwarder = (): InMemoryForwarder => {
     dump: () => streams,
     seed: (streamName, events) => {
       at(streamName).push(...events)
+    },
+    trim: (streamName, beforeOffset) => {
+      trimmed.set(streamName, beforeOffset)
     },
   }
 }
