@@ -18,7 +18,7 @@
  * via `Effect.scoped` + `yield* Tag`, asserts none are missing.
  */
 
-// eslint-disable-next-line no-restricted-imports
+ 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { WorkflowEngine } from "@effect/workflow"
 import {

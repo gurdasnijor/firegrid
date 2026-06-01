@@ -21,7 +21,7 @@
  * so all consumers share a single substrate instance.
  */
 
-import { WorkflowEngine } from "@effect/workflow"
+import { type WorkflowEngine } from "@effect/workflow"
 import {
   HostPlaneChannelRouter,
 } from "@firegrid/runtime/channels"
@@ -131,7 +131,7 @@ const fullCatalog = makeCatalog([
   PeerEventObserverWorkflow,
 ])
 
-const tableLayer = <T,>(
+const tableLayer = <T>(
   cls: {
     layer: (options: {
       readonly streamOptions: { readonly url: string; readonly contentType: string }

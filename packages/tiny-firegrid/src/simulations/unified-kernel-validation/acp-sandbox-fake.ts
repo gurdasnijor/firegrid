@@ -14,7 +14,7 @@
  * agent call `armNext` once.
  */
 
-import * as acp from "@agentclientprotocol/sdk"
+import type * as acp from "@agentclientprotocol/sdk"
 import {
   defaultCapabilities,
   type Sandbox,

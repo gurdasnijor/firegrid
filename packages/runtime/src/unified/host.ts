@@ -38,12 +38,10 @@
 
 import { IdGenerator } from "@effect/ai"
 import { NodeContext } from "@effect/platform-node"
-import {
-  WorkflowEngine,
-} from "@effect/workflow"
 import { Effect, Layer } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
+  durableStreamUrl,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   runtimeControlPlaneStreamUrl,
@@ -53,7 +51,7 @@ import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
 } from "../sources/sandbox/index.ts"
-import { RuntimeContextSessionAdapter } from "./adapter.ts"
+import { type RuntimeContextSessionAdapter } from "./adapter.ts"
 import {
   ContextResolverFromControlPlaneTableLive,
   ProductionCodecAdapterLive,
@@ -168,8 +166,6 @@ const defaultProductionAdapterLayer = (
     Layer.provide(envPolicy),
   )
 
-const streamUrl = (baseUrl: string, segment: string): string =>
-  `${baseUrl.replace(/\/+$/, "")}/v1/stream/${encodeURIComponent(segment)}`
 
 const tableLayer = (options: FiregridHostOptions) =>
   Layer.mergeAll(
@@ -185,7 +181,7 @@ const tableLayer = (options: FiregridHostOptions) =>
     }),
     RuntimeOutputTable.layer({
       streamOptions: {
-        url: streamUrl(
+        url: durableStreamUrl(
           options.durableStreamsBaseUrl,
           `${options.namespace}.firegrid.runtimeOutput`,
         ),
@@ -195,7 +191,7 @@ const tableLayer = (options: FiregridHostOptions) =>
     }),
     SignalTable.layer({
       streamOptions: {
-        url: streamUrl(
+        url: durableStreamUrl(
           options.durableStreamsBaseUrl,
           `${options.namespace}.firegrid.signals`,
         ),
@@ -205,7 +201,7 @@ const tableLayer = (options: FiregridHostOptions) =>
     }),
     UnifiedTable.layer({
       streamOptions: {
-        url: streamUrl(
+        url: durableStreamUrl(
           options.durableStreamsBaseUrl,
           `${options.namespace}.firegrid.unified`,
         ),
@@ -217,7 +213,7 @@ const tableLayer = (options: FiregridHostOptions) =>
 
 const engineLayer = (options: FiregridHostOptions) =>
   DurableStreamsWorkflowEngine.layer({
-    streamUrl: streamUrl(
+    streamUrl: durableStreamUrl(
       options.durableStreamsBaseUrl,
       `${options.namespace}.firegrid.engine`,
     ),
@@ -232,7 +228,7 @@ const engineLayer = (options: FiregridHostOptions) =>
  */
 export const FiregridHost = (options: FiregridHostOptions) => {
   const toolExecutorEffect = makeToolExecutor((p) =>
-    JSON.stringify({ tool: p.toolName, input: JSON.parse(p.inputJson) }),
+    JSON.stringify({ tool: p.toolName, input: JSON.parse(p.inputJson) as unknown }),
   )
 
   const adapterLayer = hasAdapter(options)

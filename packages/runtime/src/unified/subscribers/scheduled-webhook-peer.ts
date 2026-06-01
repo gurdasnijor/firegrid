@@ -23,7 +23,7 @@ import {
   Workflow,
   type WorkflowEngine,
 } from "@effect/workflow"
-import { Data, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Data, Duration, Effect, Option, Schema } from "effect"
 import {
   awaitSignal,
   sendSignal,
@@ -79,7 +79,7 @@ const scheduledPromptBody = (payload: ScheduledPromptPayload) =>
     })
 
     // DurableClock — the engine recovers this on reconstruction.
-    const now = Date.now()
+    const now = yield* Clock.currentTimeMillis
     const delay = Math.max(0, payload.fireAtMs - now)
     yield* DurableClock.sleep({
       name: `unified.scheduled-prompt/${key}`,

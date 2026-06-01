@@ -124,7 +124,7 @@ const encodePermissionResponsePayload = (
   }
   return {
     kind: "permission-response",
-    payloadJson: JSON.stringify(encodeAgentInputEvent(event as never)),
+    payloadJson: JSON.stringify(encodeAgentInputEvent(event)),
   }
 }
 
@@ -220,12 +220,13 @@ export const HostPromptChannelSignalingLive = Layer.effect(
           readonly payload: unknown
           readonly idempotencyKey?: string
         }
-        const correlationId = req.idempotencyKey ?? `prompt-${req.contextId}-${Date.now()}`
-        const payload = encodePromptPayload(
-          req.payload as { readonly text?: string },
-          correlationId,
-        )
         return Effect.gen(function*() {
+          const correlationId = req.idempotencyKey
+            ?? `prompt-${req.contextId}-${yield* Clock.currentTimeMillis}`
+          const payload = encodePromptPayload(
+            req.payload as { readonly text?: string },
+            correlationId,
+          )
           const executionId = yield* RuntimeContextSessionWorkflow.executionId({
             contextId: req.contextId,
             attempt: DEFAULT_ATTEMPT,
@@ -242,7 +243,7 @@ export const HostPromptChannelSignalingLive = Layer.effect(
           return eventOffset(`${String(HostPromptChannelTarget)}:${executionId}|${correlationId}`)
         }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, engine))
       },
-    }) as unknown as HostPromptChannel["Type"]
+    })
   }),
 )
 
@@ -262,12 +263,13 @@ export const SessionPromptChannelSignalingLive = Layer.effect(
               readonly payload: unknown
               readonly idempotencyKey?: string
             }
-            const correlationId = req.idempotencyKey ?? `prompt-${sessionId}-${Date.now()}`
-            const payload = encodePromptPayload(
-              req.payload as { readonly text?: string },
-              correlationId,
-            )
             return Effect.gen(function*() {
+              const correlationId = req.idempotencyKey
+                ?? `prompt-${sessionId}-${yield* Clock.currentTimeMillis}`
+              const payload = encodePromptPayload(
+                req.payload as { readonly text?: string },
+                correlationId,
+              )
               const executionId = yield* RuntimeContextSessionWorkflow.executionId({
                 contextId: sessionId,
                 attempt: DEFAULT_ATTEMPT,
@@ -284,7 +286,7 @@ export const SessionPromptChannelSignalingLive = Layer.effect(
               return eventOffset(`${String(SessionPromptChannelTarget)}:${executionId}|${correlationId}`)
             }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, engine))
           },
-        }) as unknown as ReturnType<SessionPromptChannel["Type"]["forSession"]>,
+        }),
     })
   }),
 )
@@ -458,7 +460,7 @@ export const HostContextSnapshotChannelLive = Layer.succeed(
         events: [] as ReadonlyArray<unknown>,
         logs: [] as ReadonlyArray<unknown>,
         agentOutputs: [],
-      } as unknown as typeof RuntimeContextSnapshotSchema.Type),
+      }),
   }),
 )
 
@@ -475,7 +477,7 @@ export const HostSessionSnapshotChannelLive = Layer.succeed(
         events: [] as ReadonlyArray<unknown>,
         logs: [] as ReadonlyArray<unknown>,
         agentOutputs: [],
-      } as unknown as typeof RuntimeContextSnapshotSchema.Type),
+      }),
   }),
 )
 

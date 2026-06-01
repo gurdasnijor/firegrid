@@ -1419,10 +1419,9 @@ const firegridServiceLayer = Layer.scoped(
  * for the table Tag.
  */
 // `FiregridLive` no longer provides standalone channel defaults — the
-// host-side `@firegrid/runtime/unified/channel-bindings` is the
-// canonical source of the channel Tags. Standalone client composition
-// must compose the unified bindings explicitly (or run against a
-// real host).
+// host-side unified channel-bindings module is the canonical source of
+// the channel Tags. Standalone client composition must compose the
+// unified bindings explicitly (or run against a real host).
 export const FiregridLive = firegridServiceLayer
 
 /**

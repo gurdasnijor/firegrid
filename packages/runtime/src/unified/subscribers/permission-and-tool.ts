@@ -23,7 +23,7 @@ import { Prompt } from "@effect/ai"
 import {
   Activity,
   Workflow,
-  WorkflowEngine,
+  type WorkflowEngine,
 } from "@effect/workflow"
 import { Effect, Ref, Schema } from "effect"
 import { awaitSignal, sendSignal, SignalTable } from "../signal.ts"
@@ -43,12 +43,8 @@ const encodeAgentInputEvent = Schema.encodeSync(AgentInputEventSchema)
 // ── Shared: session relay payload ───────────────────────────────────────────
 //
 // Both sibling workflows target a specific (contextId, attempt) session
-// execution. Carried in the workflow payload so the body can compute the
-// session executionId and relay its result via `recordSignal`.
-const SessionTargetSchema = Schema.Struct({
-  contextId: Schema.String,
-  attempt: Schema.Number,
-})
+// execution, carried inline in each workflow payload so the body can compute
+// the session executionId and relay its result via `recordSignal`.
 
 // ── PermissionRoundtripWorkflow ─────────────────────────────────────────────
 
@@ -133,7 +129,7 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
     }
     const relayPayload: SessionInputPayload = {
       kind: "permission-response",
-      payloadJson: JSON.stringify(encodeAgentInputEvent(permissionResponseEvent as never)),
+      payloadJson: JSON.stringify(encodeAgentInputEvent(permissionResponseEvent)),
     }
     yield* Activity.make({
       name: `unified.permission.relay/${key}`,
@@ -256,7 +252,7 @@ const toolDispatchBody = (executor: ToolExecutor) =>
       }
       const relayPayload: SessionInputPayload = {
         kind: "tool-result",
-        payloadJson: JSON.stringify(encodeAgentInputEvent(toolResultEvent as never)),
+        payloadJson: JSON.stringify(encodeAgentInputEvent(toolResultEvent)),
       }
       yield* Activity.make({
         name: `unified.tool.relay/${payload.toolUseId}`,

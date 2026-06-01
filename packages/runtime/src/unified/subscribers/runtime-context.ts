@@ -35,7 +35,7 @@ import {
   Workflow,
   WorkflowEngine,
 } from "@effect/workflow"
-import { Effect, ParseResult, Schema } from "effect"
+import { Effect, type ParseResult, Schema } from "effect"
 import { readSignalsFor, SignalTable } from "../signal.ts"
 import {
   RuntimeContextSessionAdapter,
