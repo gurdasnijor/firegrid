@@ -19,21 +19,25 @@
         "src/**/*.ts"
       ]
     },
-    "packages/client": {
+    "packages/client-sdk": {
       "entry": [
-        "src/index.ts"
+        "src/index.ts",
+        "test/**/*.test.ts"
       ],
       "project": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "test/**/*.ts"
       ]
     },
     "packages/protocol": {
       "entry": [
         "src/index.ts",
-        "src/launch/index.ts"
+        "src/launch/index.ts",
+        "test/**/*.test.ts"
       ],
       "project": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "test/**/*.ts"
       ]
     },
     "packages/runtime": {
@@ -49,14 +53,37 @@
         "@agentclientprotocol/claude-agent-acp"
       ]
     },
+    "packages/effect-durable-operators": {
+      "entry": [
+        "src/index.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "test/**/*.ts"
+      ]
+    },
+    "packages/observability": {
+      "entry": [
+        "src/index.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "test/**/*.ts"
+      ]
+    },
     "packages/tiny-firegrid": {
       "entry": [
         "src/index.ts",
+        "src/bin/**/*.ts",
         "src/simulations/*/index.ts",
-        "src/simulations/*/*/index.ts"
+        "src/simulations/*/*/index.ts",
+        "test/**/*.test.ts"
       ],
       "project": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "test/**/*.ts"
       ],
       "ignoreFiles": [
         "src/simulations/to-be-migrated/**/*.ts",

@@ -41,20 +41,20 @@ import {
 
 const encoder = new TextEncoder()
 
-export interface VerifiedWebhookRouteAddress {
+interface VerifiedWebhookRouteAddress {
   readonly host: string
   readonly port: number
   readonly path: string
 }
 
-export interface VerifiedWebhookRouteBound {
+interface VerifiedWebhookRouteBound {
   readonly url: string
   readonly host: string
   readonly port: number
   readonly path: string
 }
 
-export interface MakeVerifiedWebhookSourceConfig<Fact> {
+interface MakeVerifiedWebhookSourceConfig<Fact> {
   /**
    * Stable source identifier written into every fact row's `factKey[0]`.
    * Examples: `"linear-prod"`, `"github-org-acme"`. Must be unique per
@@ -93,7 +93,7 @@ export interface MakeVerifiedWebhookSourceConfig<Fact> {
   readonly route: VerifiedWebhookRouteAddress
 }
 
-export interface VerifiedWebhookSourceBinding<Fact> {
+interface VerifiedWebhookSourceBinding<Fact> {
   /** The same `source` identifier the config carried; surfaced for tests/observability. */
   readonly source: string
 
