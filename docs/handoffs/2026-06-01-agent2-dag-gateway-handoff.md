@@ -6,30 +6,41 @@ active in-progress build (tf-r06u.28).
 
 ## TL;DR — where to pick up
 
-**Continue tf-r06u.28 (PR #770) at slice 3/4: the `mcp-host.ts` server port.**
-Slices 1 (toolkit definition) and 2 (the rewire) are landed + green. The plan +
-executor→unified mapping is in `docs/findings/tf-r06u-28-mcp-host-port-plan.md`
-on that branch — read it first; it's the spine.
+**Continue tf-r06u.28 (PR #770) at slice 4/4: the HTTP acceptance tests.**
+Slices 1 (toolkit definition), 2 (the rewire), and 3 (mcp-host server) are
+landed + green, all reshaped to **library-owned MCP semantics** (Gurdas review
+r3333339003: don't reinvent `@effect/ai`). The plan is in
+`docs/findings/tf-r06u-28-mcp-host-port-plan.md`; the executor/body-boundary
+finding is `docs/findings/tf-r06u-28-sleep-spike-suspension-boundary.md`.
 
-**Slice 2 outcome (2026-06-01, green, pushed):** the Coordinator's final shape
-(superseding the relayToSession fork) = the MCP-entry path is its own **bounded
-relay-free Shape D workflow** (`McpToolDispatchWorkflow`, idempotencyKey=toolUseId,
-no result table, no `permission-and-tool.ts` touch → Agent1 tf-r06u.5 collision
-dodged), driven by the **single shared `FiregridAgentToolExecutor`** (sleep =
-`Clock.sleep`, the *permanent* MCP answer; others typed not-yet-ported). Green e2e:
-`packages/runtime/test/mcp-host/mcp-tool-dispatch-sleep.test.ts` (3/3 on a real
-`DurableStreamsWorkflowEngine`). Sleep spike finding:
-`docs/findings/tf-r06u-28-sleep-spike-suspension-boundary.md` (suspension can't
-live inside `Activity.make` — `retryOnInterrupt` fights `Workflow.suspend`).
-Wire-path durable-sleep debt = bead **tf-qmkn**; `wait_for`/signal-blocking tools
-= separate milestone (tf-12q9/tf-c9r9). **Scope was sleep ONLY.**
+**Slices 2+3 outcome (2026-06-01, green, pushed b4836305b):**
+- **Shared unit = the typed per-tool arm** `(input)=>Effect<Output,ToolError>`
+  (= main's `toolUseToEffect` arm shape). `sleep` = `Clock.sleep` (permanent MCP
+  answer). `ToolError` rides the typed error channel through
+  `McpToolDispatchWorkflow` (`error: ToolError`, relay-free Shape D,
+  idempotencyKey=toolUseId) → `ToolDispatch` facade → toolkit handler.
+- **No hand-rolled MCP encoding.** `@effect/ai`'s `McpServer.registerToolkit`
+  (default `failureMode: "error"`) builds `CallToolResult{isError,...}` itself.
+  The `ToolResultEvent`/`AgentInputEvent` builders were DELETED from
+  `tool-error.ts` (wire-path delivery → future wire-path slice). `tool-error.ts`
+  keeps the `ToolError` union (the `.setFailure` schema) + constructors.
+- **slice 3 `mcp-host.ts` = `McpServer.layerHttp` + `McpServer.registerToolkit`**,
+  NOT a hand-rolled server. tf-x3sv register-before-serve is STRUCTURAL (toolkit
+  as a build-time `Layer` dep of `HttpRouter.Default.serve()`). Keeps the
+  Firegrid `/runtime-context/:contextId` resolver (`ContextResolverTag`).
+- Green e2e: `test/mcp-host/mcp-tool-dispatch-sleep.test.ts` (3/3, real
+  `DurableStreamsWorkflowEngine`): typed `{slept:true}` + at-most-once + typed
+  `ToolError` failure.
+- Beads: **tf-qmkn** (wire-path durable sleep), **tf-rgdt** (slice-3 deferrals:
+  single-response JSON-RPC serializer, OAuth probes, base-URL late-binding —
+  verify at slice-4 live codex-acp, re-add only if broken). `wait_for`/
+  signal-blocking tools = separate milestone (tf-12q9/tf-c9r9). **Scope = sleep.**
 
-For slice 3: port `mcp-host.ts` (`FiregridMcpServerLayer`) +
-`runtime-context-mcp-base-url.ts` + `mcp-channel-metadata.ts` from main
-`composition/`, register `FiregridAgentToolkitLayer`/`FiregridPrimitiveProfileToolkitLayer`
-(from `./toolkit-layer.ts`) + provide `ToolDispatchLive` (from `./tool-dispatch.ts`).
-**PRESERVE the tf-x3sv register-before-serve invariant** + the `toolProfile`
-full/primitive split.
+For slice 4: port back `agentic-patterns-primitive-profile.test.ts` +
+`sleep-only-substrate-smoke.test.ts` to hit the REAL bound HTTP endpoint
+(`tools/list` complete + `sleep` e2e). This is ALSO where **tf-rgdt** gets its
+verdict against live codex-acp (re-add the deferred customizations ONLY if the
+round-trip breaks).
 
 ## Open PRs
 
