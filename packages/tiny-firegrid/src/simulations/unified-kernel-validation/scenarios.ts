@@ -64,9 +64,9 @@ import {
   buildPeerEventObserverLayer,
   buildScheduledPromptLayer,
   buildWebhookFactObserverLayer,
+  isVerifiedWebhookError,
   PeerEventObserverWorkflow,
   ScheduledPromptWorkflow,
-  VerifiedWebhookError,
   WebhookFactObserverWorkflow,
 } from "./subscribers/scheduled-webhook-peer.ts"
 import {
@@ -457,7 +457,7 @@ export const webhookBadHmacScenario = (
       // The router wraps invocation failures as
       // `ChannelRouteInvocationFailed { cause }` — peel one layer.
       const findOp = (err: unknown): string | undefined => {
-        if (err instanceof VerifiedWebhookError) return err.op
+        if (isVerifiedWebhookError(err)) return err.op
         if (typeof err === "object" && err !== null) {
           const obj = err as { readonly cause?: unknown }
           if (obj.cause !== undefined) return findOp(obj.cause)

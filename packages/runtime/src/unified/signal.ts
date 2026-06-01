@@ -80,6 +80,32 @@ const now = (): string => new Date().toISOString()
 const signalKeyFor = (executionId: string, name: string): string =>
   `${executionId}|${name}`
 
+const insertSignalRow = (options: {
+  readonly signals: SignalTableService
+  readonly workflowName: string
+  readonly executionId: string
+  readonly name: string
+  readonly payloadJson: string
+}) =>
+  options.signals.signals.insertOrGet({
+    signalKey: signalKeyFor(options.executionId, options.name),
+    workflowName: options.workflowName,
+    executionId: options.executionId,
+    name: options.name,
+    payloadJson: options.payloadJson,
+    recordedAt: now(),
+  }).pipe(Effect.orDie)
+
+const signalSpanAttributes = (options: {
+  readonly workflowName: string
+  readonly executionId: string
+  readonly name: string
+}) => ({
+  "firegrid.workflow.name": options.workflowName,
+  "firegrid.workflow.execution_id": options.executionId,
+  "firegrid.unified.signal.name": options.name,
+})
+
 // ── Resumable-workflow contract ─────────────────────────────────────────────
 
 export interface ResumableWorkflow<Name extends string = string> {
@@ -89,66 +115,57 @@ export interface ResumableWorkflow<Name extends string = string> {
   ) => Effect.Effect<void, never, WorkflowEngine.WorkflowEngine>
 }
 
-// ── Producer side ───────────────────────────────────────────────────────────
-
-export const recordSignal = <Row, RowR>(options: {
+interface SignalWriteOptions<Row, RowR> {
   readonly signals: SignalTableService
-  readonly workflowName: string
   readonly executionId: string
   readonly name: string
   readonly write: (value: Row) => Effect.Effect<void, unknown, RowR>
   readonly value: Row
   readonly serializeValue: (value: Row) => string
+}
+
+// ── Producer side ───────────────────────────────────────────────────────────
+
+export const recordSignal = <Row, RowR>(options: SignalWriteOptions<Row, RowR> & {
+  readonly workflowName: string
 }): Effect.Effect<void, unknown, RowR> =>
   Effect.gen(function*() {
-    yield* options.signals.signals.insertOrGet({
-      signalKey: signalKeyFor(options.executionId, options.name),
+    yield* insertSignalRow({
+      signals: options.signals,
       workflowName: options.workflowName,
       executionId: options.executionId,
       name: options.name,
       payloadJson: options.serializeValue(options.value),
-      recordedAt: now(),
-    }).pipe(Effect.orDie)
+    })
     yield* options.write(options.value)
   }).pipe(
     Effect.withSpan("firegrid.unified.signal.record", {
       kind: "internal",
-      attributes: {
-        "firegrid.workflow.name": options.workflowName,
-        "firegrid.workflow.execution_id": options.executionId,
-        "firegrid.unified.signal.name": options.name,
-      },
+      attributes: signalSpanAttributes(options),
     }),
   )
 
-export const sendSignal = <Row, RowR>(options: {
-  readonly signals: SignalTableService
+export const sendSignal = <Row, RowR>(options: SignalWriteOptions<Row, RowR> & {
   readonly workflow: ResumableWorkflow
-  readonly executionId: string
-  readonly name: string
-  readonly write: (value: Row) => Effect.Effect<void, unknown, RowR>
-  readonly value: Row
-  readonly serializeValue: (value: Row) => string
 }): Effect.Effect<void, unknown, WorkflowEngine.WorkflowEngine | RowR> =>
   Effect.gen(function*() {
-    yield* options.signals.signals.insertOrGet({
-      signalKey: signalKeyFor(options.executionId, options.name),
+    yield* insertSignalRow({
+      signals: options.signals,
       workflowName: options.workflow.name,
       executionId: options.executionId,
       name: options.name,
       payloadJson: options.serializeValue(options.value),
-      recordedAt: now(),
-    }).pipe(Effect.orDie)
+    })
     yield* options.write(options.value)
     yield* options.workflow.resume(options.executionId)
   }).pipe(
     Effect.withSpan("firegrid.unified.signal.send", {
       kind: "internal",
-      attributes: {
-        "firegrid.workflow.name": options.workflow.name,
-        "firegrid.workflow.execution_id": options.executionId,
-        "firegrid.unified.signal.name": options.name,
-      },
+      attributes: signalSpanAttributes({
+        workflowName: options.workflow.name,
+        executionId: options.executionId,
+        name: options.name,
+      }),
     }),
   )
 
@@ -204,7 +221,10 @@ export const recoverPendingSignals = (options: {
     let replayed = 0
     let skipped = 0
     const seen = new Set<string>()
-    for (const row of rows) {
+    let index = 0
+    while (index < rows.length) {
+      const row = rows[index]!
+      index += 1
       const rewrite = options.rewriter?.forSignal(row)
       if (rewrite !== undefined) yield* rewrite
       if (seen.has(row.executionId)) continue

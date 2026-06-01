@@ -70,7 +70,9 @@ export const RuntimeContextSessionWorkflow = Workflow.make({
   idempotencyKey: (p) => `${p.contextId}:${p.attempt}`,
 })
 
-const decodeSessionInputPayload = Schema.decodeUnknown(SessionInputPayloadSchema)
+const decodeSessionInputPayloadJson = Schema.decode(
+  Schema.parseJson(SessionInputPayloadSchema),
+)
 
 const sessionKey = (contextId: string, attempt: number): string =>
   `${contextId}:${attempt}`
@@ -112,9 +114,7 @@ const body = (
       while (consumed < rows.length && !reachedTerminal) {
         const row = rows[consumed]!
         const cursor = consumed
-        const input: SessionInputPayload = yield* decodeSessionInputPayload(
-          JSON.parse(row.payloadJson) as unknown,
-        ).pipe(
+        const input: SessionInputPayload = yield* decodeSessionInputPayloadJson(row.payloadJson).pipe(
           Effect.mapError((e: ParseResult.ParseError) =>
             new Error(`malformed session input at cursor ${cursor}: ${e.message}`),
           ),

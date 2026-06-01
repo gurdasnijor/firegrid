@@ -9,6 +9,7 @@ export {
   buildScheduledPromptLayer,
   buildWebhookFactObserverLayer,
   emitPeerEvent,
+  isVerifiedWebhookError,
   PEER_EVENT_SIGNAL,
   type PeerEventObserverPayload,
   PeerEventObserverPayloadSchema,

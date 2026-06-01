@@ -9,7 +9,7 @@ import process from "node:process"
 //
 // Shape C cutover (2026-05-22) + SDD #761 source/producer split (PR-M1):
 // `events/`, `capabilities/`, `tables/`, `sources/`, `producers/`,
-// `transforms/`, `channels/`, `subscribers/`, `composition/`, and `_archive/`
+// `transforms/`, `channels/`, `unified/`, and `_archive/`
 // are the semantic target surfaces from
 // `docs/architecture/2026-05-22-runtime-physical-target-tree.md` (updated for
 // the SDD #761 tier split).
@@ -46,8 +46,7 @@ const requiredTargetSurfaces = [
   "producers",
   "transforms",
   "channels",
-  "subscribers",
-  "composition",
+  "unified",
   "_archive",
 ]
 
