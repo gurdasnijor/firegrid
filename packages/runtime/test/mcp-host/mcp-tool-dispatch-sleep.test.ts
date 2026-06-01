@@ -2,20 +2,20 @@
 // MCP-entry Shape D dispatch.
 //
 // Proves:
-//   A. `ToolDispatch.call({ toolName: "sleep" })` returns `{ slept: true }`
-//      through `McpToolDispatchWorkflow` on a real `DurableStreamsWorkflowEngine`
-//      — the sleep milestone.
-//   B. at-most-once: a repeated `toolUseId` runs the shared executor exactly
-//      once (`Workflow.idempotencyKey: toolUseId` memoization — the Shape D
-//      C3 mechanism; no separate result table), and the second call returns
-//      the memoized result.
-//   C. honest surface: a tool not yet ported onto the unified executor
-//      returns a structured `isFailure` result (an agent-visible error, not
-//      a workflow failure).
+//   A. `ToolDispatch.call({ toolName: "sleep" })` returns the typed output
+//      `{ slept: true }` through `McpToolDispatchWorkflow` on a real
+//      `DurableStreamsWorkflowEngine` — the sleep milestone.
+//   B. at-most-once: a repeated `toolUseId` runs the shared arm exactly once
+//      (`Workflow.idempotencyKey: toolUseId` memoization — the Shape D C3
+//      mechanism; no separate result table), and the second call returns the
+//      memoized result.
+//   C. honest surface: a tool not yet ported fails on the typed `ToolError`
+//      channel (which `@effect/ai`'s McpServer lowers to `isError:true`),
+//      not a thrown defect.
 
 import { WorkflowEngine } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Effect, Layer, Ref } from "effect"
+import { Effect, Exit, Layer, Ref } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DurableStreamsWorkflowEngine } from "../../src/engine/durable-streams-workflow-engine.ts"
 import {
@@ -61,7 +61,7 @@ const runWith = <A, E>(
   )
 
 describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
-  it("A. sleep returns { slept: true } through ToolDispatch.call", async () => {
+  it("A. sleep returns the typed output { slept: true } through ToolDispatch.call", async () => {
     const result = await runWith(
       streamUrlFor("sleep"),
       ToolDispatchLive,
@@ -75,11 +75,10 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
         })
       }),
     )
-    expect(result.part.isFailure).toBe(false)
-    expect(result.part.result).toEqual({ slept: true })
+    expect(result).toEqual({ slept: true })
   })
 
-  it("B. same toolUseId runs the executor exactly once (idempotencyKey memo)", async () => {
+  it("B. same toolUseId runs the arm exactly once (idempotencyKey memo)", async () => {
     // Hold the executor instance so we can read its invocation counter
     // after driving the workflow twice with the same toolUseId.
     const executor = await Effect.runPromise(makeFiregridAgentToolExecutor())
@@ -105,14 +104,11 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
     )
     expect(observed.invocations).toBe(1)
     expect(observed.second).toEqual(observed.first)
-    const firstEvent = JSON.parse(observed.first.resultJson) as {
-      readonly part: { readonly result: unknown }
-    }
-    expect(firstEvent.part.result).toEqual({ slept: true })
+    expect(JSON.parse(observed.first.resultJson)).toEqual({ slept: true })
   })
 
-  it("C. a not-yet-ported tool returns a structured isFailure result", async () => {
-    const result = await runWith(
+  it("C. a not-yet-ported tool fails on the typed ToolError channel", async () => {
+    const exit = await runWith(
       streamUrlFor("unported"),
       ToolDispatchLive,
       Effect.gen(function*() {
@@ -123,10 +119,11 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
           toolName: "send",
           input: { channel: "egress.x", payload: {} },
         })
-      }),
+      }).pipe(Effect.exit),
     )
-    expect(result.part.isFailure).toBe(true)
-    const payload = result.part.result as { readonly message?: string }
-    expect(String(payload.message ?? "")).toContain("not yet ported")
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(String(exit.cause)).toContain("not yet ported")
+    }
   })
 })

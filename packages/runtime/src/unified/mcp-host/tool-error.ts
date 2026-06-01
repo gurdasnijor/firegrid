@@ -1,13 +1,19 @@
 /**
  * Structured agent-tool error types.
  *
- * `toolUseToEffect` catches every arm failure and emits a `ToolResult`
- * input event with `isError: true`. The workflow does NOT fail for tool
- * failures — the agent gets a structured error and decides what to do.
+ * `ToolError` is the typed tool-failure union. It is the `.setFailure`
+ * schema each Firegrid `Tool` binds (`FiregridMcpToolFailureSchema` in
+ * `./toolkit.ts`), and it is the error channel the typed arms + toolkit
+ * handlers fail with. The workflow does NOT fail for tool failures — the
+ * agent gets a structured error and decides what to do.
  *
- * `ToolError` is the tagged union match arms surface internally; the
- * outer lowering converts each variant into a `ToolResult` event with a
- * codec-friendly content payload using `toolErrorResult`.
+ * The MCP-entry path does NOT build the MCP result: `@effect/ai`'s
+ * `McpServer.registerToolkit` (default `failureMode: "error"`) catches a
+ * handler failure of this shape and lowers it into
+ * `CallToolResult{isError:true, structuredContent: <ToolError>}`. The
+ * `ToolResult` → `AgentInputEvent` lowering that the legacy
+ * `toolUseToEffect` did is WIRE-path delivery machinery and lives in the
+ * future wire-path slice, not here.
  *
  * Implements:
  *  - agent-codec-runtime-tools.md/agent-tool-layer-phase-2 §"Tool error semantics"
@@ -15,9 +21,7 @@
  *    (typed expected results; retryable vs terminal failures)
  */
 
-import { Prompt } from "@effect/ai"
-import { ParseResult, Schema } from "effect"
-import type { AgentInputEvent } from "../../events/index.ts"
+import { Cause, ParseResult, Schema } from "effect"
 
 export const ToolInvalidInputError = Schema.TaggedStruct("ToolInvalidInput", {
   toolUseId: Schema.String,
@@ -54,100 +58,15 @@ export const ToolError = Schema.Union(
 )
 export type ToolError = Schema.Schema.Type<typeof ToolError>
 
-const stringifyCause = (cause: unknown): string => {
-  if (cause === undefined) return "no cause"
-  if (cause instanceof Error) return cause.message
-  if (typeof cause === "string") return cause
-  if (typeof cause === "number" || typeof cause === "boolean") {
-    return String(cause)
-  }
-  try {
-    return JSON.stringify(cause)
-  } catch {
-    return "[unprintable cause]"
-  }
-}
-
-/**
- * Human-friendly formatter for a `ToolError`. Used by the lowering when
- * constructing the `content` payload of an `isError: true` ToolResult,
- * and by tests asserting on the textual surface of error results.
- */
-export const formatToolError = (error: ToolError): string => {
-  switch (error._tag) {
-    case "ToolInvalidInput":
-      return `Tool "${error.name}" rejected input: ${error.reason}`
-    case "ToolExecutionFailed":
-      return `Tool "${error.name}" execution failed: ${error.message}`
-    case "ToolCancelled":
-      return `Tool "${error.name}" was cancelled`
-  }
-}
-
-type ToolResultEvent = Extract<AgentInputEvent, { _tag: "ToolResult" }>
-
-const toolResultEvent = (
-  toolUseId: string,
-  name: string,
-  content: unknown,
-  isError: boolean,
-): ToolResultEvent => ({
-  _tag: "ToolResult",
-  part: Prompt.toolResultPart({
-    id: toolUseId,
-    name,
-    result: content,
-    isFailure: isError,
-    providerExecuted: false,
-  }),
-})
-
-/**
- * Build a success `ToolResult` event. `content` is the decoded tool
- * output; the codec re-encodes it for the agent's wire protocol.
- */
-export const toolResult = (
-  toolUseId: string,
-  name: string,
-  content: unknown,
-): ToolResultEvent => toolResultEvent(toolUseId, name, content, false)
-
-/**
- * Build an `isError: true` `ToolResult` event with a structured error
- * payload derived from `ToolError`. The payload includes the tagged
- * union shape so codecs can inspect the failure category.
- */
-export const toolErrorResult = (error: ToolError): ToolResultEvent =>
-  toolResultEvent(
-    error.toolUseId,
-    error.name,
-    { error, message: formatToolError(error) },
-    true,
-  )
-
-/**
- * Build the name-lookup-failure ToolResult for an unknown tool
- * name. This is a distinct production result from `ToolInvalidInput`
- * (the codec emitted a name that is not in `FiregridAgentToolkit`'s
- * Tool set).
- */
-export const unknownToolResult = (
-  toolUseId: string,
-  name: string,
-): ToolResultEvent =>
-  toolResultEvent(
-    toolUseId,
-    name,
-    {
-      error: {
-        _tag: "UnknownTool" as const,
-        toolUseId,
-        name,
-      },
-      message: `Unknown tool "${name}"`,
-    },
-    true,
-  )
+// Render an arbitrary caught value to a human-readable message. Plain
+// string causes pass through verbatim (many call sites pass a literal
+// message); everything else is rendered with Effect's `Cause.pretty`.
+const stringifyCause = (cause: unknown): string =>
+  cause === undefined
+    ? "no cause"
+    : typeof cause === "string"
+      ? cause
+      : Cause.pretty(Cause.die(cause))
 
 /**
  * Convenience: turn a `Schema.decodeUnknown` ParseError into the

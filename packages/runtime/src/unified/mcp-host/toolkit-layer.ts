@@ -1,30 +1,32 @@
 /**
  * EXECUTION side of the agent-tool boundary
  * (`firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6`): the toolkit handler Layer
- * that routes every registered tool through the unified-owned
- * `ToolDispatch` facade (`./tool-dispatch.ts`).
+ * that routes every registered tool through the unified-owned `ToolDispatch`
+ * facade (`./tool-dispatch.ts`).
  *
- * The binding values (`Tool`/`Toolkit`, failure schema, routing tag) live
- * in `./toolkit.ts`; this module composes them with the dispatch Tag.
+ * The binding values (`Tool`/`Toolkit`, failure schema, routing tag) live in
+ * `./toolkit.ts`; this module composes them with the dispatch Tag.
  *
- * Option B (tf-r06u.28): handler dispatch goes through `ToolDispatch.call`,
- * which drives the relay-free MCP-entry `McpToolDispatchWorkflow` over
- * #765's unified substrate — NOT main's deleted `ToolCallWorkflow`. The
- * handlers are uniform: every tool resolves the route-scoped context and
- * calls the facade; what each tool actually does lives in the shared
- * `FiregridAgentToolExecutor`.
+ * Each handler returns `Effect<Output, ToolError>`: on success the tool
+ * output (which `@effect/ai`'s `McpServer.registerToolkit` lowers into a
+ * `CallToolResult`), on failure a typed `ToolError` (the tool's
+ * `.setFailure` schema). With the Tools' default `failureMode: "error"`,
+ * `registerToolkit` catches that failure via `Effect.match` and builds
+ * `CallToolResult{isError:true, structuredContent: <ToolError>}` — we do NOT
+ * build the MCP result ourselves. (The MCP-entry path is relay-free; the
+ * `ToolResultEvent` → `AgentInputEvent` lowering is wire-path machinery and
+ * lives in the future wire-path slice, not here.)
  */
 
 import { IdGenerator } from "@effect/ai"
 import type * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import { type Context, Effect, Layer } from "effect"
 import { ToolDispatch } from "./tool-dispatch.ts"
-import { toolExecutionFailed } from "./tool-error.ts"
+import { type ToolError, toolExecutionFailed } from "./tool-error.ts"
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
   FiregridPrimitiveProfileToolkit,
-  type FiregridMcpToolFailure,
 } from "./toolkit.ts"
 
 const TOOL_USE_ID_PREFIX = "mcp"
@@ -37,6 +39,10 @@ type ToolCallHostEnvironment = ToolDispatch
  * identity and at-most-once (`Workflow.idempotencyKey: toolUseId`) as the
  * direct codec path. Context routing is resolved host-side from
  * `FiregridAgentToolContext`, never an agent-visible argument.
+ *
+ * The error channel is `ToolError` (the tool's `.setFailure` schema), so a
+ * dispatch failure propagates as a typed agent-tool failure that the
+ * library lowers to `CallToolResult{isError:true}`.
  */
 const handleTool = <Output>(
   captured: Context.Context<ToolCallHostEnvironment>,
@@ -48,7 +54,7 @@ const handleTool = <Output>(
     const idGen = yield* IdGenerator.IdGenerator
     const idSuffix = yield* idGen.generateId()
     const resolved = yield* ctx.resolve.pipe(
-      Effect.mapError(cause =>
+      Effect.mapError((cause): ToolError =>
         toolExecutionFailed(
           `${TOOL_USE_ID_PREFIX}:unrouted:${idSuffix}`,
           toolName,
@@ -64,55 +70,16 @@ const handleTool = <Output>(
       ))
     }
     const dispatch = yield* ToolDispatch
-    const result = yield* dispatch.call({
+    return (yield* dispatch.call({
       contextId: resolved.contextId,
       toolUseId,
       toolName,
       input: params,
-    }).pipe(
-      Effect.mapError(failure =>
-        toolExecutionFailed(failure.toolUseId, failure.toolName, failure.cause)),
-    )
-    if (result.part.isFailure) {
-      const error = extractToolFailure(result.part.result)
-      return yield* Effect.fail(error)
-    }
-    return result.part.result as Output
+    })) as Output
   }).pipe(
     Effect.provide(captured),
     Effect.annotateSpans("firegrid.side", "agent-tools"),
   )
-
-/**
- * Pull a structured `ToolError` out of `ToolResult.part.result`. The
- * unknown-tool case (`_tag: "UnknownTool"`) should never reach an MCP
- * handler because toolkit dispatch only invokes registered names; if it
- * does, map it to `ToolExecutionFailed` so the MCP-facing failure stays
- * a valid `FiregridMcpToolFailure`.
- */
-const extractToolFailure = (content: unknown): FiregridMcpToolFailure => {
-  const record = (typeof content === "object" && content !== null
-    ? content
-    : {}) as Record<string, unknown>
-  const error = record.error
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    (error as { readonly _tag: unknown })._tag !== "UnknownTool"
-  ) {
-    return error as FiregridMcpToolFailure
-  }
-  return {
-    _tag: "ToolExecutionFailed",
-    toolUseId: "unknown",
-    name: "unknown",
-    message:
-      typeof record.message === "string"
-        ? record.message
-        : "Tool returned an unstructured error payload",
-  }
-}
 
 const makeToolkitHandlers = (
   captured: Context.Context<ToolCallHostEnvironment>,
@@ -143,12 +110,10 @@ const makeToolkitHandlers = (
 
 /**
  * Toolkit handler Layer. Registering this with `McpServer` (via
- * `McpServer.registerToolkit`) projects the toolkit to MCP `tools/list`
- * and `tools/call`.
- *
- * Host services are captured once when the MCP layer is built; each handler
- * resolves the `ToolDispatch` facade and a route-scoped runtime context at
- * call time.
+ * `McpServer.registerToolkit`) projects the toolkit to MCP `tools/list` and
+ * `tools/call`. Host services are captured once when the MCP layer is
+ * built; each handler resolves the `ToolDispatch` facade and a route-scoped
+ * runtime context at call time.
  */
 export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
   Effect.map(Effect.context<ToolCallHostEnvironment>(), makeToolkitHandlers),
