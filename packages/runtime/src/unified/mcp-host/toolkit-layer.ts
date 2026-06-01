@@ -63,11 +63,11 @@ const handleTool = <Output>(
     )
     const toolUseId = `${TOOL_USE_ID_PREFIX}:${resolved.contextId}:${idSuffix}`
     if (resolved.runtimeContext === undefined) {
-      return yield* Effect.fail(toolExecutionFailed(
+      return yield* toolExecutionFailed(
         toolUseId,
         toolName,
         "MCP tool execution requires a resolved runtime context",
-      ))
+      )
     }
     const dispatch = yield* ToolDispatch
     return (yield* dispatch.call({

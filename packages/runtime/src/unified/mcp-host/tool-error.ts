@@ -1,7 +1,7 @@
 /**
  * Structured agent-tool error types.
  *
- * `ToolError` is the typed tool-failure union. It is the `.setFailure`
+ * `ToolError` is the typed tool-failure schema. It is the `.setFailure`
  * schema each Firegrid `Tool` binds (`FiregridMcpToolFailureSchema` in
  * `./toolkit.ts`), and it is the error channel the typed arms + toolkit
  * handlers fail with. The workflow does NOT fail for tool failures — the
@@ -21,42 +21,13 @@
  *    (typed expected results; retryable vs terminal failures)
  */
 
+import { AiError } from "@effect/ai"
 import { Cause, ParseResult, Schema } from "effect"
 
-export const ToolInvalidInputError = Schema.TaggedStruct("ToolInvalidInput", {
-  toolUseId: Schema.String,
-  name: Schema.String,
-  reason: Schema.String,
-})
-export type ToolInvalidInputError = Schema.Schema.Type<
-  typeof ToolInvalidInputError
->
-
-export const ToolExecutionFailedError = Schema.TaggedStruct(
-  "ToolExecutionFailed",
-  {
-    toolUseId: Schema.String,
-    name: Schema.String,
-    message: Schema.String,
-    cause: Schema.optional(Schema.Unknown),
-  },
-)
-export type ToolExecutionFailedError = Schema.Schema.Type<
-  typeof ToolExecutionFailedError
->
-
-export const ToolCancelledError = Schema.TaggedStruct("ToolCancelled", {
-  toolUseId: Schema.String,
-  name: Schema.String,
-})
-export type ToolCancelledError = Schema.Schema.Type<typeof ToolCancelledError>
-
-export const ToolError = Schema.Union(
-  ToolInvalidInputError,
-  ToolExecutionFailedError,
-  ToolCancelledError,
-)
+export const ToolError = Schema.Union(AiError.MalformedInput, AiError.UnknownError)
 export type ToolError = Schema.Schema.Type<typeof ToolError>
+export type ToolInvalidInputError = AiError.MalformedInput
+export type ToolExecutionFailedError = AiError.UnknownError
 
 // Render an arbitrary caught value to a human-readable message. Plain
 // string causes pass through verbatim (many call sites pass a literal
@@ -70,45 +41,38 @@ const stringifyCause = (cause: unknown): string =>
 
 /**
  * Convenience: turn a `Schema.decodeUnknown` ParseError into the
- * `ToolInvalidInput` variant. Used by the lowering when protocol
- * input-schema validation fails.
+ * Effect AI's `MalformedInput` variant. Used by the lowering when protocol
+ * input-schema validation fails. The installed `@effect/ai` version exposes
+ * the same context fields as upstream (`module`, `method`, `description`,
+ * `cause`), so the Firegrid tool name and `toolUseId` live there instead of
+ * in a parallel tool-error hierarchy.
  */
 export const toolInvalidInputFromParseError = (
   toolUseId: string,
   name: string,
   cause: ParseResult.ParseError,
-): ToolInvalidInputError => ({
-  _tag: "ToolInvalidInput",
-  toolUseId,
-  name,
-  reason: ParseResult.TreeFormatter.formatErrorSync(cause),
-})
+): ToolInvalidInputError =>
+  new AiError.MalformedInput({
+    module: "FiregridMcpHost",
+    method: `${name}.tool/${toolUseId}`,
+    description: `Malformed input for tool "${name}" (${toolUseId}): ${
+      ParseResult.TreeFormatter.formatErrorSync(cause)
+    }`,
+    cause,
+  })
 
 /**
- * Convenience: turn an arbitrary cause into the `ToolExecutionFailed`
+ * Convenience: turn an arbitrary cause into Effect AI's `UnknownError`
  * variant for a known tool name.
  */
 export const toolExecutionFailed = (
   toolUseId: string,
   name: string,
   cause: unknown,
-): ToolExecutionFailedError => ({
-  _tag: "ToolExecutionFailed",
-  toolUseId,
-  name,
-  message: stringifyCause(cause),
-  ...(cause === undefined ? {} : { cause }),
-})
-
-/**
- * Convenience: cancellation variant. Reserved for future cancellation
- * propagation; not currently emitted by any arm.
- */
-export const toolCancelled = (
-  toolUseId: string,
-  name: string,
-): ToolCancelledError => ({
-  _tag: "ToolCancelled",
-  toolUseId,
-  name,
-})
+): ToolExecutionFailedError =>
+  new AiError.UnknownError({
+    module: "FiregridMcpHost",
+    method: `${name}.tool/${toolUseId}`,
+    description: stringifyCause(cause),
+    ...(cause === undefined ? {} : { cause }),
+  })
