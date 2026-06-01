@@ -2,6 +2,12 @@ export {
   sessionAgentOutputChannel,
   type SessionAgentOutputChannelOptions,
 } from "./session-agent-output.ts"
+export { SessionAgentOutputChannelLive } from "./session-agent-output/live.ts"
+export {
+  AuthorizedSessionAgentOutputRouterLive,
+  makeAuthorizedSessionAgentOutputChannel,
+  UnauthorizedChildObservation,
+} from "./session-agent-output/authority.ts"
 export {
   SessionAgentOutputRouteInputSchema,
   sessionAgentOutputObservationRoute,

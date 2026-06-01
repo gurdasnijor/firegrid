@@ -476,6 +476,15 @@ export const RuntimeContextSchema = Schema.Struct({
   contextId: Schema.String,
   createdAt: Schema.String,
   createdBy: Schema.optional(Schema.String),
+  // tf-r06u.8: the parent-child delegation FK. A child context has exactly
+  // ONE creator (1:N), so the link is normalized as a foreign key on the
+  // child's own context row — not a separate link table. Present iff this
+  // context was created by another context (e.g. via `spawn`/`spawn_all`,
+  // wired in tf-r06u.9); absent for top-level sessions. This field is the
+  // durable authority record for cursored child-output observation: a
+  // parent may observe a child's `session.agent_output` iff the child's
+  // `parentContextId` equals the observing context (synthesis §3.1/§4).
+  parentContextId: Schema.optional(Schema.String),
   runtime: RuntimeContextIntentSchema,
   host: RuntimeContextHostBindingSchema,
 })
@@ -491,12 +500,16 @@ export const makeRuntimeContext = (input: {
   readonly contextId: string
   readonly createdAtMs: number
   readonly createdBy?: string
+  readonly parentContextId?: string
   readonly runtime: RuntimeContextIntent
   readonly host: RuntimeContextHostBinding
 }): RuntimeContext => ({
   contextId: input.contextId,
   createdAt: new Date(input.createdAtMs).toISOString(),
   ...(input.createdBy === undefined ? {} : { createdBy: input.createdBy }),
+  ...(input.parentContextId === undefined
+    ? {}
+    : { parentContextId: input.parentContextId }),
   runtime: input.runtime,
   host: input.host,
 })
