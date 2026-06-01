@@ -6,7 +6,6 @@
     "preflight": "node ./src/preflight.ts"
   },
   "devDependencies": {
-    "ts-node": "^10.9.1",
     "typescript": "^5.0.0"
   },
   "dependencies": {
