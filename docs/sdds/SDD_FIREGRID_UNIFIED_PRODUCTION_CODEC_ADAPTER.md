@@ -88,7 +88,16 @@ FiregridHost({
 
 Composes: `ProductionCodecAdapterLive` + `LocalProcessSandboxProvider` + `NodeContext.layer` + `IdGenerator.defaultIdGenerator` + `ContextResolverFromControlPlaneTableLive` + `RuntimeEnvResolverPolicy.denyAll` + the full unified substrate. The signaling channel bindings (`UnifiedSignalingChannelBindingsLive`) are layered over the stub `UnifiedChannelBindingsLive` so `firegrid.prompt/session.prompt/sessions.start/permissions.respond` actually deliver signals to the workflow bodies. `hostId` is optionally configurable; defaults to `${namespace}-host`.
 
-The original `adapter:` discriminated-union option still works for sims and non-ACP hosts. The two shapes share `FiregridHostOptionsBase` so options like `headers`, `hostId`, `toolExecutor` work for both.
+> **Decision (2026-06-01, Gurdas — `tf-ll90.8.1`):** the open `adapter:`
+> injection seam is being **REMOVED entirely** — `FiregridHost` takes ONLY the
+> closed codec-sugar shape (a known-codec enum). Sims compose via the codec sugar,
+> not an injected adapter (the recorder/Tag-swap backdoor it enabled is deleted —
+> `tf-ll90.11.1`). The legitimate non-ACP path returns as a **closed
+> `codec: "stdio-jsonl"` enum option** when stdio-jsonl is actually needed
+> (ACP-only is fine until then) — removing the open seam must not silently strand
+> stdio-jsonl capability. Until the option is physically removed (post-green-up,
+> in `unified/`), Lane 3's `tf-ll90.15` sim-ban on injecting a non-production
+> adapter stands as defense-in-depth.
 
 ### 3. Env binding resolution — DONE (Phase I)
 
