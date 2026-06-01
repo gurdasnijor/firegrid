@@ -654,32 +654,37 @@ module.exports = {
       to: { path: "^packages/runtime/src" },
     },
     {
+      name: "tiny-firegrid-sim-no-fake-substitutes",
+      severity: "error",
+      comment:
+        "tiny-firegrid simulations must exercise production code: no fake codec/sandbox modules and no direct adapter internals from simulations.",
+      from: {
+        path: "^packages/tiny-firegrid/src/simulations/",
+      },
+      to: {
+        path: [
+          "fake-codec\\.ts$",
+          "acp-sandbox-fake\\.ts$",
+          "production-flow-scenario\\.ts$",
+          "production-flow-acp-scenario\\.ts$",
+          "^packages/runtime/src/unified/adapter\\.ts$",
+        ],
+      },
+    },
+    {
       // tf-r06u.24 R2 — tiny-firegrid sim airgap (WHOLE SIM, host.ts carved out).
       // Extends the eslint driver.ts/host.ts airgap (eslint.config.js:707-757) to
       // every simulation file except host.ts: a sim drives the PUBLIC client/host
       // seam; only host(env) composes the substrate. Anything else reaching into
       // runtime/host-sdk internals, protocol internals, or durable tables is
       // exercising a private seam — write it as a test in the owning package.
-      // GRANDFATHERS (tf-zchu baseline discipline — explicit + bead-owned; these
-      // shrink, new sims get NO exemption):
-      //   - unified-kernel-validation/* → tf-r06u.29 (UKV airgap conformance:
-      //     move its substrate/scenarios/subscribers composition into host.ts).
-      //   - child-output-existing-channel-router/* + channel-completion-contracts/*
-      //     → tf-r06u.30 (relocate these probe-only sims to the owning package).
       name: "tiny-firegrid-sim-airgap-whole-sim",
       severity: "error",
       comment:
-        "tiny-firegrid sims drive the public client/host seam; only host.ts composes the substrate. No runtime/host-sdk/protocol internals or durable tables from a non-host.ts sim file. Grandfathered: unified-kernel-validation (tf-r06u.29), child-output-existing-channel-router + channel-completion-contracts (tf-r06u.30).",
+        "tiny-firegrid sims drive the public client/host seam; only host.ts composes the substrate. No runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports from a non-host.ts sim file.",
       from: {
         path: "^packages/tiny-firegrid/src/simulations/",
-        pathNot: [
-          "/host\\.ts$",
-          // grandfather → tf-r06u.29
-          "^packages/tiny-firegrid/src/simulations/unified-kernel-validation/",
-          // grandfather → tf-r06u.30
-          "^packages/tiny-firegrid/src/simulations/child-output-existing-channel-router/",
-          "^packages/tiny-firegrid/src/simulations/channel-completion-contracts/",
-        ],
+        pathNot: "/host\\.ts$",
       },
       to: {
         path: [
@@ -688,6 +693,10 @@ module.exports = {
           "^packages/protocol/src",
           "^node_modules/effect-durable-operators",
           "effect-durable-operators",
+          "^node_modules/@effect/workflow",
+          "@effect/workflow",
+          "^node_modules/@durable-streams/",
+          "@durable-streams/",
         ],
       },
     },
@@ -697,30 +706,24 @@ module.exports = {
       // allowed); a test reaching runtime/host-sdk/protocol internals belongs in
       // the OWNING package's test/ folder. Enforced via a dedicated test-scoped
       // depcruise run (the default lint:deps scope is src-only — see lint:deps).
-      // GRANDFATHERS (→ tf-r06u.30 test relocations; explicit + bead-owned):
-      //   - child-output-existing-channel-router/probe.test.ts (runtime/channels)
-      //   - experiment-ergonomics.test.ts (protocol/channels)
-      //   - unified-firegrid-host-compose.test.ts → Agent1's tf-r06u.27 misuse
-      //     seed; .27 decides its home — do NOT relocate unilaterally.
       name: "tiny-firegrid-test-no-internals",
       severity: "error",
       comment:
-        "tiny-firegrid tests are public-surface (client-sdk allowed); no runtime/host-sdk/protocol internals — relocate such tests to the owning package's test/. Grandfathered → tf-r06u.30: child-output probe.test, experiment-ergonomics; unified-firegrid-host-compose → Agent1 tf-r06u.27.",
+        "tiny-firegrid tests are not simulation evidence; no runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports.",
       from: {
         path: "^packages/tiny-firegrid/test/",
-        pathNot: [
-          // grandfather → tf-r06u.30
-          "^packages/tiny-firegrid/test/child-output-existing-channel-router/",
-          "^packages/tiny-firegrid/test/experiment-ergonomics\\.test\\.ts$",
-          // grandfather → Agent1 tf-r06u.27 (misuse-seed; .27 decides its home)
-          "^packages/tiny-firegrid/test/unified-firegrid-host-compose\\.test\\.ts$",
-        ],
       },
       to: {
         path: [
           "^packages/runtime/src",
           "^packages/host-sdk/src",
           "^packages/protocol/src",
+          "^node_modules/effect-durable-operators",
+          "effect-durable-operators",
+          "^node_modules/@effect/workflow",
+          "@effect/workflow",
+          "^node_modules/@durable-streams/",
+          "@durable-streams/",
         ],
       },
     },

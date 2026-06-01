@@ -1,12 +1,7 @@
 import {
   FiregridConfig,
-  FiregridControlPlaneTableLive,
   FiregridLive,
 } from "@firegrid/client-sdk/firegrid"
-import {
-  buildCurrentHostSessionLayer,
-  UnifiedChannelBindingsLive,
-} from "@firegrid/runtime/unified"
 import {
   Console,
   Config,
@@ -27,6 +22,7 @@ import { stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type {
+  FiregridHost,
   TinyFiregridHostEnv,
   TinyFiregridSimulation,
 } from "../types.ts"
@@ -99,25 +95,14 @@ const latestPath = path.join(simulateRoot, "latest.json")
 const firegridClientLayer = (
   durableStreamsBaseUrl: string,
   namespace: string,
+  hostLayer: Layer.Layer<FiregridHost, unknown>,
 ) => {
   const configLayer = Layer.succeed(FiregridConfig, {
     durableStreamsBaseUrl,
     namespace,
   })
-  const hostSessionLayer = buildCurrentHostSessionLayer({ namespace })
-  // Compose the substrate first (control-plane table) so it's visible
-  // to both the channel bindings and the Firegrid client below.
-  // `provideMerge` keeps the provided service exposed in the resulting
-  // Layer's output set; subsequent consumers see one shared instance.
-  const substrate = Layer.mergeAll(
-    FiregridControlPlaneTableLive,
-    hostSessionLayer,
-  ).pipe(Layer.provide(configLayer))
-  // Channel bindings on top of substrate; HostContextsCreateChannelLive
-  // resolves RuntimeControlPlaneTable + CurrentHostSession from here.
   return FiregridLive.pipe(
-    Layer.provide(UnifiedChannelBindingsLive),
-    Layer.provideMerge(substrate),
+    Layer.provideMerge(hostLayer),
     Layer.provide(configLayer),
   )
 }
@@ -217,6 +202,7 @@ export const runSimulation = (
         ),
       },
     }
+    const hostLayer = simulation.host(hostEnv)
     yield* Effect.acquireRelease(
       Effect.sync(() => {
         const onSigint = Ref.updateAndGet(sigintCount, n => n + 1).pipe(
@@ -253,14 +239,9 @@ export const runSimulation = (
         }),
       )
 
-      yield* Layer.launch(simulation.host(hostEnv)).pipe(
-        annotateSide("host"),
-        Effect.forkScoped,
-      )
-
       const outcome = yield* Effect.raceWith(
         simulation.driver.pipe(
-          Effect.provide(firegridClientLayer(baseUrl, namespace)),
+          Effect.provide(firegridClientLayer(baseUrl, namespace, hostLayer)),
           annotateSide("driver"),
         ),
         Deferred.await(stopSignal),

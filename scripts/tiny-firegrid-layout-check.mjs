@@ -15,6 +15,7 @@ import process from "node:process"
 // host(env) composition" contract structurally rather than by review.
 
 const tinySrc = "packages/tiny-firegrid/src"
+const simulationsDir = `${tinySrc}/simulations`
 
 // The only top-level entries permitted under tiny-firegrid/src.
 //   simulations/  — the sims (driver + host(env) + probe + FINDING)
@@ -55,6 +56,46 @@ for (const entry of entries) {
     + `(Spikes that drive a private codec/sandbox seam belong in the owning `
     + `package's test/ folder — see docs/findings/tf-r06u-25-tiny-firegrid-asset-inventory.md.)`,
   )
+}
+
+let simulationEntries
+try {
+  simulationEntries = readdirSync(simulationsDir, { withFileTypes: true })
+} catch (cause) {
+  error(`tiny-firegrid layout check failed: cannot read ${simulationsDir}: ${String(cause)}`)
+  process.exit(1)
+}
+
+const requiredSimulationFiles = new Set(["index.ts", "driver.ts", "host.ts"])
+
+for (const simulationEntry of simulationEntries) {
+  if (!simulationEntry.isDirectory()) continue
+  const simulationName = simulationEntry.name
+  if (simulationName.startsWith(".") || simulationName.startsWith("_")) continue
+
+  const simulationPath = `${simulationsDir}/${simulationName}`
+  const simulationFiles = readdirSync(simulationPath, { withFileTypes: true })
+  for (const simulationFile of simulationFiles) {
+    const fileName = simulationFile.name
+    if (fileName === ".DS_Store") continue
+    failures.push(
+      simulationFile.isFile() && requiredSimulationFiles.has(fileName)
+        ? ""
+        : `${simulationPath}/${fileName}: simulations must be exactly `
+          + `{index.ts, driver.ts, host.ts}; move prose findings to docs/findings/ `
+          + `and substrate/scenario/probe code into host.ts or the owning package.`,
+    )
+  }
+
+  for (const required of requiredSimulationFiles) {
+    if (!simulationFiles.some(file => file.isFile() && file.name === required)) {
+      failures.push(`${simulationPath}: missing required simulation file ${required}`)
+    }
+  }
+}
+
+for (let i = failures.length - 1; i >= 0; i--) {
+  if (failures[i] === "") failures.splice(i, 1)
 }
 
 if (failures.length > 0) {

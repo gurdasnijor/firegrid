@@ -2,22 +2,13 @@ import type {
   Firegrid,
 } from "@firegrid/client-sdk/firegrid"
 import type {
-  CurrentHostSession,
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
-  RuntimeStartCapability,
-} from "@firegrid/protocol/launch"
-import type { SessionAgentOutputChannel } from "@firegrid/protocol/channels"
-import type { RuntimeChannelRouter } from "@firegrid/runtime/channels/router/live"
+  FiregridHost as RuntimeFiregridHost,
+} from "@firegrid/runtime/unified"
 import type { Effect, Layer } from "effect"
 
-export type FiregridHost =
-  | RuntimeStartCapability
-  | SessionAgentOutputChannel
-  | CurrentHostSession
-  | RuntimeControlPlaneTable
-  | RuntimeOutputTable
-  | RuntimeChannelRouter
+export type FiregridHost = Layer.Layer.Success<
+  ReturnType<typeof RuntimeFiregridHost>
+>
 
 export interface TinyFiregridStopSignal {
   readonly complete: Effect.Effect<void>
@@ -32,7 +23,7 @@ export interface TinyFiregridHostEnv {
   readonly stopSignal: TinyFiregridStopSignal
 }
 
-export interface TinyFiregridSimulation<A, E = unknown> {
+export interface TinyFiregridSimulationDefinition<A, E = unknown> {
   readonly id: string
   readonly description: string
   readonly host: (
@@ -41,6 +32,14 @@ export interface TinyFiregridSimulation<A, E = unknown> {
   readonly driver: Effect.Effect<A, E, Firegrid>
 }
 
+declare const TinyFiregridSimulationBrand: unique symbol
+
+export type TinyFiregridSimulation<A, E = unknown> =
+  TinyFiregridSimulationDefinition<A, E> & {
+    readonly [TinyFiregridSimulationBrand]: typeof TinyFiregridSimulationBrand
+  }
+
 export const defineSimulation = <A, E = unknown>(
-  simulation: TinyFiregridSimulation<A, E>,
-): TinyFiregridSimulation<A, E> => simulation
+  simulation: TinyFiregridSimulationDefinition<A, E>,
+): TinyFiregridSimulation<A, E> =>
+  simulation as TinyFiregridSimulation<A, E>
