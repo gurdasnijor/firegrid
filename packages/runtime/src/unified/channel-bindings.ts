@@ -42,11 +42,18 @@ import {
 } from "../events/contract.ts"
 import {
   type SessionInputPayload,
-} from "./adapter.ts"
-import { sendSignal, SignalTable } from "./signal.ts"
-import {
-  RuntimeContextSessionWorkflow,
-} from "./subscribers/runtime-context.ts"
+	} from "./adapter.ts"
+	import {
+	  armSession,
+	  sendSignal,
+	  SignalTable,
+	  WorkflowEngineTable,
+	} from "./signal.ts"
+	import {
+	  encodeRuntimeContextSessionPayloadJson,
+	  type RuntimeContextSessionPayload,
+	  RuntimeContextSessionWorkflow,
+	} from "./subscribers/runtime-context.ts"
 
 const stableOffset = (target: string, key: string) =>
   Effect.succeed(eventOffset(`${target}:${key}`))
@@ -102,6 +109,41 @@ const encodePermissionResponsePayload = (
     payloadJson: JSON.stringify(encodeAgentInputEvent(event)),
   }
 }
+
+const sessionWorkflowPayload = (contextId: string): RuntimeContextSessionPayload => ({
+  contextId,
+  attempt: DEFAULT_ATTEMPT,
+})
+
+const writeSessionInputSignal = (options: {
+  readonly signals: SignalTable["Type"]
+  readonly engineTable: WorkflowEngineTable["Type"]
+  readonly contextId: string
+  readonly inputKey: string
+  readonly input: SessionInputPayload
+}) =>
+  Effect.gen(function*() {
+    const workflowPayload = sessionWorkflowPayload(options.contextId)
+    const workflowPayloadJson = encodeRuntimeContextSessionPayloadJson(workflowPayload)
+    const executionId = yield* RuntimeContextSessionWorkflow.executionId(workflowPayload)
+    yield* sendSignal({
+      signals: options.signals,
+      workflow: RuntimeContextSessionWorkflow,
+      executionId,
+      name: options.inputKey,
+      workflowPayloadJson,
+      write: () => Effect.void,
+      value: options.input,
+      serializeValue: (v) => JSON.stringify(v),
+      arm: armSession({
+        engineTable: options.engineTable,
+        workflow: RuntimeContextSessionWorkflow,
+        executionId,
+        payload: workflowPayload,
+      }),
+    }).pipe(Effect.orDie)
+    return executionId
+  })
 
 /**
  * Stub `HostPromptChannel` — returns a stable offset without signaling.
@@ -181,9 +223,10 @@ export const HostPermissionRespondChannelLive = Layer.succeed(
 // substrate) and actually deliver signals to the unified workflow bodies.
 
 const signalPromptToSession = (options: {
-  readonly signals: SignalTable["Type"]
-  readonly engine: WorkflowEngine.WorkflowEngine["Type"]
-  readonly contextId: string
+	  readonly signals: SignalTable["Type"]
+	  readonly engineTable: WorkflowEngineTable["Type"]
+	  readonly engine: WorkflowEngine.WorkflowEngine["Type"]
+	  readonly contextId: string
   readonly payload: unknown
   readonly target: string
   readonly idempotencyKey?: string
@@ -195,28 +238,54 @@ const signalPromptToSession = (options: {
       options.payload as { readonly text?: string },
       correlationId,
     )
-    const executionId = yield* RuntimeContextSessionWorkflow.executionId({
-      contextId: options.contextId,
-      attempt: DEFAULT_ATTEMPT,
-    })
-    yield* sendSignal({
+	    const executionId = yield* writeSessionInputSignal({
+	      signals: options.signals,
+	      engineTable: options.engineTable,
+	      contextId: options.contextId,
+	      inputKey: correlationId,
+	      input: payload,
+	    })
+	    return eventOffset(`${options.target}:${executionId}|${correlationId}`)
+	  }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, options.engine))
+
+export const emitSessionTerminalSignal = (options: {
+  readonly signals: SignalTable["Type"]
+  readonly engineTable: WorkflowEngineTable["Type"]
+  readonly engine: WorkflowEngine.WorkflowEngine["Type"]
+  readonly contextId: string
+  readonly idempotencyKey: string
+  readonly payloadJson?: string
+}) =>
+  Effect.gen(function*() {
+    const payload: SessionInputPayload = {
+      kind: "terminal",
+      payloadJson: options.payloadJson ?? "{}",
+    }
+    return yield* writeSessionInputSignal({
       signals: options.signals,
-      workflow: RuntimeContextSessionWorkflow,
-      executionId,
-      name: correlationId,
-      write: () => Effect.void,
-      value: payload,
-      serializeValue: (v) => JSON.stringify(v),
-    }).pipe(Effect.orDie)
-    return eventOffset(`${options.target}:${executionId}|${correlationId}`)
-  }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, options.engine))
+      engineTable: options.engineTable,
+      contextId: options.contextId,
+      inputKey: options.idempotencyKey,
+      input: payload,
+    })
+  }).pipe(
+    Effect.provideService(WorkflowEngine.WorkflowEngine, options.engine),
+    Effect.withSpan("firegrid.unified.session.terminal_signal", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": options.contextId,
+        "firegrid.input.idempotency_key": options.idempotencyKey,
+      },
+    }),
+  )
 
 /** Production HostPromptChannel — signals the session workflow. */
 export const HostPromptChannelSignalingLive = Layer.effect(
   HostPromptChannel,
-  Effect.gen(function*() {
-    const signals = yield* SignalTable
-    const engine = yield* WorkflowEngine.WorkflowEngine
+	  Effect.gen(function*() {
+	    const signals = yield* SignalTable
+	    const engineTable = yield* WorkflowEngineTable
+	    const engine = yield* WorkflowEngine.WorkflowEngine
     return makeDurableEventChannel({
       target: HostPromptChannelTarget,
       schema: HostContextsCreateRequestSchema as never,
@@ -227,8 +296,9 @@ export const HostPromptChannelSignalingLive = Layer.effect(
           readonly idempotencyKey?: string
         }
         return signalPromptToSession({
-          signals,
-          engine,
+	          signals,
+	          engineTable,
+	          engine,
           contextId: req.contextId,
           payload: req.payload,
           target: String(HostPromptChannelTarget),
@@ -242,9 +312,10 @@ export const HostPromptChannelSignalingLive = Layer.effect(
 /** Production SessionPromptChannel — signals the session workflow. */
 export const SessionPromptChannelSignalingLive = Layer.effect(
   SessionPromptChannel,
-  Effect.gen(function*() {
-    const signals = yield* SignalTable
-    const engine = yield* WorkflowEngine.WorkflowEngine
+	  Effect.gen(function*() {
+	    const signals = yield* SignalTable
+	    const engineTable = yield* WorkflowEngineTable
+	    const engine = yield* WorkflowEngine.WorkflowEngine
     return SessionPromptChannel.of({
       forSession: (sessionId) =>
         makeDurableEventChannel({
@@ -256,8 +327,9 @@ export const SessionPromptChannelSignalingLive = Layer.effect(
               readonly idempotencyKey?: string
             }
             return signalPromptToSession({
-              signals,
-              engine,
+	              signals,
+	              engineTable,
+	              engine,
               contextId: sessionId,
               payload: req.payload,
               target: String(SessionPromptChannelTarget),
@@ -269,26 +341,29 @@ export const SessionPromptChannelSignalingLive = Layer.effect(
   }),
 )
 
-/** Production HostSessionsStartChannel — forks the session workflow. */
+/** Production HostSessionsStartChannel — arms the session workflow. */
 export const HostSessionsStartChannelSignalingLive = Layer.effect(
   HostSessionsStartChannel,
   Effect.gen(function*() {
-    const engine = yield* WorkflowEngine.WorkflowEngine
-    return makeDurableEventChannel({
-      target: HostSessionsStartChannelTarget,
-      schema: HostSessionsStartRequestSchema,
-      append: (request) =>
-        Effect.gen(function*() {
-          yield* Effect.fork(
-            RuntimeContextSessionWorkflow.execute({
-              contextId: request.sessionId,
-              attempt: DEFAULT_ATTEMPT,
-            }),
-          )
-          return eventOffset(`${String(HostSessionsStartChannelTarget)}:${request.sessionId}`)
-        }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, engine)),
-    })
-  }),
+	    const engine = yield* WorkflowEngine.WorkflowEngine
+	    const engineTable = yield* WorkflowEngineTable
+	    return makeDurableEventChannel({
+	      target: HostSessionsStartChannelTarget,
+	      schema: HostSessionsStartRequestSchema,
+	      append: (request) =>
+	        Effect.gen(function*() {
+	          const workflowPayload = sessionWorkflowPayload(request.sessionId)
+	          const executionId = yield* RuntimeContextSessionWorkflow.executionId(workflowPayload)
+	          yield* armSession({
+	            engineTable,
+	            workflow: RuntimeContextSessionWorkflow,
+	            executionId,
+	            payload: workflowPayload,
+	          }).pipe(Effect.orDie)
+	          return eventOffset(`${String(HostSessionsStartChannelTarget)}:${executionId}`)
+	        }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, engine)),
+	    })
+	  }),
 )
 
 /**

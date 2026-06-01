@@ -35,7 +35,7 @@ import {
   Workflow,
   WorkflowEngine,
 } from "@effect/workflow"
-import { Effect, type ParseResult, Schema } from "effect"
+import { Context, Effect, Layer, type ParseResult, Schema } from "effect"
 import { readSignalsFor, SignalTable } from "../signal.ts"
 import {
   RuntimeContextSessionAdapter,
@@ -69,6 +69,14 @@ export const RuntimeContextSessionWorkflow = Workflow.make({
   success: RuntimeContextSessionResultSchema,
   idempotencyKey: (p) => `${p.contextId}:${p.attempt}`,
 })
+
+export const encodeRuntimeContextSessionPayloadJson = (
+  payload: RuntimeContextSessionPayload,
+): string => JSON.stringify(payload)
+
+export const decodeRuntimeContextSessionPayloadJson = Schema.decode(
+  Schema.parseJson(RuntimeContextSessionPayloadSchema),
+)
 
 const decodeSessionInputPayloadJson = Schema.decode(
   Schema.parseJson(SessionInputPayloadSchema),
@@ -161,4 +169,19 @@ const body = (
     Effect.orDie,
   )
 
-export const RuntimeContextSessionWorkflowLayer = RuntimeContextSessionWorkflow.toLayer(body)
+export interface RuntimeContextSessionWorkflowRegistration {
+  readonly workflowName: typeof RuntimeContextSessionWorkflow.name
+}
+
+export class RuntimeContextSessionWorkflowRegistered extends Context.Tag(
+  "firegrid/unified/RuntimeContextSessionWorkflowRegistered",
+)<RuntimeContextSessionWorkflowRegistered, RuntimeContextSessionWorkflowRegistration>() {}
+
+export const RuntimeContextSessionWorkflowLayer = Layer.effect(
+  RuntimeContextSessionWorkflowRegistered,
+  Effect.gen(function*() {
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    yield* engine.register(RuntimeContextSessionWorkflow, body)
+    return { workflowName: RuntimeContextSessionWorkflow.name }
+  }),
+)
