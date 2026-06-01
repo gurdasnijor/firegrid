@@ -142,8 +142,7 @@ const SEAMS = [
   {
     id: "sandbox.local_process.open_byte_pipe",
     match: (n: string) => n === "firegrid.agent_event_pipeline.source.local_process.open_byte_pipe",
-    description: "LocalProcessSandboxProvider — real subprocess spawn (scenario 9, env-gated)",
-    optional: true,
+    description: "LocalProcessSandboxProvider — real subprocess spawn",
   },
 ] as const
 
@@ -153,6 +152,34 @@ interface Coverage {
   readonly count: number
   readonly optional: boolean
   readonly status: "pass" | "fail" | "skipped"
+}
+
+interface ProductionAssertion {
+  readonly id: string
+  readonly description: string
+  readonly count: number
+  readonly threshold: number
+  readonly source: "host-substrate-span" | "driver-corroboration"
+  readonly status: "pass" | "fail"
+}
+
+const getNumberAttribute = (
+  spans: ReadonlyArray<Span>,
+  key: string,
+): number => {
+  for (const span of spans) {
+    const value = span.attributes?.[key]
+    if (typeof value === "number") {
+      return value
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) {
+        return parsed
+      }
+    }
+  }
+  return 0
 }
 
 const findLatestRun = (runsRoot: string): string => {
@@ -186,6 +213,61 @@ const main = (): void => {
 
   const spans = readSpans(tracePath)
 
+  const productionAssertions: ReadonlyArray<ProductionAssertion> = [
+    {
+      id: "workflow_engine.execution.execute",
+      description: "Workflow engine executed a session workflow body",
+      count: spans.filter((s) =>
+        s.name === "firegrid.workflow_engine.execution.execute",
+      ).length,
+      threshold: 1,
+      source: "host-substrate-span",
+      status: spans.some((s) =>
+        s.name === "firegrid.workflow_engine.execution.execute",
+      )
+        ? "pass"
+        : "fail",
+    },
+    {
+      id: "adapter.start_or_attach",
+      description: "Production codec adapter started or attached the agent",
+      count: spans.filter((s) =>
+        s.name === "firegrid.unified.adapter.start_or_attach",
+      ).length,
+      threshold: 1,
+      source: "host-substrate-span",
+      status: spans.some((s) =>
+        s.name === "firegrid.unified.adapter.start_or_attach",
+      )
+        ? "pass"
+        : "fail",
+    },
+    {
+      id: "local_process.open_byte_pipe",
+      description: "LocalProcessSandboxProvider spawned a real subprocess",
+      count: spans.filter((s) =>
+        s.name === "firegrid.agent_event_pipeline.source.local_process.open_byte_pipe",
+      ).length,
+      threshold: 1,
+      source: "host-substrate-span",
+      status: spans.some((s) =>
+        s.name === "firegrid.agent_event_pipeline.source.local_process.open_byte_pipe",
+      )
+        ? "pass"
+        : "fail",
+    },
+    {
+      id: "firegrid.ukv.snapshot_run_count",
+      description: "Driver snapshot corroborates that at least one run exists",
+      count: getNumberAttribute(spans, "firegrid.ukv.snapshot_run_count"),
+      threshold: 1,
+      source: "driver-corroboration",
+      status: getNumberAttribute(spans, "firegrid.ukv.snapshot_run_count") > 0
+        ? "pass"
+        : "fail",
+    },
+  ]
+
   const coverage: ReadonlyArray<Coverage> = SEAMS.map((seam) => {
     const matched = spans.filter((s) => seam.match(s.name))
     const optional = "optional" in seam ? Boolean(seam.optional) : false
@@ -206,14 +288,20 @@ const main = (): void => {
   const passing = coverage.filter((c) => c.status === "pass").length
   const failing = coverage.filter((c) => c.status === "fail").length
   const skipped = coverage.filter((c) => c.status === "skipped").length
+  const productionFailing = productionAssertions.filter((a) =>
+    a.status === "fail",
+  ).length
 
   const summary = {
     runDir,
     totalSpans: spans.length,
+    productionAssertions,
     seams: coverage,
     passing,
     failing,
-    verdict: failing === 0 ? "all-seams-covered" : "missing-seams",
+    verdict: failing === 0 && productionFailing === 0
+      ? "all-seams-covered"
+      : "missing-seams",
   }
 
   const outputPath = join(runDir, "seam-coverage.json")
@@ -221,6 +309,15 @@ const main = (): void => {
 
   console.log(`OTel seam coverage — ${runDir}`)
   console.log(`Total spans in trace: ${spans.length}`)
+  console.log("")
+  console.log("UKV production-path assertions:")
+  for (const assertion of productionAssertions) {
+    const mark = assertion.status === "pass" ? "✓" : "✗"
+    console.log(
+      `  ${mark} ${assertion.id.padEnd(38)} ${String(assertion.count).padStart(4)}× >= ${String(assertion.threshold).padStart(1)} — ${assertion.description} (${assertion.source})`,
+    )
+  }
+  console.log("")
   console.log(`Seams: ${passing}/${SEAMS.length} covered${skipped > 0 ? ` (${skipped} optional skipped)` : ""}`)
   console.log("")
   for (const c of coverage) {
@@ -230,8 +327,10 @@ const main = (): void => {
   console.log("")
   console.log(`Wrote: ${outputPath}`)
 
-  if (failing > 0) {
-    console.error(`FAIL: ${failing} seam(s) not covered.`)
+  if (failing > 0 || productionFailing > 0) {
+    console.error(
+      `FAIL: ${productionFailing} production assertion(s) and ${failing} seam(s) not covered.`,
+    )
     process.exit(1)
   }
 }

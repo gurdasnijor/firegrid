@@ -54,6 +54,7 @@
     "arch:deps:runtime:detail": "node scripts/tooling.mjs arch deps runtime-detail",
     "toy:coverage": "bash scripts/tiny-config-prod-coverage.sh",
     "trace:seams": "tsx scripts/trace-seam-coverage.ts",
+    "trace:seams:ukv": "tsx scripts/ukv-production-trace-gate.ts",
     "analysis:leaf": "bash tooling/analysis/run-leaf-inventory.sh",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",

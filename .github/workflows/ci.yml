@@ -79,6 +79,9 @@ jobs:
       - name: Check ast-grep style guardrails
         run: pnpm run lint:ast-grep
 
+      - name: Check UKV production trace seams
+        run: pnpm run trace:seams:ukv
+
   semgrep:
     name: Semgrep
     runs-on: ubuntu-latest
