@@ -42,6 +42,7 @@
     },
     "packages/runtime": {
       "entry": [
+        "src/bin/**/*.ts",
         "src/index.ts",
         "test/**/*.test.ts"
       ],
