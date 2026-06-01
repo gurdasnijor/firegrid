@@ -54,9 +54,9 @@ import {
 } from "@firegrid/client-sdk"
 import { FiregridHost } from "../src/unified/host.ts"
 import {
-  makeRecorderAdapter,
   RuntimeContextSessionAdapter,
 } from "../src/unified/adapter.ts"
+import { makeRecorderAdapter } from "./helpers/recorder-adapter.ts"
 
 // ── 1a. EXPRESSIBILITY — every lifecycle step through client-sdk verbs only ──
 

@@ -24,10 +24,9 @@
  * a process registry (and may require `RuntimeControlPlaneTable` to
  * resolve full context details when spawning); the workflow body only
  * passes the contextId, keeping the body decoupled from context shape.
- * Tests use `makeRecorderAdapter` (below).
  */
 
-import { Context, Effect, Ref, Schema } from "effect"
+import { Context, Schema, type Effect } from "effect"
 
 /**
  * Body-side envelope the session workflow forwards to the adapter.
@@ -83,60 +82,3 @@ export interface RuntimeContextSessionAdapterService {
 export class RuntimeContextSessionAdapter extends Context.Tag(
   "@firegrid/runtime/RuntimeContextSessionAdapter",
 )<RuntimeContextSessionAdapter, RuntimeContextSessionAdapterService>() {}
-
-// ── Test/sim adapter — recorder ─────────────────────────────────────────────
-//
-// Replaces the simulation's standalone `RuntimeContextRecorder`. Same
-// shape (Ref-backed in-memory log) but lifted to satisfy the production
-// Tag — so the simulation exercises the same code path production will,
-// just with a stand-in implementation.
-
-export interface RecorderAdapterState {
-  readonly spawns: ReadonlyArray<string>
-  readonly sends: ReadonlyArray<{ readonly key: string; readonly input: SessionInputPayload }>
-  readonly deregistrations: ReadonlyArray<string>
-}
-
-export interface RecorderAdapter {
-  readonly service: RuntimeContextSessionAdapterService
-  readonly snapshot: Effect.Effect<RecorderAdapterState>
-}
-
-const sessionKey = (contextId: string, attempt: number): string =>
-  `${contextId}:${attempt}`
-
-export const makeRecorderAdapter = (): Effect.Effect<RecorderAdapter> =>
-  Effect.gen(function*() {
-    const state = yield* Ref.make<RecorderAdapterState>({
-      spawns: [],
-      sends: [],
-      deregistrations: [],
-    })
-
-    const service: RuntimeContextSessionAdapterService = {
-      startOrAttach: (contextId, attempt) =>
-        Ref.update(state, (current) => ({
-          ...current,
-          spawns: [...current.spawns, sessionKey(contextId, attempt)],
-        })),
-      send: (contextId, attempt, input) =>
-        Ref.update(state, (current) => ({
-          ...current,
-          sends: [
-            ...current.sends,
-            { key: sessionKey(contextId, attempt), input },
-          ],
-        })),
-      deregister: (contextId) =>
-        Ref.update(state, (current) => ({
-          ...current,
-          deregistrations: [...current.deregistrations, contextId],
-        })),
-    }
-
-    return {
-      service,
-      snapshot: Ref.get(state),
-    }
-  })
-

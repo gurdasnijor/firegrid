@@ -13,9 +13,7 @@ import {
   type WorkflowEngineTableService,
 } from "../../src/engine/durable-streams-workflow-engine.ts"
 import {
-  makeRecorderAdapter,
   RuntimeContextSessionAdapter,
-  type RecorderAdapter,
   type SessionInputPayload,
 } from "../../src/unified/adapter.ts"
 import { FiregridHost } from "../../src/unified/host.ts"
@@ -27,6 +25,10 @@ import {
   encodeRuntimeContextSessionPayloadJson,
   RuntimeContextSessionWorkflow,
 } from "../../src/unified/subscribers/runtime-context.ts"
+import {
+  makeRecorderAdapter,
+  type RecorderAdapter,
+} from "../helpers/recorder-adapter.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
