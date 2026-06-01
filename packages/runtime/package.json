@@ -147,14 +147,11 @@
     "@agentclientprotocol/sdk": "0.21.0",
     "@durable-streams/server": "^0.3.1",
     "@effect/ai": "^0.35.0",
-    "@effect/cli": "^0.75.1",
     "@effect/experimental": "0.60.0",
     "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",
     "@effect/rpc": "0.75.1",
     "@effect/workflow": "0.18.1",
-    "@firegrid/client-sdk": "workspace:*",
-    "@firegrid/observability": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "effect": "^3.21.2",
@@ -162,6 +159,7 @@
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.36.1",
+    "@firegrid/client-sdk": "workspace:*",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"

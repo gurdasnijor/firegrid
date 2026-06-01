@@ -413,6 +413,9 @@ export const NamespaceRuntimeStreamNameSchema = Schema.transformOrFail(
 export const namespaceRuntimeStreamName = (namespace: string): string =>
   Schema.encodeSync(NamespaceRuntimeStreamNameSchema)({ namespace })
 
+export const namespaceRuntimeOutputStreamName = (namespace: string): string =>
+  `${namespace}.${FIREGRID_DURABLE_NAMESPACE}.runtimeOutput`
+
 const DurableStreamUrlPartsSchema = Schema.Struct({
   baseUrl: Schema.String.pipe(
     Schema.filter((value) => {
@@ -503,6 +506,12 @@ export const runtimeControlPlaneStreamUrl = (input: {
   readonly namespace: string
 }): string =>
   durableStreamUrl(input.baseUrl, namespaceRuntimeStreamName(input.namespace))
+
+export const runtimeOutputStreamUrl = (input: {
+  readonly baseUrl: string
+  readonly namespace: string
+}): string =>
+  durableStreamUrl(input.baseUrl, namespaceRuntimeOutputStreamName(input.namespace))
 
 /** Encode prefix + segment + base URL → host-owned stream URL. */
 export const hostOwnedStreamUrl = (input: {

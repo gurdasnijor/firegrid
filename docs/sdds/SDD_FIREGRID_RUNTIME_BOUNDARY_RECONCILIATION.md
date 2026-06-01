@@ -30,6 +30,7 @@ exists and is documented:
 | `producers/` | Kafka-broker "Producer" topic writers: layers that consume Streams from `sources/` and append rows to `tables/`. | 3b |
 | `transforms/` | pure row/event transforms; no `Effect`. | 4 |
 | `channels/` | wire-edge live routing (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
+| `unified/` | unified-kernel validation surface replacing the deleted pre-unified `subscribers/` + `composition/` roots during stabilization. | 6 |
 | `subscribers/` | keyed subscribers — Shape B/C/D recorded in folder READMEs (`projections/`, `runtime-context/`, `runtime-context-session/`, `tool-dispatch/`, `wait-router/`, `scheduled-prompt/`, `runtime-control/`). | 6 |
 | `composition/` | runtime-local layer-graph wiring + topology checks. | 7 |
 | `bin/` | runtime-owned daemon/process entrypoints (`firegrid run`, `firegrid start`, `firegrid acp`); outside pipeline order and allowed to compose public client + runtime host surfaces. | — |

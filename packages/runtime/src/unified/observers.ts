@@ -30,8 +30,8 @@
  * are not reachable from the forked effect's own scope.
  */
 
-import { WorkflowEngine } from "@effect/workflow"
-import { Context, Effect, Layer, Stream } from "effect"
+import { type WorkflowEngine } from "@effect/workflow"
+import { type Context, Effect, Layer, Stream } from "effect"
 import {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
@@ -40,8 +40,9 @@ import {
   PermissionRoundtripWorkflow,
   ToolDispatchWorkflow,
 } from "./subscribers/permission-and-tool.ts"
-import { SignalTable } from "./signal.ts"
-import { UnifiedTable } from "./tables.ts"
+import { type SignalTable } from "./signal.ts"
+import { type UnifiedTable } from "./tables.ts"
+import { type RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 
 type CapturedServices =
   | WorkflowEngine.WorkflowEngine
@@ -51,7 +52,7 @@ type CapturedServices =
 const triggerForObservation = (
   captured: Context.Context<CapturedServices>,
 ) =>
-(observation: import("@firegrid/protocol/session-facade").RuntimeAgentOutputObservation) => {
+(observation: RuntimeAgentOutputObservation) => {
   switch (observation._tag) {
     case "PermissionRequest":
       return Effect.fork(

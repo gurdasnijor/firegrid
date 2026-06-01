@@ -23,7 +23,7 @@ import { Prompt } from "@effect/ai"
 import {
   Activity,
   Workflow,
-  WorkflowEngine,
+  type WorkflowEngine,
 } from "@effect/workflow"
 import { Effect, Ref, Schema } from "effect"
 import { awaitSignal, sendSignal, SignalTable } from "../signal.ts"
@@ -38,17 +38,36 @@ import {
   AgentInputEventSchema,
 } from "../../events/contract.ts"
 
-const encodeAgentInputEvent = Schema.encodeSync(AgentInputEventSchema)
+const encodeAgentInputEventJson = Schema.encodeSync(
+  Schema.parseJson(AgentInputEventSchema),
+)
+
+const relaySessionInput = (options: {
+  readonly activityName: string
+  readonly signals: SignalTable["Type"]
+  readonly sessionExecutionId: string
+  readonly signalName: string
+  readonly payload: SessionInputPayload
+}) =>
+  Activity.make({
+    name: options.activityName,
+    success: Schema.Void,
+    execute: sendSignal({
+      signals: options.signals,
+      workflow: RuntimeContextSessionWorkflow,
+      executionId: options.sessionExecutionId,
+      name: options.signalName,
+      write: () => Effect.void,
+      value: options.payload,
+      serializeValue: (value) => JSON.stringify(value),
+    }).pipe(Effect.orDie, Effect.asVoid),
+  })
 
 // ── Shared: session relay payload ───────────────────────────────────────────
 //
 // Both sibling workflows target a specific (contextId, attempt) session
-// execution. Carried in the workflow payload so the body can compute the
-// session executionId and relay its result via `recordSignal`.
-const SessionTargetSchema = Schema.Struct({
-  contextId: Schema.String,
-  attempt: Schema.Number,
-})
+// execution, carried inline in each workflow payload so the body can compute
+// the session executionId and relay its result via `recordSignal`.
 
 // ── PermissionRoundtripWorkflow ─────────────────────────────────────────────
 
@@ -133,20 +152,14 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
     }
     const relayPayload: SessionInputPayload = {
       kind: "permission-response",
-      payloadJson: JSON.stringify(encodeAgentInputEvent(permissionResponseEvent as never)),
+      payloadJson: encodeAgentInputEventJson(permissionResponseEvent),
     }
-    yield* Activity.make({
-      name: `unified.permission.relay/${key}`,
-      success: Schema.Void,
-      execute: sendSignal({
-        signals,
-        workflow: RuntimeContextSessionWorkflow,
-        executionId: sessionExecutionId,
-        name: `permission-response:${payload.permissionRequestId}`,
-        write: () => Effect.void,
-        value: relayPayload,
-        serializeValue: (v) => JSON.stringify(v),
-      }).pipe(Effect.orDie, Effect.asVoid),
+    yield* relaySessionInput({
+      activityName: `unified.permission.relay/${key}`,
+      signals,
+      sessionExecutionId,
+      signalName: `permission-response:${payload.permissionRequestId}`,
+      payload: relayPayload,
     })
 
     return {
@@ -244,6 +257,7 @@ const toolDispatchBody = (executor: ToolExecutor) =>
       // the codec's session.send. Wrapping the resultJson as the
       // `ToolResult.part.result` lets the agent receive structured
       // tool output that round-trips through the codec wire format.
+      const result = yield* Schema.decode(Schema.parseJson())(resultJson).pipe(Effect.orDie)
       const toolResultEvent = {
         _tag: "ToolResult" as const,
         part: Prompt.toolResultPart({
@@ -251,25 +265,19 @@ const toolDispatchBody = (executor: ToolExecutor) =>
           name: payload.toolName,
           isFailure: false,
           providerExecuted: false,
-          result: JSON.parse(resultJson) as never,
+          result,
         }),
       }
       const relayPayload: SessionInputPayload = {
         kind: "tool-result",
-        payloadJson: JSON.stringify(encodeAgentInputEvent(toolResultEvent as never)),
+        payloadJson: encodeAgentInputEventJson(toolResultEvent),
       }
-      yield* Activity.make({
-        name: `unified.tool.relay/${payload.toolUseId}`,
-        success: Schema.Void,
-        execute: sendSignal({
-          signals,
-          workflow: RuntimeContextSessionWorkflow,
-          executionId: sessionExecutionId,
-          name: `tool-result:${payload.toolUseId}`,
-          write: () => Effect.void,
-          value: relayPayload,
-          serializeValue: (v) => JSON.stringify(v),
-        }).pipe(Effect.orDie, Effect.asVoid),
+      yield* relaySessionInput({
+        activityName: `unified.tool.relay/${payload.toolUseId}`,
+        signals,
+        sessionExecutionId,
+        signalName: `tool-result:${payload.toolUseId}`,
+        payload: relayPayload,
       })
 
       return { toolUseId: payload.toolUseId, resultJson }

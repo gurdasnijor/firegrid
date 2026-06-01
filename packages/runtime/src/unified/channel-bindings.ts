@@ -18,49 +18,24 @@
  */
 
 import {
-  HostContextsChannel,
-  HostContextsChannelTarget,
-  HostContextsCreateChannel,
-  HostContextsCreateChannelTarget,
   HostContextsCreateRequestSchema,
-  HostContextsCreateResponseSchema,
-  HostContextSnapshotChannel,
-  HostContextSnapshotChannelTarget,
-  HostContextSnapshotRequestSchema,
   HostPermissionRespondChannel,
   HostPermissionRespondChannelRequestSchema,
   HostPermissionRespondChannelTarget,
   HostPromptChannel,
   HostPromptChannelTarget,
-  HostSessionsCreateOrLoadChannel,
-  HostSessionsCreateOrLoadChannelTarget,
   HostSessionsCreateOrLoadRequestSchema,
-  HostSessionsCreateOrLoadResponseSchema,
   HostSessionsStartChannel,
   HostSessionsStartChannelTarget,
   HostSessionsStartRequestSchema,
-  HostSessionSnapshotChannel,
-  HostSessionSnapshotChannelTarget,
-  HostSessionSnapshotRequestSchema,
-  RuntimeContextSnapshotSchema,
-  SessionLifecycleChannel,
-  SessionLifecycleChannelTarget,
   SessionPromptChannel,
   SessionPromptChannelTarget,
   eventOffset,
-  makeCallableChannel,
   makeDurableEventChannel,
-  makeIngressChannel,
 } from "@firegrid/protocol/channels"
 import { Prompt } from "@effect/ai"
 import { WorkflowEngine } from "@effect/workflow"
-import {
-  RuntimeContextSchema,
-  RuntimeControlPlaneTable,
-  RuntimeRunEventSchema,
-  CurrentHostSession,
-} from "@firegrid/protocol/launch"
-import { Clock, Effect, Layer, Schema, Stream } from "effect"
+import { Clock, Effect, Layer, Schema } from "effect"
 import {
   AgentInputEventSchema,
   type AgentInputEvent,
@@ -124,7 +99,7 @@ const encodePermissionResponsePayload = (
   }
   return {
     kind: "permission-response",
-    payloadJson: JSON.stringify(encodeAgentInputEvent(event as never)),
+    payloadJson: JSON.stringify(encodeAgentInputEvent(event)),
   }
 }
 
@@ -205,6 +180,37 @@ export const HostPermissionRespondChannelLive = Layer.succeed(
 // require `SignalTable` + `WorkflowEngine` (provided by FiregridHost's
 // substrate) and actually deliver signals to the unified workflow bodies.
 
+const signalPromptToSession = (options: {
+  readonly signals: SignalTable["Type"]
+  readonly engine: WorkflowEngine.WorkflowEngine["Type"]
+  readonly contextId: string
+  readonly payload: unknown
+  readonly target: string
+  readonly idempotencyKey?: string
+}) =>
+  Effect.gen(function*() {
+    const correlationId = options.idempotencyKey
+      ?? `prompt-${options.contextId}-${yield* Clock.currentTimeMillis}`
+    const payload = encodePromptPayload(
+      options.payload as { readonly text?: string },
+      correlationId,
+    )
+    const executionId = yield* RuntimeContextSessionWorkflow.executionId({
+      contextId: options.contextId,
+      attempt: DEFAULT_ATTEMPT,
+    })
+    yield* sendSignal({
+      signals: options.signals,
+      workflow: RuntimeContextSessionWorkflow,
+      executionId,
+      name: correlationId,
+      write: () => Effect.void,
+      value: payload,
+      serializeValue: (v) => JSON.stringify(v),
+    }).pipe(Effect.orDie)
+    return eventOffset(`${options.target}:${executionId}|${correlationId}`)
+  }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, options.engine))
+
 /** Production HostPromptChannel — signals the session workflow. */
 export const HostPromptChannelSignalingLive = Layer.effect(
   HostPromptChannel,
@@ -220,29 +226,16 @@ export const HostPromptChannelSignalingLive = Layer.effect(
           readonly payload: unknown
           readonly idempotencyKey?: string
         }
-        const correlationId = req.idempotencyKey ?? `prompt-${req.contextId}-${Date.now()}`
-        const payload = encodePromptPayload(
-          req.payload as { readonly text?: string },
-          correlationId,
-        )
-        return Effect.gen(function*() {
-          const executionId = yield* RuntimeContextSessionWorkflow.executionId({
-            contextId: req.contextId,
-            attempt: DEFAULT_ATTEMPT,
-          })
-          yield* sendSignal({
-            signals,
-            workflow: RuntimeContextSessionWorkflow,
-            executionId,
-            name: correlationId,
-            write: () => Effect.void,
-            value: payload,
-            serializeValue: (v) => JSON.stringify(v),
-          }).pipe(Effect.orDie)
-          return eventOffset(`${String(HostPromptChannelTarget)}:${executionId}|${correlationId}`)
-        }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, engine))
+        return signalPromptToSession({
+          signals,
+          engine,
+          contextId: req.contextId,
+          payload: req.payload,
+          target: String(HostPromptChannelTarget),
+          ...(req.idempotencyKey === undefined ? {} : { idempotencyKey: req.idempotencyKey }),
+        })
       },
-    }) as unknown as HostPromptChannel["Type"]
+    })
   }),
 )
 
@@ -262,29 +255,16 @@ export const SessionPromptChannelSignalingLive = Layer.effect(
               readonly payload: unknown
               readonly idempotencyKey?: string
             }
-            const correlationId = req.idempotencyKey ?? `prompt-${sessionId}-${Date.now()}`
-            const payload = encodePromptPayload(
-              req.payload as { readonly text?: string },
-              correlationId,
-            )
-            return Effect.gen(function*() {
-              const executionId = yield* RuntimeContextSessionWorkflow.executionId({
-                contextId: sessionId,
-                attempt: DEFAULT_ATTEMPT,
-              })
-              yield* sendSignal({
-                signals,
-                workflow: RuntimeContextSessionWorkflow,
-                executionId,
-                name: correlationId,
-                write: () => Effect.void,
-                value: payload,
-                serializeValue: (v) => JSON.stringify(v),
-              }).pipe(Effect.orDie)
-              return eventOffset(`${String(SessionPromptChannelTarget)}:${executionId}|${correlationId}`)
-            }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, engine))
+            return signalPromptToSession({
+              signals,
+              engine,
+              contextId: sessionId,
+              payload: req.payload,
+              target: String(SessionPromptChannelTarget),
+              ...(req.idempotencyKey === undefined ? {} : { idempotencyKey: req.idempotencyKey }),
+            })
           },
-        }) as unknown as ReturnType<SessionPromptChannel["Type"]["forSession"]>,
+        }),
     })
   }),
 )
@@ -369,137 +349,14 @@ export const HostPermissionRespondChannelSignalingLive = Layer.effect(
  * input-delivery channels actually wire to signals. Requires
  * `SignalTable` + `WorkflowEngine` from the substrate.
  */
-export const UnifiedSignalingChannelBindingsLive = Layer.mergeAll(
-  HostPromptChannelSignalingLive,
-  SessionPromptChannelSignalingLive,
-  HostSessionsStartChannelSignalingLive,
-  HostPermissionRespondChannelSignalingLive,
+export const UnifiedSignalingChannelBindingsLive = HostPromptChannelSignalingLive.pipe(
+  Layer.provideMerge(SessionPromptChannelSignalingLive),
+  Layer.provideMerge(HostSessionsStartChannelSignalingLive),
+  Layer.provideMerge(HostPermissionRespondChannelSignalingLive),
 )
 
-/**
- * Persists context rows to `RuntimeControlPlaneTable.contexts` so the
- * codec adapter's context resolver (`ContextResolverFromControlPlaneTableLive`)
- * finds them at startOrAttach time. Requires `CurrentHostSession` so
- * the row's host binding (`hostId`, `streamPrefix`, `boundAtMs`)
- * carries valid wire-form values; `FiregridHost` provides the host
- * session via `buildCurrentHostSessionLayer`.
- */
-export const HostContextsCreateChannelLive = Layer.effect(
-  HostContextsCreateChannel,
-  Effect.gen(function*() {
-    const control = yield* RuntimeControlPlaneTable
-    const hostSession = yield* CurrentHostSession
-    return makeCallableChannel({
-      target: HostContextsCreateChannelTarget,
-      requestSchema: HostContextsCreateRequestSchema,
-      responseSchema: HostContextsCreateResponseSchema,
-      call: (request) =>
-        Effect.gen(function*() {
-          const nowMs = yield* Clock.currentTimeMillis
-          yield* control.contexts.insertOrGet({
-            contextId: request.contextId,
-            createdAt: new Date(nowMs).toISOString(),
-            ...(request.createdBy === undefined ? {} : { createdBy: request.createdBy }),
-            runtime: {
-              provider: request.runtime.provider,
-              config: request.runtime.config,
-              journal: [],
-            },
-            host: {
-              hostId: hostSession.hostId,
-              streamPrefix: hostSession.streamPrefix,
-              boundAtMs: nowMs,
-            },
-          }).pipe(Effect.orDie, Effect.asVoid)
-          return {
-            sessionId: request.contextId,
-            contextId: request.contextId,
-          } as unknown as typeof HostContextsCreateResponseSchema.Type
-        }),
-    })
-  }),
-)
-
-export const HostSessionsCreateOrLoadChannelLive = Layer.succeed(
-  HostSessionsCreateOrLoadChannel,
-  makeCallableChannel({
-    target: HostSessionsCreateOrLoadChannelTarget,
-    requestSchema: HostSessionsCreateOrLoadRequestSchema,
-    responseSchema: HostSessionsCreateOrLoadResponseSchema,
-    call: (request) => {
-      const id = `session:${request.externalKey.source}:${request.externalKey.id}`
-      return Effect.succeed({
-        sessionId: id,
-        contextId: id,
-      } as unknown as typeof HostSessionsCreateOrLoadResponseSchema.Type)
-    },
-  }),
-)
-
-export const HostContextsChannelLive = Layer.succeed(
-  HostContextsChannel,
-  makeIngressChannel({
-    target: HostContextsChannelTarget,
-    schema: RuntimeContextSchema,
-    stream: Stream.empty,
-  }),
-)
-
-export const HostContextSnapshotChannelLive = Layer.succeed(
-  HostContextSnapshotChannel,
-  makeCallableChannel({
-    target: HostContextSnapshotChannelTarget,
-    requestSchema: HostContextSnapshotRequestSchema,
-    responseSchema: RuntimeContextSnapshotSchema,
-    call: (request) =>
-      Effect.succeed({
-        contextId: request.contextId,
-        runs: [] as ReadonlyArray<unknown>,
-        events: [] as ReadonlyArray<unknown>,
-        logs: [] as ReadonlyArray<unknown>,
-        agentOutputs: [],
-      } as unknown as typeof RuntimeContextSnapshotSchema.Type),
-  }),
-)
-
-export const HostSessionSnapshotChannelLive = Layer.succeed(
-  HostSessionSnapshotChannel,
-  makeCallableChannel({
-    target: HostSessionSnapshotChannelTarget,
-    requestSchema: HostSessionSnapshotRequestSchema,
-    responseSchema: RuntimeContextSnapshotSchema,
-    call: (request) =>
-      Effect.succeed({
-        contextId: request.sessionId,
-        runs: [] as ReadonlyArray<unknown>,
-        events: [] as ReadonlyArray<unknown>,
-        logs: [] as ReadonlyArray<unknown>,
-        agentOutputs: [],
-      } as unknown as typeof RuntimeContextSnapshotSchema.Type),
-  }),
-)
-
-export const SessionLifecycleChannelLive = Layer.succeed(
-  SessionLifecycleChannel,
-  SessionLifecycleChannel.of({
-    forSession: (_sessionId) =>
-      makeIngressChannel({
-        target: SessionLifecycleChannelTarget,
-        schema: RuntimeRunEventSchema,
-        stream: Stream.empty,
-      }),
-  }),
-)
-
-export const UnifiedChannelBindingsLive = Layer.mergeAll(
-  HostPromptChannelLive,
-  SessionPromptChannelLive,
-  HostSessionsStartChannelLive,
-  HostPermissionRespondChannelLive,
-  HostContextsCreateChannelLive,
-  HostSessionsCreateOrLoadChannelLive,
-  HostContextsChannelLive,
-  HostContextSnapshotChannelLive,
-  HostSessionSnapshotChannelLive,
-  SessionLifecycleChannelLive,
+export const UnifiedChannelBindingsLive = HostPromptChannelLive.pipe(
+  Layer.provideMerge(SessionPromptChannelLive),
+  Layer.provideMerge(HostSessionsStartChannelLive),
+  Layer.provideMerge(HostPermissionRespondChannelLive),
 )

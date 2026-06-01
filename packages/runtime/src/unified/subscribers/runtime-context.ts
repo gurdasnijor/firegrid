@@ -35,7 +35,7 @@ import {
   Workflow,
   WorkflowEngine,
 } from "@effect/workflow"
-import { Effect, ParseResult, Schema } from "effect"
+import { Effect, type ParseResult, Schema } from "effect"
 import { readSignalsFor, SignalTable } from "../signal.ts"
 import {
   RuntimeContextSessionAdapter,
@@ -70,7 +70,9 @@ export const RuntimeContextSessionWorkflow = Workflow.make({
   idempotencyKey: (p) => `${p.contextId}:${p.attempt}`,
 })
 
-const decodeSessionInputPayload = Schema.decodeUnknown(SessionInputPayloadSchema)
+const decodeSessionInputPayloadJson = Schema.decode(
+  Schema.parseJson(SessionInputPayloadSchema),
+)
 
 const sessionKey = (contextId: string, attempt: number): string =>
   `${contextId}:${attempt}`
@@ -107,15 +109,12 @@ const body = (
           "firegrid.unified.body.decision": "suspend",
           "firegrid.unified.cursor": consumed,
         })
-        yield* Workflow.suspend(instance)
-        return yield* Effect.never
+        return yield* Workflow.suspend(instance)
       }
       while (consumed < rows.length && !reachedTerminal) {
         const row = rows[consumed]!
         const cursor = consumed
-        const input: SessionInputPayload = yield* decodeSessionInputPayload(
-          JSON.parse(row.payloadJson) as unknown,
-        ).pipe(
+        const input: SessionInputPayload = yield* decodeSessionInputPayloadJson(row.payloadJson).pipe(
           Effect.mapError((e: ParseResult.ParseError) =>
             new Error(`malformed session input at cursor ${cursor}: ${e.message}`),
           ),

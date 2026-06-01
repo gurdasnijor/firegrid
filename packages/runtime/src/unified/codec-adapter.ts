@@ -37,9 +37,7 @@
 
 import { IdGenerator } from "@effect/ai"
 import {
-  RuntimeOutputTable,
   type RuntimeContext,
-  RuntimeControlPlaneTable,
   isMcpServerHeaderRef,
   type McpServerDeclaration,
 } from "@firegrid/protocol/launch"
@@ -76,18 +74,18 @@ import {
   AdapterError,
   type SessionInputPayload,
 } from "./adapter.ts"
+import {
+  CodecOutputJournalTag,
+  type CodecOutputJournal,
+  ContextResolverTag,
+} from "../tables/codec-adapter-tags.ts"
 
-// ── Context resolution seam ────────────────────────────────────────────────
-
-export interface ContextResolver {
-  readonly resolve: (
-    contextId: string,
-  ) => Effect.Effect<Option.Option<RuntimeContext>, never>
-}
-
-export class ContextResolverTag extends Context.Tag(
-  "@firegrid/runtime/unified/ContextResolver",
-)<ContextResolverTag, ContextResolver>() {}
+export {
+  CodecOutputJournalTag,
+  type CodecOutputJournal,
+  ContextResolverTag,
+  type ContextResolver,
+} from "../tables/codec-adapter-tags.ts"
 
 // ── Per-context registry entry ─────────────────────────────────────────────
 
@@ -97,6 +95,14 @@ interface RegistryEntry {
   readonly attempt: number
   readonly sequenceRef: Ref.Ref<number>
 }
+
+const getRegistryEntry = (
+  registry: Ref.Ref<Map<string, RegistryEntry>>,
+  contextId: string,
+) =>
+  Ref.get(registry).pipe(
+    Effect.map((sessions) => sessions.get(contextId)),
+  )
 
 // ── Input decoding ─────────────────────────────────────────────────────────
 //
@@ -131,7 +137,7 @@ const decodeAgentInputEvent = (input: SessionInputPayload): DecodeOutcome => {
 // ── Output pump ────────────────────────────────────────────────────────────
 
 const drainOutputsToJournal = (
-  table: RuntimeOutputTable["Type"],
+  journal: CodecOutputJournal,
   contextId: string,
   attempt: number,
   sequenceRef: Ref.Ref<number>,
@@ -142,7 +148,7 @@ const drainOutputsToJournal = (
       Effect.gen(function*() {
         const sequence = yield* Ref.modify(sequenceRef, (n) => [n, n + 1])
         const receivedAt = new Date().toISOString()
-        yield* table.events.insertOrGet({
+        yield* journal.append({
           eventId: { contextId, activityAttempt: attempt, target: "events", sequence },
           contextId,
           activityAttempt: attempt,
@@ -151,7 +157,7 @@ const drainOutputsToJournal = (
           format: "jsonl",
           receivedAt,
           raw: encodeRuntimeAgentOutputEnvelope(event),
-        }).pipe(Effect.orDie, Effect.asVoid)
+        })
       }),
     ),
     Stream.runDrain,
@@ -190,31 +196,26 @@ const mcpServersForAcp = (
   if (declarations === undefined || declarations.length === 0) {
     return { servers: [], droppedRefCount: 0 }
   }
-  let dropped = 0
-  const out: AcpMcpServerDeclaration[] = []
-  for (const decl of declarations) {
-    const headers: Array<{ readonly name: string; readonly value: string }> = []
-    if (decl.server.headers !== undefined) {
-      for (const [name, value] of Object.entries(decl.server.headers)) {
-        if (isMcpServerHeaderRef(value)) {
-          dropped += 1
-          continue
-        }
-        if (typeof value === "string") {
-          headers.push({ name, value })
-        }
-      }
+  return declarations.reduce<{
+    readonly servers: ReadonlyArray<AcpMcpServerDeclaration>
+    readonly droppedRefCount: number
+  }>((acc, decl) => {
+    const headerEntries = Object.entries(decl.server.headers ?? {})
+    const droppedRefCount = headerEntries.filter(([, value]) => isMcpServerHeaderRef(value)).length
+    const headers = headerEntries.flatMap(([name, value]) =>
+      typeof value === "string" ? [{ name, value }] : [])
+    return {
+      droppedRefCount: acc.droppedRefCount + droppedRefCount,
+      servers: [...acc.servers, {
+        name: decl.name,
+        server: {
+          type: "url",
+          url: decl.server.url,
+          ...(headers.length === 0 ? {} : { headers }),
+        },
+      }],
     }
-    out.push({
-      name: decl.name,
-      server: {
-        type: "url",
-        url: decl.server.url,
-        ...(headers.length === 0 ? {} : { headers }),
-      },
-    })
-  }
-  return { servers: out, droppedRefCount: dropped }
+  }, { servers: [], droppedRefCount: 0 })
 }
 
 // ── The adapter Live ───────────────────────────────────────────────────────
@@ -236,7 +237,7 @@ const buildSessionForContext = (
   hostScope: Scope.Scope,
   context: RuntimeContext,
   attempt: number,
-  table: RuntimeOutputTable["Type"],
+  journal: CodecOutputJournal,
   sandboxProvider: SandboxProvider["Type"],
   idGenerator: IdGenerator.IdGenerator["Type"],
   envResolverPolicy: RuntimeEnvResolverPolicy["Type"],
@@ -318,7 +319,7 @@ const buildSessionForContext = (
 
     const sequenceRef = yield* Ref.make(0)
     yield* drainOutputsToJournal(
-      table, contextId, attempt, sequenceRef, session.outputs,
+      journal, contextId, attempt, sequenceRef, session.outputs,
     ).pipe(Scope.extend(ctxScope))
 
     return { session, scope: ctxScope, attempt, sequenceRef }
@@ -328,7 +329,7 @@ export const ProductionCodecAdapterLive = Layer.scoped(
   RuntimeContextSessionAdapter,
   Effect.gen(function*() {
     const hostScope = yield* Effect.scope
-    const table = yield* RuntimeOutputTable
+    const journal = yield* CodecOutputJournalTag
     const sandboxProvider = yield* SandboxProvider
     const idGenerator = yield* IdGenerator.IdGenerator
     const resolver = yield* ContextResolverTag
@@ -346,14 +347,16 @@ export const ProductionCodecAdapterLive = Layer.scoped(
         )
         if (existing !== undefined) return
 
-        const ctx = yield* resolver.resolve(contextId)
+        const ctx = yield* resolver.resolve(contextId).pipe(
+          Effect.mapError((cause) =>
+            adapterError("startOrAttach", contextId, "context resolve failed", cause),
+          ),
+        )
         if (Option.isNone(ctx)) {
-          return yield* Effect.fail(
-            adapterError("startOrAttach", contextId, "context not found"),
-          )
+          return yield* adapterError("startOrAttach", contextId, "context not found")
         }
         const entry = yield* buildSessionForContext(
-          hostScope, ctx.value, attempt, table, sandboxProvider, idGenerator, envResolverPolicy,
+          hostScope, ctx.value, attempt, journal, sandboxProvider, idGenerator, envResolverPolicy,
         )
         yield* Ref.update(registry, (m) => {
           const next = new Map(m)
@@ -377,13 +380,9 @@ export const ProductionCodecAdapterLive = Layer.scoped(
       input: SessionInputPayload,
     ): Effect.Effect<void, AdapterError> =>
       Effect.gen(function*() {
-        const entry = yield* Ref.get(registry).pipe(
-          Effect.map((m) => m.get(contextId)),
-        )
+        const entry = yield* getRegistryEntry(registry, contextId)
         if (entry === undefined) {
-          return yield* Effect.fail(
-            adapterError("send", contextId, "session not registered"),
-          )
+          return yield* adapterError("send", contextId, "session not registered")
         }
         const outcome = decodeAgentInputEvent(input)
         switch (outcome._tag) {
@@ -393,21 +392,17 @@ export const ProductionCodecAdapterLive = Layer.scoped(
             })
             return
           case "MalformedJson":
-            return yield* Effect.fail(
-              adapterError("send", contextId, "input payloadJson is not valid JSON"),
-            )
+            return yield* adapterError("send", contextId, "input payloadJson is not valid JSON")
           case "SchemaReject":
             yield* Effect.annotateCurrentSpan({
               "firegrid.unified.adapter.send.outcome": "schema_reject",
               "firegrid.unified.adapter.send.payload_excerpt": input.payloadJson.slice(0, 400),
               "firegrid.unified.adapter.send.decode_error": outcome.message.slice(0, 400),
             })
-            return yield* Effect.fail(
-              adapterError(
-                "send",
-                contextId,
-                `input payloadJson failed AgentInputEvent decode: ${outcome.message}`,
-              ),
+            return yield* adapterError(
+              "send",
+              contextId,
+              `input payloadJson failed AgentInputEvent decode: ${outcome.message}`,
             )
           case "Decoded":
             yield* Effect.annotateCurrentSpan({
@@ -437,9 +432,7 @@ export const ProductionCodecAdapterLive = Layer.scoped(
       contextId: string,
     ): Effect.Effect<void, AdapterError> =>
       Effect.gen(function*() {
-        const entry = yield* Ref.get(registry).pipe(
-          Effect.map((m) => m.get(contextId)),
-        )
+        const entry = yield* getRegistryEntry(registry, contextId)
         if (entry === undefined) return
         yield* Scope.close(entry.scope, Exit.void)
         yield* Ref.update(registry, (m) => {
@@ -462,17 +455,5 @@ export const ProductionCodecAdapterLive = Layer.scoped(
       send,
       deregister,
     } satisfies RuntimeContextSessionAdapterService
-  }),
-)
-
-// ── Convenience: resolver backed by RuntimeControlPlaneTable ───────────────
-
-export const ContextResolverFromControlPlaneTableLive = Layer.effect(
-  ContextResolverTag,
-  Effect.gen(function*() {
-    const control = yield* RuntimeControlPlaneTable
-    return {
-      resolve: (contextId) => control.contexts.get(contextId).pipe(Effect.orDie),
-    }
   }),
 )

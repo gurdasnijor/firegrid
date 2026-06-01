@@ -74,11 +74,14 @@ const _clientFootguns = (firegrid: FiregridService) => {
 
   // F5 — a substrate handle cannot be passed to a typed client verb.
   // @ts-expect-error a substrate `SignalTable` Tag is not a valid SessionCreateOrLoadInput
-  firegrid.sessions.createOrLoad(SignalTable)
+  const _noSubstrateHandle = firegrid.sessions.createOrLoad(SignalTable)
 
   // F6 — a wrong-typed request to a typed verb does not compile.
   // @ts-expect-error `prompt` expects a PublicPromptRequest, not a number
-  firegrid.prompt(42)
+  const _wrongPrompt = firegrid.prompt(42)
+
+  void _noSubstrateHandle
+  void _wrongPrompt
 }
 
 // ── F3 — substrate types are NOT on the client public surface ────────────────

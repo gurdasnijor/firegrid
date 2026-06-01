@@ -23,7 +23,7 @@ import {
   Workflow,
   type WorkflowEngine,
 } from "@effect/workflow"
-import { Data, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Data, Duration, Effect, Option, Schema } from "effect"
 import {
   awaitSignal,
   sendSignal,
@@ -38,6 +38,11 @@ import {
   type UnifiedTableService,
   webhookFactKey,
 } from "../tables.ts"
+import {
+  bytesToHex,
+  hexToBytes,
+  signHmacSha256,
+} from "../../events/webhook-crypto.ts"
 
 // ── 1. ScheduledPromptWorkflow ──────────────────────────────────────────────
 
@@ -79,7 +84,7 @@ const scheduledPromptBody = (payload: ScheduledPromptPayload) =>
     })
 
     // DurableClock — the engine recovers this on reconstruction.
-    const now = Date.now()
+    const now = yield* Clock.currentTimeMillis
     const delay = Math.max(0, payload.fireAtMs - now)
     yield* DurableClock.sleep({
       name: `unified.scheduled-prompt/${key}`,
@@ -108,28 +113,7 @@ export interface VerifyWebhookOptions {
   readonly receivedSignatureHex: string
 }
 
-const encoder = new TextEncoder()
 const decoder = new TextDecoder()
-
-const bytesToArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
-  const copy = new Uint8Array(bytes.byteLength)
-  copy.set(bytes)
-  return copy.buffer
-}
-
-const bytesToHex = (bytes: Uint8Array): string =>
-  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
-
-const hexToBytes = (hex: string): Uint8Array | undefined => {
-  if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) return undefined
-  const bytes = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < bytes.length; i += 1) {
-    const parsed = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16)
-    if (!Number.isFinite(parsed)) return undefined
-    bytes[i] = parsed
-  }
-  return bytes
-}
 
 const constantTimeHexEquals = (left: string, right: string): boolean => {
   const l = hexToBytes(left)
@@ -144,30 +128,38 @@ const constantTimeHexEquals = (left: string, right: string): boolean => {
 const hmacSha256Hex = (
   secret: string | Uint8Array,
   rawBody: Uint8Array,
-): Effect.Effect<string, Error> =>
+): Effect.Effect<string, VerifiedWebhookError> =>
   Effect.tryPromise({
-    try: async () => {
-      const key = await globalThis.crypto.subtle.importKey(
-        "raw",
-        bytesToArrayBuffer(typeof secret === "string" ? encoder.encode(secret) : secret),
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["sign"],
-      )
-      const digest = await globalThis.crypto.subtle.sign(
-        "HMAC",
-        key,
-        bytesToArrayBuffer(rawBody),
-      )
-      return bytesToHex(new Uint8Array(digest))
-    },
-    catch: (e) => e as Error,
+    try: async () => bytesToHex(await signHmacSha256(secret, rawBody)),
+    catch: (cause) =>
+      VerifiedWebhookError({
+        message: `HMAC digest failed: ${String(cause)}`,
+        op: "signature/digest",
+      }),
   })
 
-export class VerifiedWebhookError extends Data.TaggedError("VerifiedWebhookError")<{
+export interface VerifiedWebhookError {
+  readonly _tag: "VerifiedWebhookError"
   readonly message: string
   readonly op: string
-}> {}
+}
+
+export const VerifiedWebhookError = Data.tagged<VerifiedWebhookError>("VerifiedWebhookError")
+
+export const isVerifiedWebhookError = (value: unknown): value is VerifiedWebhookError =>
+  typeof value === "object" &&
+  value !== null &&
+  "_tag" in value &&
+  value._tag === "VerifiedWebhookError" &&
+  "op" in value &&
+  typeof value.op === "string"
+
+interface MissingSignaledRowError {
+  readonly _tag: "MissingSignaledRowError"
+  readonly message: string
+}
+
+const MissingSignaledRowError = Data.tagged<MissingSignaledRowError>("MissingSignaledRowError")
 
 export interface VerifyAndIngestResult {
   readonly _tag: "Inserted" | "Duplicate"
@@ -176,6 +168,37 @@ export interface VerifyAndIngestResult {
 
 export const WEBHOOK_FACT_SIGNAL = "webhook-fact"
 export const PEER_EVENT_SIGNAL = "peer-event"
+
+const lookupExisting = <A>(
+  get: Effect.Effect<Option.Option<A>, unknown>,
+) =>
+  get.pipe(
+    Effect.map(Option.getOrUndefined),
+    Effect.orDie,
+  )
+
+const signalFact = (options: {
+  readonly signalOptions:
+    | {
+      readonly signals: SignalTableService
+      readonly workflow: ResumableWorkflow
+      readonly executionId: string
+    }
+    | undefined
+  readonly signalName: string
+  readonly value: unknown
+}) =>
+  options.signalOptions === undefined
+    ? Effect.void
+    : sendSignal({
+      signals: options.signalOptions.signals,
+      workflow: options.signalOptions.workflow,
+      executionId: options.signalOptions.executionId,
+      name: options.signalName,
+      write: () => Effect.void,
+      value: options.value,
+      serializeValue: (value) => JSON.stringify(value),
+    }).pipe(Effect.orDie)
 
 /**
  * Verify HMAC + write a webhookFacts row. Idempotent on `(source,
@@ -195,51 +218,33 @@ export const verifyAndIngestWebhook = (options: {
     const expected = yield* hmacSha256Hex(
       options.verify.secret,
       options.verify.rawBody,
-    ).pipe(
-      Effect.mapError(
-        (e) =>
-          new VerifiedWebhookError({
-            message: `HMAC digest failed: ${String(e)}`,
-            op: "signature/digest",
-          }),
-      ),
     )
     if (!constantTimeHexEquals(expected, options.verify.receivedSignatureHex)) {
-      return yield* Effect.fail(
-        new VerifiedWebhookError({
-          message: "invalid signature",
-          op: "signature/invalid",
-        }),
-      )
+      return yield* Effect.fail(VerifiedWebhookError({
+        message: "invalid signature",
+        op: "signature/invalid",
+      }))
     }
     const factKey = webhookFactKey(options.verify.source, options.verify.deliveryId)
-    const existing = yield* options.unified.webhookFacts.get(factKey).pipe(
-      Effect.map(Option.getOrUndefined),
-      Effect.orDie,
-    )
+    const existing = yield* lookupExisting(options.unified.webhookFacts.get(factKey))
     if (existing !== undefined) {
       return { _tag: "Duplicate" as const, factKey }
     }
     const payloadJson = decoder.decode(options.verify.rawBody)
+    const receivedAtMs = yield* Clock.currentTimeMillis
     yield* options.unified.webhookFacts.insertOrGet({
       factKey,
       source: options.verify.source,
       deliveryId: options.verify.deliveryId,
       eventType: options.verify.eventType,
       payloadJson,
-      receivedAt: new Date().toISOString(),
+      receivedAt: new Date(receivedAtMs).toISOString(),
     }).pipe(Effect.orDie)
-    if (options.signalOptions !== undefined) {
-      yield* sendSignal({
-        signals: options.signalOptions.signals,
-        workflow: options.signalOptions.workflow,
-        executionId: options.signalOptions.executionId,
-        name: WEBHOOK_FACT_SIGNAL,
-        write: () => Effect.void,
-        value: { factKey, source: options.verify.source, deliveryId: options.verify.deliveryId },
-        serializeValue: (v) => JSON.stringify(v),
-      }).pipe(Effect.orDie)
-    }
+    yield* signalFact({
+      signalOptions: options.signalOptions,
+      signalName: WEBHOOK_FACT_SIGNAL,
+      value: { factKey, source: options.verify.source, deliveryId: options.verify.deliveryId },
+    })
     return { _tag: "Inserted" as const, factKey }
   })
 
@@ -263,32 +268,24 @@ export const emitPeerEvent = (options: {
 > =>
   Effect.gen(function*() {
     const factKey = peerEventKey(options.name, options.eventId)
-    const existing = yield* options.unified.peerEvents.get(factKey).pipe(
-      Effect.map(Option.getOrUndefined),
-      Effect.orDie,
-    )
+    const existing = yield* lookupExisting(options.unified.peerEvents.get(factKey))
     if (existing !== undefined) {
       return { _tag: "Duplicate" as const, factKey }
     }
+    const emittedAtMs = yield* Clock.currentTimeMillis
     yield* options.unified.peerEvents.insertOrGet({
       eventKey: factKey,
       name: options.name,
       eventId: options.eventId,
       emitterContextId: options.emitterContextId,
       payloadJson: options.payloadJson,
-      emittedAt: new Date().toISOString(),
+      emittedAt: new Date(emittedAtMs).toISOString(),
     }).pipe(Effect.orDie)
-    if (options.signalOptions !== undefined) {
-      yield* sendSignal({
-        signals: options.signalOptions.signals,
-        workflow: options.signalOptions.workflow,
-        executionId: options.signalOptions.executionId,
-        name: PEER_EVENT_SIGNAL,
-        write: () => Effect.void,
-        value: { factKey, name: options.name, eventId: options.eventId },
-        serializeValue: (v) => JSON.stringify(v),
-      }).pipe(Effect.orDie)
-    }
+    yield* signalFact({
+      signalOptions: options.signalOptions,
+      signalName: PEER_EVENT_SIGNAL,
+      value: { factKey, name: options.name, eventId: options.eventId },
+    })
     return { _tag: "Inserted" as const, factKey }
   })
 
@@ -330,10 +327,11 @@ const webhookFactObserverBody = (payload: WebhookFactObserverPayload) =>
     const row = yield* table.webhookFacts.get(key).pipe(
       Effect.flatMap(Option.match({
         onNone: () =>
-          Effect.dieMessage(`webhook fact ${key} signaled but not present in table`),
+          Effect.fail(MissingSignaledRowError({
+            message: `webhook fact ${key} signaled but not present in table`,
+          })),
         onSome: Effect.succeed,
       })),
-      Effect.orDie,
     )
     return {
       source: row.source,
@@ -382,10 +380,11 @@ const peerEventObserverBody = (payload: PeerEventObserverPayload) =>
     const row = yield* table.peerEvents.get(key).pipe(
       Effect.flatMap(Option.match({
         onNone: () =>
-          Effect.dieMessage(`peer event ${key} signaled but not present in table`),
+          Effect.fail(MissingSignaledRowError({
+            message: `peer event ${key} signaled but not present in table`,
+          })),
         onSome: Effect.succeed,
       })),
-      Effect.orDie,
     )
     return {
       name: row.name,

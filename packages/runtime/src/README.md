@@ -26,6 +26,7 @@ the surfaces below exists and is documented here:
 | [`producers/`](./producers/README.md) | Kafka-broker "Producer" topic writers: layers that consume Streams from `sources/` and append rows to `tables/`. | 3b |
 | [`transforms/`](./transforms/README.md) | pure row/event transforms; no `Effect`. | 4 |
 | [`channels/`](./channels/README.md) | wire-edge live routing (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
+| [`unified/`](./unified/README.md) | unified validation kernel: workflow/session composition under stabilization. | 6 |
 | [`subscribers/`](./subscribers/README.md) | keyed subscribers — Shape B/C/D recorded in folder READMEs. | 6 |
 | [`composition/`](./composition/README.md) | runtime-local layer-graph wiring + topology checks. | 7 |
 | [`bin/`](./bin/) | runtime-owned daemon/process entrypoints (`firegrid run`, `firegrid start`, `firegrid acp`); outside pipeline order and may compose public client + runtime host surfaces. | — |
@@ -156,6 +157,10 @@ These are intentionally not agent event-pipeline stages:
   injecting host topology config. This is the doorway-enforcing co-location: the
   durable channel implementations live below the substrate boundary, not in
   host-sdk.
+- `unified/`: the unified kernel validation surface introduced by #765. It is
+  the active stabilization target while the pre-unified subscriber/composition
+  directories remain deleted; full target-tree realignment is tracked by
+  tf-ll90.8.
 
 This namespace move follows the host split and codec session Layer refactor
 (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.5`,

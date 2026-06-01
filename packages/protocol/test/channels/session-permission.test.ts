@@ -18,11 +18,13 @@ describe("session permission channel contract", () => {
       idempotencyKey: "idem-1",
       responseOrigin: "test",
     })
+    // SessionPermissionChannelResponseSchema collapsed to the generic
+    // append-receipt EventOffsetSchema ({offset, deduplicated?}); the old
+    // {responded, contextId, permissionRequestId, inputId} shape is dead (no
+    // consumer reads it — client `permissions.respond` returns EventOffset).
     const response = Schema.decodeUnknownSync(SessionPermissionChannelResponseSchema)({
-      responded: true,
-      contextId: "ctx-1",
-      permissionRequestId: "perm-1",
-      inputId: "intent-1",
+      offset: "intent-1",
+      deduplicated: false,
     })
     const channel = makeSessionPermissionChannelContract({
       call: () => Effect.succeed(response),

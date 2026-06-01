@@ -1,13 +1,10 @@
-import type {
-  FiregridHost,
-  TinyFiregridHostEnv,
-} from "../../types.ts"
+import type { FiregridHost, TinyFiregridHostEnv } from "../../types.ts"
 import {
   FiregridHost as RuntimeFiregridHost,
 } from "@firegrid/runtime/unified"
 import type { Layer } from "effect"
 
-export const unifiedKernelValidationHost = (
+export const host = (
   env: TinyFiregridHostEnv,
 ): Layer.Layer<FiregridHost, unknown> =>
   RuntimeFiregridHost({

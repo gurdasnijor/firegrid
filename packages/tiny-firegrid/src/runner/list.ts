@@ -42,8 +42,6 @@ const isSimulation = (
 const hiddenFolders = new Set([
   "sim2-multi-surface-projection",
   "shape-c-channel-router-turn",
-  "shape-c-non-recursive-start",
-  "shape-c-terminal-ordering",
   "shape-d-tool-dispatch-mcp-entry",
   "wave-d-a-shape-b-input-identity-dedup",
 ])
