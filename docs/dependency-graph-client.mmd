@@ -1,50 +1,212 @@
 flowchart LR
 
 subgraph 0["packages"]
-subgraph 1["client"]
+subgraph 1["client-sdk"]
 subgraph 2["src"]
 3["firegrid.ts"]
 4["index.ts"]
+5["internal"]
+6["operations.ts"]
+7["permission-auto-approve.ts"]
 end
 end
-subgraph 5["durable-streams"]
-subgraph 6["src"]
-7["DurableState.ts"]
-8["DurableStreamLog.ts"]
-9["log.ts"]
-A["state.ts"]
+subgraph 8["effect-durable-operators"]
+subgraph 9["src"]
+A["DurableTable.ts"]
+B["Errors.ts"]
+C["index.ts"]
 end
 end
-subgraph B["protocol"]
-subgraph C["src"]
-subgraph D["launch"]
-E["cursor.ts"]
-F["helpers.ts"]
-G["index.ts"]
-H["schema.ts"]
-I["state.ts"]
-end
-subgraph J["session"]
+subgraph D["effect-durable-streams"]
+subgraph E["src"]
+F["Bound.ts"]
+G["DurableStream.ts"]
+H["Reader.ts"]
+I["Writer.ts"]
+J["errors.ts"]
 K["index.ts"]
-L["schema.ts"]
-M["state.ts"]
+subgraph L["internal"]
+M["schema.ts"]
+N["sse.ts"]
+end
+O["namespace.ts"]
+subgraph P["protocol"]
+Q["Http.ts"]
+R["Producer.ts"]
+S["Read.ts"]
+T["constants.ts"]
+end
+end
+end
+subgraph U["protocol"]
+subgraph V["src"]
+subgraph W["agent-output"]
+X["index.ts"]
+Y["schema.ts"]
+end
+subgraph Z["agent-tools"]
+10["index.ts"]
+11["schema.ts"]
+end
+subgraph 12["channels"]
+13["core.ts"]
+14["event.ts"]
+15["host-control.ts"]
+16["host-sessions-create-or-load.ts"]
+17["human.ts"]
+18["index.ts"]
+19["router.ts"]
+1A["session-agent-output.ts"]
+1B["session-log.ts"]
+1C["session-permission.ts"]
+1D["session-self.ts"]
+1E["state-changes.ts"]
+1F["verified-webhook.ts"]
+end
+subgraph 1G["launch"]
+1H["authority.ts"]
+1I["control-request.ts"]
+1J["host-context-authority.ts"]
+1K["index.ts"]
+1L["runtime-start.ts"]
+1M["schema.ts"]
+1N["table.ts"]
+end
+subgraph 1O["observations"]
+1P["schema.ts"]
+end
+subgraph 1Q["otel"]
+1R["row-otel.ts"]
+end
+subgraph 1S["projection"]
+1T["index.ts"]
+1U["schema.ts"]
+end
+subgraph 1V["runtime-ingress"]
+1W["index.ts"]
+1X["schema.ts"]
+end
+subgraph 1Y["session-facade"]
+1Z["index.ts"]
+20["operations.ts"]
+21["schema.ts"]
 end
 end
 end
 end
-3-->9
-3-->A
-3-->G
+3-->5
+3-->6
+3-->7
+3-->10
+3-->18
+3-->19
+3-->1K
+3-->1T
+3-->1W
+3-->1Z
 4-->3
-7-->G
-7-->K
-9-->8
-A-->7
-G-->E
-G-->F
-G-->H
-G-->I
-I-->H
-K-->L
-K-->M
-M-->L
+4-->6
+4-->7
+6-->1Z
+A-->B
+A-->K
+C-->A
+C-->B
+F-->H
+F-->I
+H-->M
+H-->Q
+H-->S
+I-->J
+I-->M
+I-->Q
+I-->R
+K-->J
+K-->O
+M-->J
+N-->G
+N-->J
+N-->T
+N-->Q
+O-->F
+O-->G
+O-->J
+O-->H
+O-->I
+Q-->T
+R-->J
+R-->M
+R-->Q
+S-->G
+S-->M
+S-->N
+S-->T
+S-->Q
+X-->Y
+10-->11
+11-->Y
+11-->13
+11-->1P
+11-->1U
+14-->13
+15-->11
+15-->1M
+15-->21
+15-->13
+16-->21
+16-->13
+17-->13
+18-->13
+18-->14
+18-->15
+18-->16
+18-->17
+18-->19
+18-->1A
+18-->1B
+18-->1C
+18-->1D
+18-->1E
+18-->1F
+19-->13
+1A-->13
+1B-->13
+1B-->C
+1C-->11
+1C-->13
+1D-->1M
+1D-->13
+1F-->13
+1I-->1R
+1I-->1M
+1I-->C
+1J-->1H
+1J-->1M
+1J-->1N
+1K-->1H
+1K-->1I
+1K-->1J
+1K-->1L
+1K-->1M
+1K-->1N
+1M-->1H
+1N-->1R
+1N-->1H
+1N-->1M
+1N-->C
+1T-->1U
+1W-->1X
+1X-->1R
+1X-->C
+1Z-->X
+1Z-->20
+1Z-->21
+20-->11
+20-->13
+20-->1P
+20-->21
+21-->X
+21-->11
+21-->1M
+21-->1P
+21-->1U
