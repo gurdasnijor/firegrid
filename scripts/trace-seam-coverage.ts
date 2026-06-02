@@ -86,16 +86,19 @@ const SEAMS = [
     id: "tool.workflow.execute",
     match: (n: string) => n === "unified.tool-dispatch.execute",
     description: "ToolDispatchWorkflow execute",
+    optional: true,
   },
   {
     id: "tool.execute",
     match: (n: string) => n.startsWith("unified.tool.execute/"),
     description: "ToolDispatchWorkflow invokes the executor",
+    optional: true,
   },
   {
     id: "tool.relay",
     match: (n: string) => n.startsWith("unified.tool.relay/"),
     description: "ToolDispatchWorkflow relays result back to session (§D)",
+    optional: true,
   },
   {
     id: "journal.observer.daemon",
@@ -159,6 +162,7 @@ interface ProductionAssertion {
   readonly description: string
   readonly count: number
   readonly threshold: number
+  readonly expectation?: "atLeast" | "exactly"
   readonly source: "host-substrate-span" | "driver-corroboration"
   readonly gating: boolean
   readonly status: "pass" | "fail"
@@ -216,6 +220,32 @@ const countTerminalBeforeDeregister = (
   return count
 }
 
+const countAcpToolUseUpdates = (
+  spans: ReadonlyArray<Span>,
+): number =>
+  spans.filter((span) =>
+    span.name === "firegrid.agent_event_pipeline.acp.session_update" &&
+    typeof span.attributes?.["firegrid.agent_output.tag"] === "string" &&
+    span.attributes["firegrid.agent_output.tag"].includes("ToolUse")
+  ).length
+
+const countAcpToolResultRejections = (
+  spans: ReadonlyArray<Span>,
+): number =>
+  spans.filter((span) =>
+    span.name === "firegrid.agent_event_pipeline.acp.tool_result" &&
+    span.status?.message === "ACP ToolResult input is out-of-band for this codec slice"
+  ).length
+
+const countToolResultCodecSendFailures = (
+  spans: ReadonlyArray<Span>,
+): number =>
+  spans.filter((span) =>
+    span.name === "firegrid.unified.adapter.send" &&
+    span.status?.message === "codec send failed" &&
+    span.attributes?.["firegrid.unified.adapter.send.event_tag"] === "ToolResult"
+  ).length
+
 const findLatestRun = (runsRoot: string): string => {
   const entries = readdirSync(runsRoot)
     .filter((d) => d.includes("unified-kernel-validation"))
@@ -247,6 +277,9 @@ const main = (): void => {
 
   const spans = readSpans(tracePath)
   const terminalBeforeDeregisterCount = countTerminalBeforeDeregister(spans)
+  const acpToolUseUpdateCount = countAcpToolUseUpdates(spans)
+  const acpToolResultRejectionCount = countAcpToolResultRejections(spans)
+  const toolResultCodecSendFailureCount = countToolResultCodecSendFailures(spans)
 
   const productionAssertions: ReadonlyArray<ProductionAssertion> = [
     {
@@ -319,6 +352,35 @@ const main = (): void => {
       status: terminalBeforeDeregisterCount > 0 ? "pass" : "fail",
     },
     {
+      id: "acp.tool_use_observed",
+      description: "firegrid-runtime-host-modularity.CODEC_RUNTIME.5 real ACP ToolUse reached the journal path",
+      count: acpToolUseUpdateCount,
+      threshold: 1,
+      source: "host-substrate-span",
+      gating: true,
+      status: acpToolUseUpdateCount > 0 ? "pass" : "fail",
+    },
+    {
+      id: "acp.tool_result_rejection_absent",
+      description: "firegrid-runtime-host-modularity.CODEC_RUNTIME.5 ACP provider-executed ToolUse does not relay ToolResult",
+      count: acpToolResultRejectionCount,
+      threshold: 0,
+      expectation: "exactly",
+      source: "host-substrate-span",
+      gating: true,
+      status: acpToolResultRejectionCount === 0 ? "pass" : "fail",
+    },
+    {
+      id: "tool_result.codec_send_failure_absent",
+      description: "firegrid-runtime-host-modularity.CODEC_RUNTIME.4 ToolResult codec-send failure absent on ACP tool-calling turn",
+      count: toolResultCodecSendFailureCount,
+      threshold: 0,
+      expectation: "exactly",
+      source: "host-substrate-span",
+      gating: true,
+      status: toolResultCodecSendFailureCount === 0 ? "pass" : "fail",
+    },
+    {
       id: "firegrid.ukv.snapshot_run_count",
       description: "Driver snapshot corroborates that at least one run exists",
       count: getNumberAttribute(spans, "firegrid.ukv.snapshot_run_count"),
@@ -381,8 +443,9 @@ const main = (): void => {
   for (const assertion of productionAssertions) {
     const mark = assertion.status === "pass" ? "✓" : "✗"
     const gate = assertion.gating ? "gating" : "report-only"
+    const comparator = assertion.expectation === "exactly" ? "==" : ">="
     console.log(
-      `  ${mark} ${assertion.id.padEnd(38)} ${String(assertion.count).padStart(4)}× >= ${String(assertion.threshold).padStart(1)} — ${assertion.description} (${assertion.source}, ${gate})`,
+      `  ${mark} ${assertion.id.padEnd(38)} ${String(assertion.count).padStart(4)}× ${comparator} ${String(assertion.threshold).padStart(1)} — ${assertion.description} (${assertion.source}, ${gate})`,
     )
   }
   console.log("")

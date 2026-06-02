@@ -177,7 +177,7 @@ const runExampleAgentScenario =
         "P3B",
         "probeP3B tool dispatch idempotency",
         toolUseCount > 0 ? "observed" : "surfaced-gap",
-        `snapshot ToolUse count=${toolUseCount}; trace surfaced ACP ToolResult codec gap during real tool-result relay`,
+        `snapshot ToolUse count=${toolUseCount}; trace gate asserts ACP provider-executed ToolUse does not relay ToolResult`,
       ),
       migratedProbe(
         "P4A",
