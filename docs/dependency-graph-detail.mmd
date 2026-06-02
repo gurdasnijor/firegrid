@@ -159,42 +159,42 @@ subgraph 2H["events"]
 3P["output.ts"]
 3Q["stage-contracts.ts"]
 3S["webhook-crypto.ts"]
-5K["agent-input.ts"]
+5L["agent-input.ts"]
 end
 subgraph 2K["engine"]
 2L["durable-streams-workflow-engine.ts"]
 subgraph 2M["internal"]
 2N["engine-runtime.ts"]
 2O["table.ts"]
-5I["codec.ts"]
-5J["contract-activity.ts"]
+5J["codec.ts"]
+5K["contract-activity.ts"]
 end
 end
 subgraph 2V["sources"]
 subgraph 2W["codecs"]
 subgraph 2X["acp"]
 2Y["index.ts"]
-4M["stdio-edge.ts"]
-5V["mapping.ts"]
+4N["stdio-edge.ts"]
+5W["mapping.ts"]
 end
 2Z["contract.ts"]
 subgraph 30["stdio-jsonl"]
 31["index.ts"]
 end
-subgraph 5M["agent-adapters"]
-5N["index.ts"]
-subgraph 5O["acp"]
-5P["index.ts"]
-5Q["adapter.ts"]
-5U["mapping.ts"]
+subgraph 5N["agent-adapters"]
+5O["index.ts"]
+subgraph 5P["acp"]
+5Q["index.ts"]
+5R["adapter.ts"]
+5V["mapping.ts"]
 end
-5R["AgentAdapter.ts"]
-5S["current-turn.ts"]
-5T["errors.ts"]
-5W["LanguageModelAdapter.ts"]
+5S["AgentAdapter.ts"]
+5T["current-turn.ts"]
+5U["errors.ts"]
+5X["LanguageModelAdapter.ts"]
 end
-5X["index.ts"]
-5Y["session-byte-stream-adapter.ts"]
+5Y["index.ts"]
+5Z["session-byte-stream-adapter.ts"]
 end
 subgraph 32["sandbox"]
 33["SandboxProvider.ts"]
@@ -206,69 +206,70 @@ subgraph 32["sandbox"]
 3H["process-stream.ts"]
 3I["runtime-command.ts"]
 3K["supervisor-commands.ts"]
-5Z["byte-stream.ts"]
-60["local-process-from-env.ts"]
+60["byte-stream.ts"]
+61["local-process-from-env.ts"]
 end
 end
 subgraph 35["tables"]
 36["codec-adapter-tags.ts"]
 3L["codec-adapter-providers.ts"]
 3N["runtime-output.ts"]
-4X["output-table-layer.ts"]
-61["runtime-output-public.ts"]
+4Y["output-table-layer.ts"]
+62["runtime-output-public.ts"]
 end
 subgraph 3B["channels"]
 3C["host-control.ts"]
 3Y["router.ts"]
-4T["event-channel.ts"]
-4U["index.ts"]
-4V["session-agent-output-route.ts"]
-4W["session-agent-output.ts"]
-4Y["session-lifecycle-route.ts"]
-4Z["session-log.ts"]
-subgraph 50["observation-streams"]
-51["index.ts"]
-52["runtime-observation-streams.ts"]
-53["sources.ts"]
+4M["host-plane-router.ts"]
+4U["event-channel.ts"]
+4V["index.ts"]
+4W["session-agent-output-route.ts"]
+4X["session-agent-output.ts"]
+4Z["session-lifecycle-route.ts"]
+50["session-log.ts"]
+subgraph 51["observation-streams"]
+52["index.ts"]
+53["runtime-observation-streams.ts"]
+54["sources.ts"]
 end
-subgraph 54["router"]
-55["live.ts"]
+subgraph 55["router"]
+56["live.ts"]
 end
-subgraph 56["session-self"]
-57["live.ts"]
+subgraph 57["session-self"]
+58["live.ts"]
 end
-subgraph 58["state-changes"]
-59["live.ts"]
+subgraph 59["state-changes"]
+5A["live.ts"]
 end
-subgraph 5A["verified-webhook"]
-5B["live.ts"]
-5H["source-live.ts"]
+subgraph 5B["verified-webhook"]
+5C["live.ts"]
+5I["source-live.ts"]
 end
 end
 3J["runtime-errors.ts"]
 subgraph 3Z["transforms"]
 40["field-equals.ts"]
-62["decode-ingress-row.ts"]
-63["decode-output-row.ts"]
-64["index.ts"]
+63["decode-ingress-row.ts"]
+64["decode-output-row.ts"]
+65["index.ts"]
 end
 subgraph 4J["bin"]
 4K["_agent-cli.ts"]
 4L["_compose.ts"]
-4N["_main.ts"]
-4O["acp.ts"]
-4P["firegrid.ts"]
-4Q["host.ts"]
-4R["run.ts"]
-4S["start.ts"]
+4O["_main.ts"]
+4P["acp.ts"]
+4Q["firegrid.ts"]
+4R["host.ts"]
+4S["run.ts"]
+4T["start.ts"]
 end
-subgraph 5C["verified-webhook-ingest"]
-5D["index.ts"]
-5E["adapter.ts"]
-5F["keys.ts"]
-5G["table.ts"]
+subgraph 5D["verified-webhook-ingest"]
+5E["index.ts"]
+5F["adapter.ts"]
+5G["keys.ts"]
+5H["table.ts"]
 end
-5L["index.ts"]
+5M["index.ts"]
 end
 end
 subgraph 41["observability"]
@@ -277,69 +278,69 @@ subgraph 42["src"]
 44["node.ts"]
 end
 end
-subgraph 65["tiny-firegrid"]
-subgraph 66["src"]
-subgraph 67["bin"]
-68["fake-acp-agent-process.ts"]
+subgraph 66["tiny-firegrid"]
+subgraph 67["src"]
+subgraph 68["bin"]
+69["fake-acp-agent-process.ts"]
 end
-subgraph 69["experiment"]
-6A["index.ts"]
-end
+subgraph 6A["experiment"]
 6B["index.ts"]
-subgraph 6C["runner"]
-6D["list.ts"]
-6E["perf.ts"]
-6F["trace.ts"]
-6G["phase1-gate.ts"]
-6H["runtime.ts"]
-6I["heartbeat.ts"]
-6J["side.ts"]
-6K["telemetry.ts"]
-6L["show.ts"]
 end
-subgraph 6M["simulations"]
-subgraph 6N["channel-completion-contracts"]
-6O["driver.ts"]
-6P["host.ts"]
-6Q["index.ts"]
+6C["index.ts"]
+subgraph 6D["runner"]
+6E["list.ts"]
+6F["perf.ts"]
+6G["trace.ts"]
+6H["phase1-gate.ts"]
+6I["runtime.ts"]
+6J["heartbeat.ts"]
+6K["side.ts"]
+6L["telemetry.ts"]
+6M["show.ts"]
 end
-subgraph 6S["child-output-existing-channel-router"]
-6T["driver.ts"]
-6U["host.ts"]
-6V["index.ts"]
+subgraph 6N["simulations"]
+subgraph 6O["channel-completion-contracts"]
+6P["driver.ts"]
+6Q["host.ts"]
+6R["index.ts"]
 end
-subgraph 6W["codex-acp-tool-calls"]
-6X["driver.ts"]
-6Y["host.ts"]
-6Z["index.ts"]
+subgraph 6T["child-output-existing-channel-router"]
+6U["driver.ts"]
+6V["host.ts"]
+6W["index.ts"]
 end
-subgraph 70["comp-derisk-ordering"]
-71["driver.ts"]
-72["host.ts"]
-73["index.ts"]
+subgraph 6X["codex-acp-tool-calls"]
+6Y["driver.ts"]
+6Z["host.ts"]
+70["index.ts"]
 end
-subgraph 74["control-plane-cancel-close"]
-75["driver.ts"]
-76["host.ts"]
-77["index.ts"]
+subgraph 71["comp-derisk-ordering"]
+72["driver.ts"]
+73["host.ts"]
+74["index.ts"]
 end
-subgraph 78["factory-capstone"]
-79["driver.ts"]
-7A["host.ts"]
-7B["index.ts"]
+subgraph 75["control-plane-cancel-close"]
+76["driver.ts"]
+77["host.ts"]
+78["index.ts"]
 end
-subgraph 7C["unified-kernel-validation"]
-7D["driver.ts"]
-7E["host.ts"]
-7F["index.ts"]
+subgraph 79["factory-capstone"]
+7A["driver.ts"]
+7B["host.ts"]
+7C["index.ts"]
 end
-subgraph 7G["verified-webhook-wait"]
-7H["driver.ts"]
-7I["host.ts"]
-7J["index.ts"]
+subgraph 7D["unified-kernel-validation"]
+7E["driver.ts"]
+7F["host.ts"]
+7G["index.ts"]
+end
+subgraph 7H["verified-webhook-wait"]
+7I["driver.ts"]
+7J["host.ts"]
+7K["index.ts"]
 end
 end
-6R["types.ts"]
+6S["types.ts"]
 end
 end
 end
@@ -568,11 +569,13 @@ Z-->L
 3V-->V
 3V-->22
 3X-->3Y
+3X-->36
 3X-->40
 3X-->2R
 3X-->3W
 3X-->V
 3X-->W
+3X-->1U
 3Y-->11
 43-->44
 48-->W
@@ -593,8 +596,8 @@ Z-->L
 4F-->4G
 4K-->4L
 4K-->1U
-4L-->3Y
 4L-->4M
+4L-->4N
 4L-->34
 4L-->3L
 4L-->3A
@@ -604,159 +607,164 @@ Z-->L
 4L-->W
 4L-->1U
 4L-->D
+4M-->3Y
 4M-->W
-4N-->4L
-4O-->4M
-4O-->4K
+4M-->D
+4N-->W
 4O-->4L
-4O-->4N
-4Q-->4L
-4Q-->4N
-4R-->4K
+4P-->4N
+4P-->4K
+4P-->4L
+4P-->4O
 4R-->4L
-4R-->4N
-4R-->W
-4S-->4Q
-4T-->W
-4U-->3C
-4U-->3Y
-4U-->4V
-4U-->4W
-4U-->4Y
-4U-->4Z
+4R-->4O
+4S-->4K
+4S-->4L
+4S-->4O
+4S-->W
+4T-->4R
+4U-->W
+4V-->3C
+4V-->4M
 4V-->3Y
-4V-->W
-4W-->4X
+4V-->4W
+4V-->4X
+4V-->4Z
+4V-->50
+4W-->3Y
 4W-->W
-4W-->1U
-4W-->D
+4X-->4Y
+4X-->W
 4X-->1U
-4Y-->3Y
-4Y-->W
+4X-->D
+4Y-->1U
+4Z-->3Y
 4Z-->W
-51-->52
-51-->53
-52-->3N
-55-->4U
-55-->11
-57-->3Y
-57-->4V
-57-->W
-57-->1U
-59-->W
-5B-->5D
-5B-->51
-5B-->W
-5B-->4F
-5D-->5E
-5D-->5F
-5D-->5G
-5E-->3S
-5F-->4F
-5G-->5F
+50-->W
+52-->53
+52-->54
+53-->3N
+56-->4V
+56-->11
+58-->3Y
+58-->4W
+58-->W
+58-->1U
+5A-->W
+5C-->5E
+5C-->52
+5C-->W
+5C-->4F
+5E-->5F
+5E-->5G
+5E-->5H
+5F-->3S
 5G-->4F
-5G-->16
-5H-->5D
-5K-->2I
-5L-->51
-5L-->3P
-5L-->3J
-5L-->5N
-5L-->5X
-5L-->3E
-5L-->34
-5L-->40
-5L-->5D
-5N-->5P
-5N-->5R
-5N-->5S
-5N-->5T
-5N-->5W
-5P-->5Q
-5P-->5U
+5H-->5G
+5H-->4F
+5H-->16
+5I-->5E
+5L-->2I
+5M-->52
+5M-->3P
+5M-->3J
+5M-->5O
+5M-->5Y
+5M-->3E
+5M-->34
+5M-->40
+5M-->5E
+5O-->5Q
+5O-->5S
+5O-->5T
+5O-->5U
+5O-->5X
 5Q-->5R
-5Q-->5S
-5Q-->5T
-5Q-->5U
-5U-->5V
-5U-->5T
-5W-->5R
-5X-->2Y
-5X-->2Z
-5X-->31
-5Y-->3J
-60-->3D
-61-->3N
-62-->5K
-63-->D
-64-->62
-64-->63
-64-->40
-6A-->6
-6B-->6D
-6B-->6E
-6B-->6G
-6B-->6H
-6B-->6L
-6E-->6F
-6G-->6F
-6H-->6I
-6H-->6J
-6H-->6K
-6H-->6
-6I-->6F
-6K-->44
-6L-->6F
-6O-->6
-6P-->2E
-6Q-->6R
-6Q-->6O
-6Q-->6P
-6T-->6
-6U-->2E
-6V-->6R
-6V-->6T
-6V-->6U
-6X-->6
-6Y-->3D
-6Y-->2E
-6Z-->6R
-6Z-->6X
-6Z-->6Y
-71-->6
-72-->2E
-73-->6R
-73-->71
-73-->72
-76-->2E
-77-->6R
-77-->75
-77-->76
-79-->6
-7A-->W
-7A-->1U
-7A-->4U
-7A-->4M
-7A-->3D
-7A-->51
-7A-->2E
-7A-->16
-7B-->6R
-7B-->79
-7B-->7A
-7D-->6
-7E-->2E
-7F-->6R
-7F-->7D
-7F-->7E
-7H-->6
-7I-->W
-7I-->1U
-7I-->4F
-7I-->2E
-7I-->5D
-7I-->16
-7I-->1B
-7J-->6R
-7J-->7H
-7J-->7I
+5Q-->5V
+5R-->5S
+5R-->5T
+5R-->5U
+5R-->5V
+5V-->5W
+5V-->5U
+5X-->5S
+5Y-->2Y
+5Y-->2Z
+5Y-->31
+5Z-->3J
+61-->3D
+62-->3N
+63-->5L
+64-->D
+65-->63
+65-->64
+65-->40
+6B-->6
+6C-->6E
+6C-->6F
+6C-->6H
+6C-->6I
+6C-->6M
+6F-->6G
+6H-->6G
+6I-->6J
+6I-->6K
+6I-->6L
+6I-->6
+6J-->6G
+6L-->44
+6M-->6G
+6P-->6
+6Q-->2E
+6R-->6S
+6R-->6P
+6R-->6Q
+6U-->6
+6V-->2E
+6W-->6S
+6W-->6U
+6W-->6V
+6Y-->6
+6Z-->3D
+6Z-->2E
+70-->6S
+70-->6Y
+70-->6Z
+72-->6
+73-->2E
+74-->6S
+74-->72
+74-->73
+77-->2E
+78-->6S
+78-->76
+78-->77
+7A-->6
+7B-->W
+7B-->1U
+7B-->D
+7B-->4V
+7B-->4N
+7B-->3D
+7B-->52
+7B-->2E
+7B-->16
+7C-->6S
+7C-->7A
+7C-->7B
+7E-->6
+7F-->2E
+7G-->6S
+7G-->7E
+7G-->7F
+7I-->6
+7J-->W
+7J-->1U
+7J-->4F
+7J-->2E
+7J-->5E
+7J-->16
+7J-->1B
+7K-->6S
+7K-->7I
+7K-->7J
