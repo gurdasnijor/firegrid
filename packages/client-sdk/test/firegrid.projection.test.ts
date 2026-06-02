@@ -6,6 +6,8 @@ import {
 } from "@firegrid/protocol/session-facade"
 import {
   FiregridAgentToolOperations,
+  SpawnAllToolInputSchema,
+  SpawnToolInputSchema,
   WaitAnyToolInputSchema,
   WaitForToolInputSchema,
   WaitUntilToolInputSchema,
@@ -37,6 +39,37 @@ describe("Firegrid client schema projection", () => {
     expect(FiregridAgentToolOperations.waitAny.inputSchema).toBe(
       WaitAnyToolInputSchema,
     )
+  })
+
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.4 projects spawn operation ids without legacy suffixes", () => {
+    expect(FiregridAgentToolOperations.spawn.inputSchema).toBe(
+      SpawnToolInputSchema,
+    )
+    expect(FiregridAgentToolOperations.spawnAll.inputSchema).toBe(
+      SpawnAllToolInputSchema,
+    )
+    expect(
+      getFiregridProjectionMetadata(
+        FiregridAgentToolOperations.spawn.inputSchema,
+      ),
+    ).toMatchObject({
+      _tag: "Some",
+      value: {
+        operationId: "session.spawn",
+        toolName: "spawn",
+      },
+    })
+    expect(
+      getFiregridProjectionMetadata(
+        FiregridAgentToolOperations.spawnAll.inputSchema,
+      ),
+    ).toMatchObject({
+      _tag: "Some",
+      value: {
+        operationId: "session.spawnAll",
+        toolName: "spawn_all",
+      },
+    })
   })
 
   it("firegrid-schema-projection-contract.SCHEMA_CATALOG.4 reads client projection metadata from Effect Schema annotations", () => {
