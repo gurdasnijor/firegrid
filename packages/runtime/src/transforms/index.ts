@@ -11,14 +11,6 @@ export {
   type FieldEqualsTrigger,
 } from "./field-equals.ts"
 export {
-  RuntimeContextTransitionActionSchema,
-  RuntimeContextTransitionResultSchema,
-  transitionInputEvent,
-  transitionOutputEvent,
-  type RuntimeContextTransitionAction,
-  type RuntimeContextTransitionResult,
-} from "./runtime-context-transition.ts"
-export {
   RuntimeIngressAgentInputTransformError,
   agentInputEventFromRuntimeIngressRow,
 } from "./decode-ingress-row.ts"

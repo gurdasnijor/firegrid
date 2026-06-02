@@ -18,10 +18,14 @@
     "access": "public"
   },
   "scripts": {
+    "diagnostics": "node ../../tooling/src/effect-diagnostics-check.ts",
     "build": "tsc",
     "check": "pnpm run typecheck && pnpm run test",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@firegrid/runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

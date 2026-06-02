@@ -3,123 +3,45 @@
   "findings": [
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/subscribers/runtime-context-session-workflow/workflow.ts",
-      "line": 84
+      "path": "packages/runtime/src/unified/subscribers/runtime-context.ts",
+      "line": 66,
+      "justification": "Owned durable runtime-context session workflow: one execution per context attempt, parks on Workflow.suspend while waiting for session input signals, owns adapter lifecycle start/send/deregister."
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
-      "line": 50
+      "path": "packages/runtime/src/unified/subscribers/permission-and-tool.ts",
+      "line": 90,
+      "justification": "Owned durable permission wait workflow: records the permission request, parks on the decision signal, then relays the decision back to the owning runtime-context session workflow."
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
-      "line": 59
+      "path": "packages/runtime/src/unified/subscribers/permission-and-tool.ts",
+      "line": 203,
+      "justification": "Tool dispatch is operation-shaped but intentionally owns at-most-once durable tool execution via Workflow idempotency + Activity memoization, then relays through the ToolExecutor/session signal seam."
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
-      "line": 68
+      "path": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
+      "line": 62,
+      "justification": "Owned durable scheduled-prompt workflow: records a schedule commitment and parks on DurableClock.sleep until the owned wake time."
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/subscribers/scheduled-prompt/workflow.ts",
-      "line": 37
+      "path": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
+      "line": 313,
+      "justification": "Owned durable webhook-fact observer workflow: parks on the webhook-fact signal and then reads the corresponding owned fact row written before signal delivery."
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/subscribers/tool-dispatch/workflow.ts",
-      "line": 33
+      "path": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
+      "line": 368,
+      "justification": "Owned durable peer-event observer workflow: parks on the peer-event signal and then reads the corresponding owned peer-event row written before signal delivery."
     },
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/runtime/src/subscribers/wait-router/workflow.ts",
-      "line": 63
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/prototypes/target-topology/subscribers/shape-d/tool-call-workflow.ts",
-      "line": 25
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/input-suspend-crash-recovery/workflow.ts",
-      "line": 62
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/input-suspend-crash-recovery/workflow.ts",
-      "line": 108
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/wait-for-workflow.ts",
-      "line": 63
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
-      "line": 83
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/workflow.ts",
-      "line": 129
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/runtime-context-session-workflow/workflow.ts",
-      "line": 249
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/host.ts",
-      "line": 82
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/shape-d-workflow-admission/resources.ts",
-      "line": 191
-    },
-    {
-      "ruleId": "firegrid-no-unclassified-workflow-make",
-      "path": "packages/tiny-firegrid/src/simulations/shape-d-workflow-admission/resources.ts",
-      "line": 212
-    },
-    {
-      "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
-      "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
-      "line": 502
-    },
-    {
-      "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
-      "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
-      "line": 558
-    },
-    {
-      "ruleId": "firegrid-runtime-no-table-service-yield-outside-providers",
-      "path": "packages/runtime/src/subscribers/runtime-context-session-workflow/workflow.ts",
-      "line": 141
-    },
-    {
-      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
-      "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
-      "line": 196
-    },
-    {
-      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
-      "path": "packages/runtime/src/composition/agent-tool-host-live.ts",
-      "line": 535
-    },
-    {
-      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
-      "path": "packages/runtime/src/composition/host-public.ts",
-      "line": 105
-    },
-    {
-      "ruleId": "firegrid-runtime-no-table-type-parameters-outside-authorities",
-      "path": "packages/runtime/src/composition/host-public.ts",
-      "line": 112
+      "path": "packages/runtime/src/unified/mcp-host/tool-dispatch.ts",
+      "line": 163,
+      "justification": "Reviewed MCP-entry Shape D tool-dispatch owner workflow: one execution per toolUseId, uses Workflow idempotency and Activity memoization for at-most-once tool execution, then returns the synchronous MCP tools/call result without a relay."
     }
   ]
 }

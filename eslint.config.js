@@ -450,6 +450,60 @@ const local = {
         }
       },
     },
+    "simulation-host-real-firegrid-host": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Require tiny-firegrid simulation hosts to compose the real @firegrid/runtime FiregridHost factory.",
+        },
+        schema: [],
+        messages: {
+          missingFactoryImport:
+            "Simulation host.ts must import FiregridHost from @firegrid/runtime/unified and compose that real factory.",
+          missingFactoryCall:
+            "Simulation host.ts must call the imported @firegrid/runtime/unified FiregridHost factory.",
+        },
+      },
+      create(context) {
+        let importedFactoryLocalName
+        let calledFactory = false
+
+        return {
+          ImportDeclaration(node) {
+            if (node.source.value !== "@firegrid/runtime/unified") {
+              return
+            }
+
+            for (const specifier of node.specifiers) {
+              if (
+                specifier.type === "ImportSpecifier" &&
+                specifier.imported.type === "Identifier" &&
+                specifier.imported.name === "FiregridHost"
+              ) {
+                importedFactoryLocalName = specifier.local.name
+              }
+            }
+          },
+          CallExpression(node) {
+            if (
+              importedFactoryLocalName !== undefined &&
+              node.callee.type === "Identifier" &&
+              node.callee.name === importedFactoryLocalName
+            ) {
+              calledFactory = true
+            }
+          },
+          "Program:exit"(node) {
+            if (importedFactoryLocalName === undefined) {
+              context.report({ node, messageId: "missingFactoryImport" })
+            } else if (!calledFactory) {
+              context.report({ node, messageId: "missingFactoryCall" })
+            }
+          },
+        }
+      },
+    },
     // firegrid-remediation-hardening.STATIC_QUALITY.10
     // firegrid-remediation-hardening.EFFECT_CONSISTENCY.2
     "no-extends-error": {
@@ -711,6 +765,11 @@ export default tseslint.config(
         "error",
         {
           patterns: [
+            {
+              group: ["./*", "../*"],
+              message:
+                "Simulation drivers must be airgapped from local host/scenario code; import only @firegrid/client-sdk and effect.",
+            },
             ...legacyDurableAgentSubstrateImportPatterns,
             ...upstreamDurableStreamsImportPatterns,
             ...historicalFiregridDurableStreamsImportPatterns,
@@ -731,6 +790,10 @@ export default tseslint.config(
               group: ["effect-durable-operators", "effect-durable-operators/*"],
               message: "Drivers do not touch durable tables directly. The host owns those.",
             },
+            {
+              group: ["@effect/workflow", "@effect/workflow/*"],
+              message: "Drivers must use the public client surface, not workflow internals.",
+            },
           ],
         },
       ],
@@ -739,6 +802,140 @@ export default tseslint.config(
   {
     files: ["packages/tiny-firegrid/src/simulations/*/host.ts"],
     rules: {
+      "local/simulation-host-real-firegrid-host": "error",
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@firegrid/client-sdk", "@firegrid/client-sdk/*"],
+              message: "Hosts do not use the client. They provide it.",
+            },
+          ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "TSAsExpression[typeAnnotation.typeName.name='FiregridHost'], TSAsExpression[typeAnnotation.typeArguments.params.0.typeName.name='FiregridHost']",
+          message:
+            "Simulation hosts must provide the real FiregridHost factory Layer; do not cast no-op Layers to FiregridHost.",
+        },
+        {
+          selector: "TSAsExpression[typeAnnotation.type='TSUnknownKeyword']",
+          message:
+            "Simulation hosts must not use as unknown as to forge FiregridHost evidence.",
+        },
+        {
+          selector:
+            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
+          message:
+            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+        },
+        {
+          selector: "MemberExpression[object.name='process'][property.name='exit']",
+          message:
+            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+        },
+        {
+          selector:
+            "Property[key.name='claimStatus'], Property[key.value='claimStatus']",
+          message:
+            "Simulations emit traces; claimStatus verdicts belong in prose findings, not code artifacts.",
+        },
+        {
+          selector:
+            "Property[key.name='findings'][value.type='ArrayExpression'], Property[key.value='findings'][value.type='ArrayExpression']",
+          message:
+            "Simulations emit traces; findings arrays belong in prose findings, not code artifacts.",
+        },
+        {
+          selector:
+            "TSAsExpression[typeAnnotation.typeName.name='FiregridHost'], TSAsExpression[typeAnnotation.typeArguments.params.0.typeName.name='FiregridHost']",
+          message:
+            "Simulation hosts must provide the real FiregridHost factory Layer; do not cast no-op Layers to FiregridHost.",
+        },
+        {
+          selector: "TSAsExpression[typeAnnotation.type='TSUnknownKeyword']",
+          message:
+            "Simulation hosts must not use as unknown as to forge FiregridHost evidence.",
+        },
+        {
+          selector:
+            "ImportSpecifier[imported.name='makeRecorderAdapter'], ImportSpecifier[imported.name='RuntimeContextSessionAdapter']",
+          message:
+            "Simulations must exercise production code; do not import recorder adapters or stub RuntimeContextSessionAdapter Lives.",
+        },
+        {
+          selector:
+            "ImportDeclaration[source.value=/fake-codec|fake-sandbox|acp-sandbox-fake|production-flow-scenario|production-flow-acp-scenario/]",
+          message:
+            "Simulations must not import fake codec/sandbox paths or narrowed fake production-flow variants.",
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name='Layer'][callee.property.name='succeed'] > Identifier[name='RuntimeContextSessionAdapter']",
+          message:
+            "Simulations must not provide stubbed RuntimeContextSessionAdapter Lives.",
+        },
+      ],
+    },
+  },
+  {
+    files: ["packages/tiny-firegrid/src/simulations/*/index.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "ImportDeclaration:not([source.value='../../types.ts']):not([source.value='./driver.ts']):not([source.value='./host.ts'])",
+          message:
+            "Simulation index.ts may only import ../../types.ts, ./driver.ts, and ./host.ts.",
+        },
+      ],
+    },
+  },
+  {
+    files: ["packages/tiny-firegrid/src/simulations/*/host.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "TSAsExpression[typeAnnotation.typeName.name='FiregridHost'], TSAsExpression[typeAnnotation.typeArguments.params.0.typeName.name='FiregridHost']",
+          message:
+            "Simulation hosts must provide the real FiregridHost factory Layer; do not cast no-op Layers to FiregridHost.",
+        },
+        {
+          selector: "TSAsExpression[typeAnnotation.type='TSUnknownKeyword']",
+          message:
+            "Simulation hosts must not use as unknown as to forge FiregridHost evidence.",
+        },
+        {
+          selector:
+            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
+          message:
+            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+        },
+        {
+          selector: "MemberExpression[object.name='process'][property.name='exit']",
+          message:
+            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+        },
+        {
+          selector:
+            "Property[key.name='claimStatus'], Property[key.value='claimStatus']",
+          message:
+            "Simulations emit traces; claimStatus verdicts belong in prose findings, not code artifacts.",
+        },
+        {
+          selector:
+            "Property[key.name='findings'][value.type='ArrayExpression'], Property[key.value='findings'][value.type='ArrayExpression']",
+          message:
+            "Simulations emit traces; findings arrays belong in prose findings, not code artifacts.",
+        },
+      ],
       "no-restricted-imports": [
         "error",
         {
@@ -751,6 +948,147 @@ export default tseslint.config(
               message: "Hosts do not use the client. They provide it.",
             },
           ],
+        },
+      ],
+    },
+  },
+  {
+    // tf-r06u.24 R4 — no standalone-script shape in tiny-firegrid/src. A sim is
+    // a folder exporting a host(env)+driver run BY the runner (→ trace → prose
+    // finding), never a script that self-runs an Effect and prints a verdict.
+    // `Effect.runPromise*`/`runSync*` is the standalone-script signal and has
+    // zero legitimate use in src (the CLI entry uses NodeRuntime.runMain), so
+    // it is banned src-wide. (`process.exit` is banned only under simulations/
+    // below — bin/ spawn targets and the runner legitimately exit.)
+    files: ["packages/tiny-firegrid/src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
+          message:
+            "tiny-firegrid/src must not self-run effects. Export a host(env)+driver; the runner executes the sim (simulate run) and emits the trace. A spike that needs to drive a private seam belongs in the owning package's test/ (docs/findings/tf-r06u-25-tiny-firegrid-asset-inventory.md).",
+        },
+      ],
+    },
+  },
+  {
+    // tf-r06u.24 R4 (cont.) — no process.exit inside a sim. Drivers signal
+    // completion by returning; the runner owns process lifecycle. (bin/ spawn
+    // targets + runner/ are infra and may exit, so this is simulations-scoped.)
+    files: ["packages/tiny-firegrid/src/simulations/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
+          message:
+            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+        },
+        {
+          selector: "MemberExpression[object.name='process'][property.name='exit']",
+          message:
+            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+        },
+        {
+          selector:
+            "Property[key.name='claimStatus'], Property[key.value='claimStatus']",
+          message:
+            "Simulations emit traces; claimStatus verdicts belong in prose findings, not code artifacts.",
+        },
+        {
+          selector:
+            "Property[key.name='findings'][value.type='ArrayExpression'], Property[key.value='findings'][value.type='ArrayExpression']",
+          message:
+            "Simulations emit traces; findings arrays belong in prose findings, not code artifacts.",
+        },
+        {
+          selector:
+            "TSAsExpression[typeAnnotation.typeName.name='FiregridHost'], TSAsExpression[typeAnnotation.typeArguments.params.0.typeName.name='FiregridHost']",
+          message:
+            "Simulation hosts must provide the real FiregridHost factory Layer; do not cast no-op Layers to FiregridHost.",
+        },
+        {
+          selector: "TSAsExpression[typeAnnotation.type='TSUnknownKeyword']",
+          message:
+            "Simulation hosts must not use as unknown as to forge FiregridHost evidence.",
+        },
+        {
+          selector:
+            "ImportSpecifier[imported.name='makeRecorderAdapter'], ImportSpecifier[imported.name='RuntimeContextSessionAdapter']",
+          message:
+            "Simulations must exercise production code; do not import recorder adapters or stub RuntimeContextSessionAdapter Lives.",
+        },
+        {
+          selector:
+            "ImportDeclaration[source.value=/fake-codec|fake-sandbox|acp-sandbox-fake|production-flow-scenario|production-flow-acp-scenario/]",
+          message:
+            "Simulations must not import fake codec/sandbox paths or narrowed fake production-flow variants.",
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name='Layer'][callee.property.name='succeed'] > Identifier[name='RuntimeContextSessionAdapter']",
+          message:
+            "Simulations must not provide stubbed RuntimeContextSessionAdapter Lives.",
+        },
+      ],
+    },
+  },
+  {
+    files: ["packages/tiny-firegrid/test/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "Property[key.name='claimStatus'], Property[key.value='claimStatus']",
+          message:
+            "Simulations emit traces; claimStatus verdicts belong in prose findings, not code artifacts.",
+        },
+        {
+          selector:
+            "Property[key.name='findings'][value.type='ArrayExpression'], Property[key.value='findings'][value.type='ArrayExpression']",
+          message:
+            "Simulations emit traces; findings arrays belong in prose findings, not code artifacts.",
+        },
+      ],
+    },
+  },
+  {
+    files: ["packages/tiny-firegrid/src/simulations/*/driver.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "ImportDeclaration:not([source.value=/^(effect($|\\/)|@firegrid\\/client-sdk($|\\/))/])",
+          message:
+            "Simulation drivers may import only @firegrid/client-sdk and effect.",
+        },
+        {
+          selector:
+            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
+          message:
+            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+        },
+        {
+          selector: "MemberExpression[object.name='process'][property.name='exit']",
+          message:
+            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+        },
+        {
+          selector:
+            "Property[key.name='claimStatus'], Property[key.value='claimStatus']",
+          message:
+            "Simulations emit traces; claimStatus verdicts belong in prose findings, not code artifacts.",
+        },
+        {
+          selector:
+            "Property[key.name='findings'][value.type='ArrayExpression'], Property[key.value='findings'][value.type='ArrayExpression']",
+          message:
+            "Simulations emit traces; findings arrays belong in prose findings, not code artifacts.",
         },
       ],
     },
@@ -1260,6 +1598,16 @@ export default tseslint.config(
         "warn",
         ...effectDebtGuardrails,
       ],
+    },
+  },
+  {
+    // process.env belongs at the binary entry boundary: bin/ entry points
+    // (spawn targets, CLI mains) read boundary configuration from env. Mirrors
+    // the semgrep `firegrid-no-process-env-outside-bin` path exclusion of
+    // `packages/*/src/bin/**` and the rule's own stated intent.
+    files: ["packages/*/src/bin/**/*.ts"],
+    rules: {
+      "local/no-process-env-outside-bin": "off",
     },
   },
 )

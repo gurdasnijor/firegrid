@@ -29,14 +29,17 @@ export {
   type FiregridSessionWaitClient,
   type FiregridSessionsClient,
   type PromptInputError,
+  type EventOffset,
   type RuntimeContextHandle,
   type RuntimeContextSnapshot,
-  type RuntimeStartRequestAck,
 } from "./firegrid.ts"
 export {
   FiregridClientOperations,
   type PermissionRespondInput,
-  type PermissionRespondOutput,
+  type SessionCancelToolInput,
+  type SessionCancelToolOutput,
+  type SessionCloseToolInput,
+  type SessionCloseToolOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "./operations.ts"
@@ -48,7 +51,6 @@ export {
 } from "./permission-auto-approve.ts"
 export type {
   PublicPromptRequest,
-  RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
 export type {
   AgentOutputEvent,

@@ -1,0 +1,291 @@
+/**
+ * Permission roundtrip + tool dispatch — two specialized workflow
+ * bodies.
+ *
+ * Each subscriber is specialized to its concern. There is deliberately
+ * NO generic "wait_for any fact" workflow — string-dispatch over a
+ * fact-table name reconstructs the retired SourceCollections /
+ * RuntimeObservationSourceNames registry pattern.
+ *
+ * State minimalism: neither body keeps a parallel result table. The
+ * engine activity table memoizes activity returns; the engine
+ * execution table records each body's final result. The `permissions`
+ * row holds only what the UI needs to render an open request — no
+ * lifecycle status flag.
+ *
+ * Phase 3 feedback loop (SDD §D / §E): each workflow ends with a
+ * terminal `Activity.make` that `sendSignal`s the result back to the
+ * originating session workflow as a `SessionInputPayload`. This bakes
+ * the relay into the workflow itself — no driver-side send required.
+ */
+
+import { Prompt } from "@effect/ai"
+import {
+  Activity,
+  Workflow,
+  type WorkflowEngine,
+} from "@effect/workflow"
+import { Effect, Ref, Schema } from "effect"
+import { awaitSignal, sendSignal, SignalTable } from "../signal.ts"
+import { UnifiedTable, permissionKey } from "../tables.ts"
+import {
+  RuntimeContextSessionWorkflow,
+} from "./runtime-context.ts"
+import {
+  type SessionInputPayload,
+} from "../adapter.ts"
+import {
+  AgentInputEventSchema,
+} from "../../events/contract.ts"
+
+const encodeAgentInputEventJson = Schema.encodeSync(
+  Schema.parseJson(AgentInputEventSchema),
+)
+
+const relaySessionInput = (options: {
+  readonly activityName: string
+  readonly signals: SignalTable["Type"]
+  readonly sessionExecutionId: string
+  readonly signalName: string
+  readonly payload: SessionInputPayload
+}) =>
+  Activity.make({
+    name: options.activityName,
+    success: Schema.Void,
+    execute: sendSignal({
+      signals: options.signals,
+      workflow: RuntimeContextSessionWorkflow,
+      executionId: options.sessionExecutionId,
+      name: options.signalName,
+      write: () => Effect.void,
+      value: options.payload,
+      serializeValue: (value) => JSON.stringify(value),
+    }).pipe(Effect.orDie, Effect.asVoid),
+  })
+
+// ── Shared: session relay payload ───────────────────────────────────────────
+//
+// Both sibling workflows target a specific (contextId, attempt) session
+// execution, carried inline in each workflow payload so the body can compute
+// the session executionId and relay its result via `recordSignal`.
+
+// ── PermissionRoundtripWorkflow ─────────────────────────────────────────────
+
+export const PermissionRoundtripPayloadSchema = Schema.Struct({
+  contextId: Schema.String,
+  attempt: Schema.Number,
+  permissionRequestId: Schema.String,
+  toolUseId: Schema.String,
+})
+export type PermissionRoundtripPayload = Schema.Schema.Type<typeof PermissionRoundtripPayloadSchema>
+
+export const PermissionDecisionSchema = Schema.Literal("allow", "deny", "cancelled")
+export type PermissionDecision = Schema.Schema.Type<typeof PermissionDecisionSchema>
+
+export const PermissionRoundtripResultSchema = Schema.Struct({
+  permissionRequestId: Schema.String,
+  decision: PermissionDecisionSchema,
+})
+
+export const PermissionRoundtripWorkflow = Workflow.make({
+  name: "unified.permission-roundtrip",
+  payload: PermissionRoundtripPayloadSchema,
+  success: PermissionRoundtripResultSchema,
+  idempotencyKey: (p) => `${p.contextId}:${p.permissionRequestId}`,
+})
+
+export const PERMISSION_DECISION_SIGNAL = "permission-decision"
+
+/** Payload shape the responder delivers via sendSignal. */
+export const PermissionDecisionPayloadSchema = Schema.Struct({
+  decision: PermissionDecisionSchema,
+})
+export type PermissionDecisionPayload = Schema.Schema.Type<typeof PermissionDecisionPayloadSchema>
+
+const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
+  Effect.gen(function*() {
+    const table = yield* UnifiedTable
+    const signals = yield* SignalTable
+    const key = permissionKey(payload.contextId, payload.permissionRequestId)
+
+    // Activity-memoized: record the open-request row so the host UI
+    // can render the pending decision. The row holds no lifecycle
+    // status — the decision flows via the signal payload.
+    yield* Activity.make({
+      name: `unified.permission.request/${key}`,
+      success: Schema.Void,
+      execute: table.permissions.insertOrGet({
+        permissionKey: key,
+        contextId: payload.contextId,
+        permissionRequestId: payload.permissionRequestId,
+        toolUseId: payload.toolUseId,
+        requestedAt: new Date().toISOString(),
+      }).pipe(Effect.orDie, Effect.asVoid),
+    })
+
+    // Park until the responder sends the decision signal.
+    const decisionPayload = yield* awaitSignal<PermissionDecisionPayload>({
+      name: PERMISSION_DECISION_SIGNAL,
+    })
+
+    // Feedback signal: deliver the decision back to the originating
+    // session workflow as a `permission-response` input. Activity-memoized;
+    // runs exactly once even across replay. Per SDD §E.
+    const sessionExecutionId = yield* RuntimeContextSessionWorkflow.executionId({
+      contextId: payload.contextId,
+      attempt: payload.attempt,
+    })
+    // Auto-relay shape per SDD §E: payload is a Schema-encoded
+    // AgentInputEvent (PermissionResponse variant). Maps the channel
+    // decision strings ("allow"/"deny"/"cancelled") onto the typed
+    // PermissionDecision discriminated union the codec expects.
+    const decision: { readonly _tag: "Allow" } | { readonly _tag: "Deny" } | { readonly _tag: "Cancelled" } =
+      decisionPayload.decision === "allow"
+        ? { _tag: "Allow" }
+        : decisionPayload.decision === "deny"
+          ? { _tag: "Deny" }
+          : { _tag: "Cancelled" }
+    const permissionResponseEvent = {
+      _tag: "PermissionResponse" as const,
+      permissionRequestId: payload.permissionRequestId,
+      decision,
+    }
+    const relayPayload: SessionInputPayload = {
+      kind: "permission-response",
+      payloadJson: encodeAgentInputEventJson(permissionResponseEvent),
+    }
+    yield* relaySessionInput({
+      activityName: `unified.permission.relay/${key}`,
+      signals,
+      sessionExecutionId,
+      signalName: `permission-response:${payload.permissionRequestId}`,
+      payload: relayPayload,
+    })
+
+    return {
+      permissionRequestId: payload.permissionRequestId,
+      decision: decisionPayload.decision,
+    }
+  }) as Effect.Effect<
+    Schema.Schema.Type<typeof PermissionRoundtripResultSchema>,
+    never,
+    SignalTable | UnifiedTable | WorkflowEngine.WorkflowEngine
+  >
+
+export const buildPermissionRoundtripLayer = () =>
+  PermissionRoundtripWorkflow.toLayer(permissionRoundtripBody)
+
+// ── ToolDispatchWorkflow ────────────────────────────────────────────────────
+//
+// At-most-once via `Workflow.idempotencyKey` (one execution per toolUseId)
+// + `Activity.make` memoization (one executor invocation per execution).
+// No `toolResults` table — the engine activity record IS the durable
+// result, and the workflow execution's `finalResult` is the durable
+// return value.
+//
+// Phase 3 (SDD §D): after executing the tool, relay the result back to
+// the originating session workflow as a `tool-result` input signal.
+
+export const ToolDispatchPayloadSchema = Schema.Struct({
+  contextId: Schema.String,
+  attempt: Schema.Number,
+  toolUseId: Schema.String,
+  toolName: Schema.String,
+  inputJson: Schema.String,
+})
+export type ToolDispatchPayload = Schema.Schema.Type<typeof ToolDispatchPayloadSchema>
+
+export const ToolDispatchResultSchema = Schema.Struct({
+  toolUseId: Schema.String,
+  resultJson: Schema.String,
+})
+
+export const ToolDispatchWorkflow = Workflow.make({
+  name: "unified.tool-dispatch",
+  payload: ToolDispatchPayloadSchema,
+  success: ToolDispatchResultSchema,
+  idempotencyKey: (p) => p.toolUseId,
+})
+
+export interface ToolExecutorState {
+  /** Increments on each genuine executor invocation. Asserted == 1. */
+  readonly invocationCount: Ref.Ref<number>
+}
+
+export interface ToolExecutor {
+  readonly state: ToolExecutorState
+  readonly execute: (
+    payload: ToolDispatchPayload,
+  ) => Effect.Effect<string>
+}
+
+export const makeToolExecutor = (
+  resultFn: (payload: ToolDispatchPayload) => string,
+): Effect.Effect<ToolExecutor> =>
+  Effect.gen(function*() {
+    const invocationCount = yield* Ref.make(0)
+    return {
+      state: { invocationCount },
+      execute: (payload) =>
+        Effect.gen(function*() {
+          yield* Ref.update(invocationCount, (n) => n + 1)
+          return resultFn(payload)
+        }),
+    }
+  })
+
+const toolDispatchBody = (executor: ToolExecutor) =>
+  (payload: ToolDispatchPayload) =>
+    Effect.gen(function*() {
+      const signals = yield* SignalTable
+      const resultJson = yield* Activity.make({
+        name: `unified.tool.execute/${payload.toolUseId}`,
+        success: Schema.String,
+        execute: executor.execute(payload),
+      })
+
+      // Feedback signal: deliver tool result back to the originating
+      // session workflow as a `tool-result` input. Activity-memoized;
+      // runs exactly once. Per SDD §D.
+      const sessionExecutionId = yield* RuntimeContextSessionWorkflow.executionId({
+        contextId: payload.contextId,
+        attempt: payload.attempt,
+      })
+      // Auto-relay shape per SDD §D: payload is a Schema-encoded
+      // AgentInputEvent (ToolResult variant) so the production codec
+      // adapter can decode it back to a typed value and forward to
+      // the codec's session.send. Wrapping the resultJson as the
+      // `ToolResult.part.result` lets the agent receive structured
+      // tool output that round-trips through the codec wire format.
+      const result = yield* Schema.decode(Schema.parseJson())(resultJson).pipe(Effect.orDie)
+      const toolResultEvent = {
+        _tag: "ToolResult" as const,
+        part: Prompt.toolResultPart({
+          id: payload.toolUseId,
+          name: payload.toolName,
+          isFailure: false,
+          providerExecuted: false,
+          result,
+        }),
+      }
+      const relayPayload: SessionInputPayload = {
+        kind: "tool-result",
+        payloadJson: encodeAgentInputEventJson(toolResultEvent),
+      }
+      yield* relaySessionInput({
+        activityName: `unified.tool.relay/${payload.toolUseId}`,
+        signals,
+        sessionExecutionId,
+        signalName: `tool-result:${payload.toolUseId}`,
+        payload: relayPayload,
+      })
+
+      return { toolUseId: payload.toolUseId, resultJson }
+    }) as Effect.Effect<
+      Schema.Schema.Type<typeof ToolDispatchResultSchema>,
+      never,
+      SignalTable | WorkflowEngine.WorkflowEngine
+    >
+
+export const buildToolDispatchLayer = (executor: ToolExecutor) =>
+  ToolDispatchWorkflow.toLayer(toolDispatchBody(executor))

@@ -1,87 +1,54 @@
-// Runtime-owned `firegrid:host` daemon entrypoint.
-//
-// Behavior is preserved verbatim from the previous CLI source
-// `packages/cli/src/bin/host.ts`; only the import edges are re-rooted at
-// runtime canonical homes. The thin `@firegrid/cli` host launcher
-// subprocesses into this file.
-//
-// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
-// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
-//
-// The firegrid:host binary composes through FiregridLocalHostLive,
-// which owns CurrentHostSession internally and derives a deterministic
-// host id from the namespace. No env/disk authority knob.
+/**
+ * Runtime-owned Firegrid host process entrypoint.
+ *
+ * firegrid-runtime-process.BINARIES.10
+ * firegrid-runtime-process.BINARIES.11
+ * firegrid-runtime-process.BINARIES.12
+ * firegrid-runtime-process.EFFECT_PLATFORM.1
+ * firegrid-runtime-process.EFFECT_PLATFORM.2
+ * firegrid-runtime-process.CONFIG_SURFACE.1
+ */
 
-import type { HttpRouter } from "@effect/platform"
 import { NodeRuntime } from "@effect/platform-node"
-import { ensurePathInput } from "@firegrid/protocol/mcp"
-import {
-  FiregridLocalHostLive,
-  RuntimeHostTopologyFromConfig,
-} from "@firegrid/runtime/composition/host-live"
-import { localProcessSpawnEnvFromHostEnv } from "@firegrid/runtime/producers/sandbox"
-import {
-  FiregridMcpServerLayer,
-  FiregridMcpServerListenerConfig,
-} from "@firegrid/runtime/producers/codecs/mcp"
-import { Cause, Console, Effect, Exit, Layer } from "effect"
+import { Console, Data, Effect, Layer } from "effect"
+import { FiregridHost } from "../unified/host.ts"
 
-export const firegridHostProgram = Effect.never
+class MissingHostEnv extends Data.TaggedError("MissingHostEnv")<{
+  readonly name: string
+}> {}
 
-export const firegridHostLayer = Layer.unwrapEffect(
-  Effect.map(
-    Effect.all({
-      topology: RuntimeHostTopologyFromConfig,
-      mcp: FiregridMcpServerListenerConfig,
-    }),
-    ({ topology, mcp }) => {
-      const runtimeHost = FiregridLocalHostLive({
-        ...topology,
-        localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
-      })
-      if (!mcp.enabled) return runtimeHost
-      // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1
-      // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.2
-      return FiregridMcpServerLayer({
-        host: mcp.host,
-        port: mcp.port,
-        path: ensurePathInput(mcp.path) as HttpRouter.PathInput,
-      }).pipe(
-        Layer.provideMerge(runtimeHost),
-      )
-    },
-  ),
-)
-
-// Same daemon-fiber teardown concern as `runtime/bin/run.ts`: when the
-// host process terminates (only path is signal-driven for this bin),
-// `FiregridLocalHostLive`'s reconciler / subscriber daemons are
-// reparented to the global scope via `Effect.forkDaemon`, so the
-// default teardown's "set process.exitCode and let the event loop
-// drain" never returns. Force-exit after recording the code.
-function teardown<E, A>(
-  exit: Exit.Exit<E, A>,
-  onExit: (code: number) => void,
-): void {
-  const code = Exit.match(exit, {
-    onSuccess: () => Number(globalThis.process.exitCode ?? 0),
-    onFailure: (cause) => Cause.isInterruptedOnly(cause) ? 0 : 1,
-  })
-  onExit(code)
-  globalThis.process.exit(code)
-}
-
-export const runFiregridHost = (): void => {
-  // firegrid-runtime-process.BINARIES.12
-  NodeRuntime.runMain(
-    Effect.scoped(
-      Layer.build(firegridHostLayer).pipe(
-        Effect.tap(() => Console.log("Firegrid host running. Press Ctrl-C to stop.")),
-        Effect.zipRight(firegridHostProgram),
-      ),
+const requiredEnv = (name: string): Effect.Effect<string, MissingHostEnv> =>
+  Effect.sync(() => process.env[name]).pipe(
+    Effect.flatMap((value) =>
+      value === undefined || value.trim() === ""
+        ? Effect.fail(new MissingHostEnv({ name }))
+        : Effect.succeed(value),
     ),
-    { teardown },
   )
-}
 
-runFiregridHost()
+const optionalEnv = (name: string): Effect.Effect<string | undefined> =>
+  Effect.sync(() => {
+    const value = process.env[name]
+    return value === undefined || value.trim() === "" ? undefined : value
+  })
+
+const makeHostLayer = Effect.gen(function*() {
+  const durableStreamsBaseUrl = yield* requiredEnv("DURABLE_STREAMS_BASE_URL")
+  const namespace = yield* requiredEnv("FIREGRID_RUNTIME_NAMESPACE")
+  const hostId = yield* optionalEnv("FIREGRID_HOST_ID")
+
+  return FiregridHost({
+    codec: "acp",
+    durableStreamsBaseUrl,
+    namespace,
+    ...(hostId === undefined ? {} : { hostId }),
+  })
+})
+
+const program = Effect.gen(function*() {
+  const hostLayer = yield* makeHostLayer
+  yield* Console.log("Firegrid host started")
+  return yield* Layer.launch(hostLayer).pipe(Effect.zipRight(Effect.never))
+}).pipe(Effect.scoped)
+
+NodeRuntime.runMain(program)

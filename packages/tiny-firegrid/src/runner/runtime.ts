@@ -1,6 +1,6 @@
 import {
   FiregridConfig,
-  FiregridStandaloneLive,
+  FiregridLive,
 } from "@firegrid/client-sdk/firegrid"
 import {
   Console,
@@ -22,6 +22,7 @@ import { stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type {
+  FiregridHost,
   TinyFiregridHostEnv,
   TinyFiregridSimulation,
 } from "../types.ts"
@@ -94,15 +95,17 @@ const latestPath = path.join(simulateRoot, "latest.json")
 const firegridClientLayer = (
   durableStreamsBaseUrl: string,
   namespace: string,
-) =>
-  FiregridStandaloneLive.pipe(
-    Layer.provide(
-      Layer.succeed(FiregridConfig, {
-        durableStreamsBaseUrl,
-        namespace,
-      }),
-    ),
+  hostLayer: Layer.Layer<FiregridHost, unknown>,
+) => {
+  const configLayer = Layer.succeed(FiregridConfig, {
+    durableStreamsBaseUrl,
+    namespace,
+  })
+  return FiregridLive.pipe(
+    Layer.provideMerge(hostLayer),
+    Layer.provide(configLayer),
   )
+}
 
 interface RunOptions {
   readonly timeoutMs: number
@@ -199,6 +202,7 @@ export const runSimulation = (
         ),
       },
     }
+    const hostLayer = simulation.host(hostEnv)
     yield* Effect.acquireRelease(
       Effect.sync(() => {
         const onSigint = Ref.updateAndGet(sigintCount, n => n + 1).pipe(
@@ -235,14 +239,9 @@ export const runSimulation = (
         }),
       )
 
-      yield* Layer.launch(simulation.host(hostEnv)).pipe(
-        annotateSide("host"),
-        Effect.forkScoped,
-      )
-
       const outcome = yield* Effect.raceWith(
         simulation.driver.pipe(
-          Effect.provide(firegridClientLayer(baseUrl, namespace)),
+          Effect.provide(firegridClientLayer(baseUrl, namespace, hostLayer)),
           annotateSide("driver"),
         ),
         Deferred.await(stopSignal),

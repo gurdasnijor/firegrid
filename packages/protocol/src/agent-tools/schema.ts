@@ -25,6 +25,7 @@ import { Schema } from "effect"
 import { firegridProjection } from "../projection/schema.ts"
 import { defineFiregridOperation } from "../operations/schema.ts"
 import { PermissionOptionSchema } from "../agent-output/schema.ts"
+import { EventOffsetSchema } from "../channels/core.ts"
 
 export {
   defineFiregridOperation,
@@ -708,18 +709,10 @@ export type PermissionRespondInput = Schema.Schema.Type<
   typeof PermissionRespondInputSchema
 >
 
-export const PermissionRespondOutputSchema = Schema.Struct({
-  responded: Schema.Literal(true),
-  contextId: Schema.String.pipe(Schema.minLength(1)),
-  permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
-  inputId: Schema.String.pipe(Schema.minLength(1)),
-}).annotations({
-  identifier: "firegrid.operation.permission.respond.output",
-  title: "Permission response output",
-})
-export type PermissionRespondOutput = Schema.Schema.Type<
-  typeof PermissionRespondOutputSchema
->
+// `PermissionRespondOutputSchema` deleted per SDD_FIREGRID_PROTOCOL_
+// RESPONSE_UNIFICATION phase 2. `HostPermissionRespondChannel` is
+// now a `DurableEventChannel` returning `EventOffset`; the `inputId`
+// cross-row reference is replaced by signal-name correlation.
 
 // ---------------------------------------------------------------------------
 // call(approval)
@@ -771,7 +764,7 @@ export const ApprovalCallOutputSchema = Schema.Union(
   Schema.Struct({
     matched: Schema.Literal(true),
     request: ApprovalCallPermissionRequestSchema,
-    response: PermissionRespondOutputSchema,
+    response: EventOffsetSchema,
   }),
   Schema.Struct({
     matched: Schema.Literal(false),
@@ -830,6 +823,6 @@ export const FiregridAgentToolOperations = {
   sessionClose: defineFiregridOperation(SessionCloseToolInputSchema, SessionCloseToolOutputSchema),
   scheduleMe: defineFiregridOperation(ScheduleMeToolInputSchema, ScheduleMeToolOutputSchema),
   execute: defineFiregridOperation(ExecuteToolInputSchema, ExecuteToolOutputSchema),
-  permissionRespond: defineFiregridOperation(PermissionRespondInputSchema, PermissionRespondOutputSchema),
+  permissionRespond: defineFiregridOperation(PermissionRespondInputSchema, EventOffsetSchema),
   call: defineFiregridOperation(CallToolInputSchema, CallToolOutputSchema),
 } as const

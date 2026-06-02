@@ -1,9 +1,9 @@
 import {
   PermissionDecisionSchema,
-  PermissionRespondOutputSchema,
 } from "../agent-tools/schema.ts"
 import { Context, Schema } from "effect"
 import {
+  EventOffsetSchema,
   makeCallableChannel,
   makeChannelTarget,
   type CallableChannel,
@@ -26,7 +26,7 @@ export type SessionPermissionChannelRequest = Schema.Schema.Type<
   typeof SessionPermissionChannelRequestSchema
 >
 
-export const SessionPermissionChannelResponseSchema = PermissionRespondOutputSchema
+export const SessionPermissionChannelResponseSchema = EventOffsetSchema
 export type SessionPermissionChannelResponse = Schema.Schema.Type<
   typeof SessionPermissionChannelResponseSchema
 >

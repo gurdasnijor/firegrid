@@ -30,10 +30,13 @@ callers. Prefer explicit subpaths in new code:
 | `@firegrid/runtime/engine/durable-streams-workflow-engine` | Firegrid-backed `@effect/workflow` engine adapter and durable state row types for engine tests and tiny-firegrid simulations. |
 | `@firegrid/runtime/subscribers/{tool-dispatch,wait-router,scheduled-prompt,runtime-control}` | Runtime-owned Shape D workflow definitions, payload schemas, outcome schemas, and execution-id helpers. |
 | `@firegrid/runtime/events` | Normalized runtime agent event contracts and envelope helpers. |
-| `@firegrid/runtime/codecs` | Scoped codec session contracts and concrete ACP / stdio JSONL session layers. |
-| `@firegrid/runtime/agent-tools` | Firegrid agent tool schemas as Effect AI tools, MCP projection, host-coupled tool services, and tool-use lowering. |
-| `@firegrid/runtime/agent-adapters` | Adapter projections over codec sessions, including ACP adapter helpers. |
-| `@firegrid/runtime/sources/sandbox` | Sandbox and local-process source helpers. App code should prefer `runtime-host` unless it truly needs source-level configuration. |
+| `@firegrid/runtime/sources/codecs` | Scoped codec session contracts and concrete ACP / stdio JSONL session layers (Kafka-Connect "Source" tier — pure emitters). |
+| `@firegrid/runtime/sources/sandbox` | Sandbox and local-process source helpers. App code should prefer `composition/host-live` unless it truly needs producer-level configuration. |
+| `@firegrid/runtime/agent-adapters` | Adapter projections over codec sessions, including ACP adapter helpers (alias for `sources/codecs/agent-adapters`). |
+
+Legacy `@firegrid/runtime/producers/{sandbox,codecs}*` subpaths remain as
+back-compat aliases until PR-M6 of SDD #761 removes them. The
+`@firegrid/runtime/sources/*` paths above are canonical.
 
 Folders under `packages/runtime/src/**` that do not appear above are internal
 implementation boundaries. Avoid adding package exports for review tooling,
@@ -44,23 +47,23 @@ docs-only metadata, compatibility aliases, or tests.
 | Folder | Responsibility |
 | --- | --- |
 | `src/events/` | Normalized agent input/output events, envelope helpers, and stage contracts (pipeline layer 1). |
-| `src/tables/` | Durable runtime state and event-table bindings (pipeline layer 2). |
-| `src/producers/sandbox/` | Live process, byte stream, and sandbox edges (Shape A producers). |
-| `src/producers/codecs/` | Protocol wire/session normalization into `AgentSession` (Shape A producers). |
-| `src/producers/ingress-writers/` | Append authorities bridging live boundaries into durable rows. |
+| `src/capabilities/` | Pure `Context.Tag` declarations for producer write capabilities. Subscribers depend on Tags from here; producers provide Live bindings (pipeline layer 1b). |
+| `src/tables/` | Durable runtime state and event-table bindings — the durable "topics" in the Kafka-broker mapping (pipeline layer 2). |
+| `src/sources/sandbox/` | Live process, byte stream, and sandbox edges (Kafka-Connect "Source" emitters; pipeline layer 3a). |
+| `src/sources/codecs/` | Protocol wire/session normalization into `AgentSession` (Kafka-Connect "Source" emitters; pipeline layer 3a). |
+| `src/sources/codecs/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping (Shape A codec-adjacent). |
+| `src/producers/` | Kafka-broker "Producer" topic writers: layers consuming Streams from `sources/` and appending rows to `tables/` (pipeline layer 3b). Empty after PR-M1; PR-M2/M3 land concrete writers. |
 | `src/transforms/` | Pure stream/row-shaping reducers, decoders, trigger evaluation. |
 | `src/channels/` | Runtime channel implementations, route projections, host-plane router. |
 | `src/subscribers/runtime-context/` | Shape C per-event RuntimeContext handler. |
 | `src/subscribers/runtime-context-session/` | Shape C codec-session command sink. |
 | `src/subscribers/tool-dispatch/` | Shape D tool-dispatch workflow + executor capability. |
 | `src/subscribers/wait-router/`, `scheduled-prompt/`, `runtime-control/`, `projections/` | Shape D/B subscriber landing zones. |
-| `src/composition/` | Runtime-local Layer composition and topology checks. |
-| `src/authorities/` | Runtime control-plane authorities for contexts and runs. |
+| `src/composition/` | Runtime-local Layer composition (topology checks live in `scripts/`). |
 | `src/engine/` | Firegrid durable-table adapter for `@effect/workflow` (leaf-tier substrate). |
-| `src/producers/codecs/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping (Shape A codec-adjacent). |
-| `src/verified-webhook-ingest/` | Adjacent verified webhook fact ingest adapter. |
+| `src/verified-webhook-ingest/` | Adjacent verified webhook fact ingest adapter (split into tier folders in PR-M4 per SDD #761). |
 
-Layer order is `events < tables < producers/transforms/channels < subscribers < composition`. See
+Layer order is `events < capabilities < tables < sources/producers/transforms/channels < subscribers < composition`. See
 [`docs/architecture/2026-05-22-runtime-physical-target-tree.md`](../../docs/architecture/2026-05-22-runtime-physical-target-tree.md)
 for the canonical map. The legacy `src/agent-event-pipeline/`, `src/kernel/`,
 `src/streams/`, `src/runtime-keyed-subscriber/`, and `src/workflow-engine/`
@@ -72,7 +75,7 @@ folders above or deleted dead compatibility shims.
 The runtime event pipeline is:
 
 ```txt
-sources -> codecs -> events -> transforms -> authorities
+sources/sandbox -> sources/codecs -> events -> transforms -> producers -> tables -> subscribers
 ```
 
 The arrows describe role ownership, not import permission. The live-owner
@@ -182,24 +185,37 @@ not construct runtime tables per operation.
 
 ## Tools And Adapters
 
-`src/agent-tools/` owns runtime tool definitions and host-side tool execution.
-It imports shared protocol schemas, exposes Effect AI tools/toolkits, projects
-them to MCP when needed, and lowers codec `ToolUse` events to effects. It is a
-tool boundary, not an agent event-pipeline subscriber.
-
-`src/producers/codecs/agent-adapters/` owns projections over codec sessions,
+`src/sources/codecs/agent-adapters/` owns projections over codec sessions,
 such as language model adapter surfaces and ACP mapping. Adapters do not own
-durable runtime rows or pipeline lifecycle. (Re-homed under
-`producers/codecs/` per the runtime physical target tree — the contract is
-Shape A codec-bound; legacy public subpath `@firegrid/runtime/agent-adapters`
-is preserved.)
+durable runtime rows or pipeline lifecycle. (Re-homed under `sources/codecs/`
+per SDD #761 — the contract is Shape A codec-bound, an emitter not a writer;
+public subpath `@firegrid/runtime/agent-adapters` is preserved as an alias
+for `@firegrid/runtime/sources/codecs/agent-adapters`.)
+
+## External Adapters (Webhooks, Linear, GitHub, …)
+
+External adapters land as **channel registrations** against the existing
+`IngressChannel<S>` / `EgressChannel<S>` / `BidirectionalChannel<S>` /
+`CallableChannel<Req, Res>` primitive in
+`packages/protocol/src/channels/core.ts`. They do **not** introduce a new
+runtime tier.
+
+For HTTP-delivered webhook providers the canonical helper is
+`makeVerifiedWebhookSource` in
+`src/channels/verified-webhook/source-live.ts`. One factory call per
+provider mounts the HTTP listener, calls the existing
+`ingestVerifiedWebhook` adapter, journals into `VerifiedWebhookFactTable`,
+and projects an `IngressChannel` so agents can `wait_for({channel:
+"firegrid.verifiedWebhooks", whereFields})`. See the public recipe at
+`docs/recipes/durable-webhook-facts-and-wait-for.md`.
 
 ## Verified Webhook Ingest
 
-`src/verified-webhook-ingest/` is an adjacent external ingress/source adapter.
-It owns verified webhook fact schemas, key encoding, table declaration, and an
-ingest adapter. It can be observed by durable waits through normal source
-stream patterns, but it is not part of the agent event pipeline.
+`src/verified-webhook-ingest/` is an adjacent module owning verified
+webhook fact schemas, key encoding, table declaration, and the
+`ingestVerifiedWebhook` adapter that the channel-Live helper calls. It is
+not consumed directly by host integrators; reach for
+`channels/verified-webhook/source-live.ts` instead.
 
 ## App Consumer Patterns
 

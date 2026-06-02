@@ -1,154 +1,179 @@
 # Durable Webhook Facts And `wait_for`
 
-Audience: product and runtime engineers wiring provider webhooks into Firegrid
-durable fact flows.
+Audience: product and runtime engineers wiring provider webhooks (Linear,
+GitHub, Slack, custom) into Firegrid durable fact flows that agents can
+observe with `wait_for`.
 
-Use this pattern when a product-owned HTTP route receives a provider webhook
-and a durable process or agent should later wait for that verified fact with
-`wait_for`.
-Verified webhooks are one concrete producer of the broader Firegrid pattern:
-durable facts are ordinary DurableTable rows, and durable-tools can expose any
-registered DurableTable collection to `wait_for`.
+**TL;DR — one call to `makeVerifiedWebhookSource(config)` per adapter.** No
+new tier, no per-provider primitive. The helper composes the existing
+`VerifiedWebhookFactTable` + `IngressChannel` + caller-fact-streams stack
+so the agent's `wait_for({ channel: "firegrid.verifiedWebhooks", whereFields:
+{ source, eventType, … } })` resolves cleanly.
 
-## Ground Truth
+## Status
 
-- Spec: `features/firegrid/firegrid-verified-webhook-ingest.feature.yaml`
-- Spec: `features/firegrid/firegrid-durable-tools.feature.yaml`
-- Runtime README:
-  `packages/runtime/src/verified-webhook-ingest/README.md`
-- `wait_for` README: `packages/runtime/src/durable-tools/README.md`
-- Verified ingest scenario:
-  `scenarios/firegrid/src/tracer-020-verified-webhook-ingest.test.ts`
-- Source registration proof:
-  `packages/runtime/src/durable-tools/WaitFor.test.ts`
-- Agent `wait_for` lowering:
-  `packages/runtime/src/agent-tools/tool-use-to-effect.ts`
-- Agent `wait_for` protocol schema:
-  `packages/protocol/src/agent-tools/schema.ts`
-- Agent `wait_for` tests:
-  `packages/runtime/src/agent-tools/tool-use-to-effect.test.ts`
-- Source collection helper:
-  `packages/runtime/src/durable-tools/internal/source-collections.ts`
-- Table declaration:
-  `packages/runtime/src/verified-webhook-ingest/table.ts`
+- This pattern is **live and tested**. End-to-end proof:
+  - `packages/runtime/test/channels/verified-webhook/source-live.test.ts` —
+    Linear + GitHub through the helper with merged channel projection.
+  - `packages/tiny-firegrid/src/simulations/linear-webhook-cookbook-composition/`
+    — full agent loop (`pnpm simulate:run linear-webhook-cookbook-composition`).
+- Public surface: `@firegrid/runtime/channels/verified-webhook/source-live`
+  (`makeVerifiedWebhookSource`, `mergeWebhookSourceChannels`).
 
-## Shape
-
-The product owns the HTTP edge. That route or Worker captures the raw request
-bytes, resolves the source id and secret, decides provider response status, and
-calls `ingestVerifiedWebhook`.
-
-Firegrid runtime owns the durable fact contract. `ingestVerifiedWebhook`
-verifies the HMAC over raw bytes, decodes JSON only after verification, derives
-the deterministic fact key `[source, externalEventKey]`, and writes through
-`VerifiedWebhookFactTable.verifiedWebhookFacts.insertOrGet`.
-
-Facts land in a normal `DurableTable`:
+## The Pattern, In One Diagram
 
 ```txt
-DurableTable namespace: firegrid.verifiedWebhook
-Collection: verifiedWebhookFacts
-Primary key: factKey = [source, externalEventKey]
+external provider                               Firegrid
+                                                ─────────
+POST /webhooks/linear ──► makeVerifiedWebhookSource({linear config})
+                            │  (mounts HTTP listener)
+                            ▼
+                          ingestVerifiedWebhook
+                            │ HMAC verify on raw bytes
+                            │ JSON decode (post-verify)
+                            │ derive [source, externalEventKey]
+                            ▼
+                          VerifiedWebhookFactTable.insertOrGet
+                            │
+                            ▼
+                          IngressChannel projection
+                            │ filter-decode against your factSchema
+                            ▼
+                          CallerOwnedFactStreams
+                            │ keyed by channel target name
+                            ▼
+                          wait_for({ channel, whereFields }) ◄── agent / workflow
 ```
 
-That same collection is the durable fact store, the live subscription surface,
-and the `wait_for` source. `SourceCollections` exposes its rows to the
-durable-tools router with `sourceCollectionStreamHandle(...)`; no second queue or
-provider-specific registry is needed.
+Everything below the helper boundary is existing runtime infrastructure. The
+helper does the wiring; the boundary stays at the typed channel target name.
 
-Today the ground-truth APIs are concrete and low-level: the product composes
-the table layer, runtime composition registers `sourceCollectionStreamHandle`, and
-callers use either the programmer-facing `WaitFor.match` API or the
-agent-facing `wait_for` tool. A future product/client API may wrap this wiring,
-but that ergonomic wrapper is not the current implementation surface.
-
-## Product Route
-
-Compose the fact table once in the product route or Worker runtime:
+## Add A Provider In ~30 Lines
 
 ```ts
 import {
+  makeVerifiedWebhookSource,
+  mergeWebhookSourceChannels,
+} from "@firegrid/runtime/channels/verified-webhook/source-live"
+import {
   VerifiedWebhookFactTable,
-  ingestVerifiedWebhook,
   verifiedWebhookFactTableLayerOptions,
-} from "@firegrid/runtime"
-import { Effect } from "effect"
+} from "@firegrid/runtime/verified-webhook-ingest"
+import { VerifiedWebhookFactSchema } from "@firegrid/protocol/verified-webhook"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import { Layer } from "effect"
 
-const verifiedWebhookFacts = VerifiedWebhookFactTable.layer(
+const linear = makeVerifiedWebhookSource({
+  source: "linear-prod",
+  factSchema: VerifiedWebhookFactSchema,
+  ingest: {
+    secret: env.LINEAR_WEBHOOK_SECRET,
+    signatureHeaderName: "x-linear-signature",
+    selectedHeaderNames: ["x-linear-signature", "linear-delivery"],
+  },
+  route: { host: "0.0.0.0", port: 8081, path: "/webhooks/linear" },
+})
+
+const github = makeVerifiedWebhookSource({
+  source: "github-prod",
+  factSchema: VerifiedWebhookFactSchema,
+  ingest: {
+    secret: env.GITHUB_WEBHOOK_SECRET,
+    signatureHeaderName: "x-hub-signature-256",
+    externalEventKeyPath: ["pull_request", "node_id"],
+    eventTypePath: ["action"],
+    externalEntityKeyPath: ["repository", "full_name"],
+    selectedHeaderNames: ["x-github-event", "x-github-delivery"],
+  },
+  route: { host: "0.0.0.0", port: 8082, path: "/webhooks/github" },
+})
+
+const factTable = VerifiedWebhookFactTable.layer(
   verifiedWebhookFactTableLayerOptions({
-    streamUrl: `${DURABLE_STREAMS_BASE_URL}/v1/stream/firegrid.verifiedWebhook`,
-    headers: {
-      authorization: () => `Bearer ${DURABLE_STREAMS_TOKEN}`,
-    },
+    streamUrl: durableStreamUrl(env.durableStreamsBaseUrl, "firegrid.verifiedWebhookFacts"),
   }),
 )
 
-const result = await Effect.runPromise(
-  ingestVerifiedWebhook({
-    source: "linear-demo",
-    headers: Object.fromEntries(request.headers),
-    rawBody,
-    config: sourceConfig,
-  }).pipe(Effect.provide(verifiedWebhookFacts)),
+// Merge both sources into one IngressChannel keyed at
+// "firegrid.verifiedWebhooks" so agents wait on one target name.
+const mergedChannelFromTable = mergeWebhookSourceChannels(
+  [linear, github],
+  { mergedSchema: VerifiedWebhookFactSchema },
+)
+
+// Layer assembly. Provide to FiregridLocalHostLive alongside the channel
+// router; see `linear-webhook-cookbook-composition/host.ts` for the full
+// wiring template (the cookbook is the worked example; the helper just
+// removes the per-source boilerplate from it).
+const webhookSources = Layer.mergeAll(
+  factTable,
+  linear.routeLayer.pipe(Layer.provide(factTable)),
+  github.routeLayer.pipe(Layer.provide(factTable)),
 )
 ```
 
-Map `VerifiedWebhookIngestError` at the product edge. For example,
-verification and JSON/key derivation failures are usually client rejections,
-conflicts are usually `409`, and durable write failures are usually `503`.
-The runtime adapter deliberately does not own product response policy.
+The agent then issues:
 
-## Register The Source
-
-Register the DurableTable collection with durable-tools in the runtime-host
-scope that also provides `DurableToolsWaitForLive` and the workflow engine:
-
-```ts
-import {
-  SourceCollections,
-  VerifiedWebhookFactTable,
-  sourceCollectionStreamHandle,
-} from "@firegrid/runtime"
-import { Effect } from "effect"
-
-const verifiedWebhookFactsSource = "firegrid.verifiedWebhooks"
-
-const registerVerifiedWebhookFacts = Effect.gen(function*() {
-  const sources = yield* SourceCollections
-  const table = yield* VerifiedWebhookFactTable
-
-  yield* sources.register(
-    sourceCollectionStreamHandle(
-      verifiedWebhookFactsSource,
-      table.verifiedWebhookFacts.rows(),
-    ),
-  )
-})
+```json
+{
+  "tool": "wait_for",
+  "input": {
+    "eventQuery": {
+      "stream": "firegrid.verifiedWebhooks",
+      "whereFields": {
+        "source": "github-prod",
+        "eventType": "opened",
+        "externalEntityKey": "example/repo"
+      }
+    },
+    "timeoutMs": 60000
+  }
+}
 ```
 
-`sourceCollectionStreamHandle` consumes the collection facade's row observation
-stream. The router receives initial state and live changes through one
-subscription path, so the wait path can match a fact that already exists or
-one that arrives later.
+The wait-router resolves `firegrid.verifiedWebhooks` through
+`CallerOwnedFactStreams`, finds the merged channel stream, matches on the
+scalar fact fields, and returns the matched row to the agent as the
+`wait_for` tool result.
 
-The source name is a product/runtime registration key. The table namespace is
-still `firegrid.verifiedWebhook`, and the collection is still
-`verifiedWebhookFacts`.
+## Ground Truth
 
-## Programmer-Facing Wait API
+| Path | Role |
+| --- | --- |
+| `packages/runtime/src/channels/verified-webhook/source-live.ts` | The helper. |
+| `packages/runtime/src/channels/verified-webhook/live.ts` | The `VerifiedWebhookFactChannel` Tag binding + `CallerOwnedFactStreams` projection. |
+| `packages/runtime/src/verified-webhook-ingest/adapter.ts` | The HMAC-verify + decode + `insertOrGet` body the helper calls. Handles both generic JSON and Linear-shaped payloads. |
+| `packages/protocol/src/channels/verified-webhook.ts` | `VerifiedWebhookFactChannelTarget` (`"firegrid.verifiedWebhooks"`) + `VerifiedWebhookFactChannel` Tag. |
+| `packages/protocol/src/verified-webhook/schema.ts` | `VerifiedWebhookFactSchema`, `LinearWebhookFactSchema`, fact-key encoding. |
+| `packages/tiny-firegrid/src/simulations/linear-webhook-cookbook-composition/` | Full worked example with agent loop. The helper distills its boilerplate. |
 
-`WaitFor.match` is currently the lower-level workflow-handler API. Product or
-runtime code that is already inside that handler boundary waits on scalar row
-fields:
+## What The Helper Does NOT Touch
+
+- **Provider response policy.** The helper returns `202` on success, `400`
+  on signature/decode failure, `500` on internal cause. If your provider
+  expects different codes, mount the helper's `routeLayer` behind your
+  product's HTTP framework and translate.
+- **Secret rotation.** The `ingest.secret` field is a single secret resolved
+  at Layer build time. Rotate by replacing the Layer.
+- **Channel target naming.** Default target is `"firegrid.verifiedWebhooks"`
+  (the shared one). Pass `channelTarget: "myproduct.foo"` to scope a
+  source separately if agents need to wait on it independently.
+- **Egress / outbound.** This recipe is for ingress. Outbound (push to a
+  provider) is a separate channel pattern; see the channel core types
+  (`EgressChannel`, `BidirectionalChannel`, `CallableChannel`) in
+  `packages/protocol/src/channels/core.ts`.
+
+## Programmer-Facing `WaitFor.match`
+
+Inside a workflow handler, the same channel target is observable via
+`WaitFor.match`:
 
 ```ts
-import { VerifiedWebhookFactSchema, WaitFor } from "@firegrid/runtime"
-
 const outcome = yield* WaitFor.match({
   name: "linear-issue-updated",
   source: "firegrid.verifiedWebhooks",
   trigger: [
-    { path: ["source"], equals: "linear-demo" },
+    { path: ["source"], equals: "linear-prod" },
     { path: ["eventType"], equals: "Issue.updated" },
     { path: ["externalEntityKey"], equals: "issue:LIN-123" },
   ],
@@ -157,66 +182,29 @@ const outcome = yield* WaitFor.match({
 })
 ```
 
-The trigger DSL is an AND of scalar field-equality predicates. Put identity
-that callers need to match on top-level fact fields such as `source`,
-`externalEventKey`, `externalEntityKey`, and `eventType`; do not make the
-router understand provider-specific payloads.
-
-## Agent-Facing `wait_for` Tool
-
-Agents use the canonical `wait_for` tool with an `eventQuery`. The tool's
-`eventQuery.stream` is the same source name registered with
-`SourceCollections`; `whereFields` lowers to the same scalar field-equality
-trigger used by `WaitFor.match`:
-
-```json
-{
-  "eventQuery": {
-    "stream": "firegrid.verifiedWebhooks",
-    "whereFields": {
-      "source": "linear-demo",
-      "eventType": "Issue.updated",
-      "externalEntityKey": "issue:LIN-123"
-    }
-  },
-  "timeoutMs": 60000
-}
-```
-
-The current lowering rejects empty `whereFields` and non-scalar values before
-calling durable-tools. On match, the tool returns the matched row as
-`{ "matched": true, "event": ... }`; on timeout, it returns
-`{ "matched": false, "timedOut": true }`.
-
-## Live Observation
-
-Because the fact is just a DurableTable row, live observers can watch the same
-table collection used by `wait_for`. A UI, operator, or runtime diagnostic
-surface should subscribe to or query `VerifiedWebhookFactTable` directly rather
-than asking the ingest route or durable-tools router for separate state.
-
-This keeps one durable authority:
-
-```txt
-product HTTP route / Worker
-  -> ingestVerifiedWebhook(...)
-  -> VerifiedWebhookFactTable.verifiedWebhookFacts.insertOrGet(...)
-  -> DurableTable row
-       -> SourceCollections / wait_for
-       -> live DurableTable subscription or query
-```
+The trigger DSL is AND of scalar field-equality predicates. Match on
+top-level fact fields (`source`, `externalEventKey`, `externalEntityKey`,
+`eventType`); the router does not understand provider-specific payloads.
 
 ## Do Not Reimplement
 
-- Do not add a Firegrid provider POST endpoint. The product owns routes,
-  callback URLs, provider registration, secrets, and response policy.
-- Do not add a Linear-specific registry or event taxonomy in Firegrid runtime.
-  `source` is a configured product source id, not a provider catalog.
-- Do not hide callback behavior in comments or side channels. Durable facts are
-  explicit rows, and callers observe them through `wait_for`.
-- Do not add a separate queue, projection, or source abstraction when
-  DurableTable rows already provide the durable store, subscription surface,
-  and `SourceCollections` handle.
-- Do not raw-append provider JSON to Durable Streams and expect a table row.
-  The ingest adapter translates verified provider payloads into schema-owned
-  DurableTable facts.
+- **Do not** add a new `connectors/` or `adapters/` tier for webhook
+  providers. The channel primitive (`IngressChannel<S>` in
+  `packages/protocol/src/channels/core.ts`) already covers this and is what
+  agents already participate in through the channel router. A spike that
+  introduced a parallel `ConnectorAdapter` primitive was rejected in
+  SDD #761; see its Second Revision section.
+- **Do not** add a provider-specific table. Use `VerifiedWebhookFactTable`.
+  All providers share the same fact-row shape via `VerifiedWebhookFactSchema`;
+  Linear adds typed extra fields via `LinearWebhookFactSchema`.
+- **Do not** raw-append provider JSON to Durable Streams. The ingest
+  adapter translates verified payloads into schema-owned rows.
+- **Do not** hide callback behavior in side channels. Facts are explicit
+  rows; observers see them through `wait_for` or `WaitFor.match`.
+
+## Related
+
+- `docs/recipes/runtime-permission-resume.md` — same channel-as-observation
+  pattern for permission resumption.
+- `packages/runtime/src/channels/README.md` — channel direction taxonomy
+  (ingress / egress / bidirectional / callable).

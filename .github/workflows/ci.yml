@@ -55,6 +55,18 @@ jobs:
       - name: Setup pnpm + Node + install
         uses: ./.github/actions/setup
 
+      # ESLint --cache (see the `lint` script) only re-lints files whose content
+      # or config changed. Persist it across runs so a typical small-diff PR
+      # lints in ~1s instead of a full cold pass. Keyed on the config so any
+      # rule change busts the cache (correctness over a stale hit).
+      - name: Restore ESLint cache
+        uses: actions/cache@v4
+        with:
+          path: .eslintcache
+          key: eslint-${{ runner.os }}-${{ hashFiles('eslint.config.js', 'tsconfig.eslint.json', 'pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            eslint-${{ runner.os }}-${{ hashFiles('eslint.config.js', 'tsconfig.eslint.json', 'pnpm-lock.yaml') }}-
+
       - name: Check feature spec syntax
         run: pnpm run check:specs
 
@@ -78,6 +90,9 @@ jobs:
 
       - name: Check ast-grep style guardrails
         run: pnpm run lint:ast-grep
+
+      - name: Check UKV production trace seams
+        run: pnpm --filter @firegrid/tiny-firegrid run trace:seams:ukv
 
   semgrep:
     name: Semgrep
@@ -114,6 +129,18 @@ jobs:
       - name: Setup pnpm + Node + install
         uses: ./.github/actions/setup
 
+      # Turbo content-hashes task inputs and caches the result; persisting the
+      # cache lets unchanged packages skip typecheck entirely. Unique per-job key
+      # with a shared restore prefix so typecheck and tests seed each other's
+      # cache without racing on the same save.
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-typecheck-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
       - name: Typecheck packages
         run: pnpm --recursive --if-present --workspace-concurrency=4 run typecheck
 
@@ -129,6 +156,17 @@ jobs:
       - name: Setup pnpm + Node + install
         uses: ./.github/actions/setup
 
+      # effect:diagnostics is now a per-package turbo task — persist the cache so
+      # the (seconds-per-package) language-service run is skipped for unchanged
+      # packages. Shared restore prefix with the other turbo jobs, unique save key.
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-diagnostics-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
       - name: Effect diagnostics
         run: pnpm effect:diagnostics
 
@@ -143,6 +181,16 @@ jobs:
 
       - name: Setup pnpm + Node + install
         uses: ./.github/actions/setup
+
+      # See the typecheck job: persist Turbo's cache so unchanged packages skip
+      # their test run. Shared restore prefix, unique save key.
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-tests-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
 
       - name: Test packages
         run: pnpm --recursive --if-present run test

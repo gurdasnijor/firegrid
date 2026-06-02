@@ -1,24 +1,41 @@
 #!/usr/bin/env bash
-# task-enter — start a lane task in a dedicated worktree off origin/main.
+# task-enter — start a lane task in a dedicated worktree off the integration
+# trunk (origin/sim/unified-kernel-validation until PR #765 lands; revert the
+# BASE default to origin/main once #765 is merged — see DEFAULT_BASE below).
 # NEVER squats the primary checkout. Deterministic on the bead id (lanes get
 # renamed mid-session; beads don't).
 #
+# Base branch (where fresh worktrees fork from): --base <ref> | $FIREGRID_TASK_BASE
+# | DEFAULT_BASE. INTEGRATION WINDOW: defaults to the unified-kernel trunk
+# (origin/sim/unified-kernel-validation) because main lacks the kernel; when
+# PR #765 lands, set DEFAULT_BASE back to origin/main (or unset).
+#
 # Usage:
 #   bash scripts/task-enter.sh <bead-id> <slug> [--class codex|sidecar]
+#   bash scripts/task-enter.sh <bead-id> <slug> --base <ref>   # fork base override
 #   bash scripts/task-enter.sh <bead-id> <slug> --resume   # attach EXISTING
 #       branch (e.g. resume PR #326 — preserves its commits; does NOT fork
-#       off main). Default refuses if the branch already exists, so a resume
-#       can never silently orphan committed work.
+#       off the base). Default refuses if the branch already exists, so a
+#       resume can never silently orphan committed work.
+#
+# Fork base precedence: --base <ref>  >  $FIREGRID_TASK_BASE  >  DEFAULT_BASE.
 #
 set -eu
-BEAD="${1:?usage: task-enter.sh <bead-id> <slug> [--class codex|sidecar] [--resume]}"
+# POST-#765: revert DEFAULT_BASE to "origin/main". Until #765 lands,
+# sim/unified-kernel-validation is the integration trunk and lane work must
+# fork off IT (task-enter forked off main → giant phantom diffs vs the kernel).
+DEFAULT_BASE="origin/sim/unified-kernel-validation"
+BEAD="${1:?usage: task-enter.sh <bead-id> <slug> [--class codex|sidecar] [--base ref] [--resume]}"
 SLUG="${2:?need a short slug}"
 CLASS="codex"
 RESUME=0
+BASE="${FIREGRID_TASK_BASE:-$DEFAULT_BASE}"
 shift 2 || true
 while [ $# -gt 0 ]; do case "$1" in
   --class) CLASS="${2:?}"; shift 2 ;;
   --class=*) CLASS="${1#*=}"; shift ;;
+  --base) BASE="${2:?}"; shift 2 ;;
+  --base=*) BASE="${1#*=}"; shift ;;
   --resume) RESUME=1; shift ;;
   *) echo "task-enter: unknown arg $1" >&2; exit 1 ;;
 esac; done
@@ -29,7 +46,9 @@ PARENT="$(dirname "$RR")"
 WT="$PARENT/firegrid-worktrees/${BEAD}-${SLUG}"
 BR="${CLASS}/${BEAD}-${SLUG}"
 
-git -C "$RR" fetch -q origin main 2>/dev/null || true
+# Fetch the fork base (strip a leading "origin/" to get the remote branch).
+BASE_REMOTE_REF="${BASE#origin/}"
+git -C "$RR" fetch -q origin "$BASE_REMOTE_REF" 2>/dev/null || true
 git -C "$RR" fetch -q origin "$BR" 2>/dev/null || true
 
 # Does the branch already exist (local ref or on origin)?
@@ -37,6 +56,7 @@ branch_exists=0
 git -C "$RR" show-ref --verify --quiet "refs/heads/$BR" && branch_exists=1
 git -C "$RR" show-ref --verify --quiet "refs/remotes/origin/$BR" && branch_exists=1
 
+CREATED=0
 if [ -d "$WT" ]; then
   echo "task-enter: worktree already exists → $WT  (cd there and continue)"
 elif [ "$RESUME" = 1 ]; then
@@ -46,15 +66,32 @@ elif [ "$RESUME" = 1 ]; then
   else
     git -C "$RR" worktree add -q "$WT" -b "$BR" --track "origin/$BR"  # local tracking branch from remote tip
   fi
+  CREATED=1
   echo "✓ worktree: $WT  (RESUMED branch $BR — existing commits preserved, not forked off main)"
 elif [ "$branch_exists" = 1 ]; then
   echo "✋ task-enter: branch '$BR' already exists (local or origin)." >&2
-  echo "   A fresh start off main would ORPHAN its commits. To continue that" >&2
+  echo "   A fresh start off $BASE would ORPHAN its commits. To continue that" >&2
   echo "   work pass --resume; to truly start over, delete the branch first." >&2
   exit 1
 else
-  git -C "$RR" worktree add -q "$WT" -b "$BR" origin/main
-  echo "✓ worktree: $WT  (branch $BR, fresh off origin/main)"
+  git -C "$RR" worktree add -q "$WT" -b "$BR" "$BASE"
+  CREATED=1
+  echo "✓ worktree: $WT  (branch $BR, fresh off $BASE)"
+fi
+
+# Install deps into the fresh worktree. The fast `pnpm preflight` delegates to
+# the `tooling` workspace package, so a worktree without node_modules fails the
+# moment a lane runs gates — with a cryptic pnpm ELIFECYCLE + buried
+# "node_modules missing" WARN (cost a lane a diagnosis cycle). Install once here
+# so the lane is gate-ready. Best-effort: a hiccup warns and continues — never
+# blocks starting the task (the lane can always `pnpm install` by hand).
+if [ "$CREATED" = 1 ] && command -v pnpm >/dev/null 2>&1; then
+  echo "→ installing dependencies (pnpm install)…"
+  if (cd "$WT" && pnpm install); then
+    echo "✓ dependencies installed — pnpm preflight is ready"
+  else
+    echo "⚠ pnpm install failed in $WT — run it manually before pnpm preflight" >&2
+  fi
 fi
 
 # Claim the bead through the canonical store inherited from the shell
@@ -67,6 +104,8 @@ cat <<EOF
 
 NEXT:
   cd "$WT"
+  # deps were installed above; \`pnpm preflight\` is ready (re-run \`pnpm install\`
+  # only if the step above warned it failed).
   # tag your lane so lane-sweep can see you (your cmux tab label):
   br update $BEAD --assignee <your-lane-label> --add-label pr-<n>
   # …work, commit here (NEVER in the primary)…

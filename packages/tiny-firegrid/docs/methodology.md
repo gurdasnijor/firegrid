@@ -53,6 +53,71 @@ write a sim, read a trace, or file a finding, you know which job you're doing.
   harness-private instrumentation, not API examples, and should not be imported
   from host-sdk public barrels.
 
+## The workbench pattern
+
+When a *production* tier doesn't exist yet (or was deleted) but you need to
+prove its dynamics and design its contract, build a **workbench sim**. The same
+artifact then pays off three ways: it proves the dynamics, it *is* the design
+bench for the production tier, and it becomes a standing regression sim. The
+loop:
+
+1. **Design the contract as an Effect `Context.Tag`.** The Tag interface is the
+   misuse-resistant contract the production tier will implement — get it right
+   here, where it's cheap. (Prefer composing Effect-native building blocks over
+   re-rolling infra — e.g. surface MCP via `@effect/ai`'s `McpServer`, not a
+   hand-rolled JSON-RPC server.)
+2. **Stub the impl in `host(env)` as a `Layer.succeed` / scoped layer.** The
+   stub is real enough to exercise the dynamics (it stands up the actual
+   endpoint/effect), but lives only in the sim's host composition.
+3. **Drive it through the public client surface in `driver.ts`** —
+   `@firegrid/client-sdk` only. The driver proves an agent/consumer reaches the
+   capability through the *public* seam, not by poking the stub directly.
+4. **Verify dynamics + invariants from the trace** (`simulate show` / `simulate
+   perf` over `trace.jsonl`) and write a **prose finding** (`docs/findings/
+   tf-*.md`). Do not compute a verdict object in-script (see "Three jobs").
+
+Worked example: the **MCP-host discovery sim** (`tf-r06u.23`, converting the
+retired `mcp-reach` spike). It designs an `McpHost` `Context.Tag` (the contract
+the production host-owned MCP-surfacing tier, `tf-r06u.28`, implements), stubs
+it in `host(env)` (standing up an `@effect/ai` `McpServer` over HTTP serving the
+choreography toolkit), and the `client-sdk` driver prompts a session so a
+downstream ACP agent *discovers and calls* a Firegrid-surfaced tool — verified
+from the wire/trace, written up as a prose finding. Live-adapter runs are
+env-gated (the `FIREGRID_UKV_RUN_ACP_LIVE` precedent).
+
+## Static airgap enforcement (misuse-resistance)
+
+The driver/host airgap above is not honor-system — it is enforced in CI, and
+re-introducing a violation turns the build **red**:
+
+- **Layout allowlist** (`scripts/tiny-firegrid-layout-check.mjs`): `src/` holds
+  only `{simulations/, runner/, experiment*, bin/, index.ts, types.ts}`. A spike
+  dropped under a new top-level dir (the retired `prototypes/`) fails the gate.
+- **Sim airgap** (dep-cruiser, whole sim, `host.ts` carved out): no non-`host.ts`
+  sim file may import `@firegrid/{runtime,host-sdk}/src`, protocol internals, or
+  `effect-durable-operators`.
+- **Host factory lock** (eslint, `host.ts`): the host may reach substrate, but
+  must import and call the real `FiregridHost` factory from
+  `@firegrid/runtime/unified`, and must not import `@firegrid/client-sdk`.
+  This keeps driver/client behavior and host/substrate composition separated.
+- **Test airgap** (dep-cruiser, `test/`): tests are public-surface
+  (`@firegrid/client-sdk` allowed); a test reaching runtime/host-sdk/protocol
+  internals belongs in the owning package's `test/`.
+- **No standalone-script shape** (eslint, `src/`): no `Effect.runPromise*` /
+  `runSync*` self-running; no `process.exit` inside a sim. A sim is run *by* the
+  runner, not as a script.
+
+Existing pre-airgap violators are grandfathered through explicit,
+**bead-owned** excludes (never anonymous) that shrink over time — same
+discipline as the Semgrep baseline ledger. New code gets no exemption.
+
+`host.ts` is still the simulation trust boundary: eslint can prove that the
+real host factory is present and called, but it cannot prove every Layer
+composed around that call is semantically honest. Reviewers must still inspect
+host composition for inline fake adapters, stub channel bindings, no-op Layers,
+or other overrides that would replace production Tags before the real factory
+path executes.
+
 ## Stopping a simulation
 
 Stop is an external signal, not an in-driver predicate. The runner creates a

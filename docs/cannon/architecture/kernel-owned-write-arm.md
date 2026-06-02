@@ -1,9 +1,37 @@
 # Kernel-Owned Write+Arm
 
 Doc-Class: dispatchable
-Status: active
-Date: 2026-05-22
+Status: active — PRINCIPLE binding; SUBSTRATE CONTEXT superseded by #765 (see banner)
+Date: 2026-05-22 (substrate-context refreshed 2026-06-01)
 Owner: Firegrid Architecture
+
+> **★ SUBSTRATE-CONTEXT SUPERSEDED by the #765 unified collapse (2026-06-01).**
+> The *principle* below (kernel/controller-owned write+arm; no generic engine
+> sweep; engine stays a mechanism; the arm idempotently **creates-or-resumes**;
+> replay recovers) is **still binding**. But this note was written 2026-05-22,
+> before the unified kernel, so its **mechanism references are stale** — do NOT
+> anchor a new implementation on them:
+> - The "DurableDeferred mailbox (`appendRuntimeInputDeferred` + dispatcher
+>   re-subscription)" described as "today's path" **no longer exists** (deleted
+>   by #765).
+> - The cited `SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md`
+>   **does not exist** — ignore that reference.
+> - **The resume-half of write+arm is ALREADY the unified signal primitive**
+>   `packages/runtime/src/unified/signal.ts`: `sendSignal` (record-row →
+>   companion write → `engine.resume`, the record-before-resume order),
+>   `recoverPendingSignals` (restart re-arm), `insertOrGet` keyed by
+>   `(executionId, name)` (idempotent). `prompt` already uses it.
+> - **Today's actual gap** = the *create* half: `sendSignal` **resumes only**
+>   (`signal.ts:160`), so a fresh session's first signal has no run to resume.
+>   The fix is a **create-or-resume arm on `signal.ts`** (first start
+>   idempotently *creates* the run via a fenced `engine.execute` keyed by
+>   `executionId(contextId, attempt:1)`; later arms resume) **+ wiring
+>   `recoverPendingSignals` into `FiregridHost`** (R14). That work is
+>   **`tf-ll90.3`** — compose the existing primitive, do **not** build a parallel
+>   `kernelWriteArm`/`KernelCommandTable` from this note's pre-unified mechanism.
+> - The Acceptance-Gate's "S1 Probe A/B/C" maps to the unified execution-span
+>   gate **`tf-ll90.19.2`** (assert `execution.execute` / `adapter.start_or_attach`
+>   / `local_process.open_byte_pipe` fired on the real-path sim).
 
 ## Purpose
 
@@ -64,11 +92,15 @@ This is not an input ordering authority. Cross-author arrival order remains a
 non-requirement for the runtime-context body. The controller owns durability and
 wake coupling, not semantic ordering.
 
-Today's production runtime-context input path still uses a DurableDeferred
-mailbox (`appendRuntimeInputDeferred` + dispatcher re-subscription). That is a
-working bridge, not a target invariant. The migration from that bridge to this
-target is specified in
-`../sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md`.
+> **[Superseded 2026-06-01]** The original text here described the pre-#765
+> "DurableDeferred mailbox (`appendRuntimeInputDeferred` + dispatcher
+> re-subscription)" as today's bridge, and pointed to a migration SDD. Both are
+> **gone**: #765 replaced that model with the unified **signal primitive**
+> (`unified/signal.ts`), and `SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md`
+> was never written / does not exist. The current production input path is
+> `sendSignal` (record-before-resume); the remaining migration is purely the
+> **create-or-resume arm + `recoverPendingSignals` host wiring** tracked by
+> `tf-ll90.3` (see the banner at the top of this doc).
 
 ## Guardrails
 

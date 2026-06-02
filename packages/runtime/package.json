@@ -21,14 +21,6 @@
       "types": "./src/tables/per-context-output.ts",
       "default": "./src/tables/per-context-output.ts"
     },
-    "./tool-executor": {
-      "types": "./src/subscribers/tool-dispatch/index.ts",
-      "default": "./src/subscribers/tool-dispatch/index.ts"
-    },
-    "./control-plane": {
-      "types": "./src/subscribers/runtime-control/index.ts",
-      "default": "./src/subscribers/runtime-control/index.ts"
-    },
     "./runtime-output": {
       "types": "./src/tables/runtime-output-public.ts",
       "default": "./src/tables/runtime-output-public.ts"
@@ -36,10 +28,6 @@
     "./streams": {
       "types": "./src/channels/observation-streams/index.ts",
       "default": "./src/channels/observation-streams/index.ts"
-    },
-    "./runtime-keyed-subscriber": {
-      "types": "./src/subscribers/keyed-dispatch/index.ts",
-      "default": "./src/subscribers/keyed-dispatch/index.ts"
     },
     "./verified-webhook-ingest": {
       "types": "./src/verified-webhook-ingest/index.ts",
@@ -49,25 +37,41 @@
       "types": "./src/engine/durable-streams-workflow-engine.ts",
       "default": "./src/engine/durable-streams-workflow-engine.ts"
     },
+    "./unified": {
+      "types": "./src/unified/index.ts",
+      "default": "./src/unified/index.ts"
+    },
     "./events": {
       "types": "./src/events/index.ts",
       "default": "./src/events/index.ts"
     },
+    "./sources/codecs": {
+      "types": "./src/sources/codecs/index.ts",
+      "default": "./src/sources/codecs/index.ts"
+    },
+    "./sources/codecs/session-byte-stream-adapter": {
+      "types": "./src/sources/codecs/session-byte-stream-adapter.ts",
+      "default": "./src/sources/codecs/session-byte-stream-adapter.ts"
+    },
+    "./sources/sandbox/local-process-from-env": {
+      "types": "./src/sources/sandbox/local-process-from-env.ts",
+      "default": "./src/sources/sandbox/local-process-from-env.ts"
+    },
     "./producers/codecs": {
-      "types": "./src/producers/codecs/index.ts",
-      "default": "./src/producers/codecs/index.ts"
+      "types": "./src/sources/codecs/index.ts",
+      "default": "./src/sources/codecs/index.ts"
     },
     "./producers/codecs/session-byte-stream-adapter": {
-      "types": "./src/producers/codecs/session-byte-stream-adapter.ts",
-      "default": "./src/producers/codecs/session-byte-stream-adapter.ts"
+      "types": "./src/sources/codecs/session-byte-stream-adapter.ts",
+      "default": "./src/sources/codecs/session-byte-stream-adapter.ts"
     },
     "./producers/sandbox": {
-      "types": "./src/producers/sandbox/index.ts",
-      "default": "./src/producers/sandbox/index.ts"
+      "types": "./src/sources/sandbox/index.ts",
+      "default": "./src/sources/sandbox/index.ts"
     },
     "./producers/sandbox/local-process-from-env": {
-      "types": "./src/producers/sandbox/local-process-from-env.ts",
-      "default": "./src/producers/sandbox/local-process-from-env.ts"
+      "types": "./src/sources/sandbox/local-process-from-env.ts",
+      "default": "./src/sources/sandbox/local-process-from-env.ts"
     },
     "./channels/router/live": {
       "types": "./src/channels/router/live.ts",
@@ -81,21 +85,9 @@
       "types": "./src/channels/session-self/live.ts",
       "default": "./src/channels/session-self/live.ts"
     },
-    "./channels/host-control/live": {
-      "types": "./src/channels/host-control/live.ts",
-      "default": "./src/channels/host-control/live.ts"
-    },
     "./channels/session-agent-output/live": {
       "types": "./src/channels/session-agent-output/live.ts",
       "default": "./src/channels/session-agent-output/live.ts"
-    },
-    "./channels/session-permission/live": {
-      "types": "./src/channels/session-permission/live.ts",
-      "default": "./src/channels/session-permission/live.ts"
-    },
-    "./channels/host-sessions-create-or-load/live": {
-      "types": "./src/channels/host-sessions-create-or-load/live.ts",
-      "default": "./src/channels/host-sessions-create-or-load/live.ts"
     },
     "./channels/verified-webhook/live": {
       "types": "./src/channels/verified-webhook/live.ts",
@@ -109,113 +101,33 @@
       "types": "./src/channels/state-changes/live.ts",
       "default": "./src/channels/state-changes/live.ts"
     },
-    "./composition/host-public": {
-      "types": "./src/composition/host-public.ts",
-      "default": "./src/composition/host-public.ts"
-    },
-    "./composition/host-substrate": {
-      "types": "./src/composition/host-substrate.ts",
-      "default": "./src/composition/host-substrate.ts"
-    },
-    "./composition/per-context-host-live": {
-      "types": "./src/composition/per-context-host-live.ts",
-      "default": "./src/composition/per-context-host-live.ts"
+    "./sources/codecs/agent-adapters": {
+      "types": "./src/sources/codecs/agent-adapters/index.ts",
+      "default": "./src/sources/codecs/agent-adapters/index.ts"
     },
     "./agent-adapters": {
-      "types": "./src/producers/codecs/agent-adapters/index.ts",
-      "default": "./src/producers/codecs/agent-adapters/index.ts"
+      "types": "./src/sources/codecs/agent-adapters/index.ts",
+      "default": "./src/sources/codecs/agent-adapters/index.ts"
     },
     "./sources/sandbox": {
-      "types": "./src/producers/sandbox/index.ts",
-      "default": "./src/producers/sandbox/index.ts"
-    },
-    "./tables/runtime-context-state": {
-      "types": "./src/tables/runtime-context-state.ts",
-      "default": "./src/tables/runtime-context-state.ts"
-    },
-    "./tables/runtime-context-input-facts": {
-      "types": "./src/tables/runtime-context-input-facts.ts",
-      "default": "./src/tables/runtime-context-input-facts.ts"
-    },
-    "./tables/runtime-control-plane": {
-      "types": "./src/tables/runtime-control-plane.ts",
-      "default": "./src/tables/runtime-control-plane.ts"
-    },
-    "./tables/runtime-control-lifecycle-evidence": {
-      "types": "./src/tables/runtime-control-lifecycle-evidence.ts",
-      "default": "./src/tables/runtime-control-lifecycle-evidence.ts"
-    },
-    "./subscribers/runtime-context-session": {
-      "types": "./src/subscribers/runtime-context-session/index.ts",
-      "default": "./src/subscribers/runtime-context-session/index.ts"
-    },
-    "./subscribers/keyed-dispatch": {
-      "types": "./src/subscribers/keyed-dispatch/index.ts",
-      "default": "./src/subscribers/keyed-dispatch/index.ts"
-    },
-    "./subscribers/tool-dispatch": {
-      "types": "./src/subscribers/tool-dispatch/index.ts",
-      "default": "./src/subscribers/tool-dispatch/index.ts"
-    },
-    "./subscribers/wait-router": {
-      "types": "./src/subscribers/wait-router/index.ts",
-      "default": "./src/subscribers/wait-router/index.ts"
-    },
-    "./subscribers/scheduled-prompt": {
-      "types": "./src/subscribers/scheduled-prompt/index.ts",
-      "default": "./src/subscribers/scheduled-prompt/index.ts"
-    },
-    "./subscribers/runtime-context/host-lookup": {
-      "types": "./src/subscribers/runtime-context/host-lookup.ts",
-      "default": "./src/subscribers/runtime-context/host-lookup.ts"
-    },
-    "./subscribers/runtime-control": {
-      "types": "./src/subscribers/runtime-control/index.ts",
-      "default": "./src/subscribers/runtime-control/index.ts"
-    },
-    "./composition/host-live": {
-      "types": "./src/composition/host-live.ts",
-      "default": "./src/composition/host-live.ts"
-    },
-    "./composition/host-workflow-engine": {
-      "types": "./src/composition/host-workflow-engine.ts",
-      "default": "./src/composition/host-workflow-engine.ts"
-    },
-    "./composition/runtime-host-config": {
-      "types": "./src/channels/runtime-host-config.ts",
-      "default": "./src/channels/runtime-host-config.ts"
+      "types": "./src/sources/sandbox/index.ts",
+      "default": "./src/sources/sandbox/index.ts"
     },
     "./channels/runtime-host-config": {
       "types": "./src/channels/runtime-host-config.ts",
       "default": "./src/channels/runtime-host-config.ts"
     },
-    "./composition/sync-run": {
-      "types": "./src/composition/sync-run.ts",
-      "default": "./src/composition/sync-run.ts"
-    },
     "./transforms": {
       "types": "./src/transforms/index.ts",
       "default": "./src/transforms/index.ts"
     },
-    "./producers/codecs/mcp": {
-      "types": "./src/composition/mcp-host.ts",
-      "default": "./src/composition/mcp-host.ts"
-    },
-    "./composition/mcp-host": {
-      "types": "./src/composition/mcp-host.ts",
-      "default": "./src/composition/mcp-host.ts"
-    },
-    "./composition/runtime-context-mcp-base-url": {
-      "types": "./src/composition/runtime-context-mcp-base-url.ts",
-      "default": "./src/composition/runtime-context-mcp-base-url.ts"
-    },
-    "./producers/codecs/mcp/base-url": {
-      "types": "./src/composition/runtime-context-mcp-base-url.ts",
-      "default": "./src/composition/runtime-context-mcp-base-url.ts"
+    "./sources/codecs/acp/stdio-edge": {
+      "types": "./src/sources/codecs/acp/stdio-edge.ts",
+      "default": "./src/sources/codecs/acp/stdio-edge.ts"
     },
     "./producers/codecs/acp/stdio-edge": {
-      "types": "./src/producers/codecs/acp/stdio-edge.ts",
-      "default": "./src/producers/codecs/acp/stdio-edge.ts"
+      "types": "./src/sources/codecs/acp/stdio-edge.ts",
+      "default": "./src/sources/codecs/acp/stdio-edge.ts"
     }
   },
   "files": [
@@ -226,6 +138,7 @@
     "access": "public"
   },
   "scripts": {
+    "diagnostics": "node ../../tooling/src/effect-diagnostics-check.ts",
     "build": "tsc",
     "check": "pnpm run typecheck && pnpm run test",
     "typecheck": "tsc --noEmit",
@@ -235,14 +148,11 @@
     "@agentclientprotocol/sdk": "0.21.0",
     "@durable-streams/server": "^0.3.1",
     "@effect/ai": "^0.35.0",
-    "@effect/cli": "^0.75.1",
     "@effect/experimental": "0.60.0",
     "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",
     "@effect/rpc": "0.75.1",
     "@effect/workflow": "0.18.1",
-    "@firegrid/client-sdk": "workspace:*",
-    "@firegrid/observability": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "effect": "^3.21.2",
@@ -250,6 +160,7 @@
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.36.1",
+    "@firegrid/client-sdk": "workspace:*",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"

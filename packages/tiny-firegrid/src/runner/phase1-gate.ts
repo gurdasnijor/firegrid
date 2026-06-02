@@ -7,7 +7,7 @@ import {
   type SpanRecord,
 } from "./trace.ts"
 
-export const workflowCorePathsSimulationId = "workflow-core-paths"
+const workflowCorePathsSimulationId = "workflow-core-paths"
 
 const legacySpanNames = [
   "firegrid.durable_tools.wait_for.match",
@@ -152,7 +152,7 @@ const requiredCheck = (
 }
 
 // firegrid-workflow-driven-runtime.VALIDATION.10
-export const analyzePhase1WorkflowCoreGate = (
+const analyzePhase1WorkflowCoreGate = (
   spans: ReadonlyArray<SpanRecord>,
 ): Phase1WorkflowCoreGateReport => {
   const checks = [

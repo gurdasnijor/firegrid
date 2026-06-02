@@ -8,7 +8,10 @@
 export {
   FiregridClientOperations,
   type PermissionRespondInput,
-  type PermissionRespondOutput,
+  type SessionCancelToolInput,
+  type SessionCancelToolOutput,
+  type SessionCloseToolInput,
+  type SessionCloseToolOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "@firegrid/protocol/session-facade"

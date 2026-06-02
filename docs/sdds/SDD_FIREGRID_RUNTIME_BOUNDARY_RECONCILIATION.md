@@ -24,24 +24,32 @@ exists and is documented:
 | Folder | Role | Logical position |
 |---|---|---|
 | `events/` | event vocabulary; pure schemas, no I/O, no `Effect`. | 1 |
-| `tables/` | `DurableTable`-backed state of record. | 2 |
-| `producers/` | Shape A live-boundary appenders (`sandbox/`, `codecs/`, `ingress-writers/`). | 3 |
+| `capabilities/` | pure `Context.Tag` declarations for producer write capabilities (post-SDD #761). | 1b |
+| `tables/` | `DurableTable`-backed state of record (the "topics" in the Kafka-broker mapping). | 2 |
+| `sources/` | Kafka-Connect "Source" emitters: `sandbox/`, `codecs/`. Live boundaries that produce typed `Stream`s; no row authority. | 3a |
+| `producers/` | Kafka-broker "Producer" topic writers: layers that consume Streams from `sources/` and append rows to `tables/`. | 3b |
 | `transforms/` | pure row/event transforms; no `Effect`. | 4 |
-| `channels/` | wire-edge capability boundary (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
+| `channels/` | wire-edge live routing (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
+| `unified/` | unified-kernel validation surface replacing the deleted pre-unified `subscribers/` + `composition/` roots during stabilization. | 6 |
 | `subscribers/` | keyed subscribers — Shape B/C/D recorded in folder READMEs (`projections/`, `runtime-context/`, `runtime-context-session/`, `tool-dispatch/`, `wait-router/`, `scheduled-prompt/`, `runtime-control/`). | 6 |
 | `composition/` | runtime-local layer-graph wiring + topology checks. | 7 |
 | `bin/` | runtime-owned daemon/process entrypoints (`firegrid run`, `firegrid start`, `firegrid acp`); outside pipeline order and allowed to compose public client + runtime host surfaces. | — |
 | `_archive/` | time-boxed holding pen for wrong-shape code pending deletion. | — |
 
-Folder names are semantic. The pipeline order `events < tables <
-producers / transforms / channels < subscribers < composition` is a docs and
-lint convention; numeric prefixes (`1-events/`, `2-tables/`, …) are forbidden
-at the runtime root and the public-surface guard rejects them. The host-sdk
-import gate (Semgrep rules `firegrid-host-sdk-no-runtime-kernel-import`,
+Folder names are semantic. The pipeline order `events < capabilities < tables <
+sources / producers / transforms / channels < subscribers < composition` is a
+docs and lint convention; numeric prefixes (`1-events/`, `2-tables/`, …) are
+forbidden at the runtime root and the public-surface guard rejects them. The
+host-sdk import gate (Semgrep rules `firegrid-host-sdk-no-runtime-kernel-import`,
 `firegrid-host-sdk-no-runtime-archive-import`,
 `firegrid-no-numbered-runtime-subpath`) blocks host-sdk imports of the
 runtime `kernel/` barrel, the `_archive/` holding pen, and any numeric
 runtime subpath.
+
+The post-PR-M1 `sources/` and `producers/` split implements
+`docs/sdds/SDD_FIREGRID_RUNTIME_SOURCE_PRODUCER_ROLES.md`: `sources/` is for
+emitters that just produce streams (no `tables/` import), and `producers/`
+is for the topic-writer role that journals those streams into `tables/`.
 
 The classification tables below remain accurate for the pre-cutover tree.
 When a folder in those tables is moved or deleted as part of the cutover,

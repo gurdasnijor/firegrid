@@ -91,12 +91,14 @@ export {
   isStreamAuthorityAst,
   makeHostSessionRow,
   makeHostStreamPrefix,
+  namespaceRuntimeOutputStreamName,
   namespaceRuntimeStreamName,
   runtimeControlPlaneStreamUrl,
   runtimeContextOutputStreamName,
   runtimeContextOutputStreamUrl,
   runtimeContextWorkflowStreamName,
   runtimeContextWorkflowStreamUrl,
+  runtimeOutputStreamUrl,
   streamAuthority,
   type HostId,
   type HostIdSegment,
@@ -118,21 +120,9 @@ export {
   provideRuntimeContext,
   requireLocalContext,
 } from "./host-context-authority.ts"
-export {
-  requestRuntimeContextCreate,
-} from "./host-context-request-binding.ts"
-export {
-  makeHostSessionsCreateOrLoadRequestRowChannel,
-  requestHostSessionCreateOrLoad,
-} from "./host-session-create-or-load-request.ts"
-export {
-  makeHostContextsChannel,
-  makeHostContextsCreateChannel,
-  makeHostPermissionRespondChannel,
-  makeHostPromptChannel,
-  makeHostSessionsStartChannel,
-  makeSessionPromptChannelForSession,
-} from "./host-control-request.ts"
+// Per SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION phase 2: legacy
+// binding factories deleted. Channel bindings live in
+// `@firegrid/runtime/unified/channel-bindings` and route via signals.
 export {
   RuntimeStartCapability,
   RuntimeStartOptionsSchema,
@@ -148,13 +138,11 @@ export {
   RuntimeControlRequestKindSchema,
   RuntimeContextRequestRowSchema,
   RuntimeLifecycleRequestRowSchema,
-  RuntimeStartRequestAckSchema,
   RuntimeStartRequestRowSchema,
   makeRuntimeControlRequestClaimRow,
   makeRuntimeControlRequestCompletionRow,
   makeRuntimeContextRequestRow,
   makeRuntimeLifecycleRequestRow,
-  makeRuntimeStartRequestAck,
   makeRuntimeStartRequestRow,
   runtimeCancelRequestClaimId,
   runtimeCancelRequestId,
@@ -170,21 +158,15 @@ export {
   type RuntimeControlRequestKind,
   type RuntimeContextRequestRow,
   type RuntimeLifecycleRequestRow,
-  type RuntimeStartRequestAck,
   type RuntimeStartRequestRow,
 } from "./control-request.ts"
 export {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  type RuntimeControlRequestClaimRow as RuntimeControlRequestClaimTableRow,
-  type RuntimeControlRequestCompletionRow as RuntimeControlRequestCompletionTableRow,
-  type RuntimeContextRequestRow as RuntimeContextRequestTableRow,
   type RuntimeControlPlaneTableService,
   type RuntimeContextRow,
   type RuntimeEventRow,
-  type RuntimeInputIntentRow,
   type RuntimeLogLineRow,
   type RuntimeOutputTableService,
   type RuntimeRunEventRow,
-  type RuntimeStartRequestRow as RuntimeStartRequestTableRow,
 } from "./table.ts"

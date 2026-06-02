@@ -1,4 +1,6 @@
 const hostSdkBoundaryModules = "^packages/host-sdk/src"
+const hostSdkPublicCompositionSurface = "^packages/host-sdk/src/index\\.ts$"
+const runtimeUnifiedPublicSurface = "^packages/runtime/src/unified/index\\.ts$"
 
 const sanctionedRuntimeCapabilitySubpaths = [
   // Runtime-owned capability tags and public observation/protocol projections
@@ -20,6 +22,13 @@ const sanctionedRuntimeCapabilitySubpaths = [
   "events/index\\.ts$",
   "events/agent-input\\.ts$",
   "events/agent-output\\.ts$",
+  // Canonical post-PR-M1 source-tier subpaths (sandbox + codecs moved
+  // from producers/ to sources/ per SDD #761). The producers/* paths
+  // below remain as back-compat aliases until PR-M6.
+  "sources/codecs/index\\.ts$",
+  "sources/codecs/session-byte-stream-adapter\\.ts$",
+  "sources/codecs/agent-adapters/index\\.ts$",
+  "sources/sandbox/index\\.ts$",
   "producers/codecs/index\\.ts$",
   "producers/codecs/session-byte-stream-adapter\\.ts$",
   "producers/codecs/agent-adapters/index\\.ts$",
@@ -106,11 +115,13 @@ module.exports = {
       name: "runtime-events-no-higher-tier-import",
       severity: "error",
       comment:
-        "events/ is the pure event-vocabulary tier. It must not import from tables/, transforms/, channels/, producers/, subscribers/, composition/, workflow-engine/, or agent-event-pipeline/. Move shared types INTO events/ and have the higher tier re-export from there. Direct cause: PR #695 first push had events/runtime-context-state.ts re-exporting from ../tables/runtime-context-state.ts — wrong direction. The prior `agent-event-pipeline/events/` bridge carve-out is now obsolete (AEP retired by the cleanup wave); the canonical event-vocabulary source files were physically moved into this folder.",
+        "events/ is the pure event-vocabulary tier. It must not import from any higher tier. Move shared types INTO events/ and have the higher tier re-export from there.",
       from: { path: "^packages/runtime/src/events/" },
       to: {
         path: [
+          "^packages/runtime/src/capabilities/",
           "^packages/runtime/src/tables/",
+          "^packages/runtime/src/sources/",
           "^packages/runtime/src/transforms/",
           "^packages/runtime/src/channels/",
           "^packages/runtime/src/producers/",
@@ -122,13 +133,31 @@ module.exports = {
       },
     },
     {
+      name: "runtime-capabilities-no-higher-tier-import",
+      severity: "error",
+      comment:
+        "capabilities/ holds pure Context.Tag declarations. It may import events/ + tables/ for row type references in Tag service shapes. It must not import any behavior-bearing tier (sources/, transforms/, channels/, producers/, subscribers/, composition/) — those tiers depend on capabilities/, not the other way around.",
+      from: { path: "^packages/runtime/src/capabilities/" },
+      to: {
+        path: [
+          "^packages/runtime/src/sources/",
+          "^packages/runtime/src/transforms/",
+          "^packages/runtime/src/channels/",
+          "^packages/runtime/src/producers/",
+          "^packages/runtime/src/subscribers/",
+          "^packages/runtime/src/composition/",
+        ],
+      },
+    },
+    {
       name: "runtime-tables-no-higher-tier-import",
       severity: "error",
       comment:
-        "tables/ is the durable state-of-record tier; it may depend on events/ + protocol. It must not import from transforms/ (transforms are pure consumers of events, not callable from tables), channels/, producers/, subscribers/, or composition/.",
+        "tables/ is the durable state-of-record tier; it may depend on events/ + capabilities/ + protocol. It must not import from sources/, transforms/, channels/, producers/, subscribers/, or composition/.",
       from: { path: "^packages/runtime/src/tables/" },
       to: {
         path: [
+          "^packages/runtime/src/sources/",
           "^packages/runtime/src/transforms/",
           "^packages/runtime/src/channels/",
           "^packages/runtime/src/producers/",
@@ -141,11 +170,12 @@ module.exports = {
       name: "runtime-transforms-no-higher-tier-import",
       severity: "error",
       comment:
-        "transforms/ is the pure-function tier. It may depend on events/ and protocol. It must not import from tables/, channels/, producers/, subscribers/, composition/, or the legacy agent-event-pipeline/ tree (the pre-cutover event-vocab home — use events/ instead).",
+        "transforms/ is the pure-function tier. It may depend on events/ + capabilities/ + protocol. It must not import from tables/, sources/, channels/, producers/, subscribers/, composition/, or the legacy agent-event-pipeline/ tree.",
       from: { path: "^packages/runtime/src/transforms/" },
       to: {
         path: [
           "^packages/runtime/src/tables/",
+          "^packages/runtime/src/sources/",
           "^packages/runtime/src/channels/",
           "^packages/runtime/src/producers/",
           "^packages/runtime/src/subscribers/",
@@ -155,10 +185,27 @@ module.exports = {
       },
     },
     {
+      name: "runtime-sources-no-peer-or-higher-tier-import",
+      severity: "error",
+      comment:
+        "sources/ owns Kafka-Connect 'Source' emitters: live boundaries that produce typed Streams. Sources have no row authority and must not import tables/. They must not import peers (producers/, transforms/, channels/), subscribers/, or composition/. Allowed: events/, capabilities/, protocol, external transport SDKs.",
+      from: { path: "^packages/runtime/src/sources/" },
+      to: {
+        path: [
+          "^packages/runtime/src/tables/",
+          "^packages/runtime/src/producers/",
+          "^packages/runtime/src/transforms/",
+          "^packages/runtime/src/channels/",
+          "^packages/runtime/src/subscribers/",
+          "^packages/runtime/src/composition/",
+        ],
+      },
+    },
+    {
       name: "runtime-producers-no-peer-or-higher-tier-import",
       severity: "error",
       comment:
-        "producers/ is a middle tier; per the target-tree doc, producers/transforms/channels are peers and peers do not import each other. producers/ may import only events/ + tables/ (+ allowed external libs); it must not import transforms/, channels/, subscribers/, or composition/. Carve-out: producers/ingress-writers/per-context-output.ts (moved from agent-event-pipeline/authorities/) imports channels/output-table-layer.ts as the shared per-context RuntimeOutputTable factory. That module is the single source of truth for the per-context output stream URL + table options and is shared with the channels themselves; relocating it into tables/ is the cleanup follow-up. Carve-out shrinks when that move lands.",
+        "producers/ owns Kafka-broker 'Producer' topic writers (post-SDD #761): layers that consume a Stream from sources/ and append rows to tables/. May import events/, capabilities/, tables/, sources/. Must not import peers (transforms/, channels/), subscribers/, or composition/. The per-context-output writer carve-out for channels/output-table-layer.ts is retained — the shared per-context RuntimeOutputTable factory is the single source of truth for the per-context output stream URL + table options.",
       from: { path: "^packages/runtime/src/producers/" },
       to: {
         path: [
@@ -176,125 +223,15 @@ module.exports = {
       name: "runtime-channels-no-peer-or-higher-tier-import",
       severity: "error",
       comment:
-        "channels/ is a middle tier; per the target-tree doc, channels/transforms/producers are peers and peers do not import each other. channels/ may import only events/ + tables/ (+ protocol/external libs); it must not import transforms/, producers/, subscribers/, or composition/.",
+        "channels/ is a middle tier; channels/sources/transforms/producers are peers and peers do not import each other. channels/ may import events/, capabilities/, tables/ (+ protocol/external libs); it must not import sources/, transforms/, producers/, subscribers/, or composition/.",
       from: { path: "^packages/runtime/src/channels/" },
       to: {
         path: [
+          "^packages/runtime/src/sources/",
           "^packages/runtime/src/transforms/",
           "^packages/runtime/src/producers/",
           "^packages/runtime/src/subscribers/",
           "^packages/runtime/src/composition/",
-        ],
-      },
-    },
-    {
-      name: "runtime-subscribers-no-composition-import",
-      severity: "error",
-      comment:
-        "subscribers/ depend on typed lower-tier sources (tables/, transforms/, channels/, events/). composition/ wires subscribers into the runtime graph, not the reverse.",
-      from: { path: "^packages/runtime/src/subscribers/" },
-      to: { path: "^packages/runtime/src/composition/" },
-    },
-    {
-      name: "runtime-subscribers-no-producers-import",
-      severity: "error",
-      comment:
-        "HARD STOP per the target-tree roadmap: subscribers/ must not import producers/, full stop. Subscribers depend on typed lower-tier sources (tables/, transforms/, channels/, events/). A subscriber that needs producer behavior either needs a typed table read (cleaner) or itself crosses into producer responsibilities (wrong tier). The Shape C-specific rule below stays in place for sharper messaging on the runtime-context subtree.",
-      from: { path: "^packages/runtime/src/subscribers/" },
-      to: { path: "^packages/runtime/src/producers/" },
-    },
-    {
-      name: "runtime-shape-c-runtime-context-no-producers-import",
-      severity: "error",
-      comment:
-        "Shape C subscribers under subscribers/runtime-context/ and subscribers/runtime-context-session/ depend on typed table reads + narrow channel tags. Importing from producers/ either grows a write authority into the per-event handler (Shape D drift) or duplicates a producer's own responsibilities. (Redundant with the broader subscribers->producers ban above; kept for the sharper Shape C message.)",
-      from: {
-        path: [
-          "^packages/runtime/src/subscribers/runtime-context/",
-          "^packages/runtime/src/subscribers/runtime-context-session/",
-        ],
-      },
-      to: { path: "^packages/runtime/src/producers/" },
-    },
-    {
-      name: "runtime-tables-no-legacy-tree-import",
-      severity: "error",
-      comment:
-        "Target-tree tables/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. The Wave A semantic move makes tables/ self-contained (it depends on events/ + protocol only); imports back into the legacy tree defeat the move. Bead-owned carve-out tf-f9n1: `tables/runtime-context-output-facts.ts` is a thin target-tree facade for the per-context output observation source the Shape C subscriber consumes; the canonical Live binding (`RuntimeAgentOutputAfterEvents`) still lives in `agent-event-pipeline/authorities/runtime-output-journal.ts` until the physical move lands in Wave 2. The carve-out shrinks to a deletion when tf-f9n1 moves the symbol.",
-      from: {
-        path: "^packages/runtime/src/tables/",
-        // Bead tf-f9n1 — Wave 2 tables/ physical move of RuntimeAgentOutputAfterEvents
-        pathNot: [
-          "^packages/runtime/src/tables/runtime-context-output-facts\\.ts$",
-        ],
-      },
-      to: {
-        path: [
-          "^packages/runtime/src/workflow-engine/",
-          "^packages/runtime/src/agent-event-pipeline/",
-        ],
-      },
-    },
-    {
-      name: "runtime-producers-no-legacy-tree-import",
-      severity: "error",
-      comment:
-        "Target-tree producers/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. Wave A semantic-move enforcement.",
-      from: { path: "^packages/runtime/src/producers/" },
-      to: {
-        path: [
-          "^packages/runtime/src/workflow-engine/",
-          "^packages/runtime/src/agent-event-pipeline/",
-        ],
-      },
-    },
-    {
-      name: "runtime-channels-no-legacy-tree-import",
-      severity: "error",
-      comment:
-        "Target-tree channels/ folder must not reach back into the legacy workflow-engine/ or agent-event-pipeline/ subtrees. Wave A semantic-move enforcement.",
-      from: { path: "^packages/runtime/src/channels/" },
-      to: {
-        path: [
-          "^packages/runtime/src/workflow-engine/",
-          "^packages/runtime/src/agent-event-pipeline/",
-        ],
-      },
-    },
-    {
-      name: "runtime-subscribers-no-legacy-tree-import",
-      severity: "error",
-      comment:
-        "Target-tree subscribers/ folder must not reach back into the legacy workflow-engine/, agent-event-pipeline/, or authorities/ subtrees. Each currently-sanctioned target->legacy edge carries a bead-numbered carve-out below (no anonymous carve-outs; audit gate added 2026-05-23). Edge inventory: tf-hpr0 WaitForWorkflow collapse (subscribers/wait-router/index.ts -> workflow-engine/workflows/wait-for.ts); tf-6hqx ScheduledPromptWorkflow physical move (subscribers/scheduled-prompt/index.ts -> workflow-engine/workflows/scheduled-prompt.ts); tf-6cdy authorities/ retirement, two edges (subscribers/runtime-context/index.ts -> authorities/index.ts, subscribers/runtime-context/handler.ts -> authorities/runtime-control-plane-recorder.ts). The tf-up1v RuntimeToolUseExecutor placement and tf-vfq9 ToolCallWorkflow cutover edges were retired this wave: those source files physically moved into subscribers/tool-dispatch/, eliminating the legacy edges. All other workflow-engine/ + agent-event-pipeline/ + authorities/ subpaths remain banned. Each remaining carve-out shrinks to a deletion when the named bead lands the target-tree physical move.",
-      from: { path: "^packages/runtime/src/subscribers/" },
-      to: {
-        path: [
-          "^packages/runtime/src/workflow-engine/",
-          "^packages/runtime/src/agent-event-pipeline/",
-          "^packages/runtime/src/authorities/",
-        ],
-        pathNot: [
-          // Bead tf-hpr0 — Collapse WaitForWorkflow into owning-workflow primitive
-          "^packages/runtime/src/workflow-engine/workflows/wait-for\\.ts$",
-          // Bead tf-6hqx — Wave D-A subscribers/scheduled-prompt physical move
-          "^packages/runtime/src/workflow-engine/workflows/scheduled-prompt\\.ts$",
-          // Bead tf-6cdy — Wave D-A authorities/ retirement (covers both
-          // authorities/index.ts and authorities/runtime-control-plane-recorder.ts)
-          "^packages/runtime/src/authorities/index\\.ts$",
-          "^packages/runtime/src/authorities/runtime-control-plane-recorder\\.ts$",
-        ],
-      },
-    },
-    {
-      name: "runtime-composition-no-legacy-tree-import",
-      severity: "error",
-      comment:
-        "composition/ wires the runtime layer graph from target-tree exports only (events/, tables/, transforms/, channels/, producers/, subscribers/). It must not import from the legacy workflow-engine/ or agent-event-pipeline/ subtrees — not via relative path (`../workflow-engine/...`, `../agent-event-pipeline/...`) and not via the public barrel (`@firegrid/runtime/workflow-engine/...` etc., resolved to the same tree). Shape D temporary target shims under `subscribers/<name>/` may still re-export from current legacy implementation homes; composition imports the TARGET path (`subscribers/<name>/`), not the legacy barrel. Gap finding: #696's existing `firegrid-composition-no-legacy-imports` (semgrep) caught legacy SYMBOL names + a few specific paths (retired body driver, mailbox, kernel barrel, archive); CC1's Wave B draft showed those signatures weren't enough — relative `../workflow-engine` / `../agent-event-pipeline` imports slipped through. This rule closes that. The prior `DurableStreamsWorkflowEngine.ts` exact-file substrate-residue carve-out shrank to deletion in the tf-z8wq Wave 2 mechanical move: the engine substrate now lives at `packages/runtime/src/engine/` (canonical leaf-tier substrate per `docs/architecture/2026-05-22-runtime-physical-target-tree.md`); composition reaches it via `../engine/durable-streams-workflow-engine.ts`, which is forward-flow and not subject to this rule.",
-      from: { path: "^packages/runtime/src/composition/" },
-      to: {
-        path: [
-          "^packages/runtime/src/workflow-engine/",
-          "^packages/runtime/src/agent-event-pipeline/",
         ],
       },
     },
@@ -439,10 +376,24 @@ module.exports = {
         "Lane D hard guardrail: host-sdk binding/composition modules may import runtime only through sanctioned public capability subpaths. Existing substrate-debt files are carved out explicitly and must be removed as boundary refactors land.",
       from: {
         path: hostSdkBoundaryModules,
-        pathNot: currentHostSdkSubstrateDebt,
+        pathNot: [
+          ...currentHostSdkSubstrateDebt,
+          hostSdkPublicCompositionSurface,
+        ],
       },
       to: {
         path: `^packages/runtime/src/(?!${sanctionedRuntimeCapabilitySubpaths})`,
+      },
+    },
+    {
+      name: "host-sdk-public-composition-surface-only-unified",
+      severity: "error",
+      comment:
+        "The host-sdk root barrel is the public host-composition surface; it may re-export FiregridHost from runtime/unified but must not become a general runtime substrate barrel.",
+      from: { path: hostSdkPublicCompositionSurface },
+      to: {
+        path: "^packages/runtime/src",
+        pathNot: runtimeUnifiedPublicSurface,
       },
     },
     {
@@ -585,6 +536,80 @@ module.exports = {
         "@firegrid/cli must bind over @firegrid/host-sdk and @firegrid/client-sdk; it must not import @firegrid/runtime substrate directly.",
       from: { path: "^packages/cli/src" },
       to: { path: "^packages/runtime/src" },
+    },
+    {
+      name: "tiny-firegrid-sim-no-fake-substitutes",
+      severity: "error",
+      comment:
+        "tiny-firegrid simulations must exercise production code: no fake codec/sandbox modules and no direct adapter internals from simulations.",
+      from: {
+        path: "^packages/tiny-firegrid/src/simulations/",
+      },
+      to: {
+        path: [
+          "fake-codec\\.ts$",
+          "acp-sandbox-fake\\.ts$",
+          "production-flow-scenario\\.ts$",
+          "production-flow-acp-scenario\\.ts$",
+          "^packages/runtime/src/unified/adapter\\.ts$",
+        ],
+      },
+    },
+    {
+      // tf-r06u.24 R2 — tiny-firegrid sim airgap (WHOLE SIM, host.ts carved out).
+      // Extends the eslint driver.ts/host.ts airgap (eslint.config.js:707-757) to
+      // every simulation file except host.ts: a sim drives the PUBLIC client/host
+      // seam; only host(env) composes the substrate. Anything else reaching into
+      // runtime/host-sdk internals, protocol internals, or durable tables is
+      // exercising a private seam — write it as a test in the owning package.
+      name: "tiny-firegrid-sim-airgap-whole-sim",
+      severity: "error",
+      comment:
+        "tiny-firegrid sims drive the public client/host seam; only host.ts composes the substrate. No runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports from a non-host.ts sim file.",
+      from: {
+        path: "^packages/tiny-firegrid/src/simulations/",
+        pathNot: "/host\\.ts$",
+      },
+      to: {
+        path: [
+          "^packages/runtime/src",
+          "^packages/host-sdk/src",
+          "^packages/protocol/src",
+          "^node_modules/effect-durable-operators",
+          "effect-durable-operators",
+          "^node_modules/@effect/workflow",
+          "@effect/workflow",
+          "^node_modules/@durable-streams/",
+          "@durable-streams/",
+        ],
+      },
+    },
+    {
+      // tf-r06u.24 R3 — tiny-firegrid test airgap (public-surface vitest only).
+      // tiny-firegrid/test exercises the PUBLIC surface (@firegrid/client-sdk is
+      // allowed); a test reaching runtime/host-sdk/protocol internals belongs in
+      // the OWNING package's test/ folder. Enforced via a dedicated test-scoped
+      // depcruise run (the default lint:deps scope is src-only — see lint:deps).
+      name: "tiny-firegrid-test-no-internals",
+      severity: "error",
+      comment:
+        "tiny-firegrid tests are not simulation evidence; no runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports.",
+      from: {
+        path: "^packages/tiny-firegrid/test/",
+      },
+      to: {
+        path: [
+          "^packages/runtime/src",
+          "^packages/host-sdk/src",
+          "^packages/protocol/src",
+          "^node_modules/effect-durable-operators",
+          "effect-durable-operators",
+          "^node_modules/@effect/workflow",
+          "@effect/workflow",
+          "^node_modules/@durable-streams/",
+          "@durable-streams/",
+        ],
+      },
     },
   ],
   options: {

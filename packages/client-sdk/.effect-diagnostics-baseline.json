@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "command": "pnpm run effect:diagnostics:baseline",
+  "counts": {
+    "error": 0,
+    "warning": 1,
+    "message": 0
+  },
+  "entries": [
+    {
+      "project": "packages/client-sdk/tsconfig.json",
+      "file": "packages/client-sdk/test/firegrid.layer-hoisting.test.ts",
+      "line": 186,
+      "column": 13,
+      "severity": "warning",
+      "code": "globalErrorInEffectFailure",
+      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
+    }
+  ]
+}

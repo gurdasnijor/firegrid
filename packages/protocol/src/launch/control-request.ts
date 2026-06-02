@@ -216,19 +216,12 @@ export type RuntimeControlRequestCompletionRow = Schema.Schema.Type<
   typeof RuntimeControlRequestCompletionRowSchema
 >
 
-export const RuntimeStartRequestAckSchema = Schema.Struct({
-  requestId: Schema.String,
-  contextId: Schema.String,
-  inserted: Schema.Boolean,
-}).annotations({
-  identifier: "firegrid.runtimeStartRequest.ack",
-  title: "Runtime start request acknowledgement",
-  description:
-    "Client-visible acknowledgement that a durable RuntimeStartRequest was recorded.",
-})
-export type RuntimeStartRequestAck = Schema.Schema.Type<
-  typeof RuntimeStartRequestAckSchema
->
+// `RuntimeStartRequestAckSchema` deleted per SDD_FIREGRID_PROTOCOL_
+// RESPONSE_UNIFICATION phase 2. `HostSessionsStartChannel` is now a
+// `DurableEventChannel` returning `EventOffset`; the `inserted`
+// boolean was the historical `Inserted | Found` outcome from
+// `DurableTable.insertOrGet`, which durable-streams deduplicates at
+// the Producer-Seq layer (the producer always sees success).
 
 export const makeRuntimeContextRequestRow = (
   input: {
@@ -355,14 +348,4 @@ export const makeRuntimeControlRequestCompletionRow = (
   ...(input.message === undefined ? {} : { message: input.message }),
 })
 
-export const makeRuntimeStartRequestAck = (
-  input: {
-    readonly requestId: string
-    readonly contextId: string
-    readonly inserted: boolean
-  },
-): RuntimeStartRequestAck => ({
-  requestId: input.requestId,
-  contextId: input.contextId,
-  inserted: input.inserted,
-})
+// `makeRuntimeStartRequestAck` deleted with `RuntimeStartRequestAck`.

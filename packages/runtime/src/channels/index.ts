@@ -12,9 +12,9 @@ export {
   sessionLifecycleTerminalRoute,
   type SessionLifecycleRouteInput,
 } from "./session-lifecycle-route.ts"
-export {
-  submitSessionPermissionResponse,
-} from "./session-permission.ts"
+// `submitSessionPermissionResponse` deleted per SDD_FIREGRID_PROTOCOL_
+// RESPONSE_UNIFICATION phase 2. Permission responses flow as signals
+// to PermissionRoundtripWorkflow via the unified channel bindings.
 export {
   sessionLogChannel,
   sessionLogChannelFromCollection,

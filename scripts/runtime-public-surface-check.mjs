@@ -7,10 +7,12 @@ import process from "node:process"
 // firegrid-runtime-boundary-reconciliation.ROLE_MODEL.4-.6
 // firegrid-runtime-boundary-reconciliation.STATIC_ENFORCEMENT.1-.3
 //
-// Shape C cutover (2026-05-22):
-// `events/`, `tables/`, `producers/`, `transforms/`, `channels/`,
-// `subscribers/`, `composition/`, and `_archive/` are the semantic target
-// surfaces from `docs/architecture/2026-05-22-runtime-physical-target-tree.md`.
+// Shape C cutover (2026-05-22) + SDD #761 source/producer split (PR-M1):
+// `events/`, `capabilities/`, `tables/`, `sources/`, `producers/`,
+// `transforms/`, `channels/`, `unified/`, and `_archive/`
+// are the semantic target surfaces from
+// `docs/architecture/2026-05-22-runtime-physical-target-tree.md` (updated for
+// the SDD #761 tier split).
 // The guard requires them to exist, requires each to ship a README, and
 // forbids any numeric `^N-` prefix at the runtime root.
 
@@ -38,12 +40,13 @@ const staleRuntimeExportSubpaths = new Set([
 // carry a README.md.
 const requiredTargetSurfaces = [
   "events",
+  "capabilities",
   "tables",
+  "sources",
   "producers",
   "transforms",
   "channels",
-  "subscribers",
-  "composition",
+  "unified",
   "_archive",
 ]
 
@@ -54,7 +57,10 @@ const staleRuntimeSourcePaths = [
   "packages/runtime/src/authorities/registry.ts",
   "packages/runtime/src/codecs",
   "packages/runtime/src/pipeline",
-  "packages/runtime/src/sources",
+  // packages/runtime/src/sources/ used to be flagged stale (pre-SDD #761
+  // when the alias subpath shadowed the producers/ canonical name). It is
+  // now the canonical home for the sandbox + codecs emitter tier; the stale
+  // entry was removed in PR-M1.
 ]
 
 const failures = []

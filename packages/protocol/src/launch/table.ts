@@ -3,16 +3,6 @@ import { ParseResult, Schema } from "effect"
 import type { Either, SchemaAST } from "effect"
 import { RowOtelContextSchema } from "../otel/row-otel.ts"
 import {
-  RuntimeInputIntentRowSchema,
-} from "../runtime-ingress/schema.ts"
-import {
-  RuntimeControlRequestClaimRowSchema,
-  RuntimeControlRequestCompletionRowSchema,
-  RuntimeContextRequestRowSchema,
-  RuntimeLifecycleRequestRowSchema,
-  RuntimeStartRequestRowSchema,
-} from "./control-request.ts"
-import {
   RuntimeContextIntentSchema,
   RuntimeOutputEventKeySchema,
   RuntimeOutputLogLineKeySchema,
@@ -175,15 +165,18 @@ const RuntimeRunEventRowSchema = Schema.Struct({
   _otel: Schema.optional(RowOtelContextSchema),
 })
 
+// Per SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION phase 2: the
+// `inputIntents`, `contextRequests`, `startRequests`,
+// `lifecycleRequests`, `controlRequestClaims`,
+// `controlRequestCompletions` families collapsed. Input delivery,
+// permission responses, session starts, lifecycle commands now flow
+// as `sendSignal` events to signal-based subscribers; their durable
+// log is the signal table in `@firegrid/runtime/unified`. The
+// `contexts` family stays as a thin derivation index; `runs` is a
+// runtime-output observation that remains.
 const runtimeControlPlaneSchemas = {
   contexts: RuntimeContextRowSchema,
   runs: RuntimeRunEventRowSchema,
-  inputIntents: RuntimeInputIntentRowSchema,
-  contextRequests: RuntimeContextRequestRowSchema,
-  startRequests: RuntimeStartRequestRowSchema,
-  lifecycleRequests: RuntimeLifecycleRequestRowSchema,
-  controlRequestClaims: RuntimeControlRequestClaimRowSchema,
-  controlRequestCompletions: RuntimeControlRequestCompletionRowSchema,
 } as const
 
 const RuntimeEventRowSchema = Schema.Struct({
@@ -221,11 +214,6 @@ export class RuntimeOutputTable extends DurableTable(
 export type RuntimeControlPlaneTableService = DurableTableService<typeof runtimeControlPlaneSchemas>
 export type RuntimeOutputTableService = DurableTableService<typeof runtimeOutputSchemas>
 export type RuntimeContextRow = RuntimeContext
-export type RuntimeInputIntentRow = Schema.Schema.Type<typeof RuntimeInputIntentRowSchema>
 export type RuntimeRunEventRow = Schema.Schema.Type<typeof RuntimeRunEventRowSchema>
-export type RuntimeContextRequestRow = Schema.Schema.Type<typeof RuntimeContextRequestRowSchema>
-export type RuntimeStartRequestRow = Schema.Schema.Type<typeof RuntimeStartRequestRowSchema>
-export type RuntimeControlRequestClaimRow = Schema.Schema.Type<typeof RuntimeControlRequestClaimRowSchema>
-export type RuntimeControlRequestCompletionRow = Schema.Schema.Type<typeof RuntimeControlRequestCompletionRowSchema>
 export type RuntimeEventRow = Schema.Schema.Type<typeof RuntimeEventRowSchema>
 export type RuntimeLogLineRow = Schema.Schema.Type<typeof RuntimeLogLineRowSchema>

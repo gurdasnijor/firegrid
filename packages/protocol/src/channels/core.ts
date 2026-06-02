@@ -261,3 +261,74 @@ export const makeCallableChannel = <
     call: options.call,
   },
 })
+
+// ── DurableEventChannel<P> — unified durable-event append shape ─────────────
+//
+// Per `docs/sdds/SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION.md`. Every
+// input-delivery operation in firegrid (prompt, permission response,
+// session start, tool dispatch, scheduled fire, webhook ingest, peer
+// emit) is the same operation: durably append an event to a
+// consumer's stream and return a stable offset. Under the unified
+// abstraction these are all `DurableEventChannel<P>` parameterized
+// by payload — one shape instead of seven specialized response
+// schemas.
+//
+// The historical response shapes (`RuntimeInputIntentRow`,
+// `PermissionRespondOutput`, `RuntimeStartRequestAck`, ...) collapse
+// to `EventOffset` — the wire-level append receipt, deduplicated at
+// the durable-streams `Producer-Seq` layer.
+
+/**
+ * Wire-level append receipt. `offset` is an opaque, lexicographically
+ * sortable position identifier. `deduplicated` is optional: when
+ * present it surfaces the durable-streams Producer-Seq dedup outcome
+ * (true if this append was server-side deduped). The schema
+ * deliberately carries NO application-shaped fields (no `inputId`,
+ * `requestId`, `inserted` boolean, `contextId`). Application
+ * correlation lives in the payload; lifecycle lives in the consumer.
+ */
+export const EventOffsetSchema = Schema.Struct({
+  offset: Schema.String,
+  deduplicated: Schema.optional(Schema.Boolean),
+})
+export type EventOffset = Schema.Schema.Type<typeof EventOffsetSchema>
+
+/**
+ * `DurableEventChannel<P>` is structurally `EgressChannel<P, EventOffset>`.
+ * Egress direction already encodes "producer appends, consumer reads
+ * downstream"; the new shape just standardizes the Receipt type to
+ * `EventOffset` so producers ignore application-level row schemas at
+ * the channel boundary.
+ */
+export type DurableEventChannel<P extends Schema.Schema.Any> = EgressChannel<P, EventOffset>
+
+export const makeDurableEventChannel = <P extends Schema.Schema.Any>(
+  options: {
+    readonly target: ChannelTarget | string
+    readonly schema: P
+    readonly append: (
+      payload: Schema.Schema.Type<P>,
+    ) => Effect.Effect<EventOffset, unknown, never>
+  },
+): DurableEventChannel<P> =>
+  makeEgressChannel({
+    target: typeof options.target === "string"
+      ? makeChannelTarget(options.target)
+      : options.target,
+    schema: options.schema,
+    append: options.append,
+  })
+
+/**
+ * Construct an `EventOffset` from a stable string identifier
+ * (typically a durable-streams wire offset, or a stable application-
+ * derived key during the simulation phase before wire offsets are
+ * available to the binding).
+ */
+export const eventOffset = (
+  offset: string,
+  options?: { readonly deduplicated?: boolean },
+): EventOffset =>
+  options?.deduplicated === undefined
+    ? { offset }
+    : { offset, deduplicated: options.deduplicated }

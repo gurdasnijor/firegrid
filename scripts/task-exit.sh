@@ -116,7 +116,13 @@ if command -v gh >/dev/null 2>&1; then
   if gh pr view "$BR" >/dev/null 2>&1; then
     echo "  PR exists for $BR"
   else
-    gh pr create --head "$BR" --fill --draft 2>&1 | tail -1 || echo "  ⚠ open the PR manually"
+    # PR base MUST be the integration trunk, not the repo default (main):
+    # lane branches fork off origin/sim/unified-kernel-validation, so a
+    # `gh pr create` without --base defaults to main and shows the whole
+    # kernel as a phantom diff (and can't merge). POST-#765: revert this to
+    # origin/main (or unset FIREGRID_TASK_BASE) once #765 lands.
+    PR_BASE="${FIREGRID_TASK_BASE:-sim/unified-kernel-validation}"; PR_BASE="${PR_BASE#origin/}"
+    gh pr create --head "$BR" --base "$PR_BASE" --fill --draft 2>&1 | tail -1 || echo "  ⚠ open the PR manually"
   fi
 
   # CI-trigger guarantee. A task-exit DRAFT PR is the merge gate, so it
