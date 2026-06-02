@@ -329,20 +329,25 @@ subgraph 79["control-plane-cancel-close"]
 7B["host.ts"]
 7C["index.ts"]
 end
-subgraph 7D["factory-capstone"]
+subgraph 7D["cross-agent-delegation"]
 7E["driver.ts"]
 7F["host.ts"]
 7G["index.ts"]
 end
-subgraph 7H["unified-kernel-validation"]
+subgraph 7H["factory-capstone"]
 7I["driver.ts"]
 7J["host.ts"]
 7K["index.ts"]
 end
-subgraph 7L["verified-webhook-wait"]
+subgraph 7L["unified-kernel-validation"]
 7M["driver.ts"]
 7N["host.ts"]
 7O["index.ts"]
+end
+subgraph 7P["verified-webhook-wait"]
+7Q["driver.ts"]
+7R["host.ts"]
+7S["index.ts"]
 end
 end
 6S["types.ts"]
@@ -750,31 +755,38 @@ Z-->L
 7C-->7A
 7C-->7B
 7E-->6
-7F-->W
-7F-->1U
-7F-->D
 7F-->4V
-7F-->4N
 7F-->3D
-7F-->52
 7F-->2E
-7F-->16
 7G-->6S
 7G-->7E
 7G-->7F
 7I-->6
+7J-->W
+7J-->1U
+7J-->D
+7J-->4V
+7J-->4N
+7J-->3D
+7J-->52
 7J-->2E
+7J-->16
 7K-->6S
 7K-->7I
 7K-->7J
 7M-->6
-7N-->W
-7N-->1U
-7N-->4F
 7N-->2E
-7N-->5E
-7N-->16
-7N-->1B
 7O-->6S
 7O-->7M
 7O-->7N
+7Q-->6
+7R-->W
+7R-->1U
+7R-->4F
+7R-->2E
+7R-->5E
+7R-->16
+7R-->1B
+7S-->6S
+7S-->7Q
+7S-->7R
