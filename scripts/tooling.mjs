@@ -24,9 +24,9 @@ const archTargets = {
     output: "docs/dependency-graph-detail.mmd",
   },
   client: {
-    paths: ["packages/client/src"],
+    paths: ["packages/client-sdk/src"],
     output: "docs/dependency-graph-client.mmd",
-    collapse: "^packages/client/src/[^/]+",
+    collapse: "^packages/client-sdk/src/[^/]+",
   },
   protocol: {
     paths: ["packages/protocol/src"],
