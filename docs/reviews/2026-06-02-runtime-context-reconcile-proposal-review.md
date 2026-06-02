@@ -4,12 +4,18 @@ Review target: primary-checkout proposal
 `docs/proposals/PROPOSAL_RUNTIME_CONTEXT_KEYED_SUBSCRIBER_RECONCILE_2026-06-02.md`.
 
 Overall verdict: **amend**. The proposal is right that RuntimeContext has a
-real architectural contradiction and a real terminal-cleanup P0. The review
-should make one higher-priority callout explicit: the source-of-truth docs are
-themselves contradictory after the unified cutover. Current code and the unified
-production SDD are on **Workflow + DurableTable + Signal**; the older hard
-"no long-lived parked bodies" text in `runtime-design-constraints.md` is not
-congruent with that shipped architecture.
+real architectural contradiction and a real terminal-cleanup P0. Two corrections
+are decision-grade:
+
+- The terminal cleanup trigger must be process/session terminal
+  (`Terminated`, explicit cancel, explicit close), **not** `TurnComplete`.
+  `TurnComplete` is per-turn; treating it as terminal would kill multi-turn
+  sessions after their first completed turn.
+- The source-of-truth docs are contradictory after the unified cutover. Current
+  code and the unified production SDD are on **Workflow + DurableTable +
+  Signal**; `runtime-design-constraints.md` deliberately permits workflow
+  machinery but bans entity-lifetime parked workflow bodies. Amending that canon
+  would be a real architecture reversal, not clerical cleanup.
 
 ## P0: Architecture Source-Of-Truth Conflict
 
@@ -33,11 +39,15 @@ That conflicts with the current wording of
 `docs/cannon/architecture/runtime-design-constraints.md`. The constraints doc
 says keyed subscribers "run to completion, and return" and must not park or keep
 fiber-local state across events (`docs/cannon/architecture/runtime-design-constraints.md:80`,
-`:83`). It then says the active validation path is `tf-tvg1`, to prove a
-shorter per-event workflow/keyed-subscriber RuntimeContext and rewrite
-production against that target (`docs/cannon/architecture/runtime-design-constraints.md:474`,
-`:479`). It also labels controller-owned write+arm as a migration safety
-primitive for a parked-body engine, "not the target abstraction"
+`:83`). It is not unaware of `@effect/workflow`: it explicitly says workflow is
+valid execution machinery when it earns its keep, but the banned shape is a
+workflow body representing the lifetime of an entity and parking across many
+events (`docs/cannon/architecture/runtime-design-constraints.md:88`, `:92`). It
+then says the active validation path is `tf-tvg1`, to prove a shorter per-event
+workflow/keyed-subscriber RuntimeContext and rewrite production against that
+target (`docs/cannon/architecture/runtime-design-constraints.md:474`, `:479`).
+It also labels controller-owned write+arm as a migration safety primitive for a
+parked-body engine, "not the target abstraction"
 (`docs/cannon/architecture/runtime-design-constraints.md:488`, `:494`).
 
 The later `kernel-owned-write-arm.md` banner partially reconciles the history:
@@ -52,8 +62,8 @@ Disposition: **P0 docs/architecture ambiguity**. Before more RuntimeContext
 rewrite work is dispatched, the architecture set needs one canonical statement:
 
 - either unified parked workflow bodies are accepted target architecture, with
-  `runtime-design-constraints.md` amended to remove/soften the no-parked-body
-  prohibition for unified signal-owned bodies;
+  `runtime-design-constraints.md` explicitly amended to reverse the existing
+  no-parked-entity-body constraint for unified signal-owned bodies;
 - or unified is current bridge state, with an explicit deletion path from
   signal-parked RuntimeContext bodies to per-event keyed subscribers.
 
@@ -88,9 +98,11 @@ signal row and then resumes or arms the owning execution
 (`packages/runtime/src/unified/signal.ts:266`, `:305`).
 
 Corrected statement: there is a real contradiction between the active
-no-parked-body constraints doc and the current unified SDD/code. The proposal
-should not assume precedence silently; it should name this as the P0 alignment
-issue above.
+no-parked-entity-body constraints doc and the current unified SDD/code. The
+proposal should not assume precedence silently; it should name this as the P0
+alignment issue above. If the decision is to keep unified parked workflow bodies
+as target architecture, the burden is on that decision to overturn a deliberate
+canon constraint.
 
 Also correct the "atomic" wording around `sendSignal`: the file comment says
 "Atomically" (`packages/runtime/src/unified/signal.ts:25`, `:27`), but source
@@ -137,17 +149,18 @@ from "no F3 at all."
 Verdict: **agree, amend causality**.
 
 The leak chain is real and matches `tf-r06u.36`, but the direct bug is missing
-terminal-output routing. The parked body makes the bug persistent.
+process/session-terminal routing. The parked body makes the bug persistent.
 
 Source chain:
 
-- Agent codecs emit terminal output facts. ACP emits `Terminated` on process
-  exit and `TurnComplete` after a turn
+- Agent codecs emit both process/session terminal and per-turn facts. ACP emits
+  `Terminated` on process exit and `TurnComplete` after a prompt turn
   (`packages/runtime/src/sources/codecs/acp/index.ts:438`, `:445`, `:768`,
-  `:770`); stdio-jsonl emits the same terminal kinds
+  `:770`); stdio-jsonl decodes per-turn `TurnComplete` and emits `Terminated`
+  from process exit
   (`packages/runtime/src/sources/codecs/stdio-jsonl/index.ts:150`, `:153`,
   `:285`, `:292`).
-- The public session-facade projection preserves `TurnComplete` and
+- The public session-facade projection preserves both `TurnComplete` and
   `Terminated` as observations
   (`packages/protocol/src/session-facade/schema.ts:554`, `:561`).
 - `JournalObserverLive` only triggers `PermissionRoundtripWorkflow` for
@@ -161,14 +174,22 @@ Source chain:
   (`packages/runtime/src/unified/codec-adapter.ts:518`, `:529`).
 - Cancel and close already use the shared terminal-signal helper
   (`packages/runtime/src/unified/channel-bindings.ts:287`, `:306`, `:442`,
-  `:485`), so the missing leg is natural agent completion:
-  `TurnComplete`/`Terminated` -> terminal signal -> body cleanup.
+  `:485`), so the missing natural-completion leg is process exit:
+  `Terminated` -> terminal signal -> body cleanup.
+
+Do **not** route `TurnComplete` to terminal cleanup. The adapter registry is
+explicitly cross-attempt/process continuity: the same agent process serves many
+inputs, and `deregister` closes the per-context scope, killing the process and
+removing the registry entry (`packages/runtime/src/unified/codec-adapter.ts:7`,
+`:23`, `:518`, `:529`). A `TurnComplete` fires after a turn; treating it as
+session terminal would deregister after the first completed turn and break
+multi-turn sessions.
 
 If the canonical decision remains unified, a run-to-completion keyed subscriber
-is not the immediate fix; the immediate fix is to wire the missing terminal
-relay into the unified signal path. If the canonical decision flips back to
-per-event keyed subscribers, the terminal event contract still has to be wired
-there too. Either way, `tf-r06u.36` should stay P0.
+is not the immediate fix; the immediate fix is to wire the missing
+process-terminal relay into the unified signal path. If the canonical decision
+flips back to per-event keyed subscribers, the same terminal event contract
+still has to be wired there too. Either way, `tf-r06u.36` should stay P0.
 
 ## 4. Recommendation Pressure Test
 
@@ -178,23 +199,26 @@ Verdict: **amend**.
 
 Operationally, yes: fix `tf-r06u.36` now. It should not wait for the larger
 architecture reconciliation because the current unified path already has the
-shared terminal-signal helper for cancel/close
+shared terminal-signal helper for explicit cancel/close
 (`packages/runtime/src/unified/channel-bindings.ts:287`, `:306`, `:442`,
-`:485`), and natural agent completion is missing the same leg.
+`:485`), and process exit is missing the same leg.
 
 But the implementation shape should be explicitly marked **current-unified**:
-observer sees `TurnComplete`/`Terminated`, emits the same terminal session input
-signal, and lets the session body run its existing terminal `deregister`
-activity. A direct observer-side `adapter.deregister` would close the registry
-but leave the workflow suspended and without its final result.
+observer sees `Terminated`, emits the same terminal session input signal, and
+lets the session body run its existing terminal `deregister` activity. Explicit
+cancel/close already use this contract. `TurnComplete` must be excluded because
+it is per-turn. A direct observer-side `adapter.deregister` would close the
+registry but leave the workflow suspended and without its final result.
 
 ### 4b. Is `tf-tvg1` A/B/C The Right Gate?
 
 Only after the P0 docs ambiguity is resolved. If unified is accepted as the
 target, `tf-tvg1` should be reframed away from "replace unified with per-event
 Shape C" and toward "prove the minimal missing unified terminal/input/tool
-edges." If `runtime-design-constraints.md` remains authoritative as written,
-then `tf-tvg1` is still the right validation bead for the per-event target.
+edges." That branch should explicitly justify reversing the existing
+no-parked-entity-body canon. If `runtime-design-constraints.md` remains
+authoritative as written, then `tf-tvg1` is still the right validation bead for
+the per-event target.
 
 There is also a faster source/API gate:
 
@@ -203,7 +227,9 @@ There is also a faster source/API gate:
 3. Existing DurableTable supports atomic multi-row append -> **no**.
 
 That gate should precede any expensive sim because it prunes several options
-without needing a model run.
+without needing a model run. In particular, pure substrate-native push with no
+explicit arm is likely already source-falsified; the remaining live question is
+how thin the arm can be, not whether the current substrate has automatic push.
 
 ### 4c. Strongest Case Against The Current Lean
 
@@ -229,11 +255,13 @@ Recommended disposition:
 
 1. Open/track a **P0 architecture-doc reconciliation**: decide whether the
    current unified parked-body Signal architecture is canonical target or a
-   bridge. Update `runtime-design-constraints.md`,
+   bridge. If canonical, explicitly reverse the deliberate no-parked-entity-body
+   constraint. Update `runtime-design-constraints.md`,
    `unified-subscriber-kernel.md`, and the relevant SDD references in one pass.
 2. Land `tf-r06u.36` now on the current unified substrate:
-   `TurnComplete`/`Terminated` -> shared terminal session signal ->
-   session-body `adapter.deregister` -> workflow final result.
+   `Terminated` plus explicit cancel/close -> shared terminal session signal ->
+   session-body `adapter.deregister` -> workflow final result. Do not include
+   `TurnComplete`; it is per-turn.
 3. Record the source/API facts as prerequisites:
    no atomic multi-row append; no automatic table-write wakeup; explicit
    table-write plus `resume` is already proven.
