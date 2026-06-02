@@ -141,19 +141,15 @@ in the PR/SDD at `external_ref` — that is fine *as read-material*. The mistake
 was ever treating that prose as the decision *state*. Deliberation = prose in
 the PR; decision = structured bead.
 
-**Decisioner tool (read-only — pure structured query, no markdown parsed):**
+**Draining decisions (read-only — pure structured query, no markdown parsed):**
+the queue is the set of open beads labelled `signoff:pending`; surface it with
+the beads tooling (`bv --robot-insights`, `br`). For each: read the reasoning at
+`external_ref`, then run the **one** command `br close <id> --reason "DECIDED:
+<verdict>"` (or `br dep remove <gated> <id>` for the rare case the decision must
+not close the bead).
 
-```bash
-bash scripts/signoff-queue.sh            # ranked digest, keystone first
-bash scripts/signoff-queue.sh --json     # structured
-bash scripts/signoff-queue.sh show tf-qy4   # one item: topic, gates, ref, PR state
-```
-
-Each row shows `topic` (title), `gates` (computed from the dependency graph),
-`read` (`external_ref`), and the **one** command: `br close <id> --reason
-"DECIDED: <verdict>"`. `show` adds verbatim PR state and the dep-decouple
-alternative (`br dep remove <gated> <id>`) for the rare case the decision must
-not close the bead.
+> The ranked-digest wrapper `scripts/signoff-queue.sh` was retired (tf-636o); the
+> `signoff:pending` structured state and the ranking below are unchanged.
 
 **Ranking is NOT raw bv order.** bv `topk_set` is 1-hop marginal and
 under-weights a transitively-load-bearing keystone. Order: `keystone` label →
@@ -164,8 +160,8 @@ under-weights a transitively-load-bearing keystone. Order: `keystone` label →
 
 - *Owning lane* — writer: sets `signoff:pending` + `pr-` + `external_ref` and
   the `blocks` edge on queuing. No prose contract to get wrong.
-- *Coordinator* — read-only router: runs `signoff-queue.sh`, routes
-  `signoff:pending` → decisioner, missing `external_ref` → bounce to lane.
+- *Coordinator* — read-only router: surfaces `signoff:pending` (via `bv`/`br`),
+  routes to decisioner, missing `external_ref` → bounce to lane.
   Never mutates `br`.
 - *Decisioner / br-owner* — closer: `br close <id> --reason "DECIDED: …"`.
   That single transition is the verdict **and** the unblock. (If impl is still
@@ -213,105 +209,23 @@ this and `cmux send`s the coordinator on exit 3) — self-policing repeats the
 failure. The cadence gate (`dispatch-gap.sh || don't-report-clear`) is a
 tripwire, not enforcement.
 
-## Push detection (state-watch — edge-triggered, prevents sticking)
+## Push detection & sync crons — RETIRED (tf-636o)
 
-`lane-sweep` / `signoff-queue` / `dispatch-gap` are all **pull** (level-
-triggered) — they only help when the coordinator runs them, so a tunneled
-coordinator means lanes stay stuck until its next sweep. `state-watch.sh` is
-the **push** (edge-triggered) layer: it runs *external* to the coordinator
-and pings only when state actually moves.
+The edge-triggered push-detection layer (`state-watch.sh` / `state-watch-cron` /
+`install-state-watch-cron.sh`) and the beads-sync cron (`beads-sync.sh` /
+`install-beads-sync-cron.sh`, with the committed `.beads/.beads-owner` =`cron`
+separation-of-duties binding) were retired with the cron/coordination layer.
 
-```bash
-bash scripts/state-watch.sh --once                       # print deltas since last check
-bash scripts/state-watch.sh --once --json
-bash scripts/state-watch.sh --once --notify surface:153 --workspace workspace:2
-```
+Coordination is now **pull-based**: run `lane-sweep` / `dispatch-gap` and drain
+the `signoff:pending` queue at session boundaries (sections above). The
+structured beads state (`.beads/issues.jsonl`, labels, dependency edges) is
+unchanged — only the bespoke watcher and sync wrappers are gone.
 
-How it works:
-
-1. **Snapshot** — structured only: `.beads/issues.jsonl` (status / signoff /
-   dependency edges) + `dispatch-gap.sh --json` + `lane-sweep.sh --json`.
-2. **Diff** vs the previous snapshot (per-machine watcher memory at
-   `${XDG_STATE_HOME:-$HOME/.local/state}/firegrid-state-watch/`, outside the
-   repo).
-3. **Classify edges:** `signoff_new` (decision now needed), `closed`
-   (decision/work landed → check unblocks), `unblocked` (freshly
-   dispatchable), `lane_idle` (a lane went `running:true→false` — the
-   stuck/done-and-silent signal), `gap_open` (dispatch gap opened).
-4. **Exit 3** on any delta (the primitive a runner gates on), `0` otherwise.
-   With `--notify <surface>` it `cmux send`s the coordinator **only on a
-   delta** — signal, not periodic noise it learns to ignore.
-
-It never mutates or auto-acts — it detects and notifies. It is correct
-*because* it is external to the coordinator: pull fails on coordinator
-vigilance; this does not depend on it.
-
-**Making it live (the runner) — one command:**
-
-```bash
-bash scripts/install-state-watch-cron.sh            # every 3 min, → coordinator
-bash scripts/install-state-watch-cron.sh --every 5 --coord coordinator
-bash scripts/install-state-watch-cron.sh --remove   # unwire
-```
-
-It installs a user-crontab entry that runs `scripts/state-watch-cron.sh`,
-the cron-safe wrapper: it hard-sets `PATH` (cron has none — resolves
-`cmux`/`gh`/`jq`/`br` by absolute dir), `HOME` (cmux socket discovery),
-single-flights with a lock, and **skips the tick entirely if cmux is
-unreachable** (laptop asleep / app closed) so a delta is never consumed
-into the baseline while undeliverable. Deltas are delivered via
-`cmux-dispatch.sh` (stable-label resolve + verify-submit — *not*
-state-watch's raw `--notify`, which has the renumber/paste-Enter bugs).
-Everything is logged to
-`${XDG_STATE_HOME:-$HOME/.local/state}/firegrid-state-watch/cron.log`.
-
-**SINGLE-CONSUMER RULE (critical):** state-watch is edge-triggered against
-ONE snapshot. Once the cron is installed it is the **sole** thing that runs
-state-watch. The coordinator must **NOT** also run `state-watch.sh --once`
-— two consumers race the snapshot and silently drop deltas. The coordinator
-reacts to the cron's cmux ping; it still runs lane-sweep / signoff-queue /
-dispatch-gap on demand, just never state-watch.
-
-macOS note: cron does not fire while the machine is asleep and the wrapper
-no-ops when cmux is down — so the coordinator should still do **one** full
-manual sweep (lane-sweep + a single `state-watch.sh --once`) at session
-resume to catch anything that changed while the runner was dark, then go
-back to pure react-to-ping. (`launchd` is the more sleep-robust runner if
-that gap matters — same wrapper, different scheduler.)
-
-v1 (now): ping the coordinator on every delta. v2 (next): a persistence
-counter that escalates to the human if the same delta is unactioned across
-K checks.
-
-### Two crons — they are opposites, don't conflate
-
-| | `state-watch-cron` | `beads-sync-cron` |
-|---|---|---|
-| does | **observes** deltas, pings coordinator | **persists** `.beads/issues.jsonl` → origin/main |
-| writes SoT? | never (read-only) | yes (the durable decision record) |
-| needs cmux? | yes (skips tick if down) | no (br+git only — runs even cmux down) |
-| install | `install-state-watch-cron.sh` | `install-beads-sync-cron.sh` |
-
-Running only state-watch-cron leaves beads-sync unowned → the "stranded
-decision state" fire recurs. Both are operator-installed.
-
-**Canonical beads-sync owner is bound (separation of duties).**
-`.beads/.beads-owner` (committed) = `cron`. `beads-sync.sh` then **refuses**
-unless invoked by the beads-sync cron (which sets `FG_BEADS_OWNER=1`) — the
-coordinator and lanes are structurally blocked from pushing the SoT, so the
-router can never also own the durable decision record. Deliberate
-br-owner/admin op: `FG_BEADS_OWNER=1` (audited to
-`.git/firegrid-beads-owner-override.log`). Install (operator, once):
-
-```bash
-bash scripts/install-beads-sync-cron.sh            # every 5 min
-bash scripts/install-beads-sync-cron.sh --remove
-```
-
-`beads-sync.sh` exits clean ("nothing to push") when unchanged, so a tick
-with no delta is a sub-second no-op (one log line, no commit). It is
-self-locking (self-healing `.git` lock — never the old `.beads/.sync.lock`
-collision) and ground-truth-verifies the push (no false-success).
+> **Open gap (TBD by the br-owner):** this removes the prior cron-owned
+> persistence of `.beads/issues.jsonl` → `origin/main` and its separation-of-
+> duties binding. Until a replacement sync ownership is defined, the br-owner
+> flushes/pushes the SoT manually. Do not let it go unowned — the historical
+> "stranded decision state" failure recurs if nobody persists the SoT.
 
 ## When something looks empty or wrong
 

@@ -128,13 +128,10 @@ bash scripts/task-reap.sh [<branch>]        # after merge, from primary
   #   and surfaces any bead still open for a merged branch. NEVER discards
   #   dirty/unmerged work — it reports and keeps it.
 
-#  beads-sync is OWNED by the beads-sync cron (.beads/.beads-owner=cron).
-#  scripts/beads-sync.sh REFUSES unless run by that cron — the coordinator
-#  and lanes are structurally blocked from pushing the SoT (separation of
-#  duties). Install: scripts/install-beads-sync-cron.sh (operator, once).
-#  It self-locks (self-healing .git lock), ground-truth-verifies the push,
-#  and is a sub-second no-op when nothing changed. Deliberate br-owner op:
-#  FG_BEADS_OWNER=1 (audited). Lanes/coordinator NEVER run beads-sync.
+#  beads durability: the beads-sync cron tooling (scripts/beads-sync*.sh,
+#  install-beads-sync-cron.sh) was RETIRED (tf-636o) with the cron/coordination
+#  layer. The br-owner now flushes/syncs the beads SoT directly — see
+#  docs/contributing/beads-operating-guide.md. Lanes/coordinator do not push the SoT.
 ```
 
 ### Deterministic dispatch (coordinator → lanes)
@@ -261,15 +258,10 @@ construction; the only valid idle-on-purpose is an audited
 `DISPATCH_GAP_PARKED="lane:reason …"` override. Full contract:
 `docs/contributing/beads-operating-guide.md` → Dispatch gap.
 
-**Push detection (`scripts/state-watch.sh`):** the pull tools above only
-help when run. `state-watch.sh --once` is the edge-triggered detector —
-diffs structured state vs a per-machine snapshot and emits only deltas
-(`signoff_new`/`closed`/`unblocked`/`lane_idle`/`gap_open`), exit 3 on
-change. Run by an *external* cron (deterministic — no LLM) with
-`--notify <coord-surface>` to ping the coordinator the moment a lane
-goes idle or a decision is needed, instead of waiting for its next
-sweep. Full model: `docs/contributing/beads-operating-guide.md` →
-Push detection.
+**Push detection:** the edge-triggered push-detection tooling
+(`scripts/state-watch*.sh` + its cron) was RETIRED (tf-636o) with the
+cron/coordination layer. Coordination is now pull-based — run the
+dispatch-gap / lane-sweep checks above at session boundaries.
 
 **Lane labels are the short tab names** (`coordinator`, `oca1`, `oca2`,
 `cca1`, `cca2`). These double as the beads join key.
@@ -349,8 +341,8 @@ these project facts override it:
 **Operating guide:** for *how* to query the graph reliably (the
 `br … --json` schema-divergence trap), how to sequence the next phase by
 blocking factor (`bv --robot-insights` `topk_set`/`coverage_set`), the
-**signoff queue** (draining decisions: the `signoff:pending` convention +
-`scripts/signoff-queue.sh`), and verified `jq` recipes against
+**signoff queue** (draining decisions: the `signoff:pending` convention,
+surfaced via `bv`/`br`), and verified `jq` recipes against
 `issues.jsonl`, see
 [docs/contributing/beads-operating-guide.md](docs/contributing/beads-operating-guide.md).
 Point coordinators there.
@@ -364,8 +356,8 @@ br update <id> --add-label signoff:pending --add-label pr-<NNN> \
 br dep add <gated-id> <id>     # the bead must `blocks` whatever it gates
 ```
 
-The decisioner drains via `bash scripts/signoff-queue.sh` (read-only, ranked
-keystone-first; `show <id>` for full context) and decides with the **single
+The decisioner drains the `signoff:pending` queue (read-only; surfaced via
+`bv`/`br`, keystone-first) and decides with the **single
 structured transition** `br close <id> --reason "DECIDED: <verdict>"` — which
 records the verdict *and* auto-unblocks every dependent via the graph (no
 label-removal step that fails to propagate). Deliberation (options/reasoning)

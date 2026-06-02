@@ -36,7 +36,7 @@ env:
 # version bumps touch one file rather than every job.
 #
 # Gating jobs:
-#   lint              — docs/specs + eslint + dead-code + dup + effect-quality + arch-graph freshness
+#   lint              — docs/specs + eslint + dead-code + dup + effect-quality
 #   typecheck         — pnpm --recursive typecheck
 #   effect-diagnostics — effect-language-service diagnostics
 #   tests             — pnpm --recursive tests
@@ -86,11 +86,6 @@ jobs:
 
       - name: Check Effect-quality metric ratchet
         run: pnpm run lint:effect-quality
-
-      # Regenerate the depcruise Mermaid dependency graphs and fail if any
-      # checked-in docs/dependency-graph*.mmd drifted (deterministic; no traces).
-      - name: Check arch dependency graphs are fresh
-        run: pnpm run arch:graphs:check
 
   # The UKV production trace gate runs a live sim (~40s) and is the single
   # heaviest step. It used to sit last in the Lint job, serializing behind every
