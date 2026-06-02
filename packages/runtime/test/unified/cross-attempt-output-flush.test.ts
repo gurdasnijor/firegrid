@@ -133,6 +133,10 @@ describe("tf-0awo.26 — cross-attempt output-flush boundary (validation instrum
       Layer.provideMerge(tables),
     )
 
+    // Decoded outside the Effect generator (pure, deterministic) so
+    // `Schema.decodeSync` is never used inside an Effect (diagnostic-clean).
+    const hostId = Schema.decodeSync(HostIdSchema)("crossattempt-host")
+
     const recorded = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
@@ -162,7 +166,6 @@ describe("tf-0awo.26 — cross-attempt output-flush boundary (validation instrum
 
           // Seed the context row the adapter resolves + spawns from. Real ACP
           // example agent as the spawn target; no env bindings (denyAll is fine).
-          const hostId = Schema.decodeSync(HostIdSchema)("crossattempt-host")
           const intent: RuntimeContextIntent = {
             provider: "local-process",
             config: {
