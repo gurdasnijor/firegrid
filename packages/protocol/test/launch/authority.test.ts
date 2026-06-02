@@ -16,7 +16,6 @@ import {
   HostStreamPrefixSchema,
   HostStreamPrefixWireSchema,
   NamespaceRuntimeStreamNameSchema,
-  RuntimeContextOutputStreamNameSchema,
   RuntimeContextHostBindingSchema,
   durableStreamUrl,
   hostOwnedStreamUrl,
@@ -26,8 +25,7 @@ import {
   makeHostStreamPrefix,
   namespaceRuntimeStreamName,
   runtimeControlPlaneStreamUrl,
-  runtimeContextOutputStreamName,
-  runtimeContextOutputStreamUrl,
+  runtimeOutputStreamUrl,
   type HostId,
   type HostSessionId,
 } from "../../src/launch/authority.ts"
@@ -41,13 +39,10 @@ describe("HostStreamPrefixSchema", () => {
     expect(encoded).toBe("firegrid-smoke.firegrid.host.host_abc")
   })
 
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1 round-trips wire string back to parts", () => {
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1 validates the branded wire prefix", () => {
     const wire = "firegrid-smoke.firegrid.host.host_abc"
     const decoded = Schema.decodeUnknownSync(HostStreamPrefixSchema)(wire)
-    expect(decoded).toEqual({
-      namespace: "firegrid-smoke",
-      hostId: "host_abc",
-    })
+    expect(decoded).toBe(wire)
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects empty namespace or empty hostId", () => {
@@ -58,35 +53,30 @@ describe("HostStreamPrefixSchema", () => {
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects hostId containing a dot", () => {
-    const result = Schema.encodeUnknownEither(HostStreamPrefixSchema)({
-      namespace: "ns",
-      hostId: "host.with.dot",
-    })
-    expect(Either.isLeft(result)).toBe(true)
+    expect(() =>
+      makeHostStreamPrefix({ namespace: "ns", hostId: "host.with.dot" as HostId }),
+    ).toThrow()
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 encode rejects an empty namespace", () => {
-    const result = Schema.encodeUnknownEither(HostStreamPrefixSchema)({
-      namespace: "",
-      hostId: "host_abc",
-    })
-    expect(Either.isLeft(result)).toBe(true)
+    expect(() =>
+      makeHostStreamPrefix({ namespace: "", hostId: "host_abc" as HostId }),
+    ).toThrow()
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 encode rejects a namespace containing the reserved infix", () => {
-    const result = Schema.encodeUnknownEither(HostStreamPrefixSchema)({
-      namespace: "ns.firegrid.host.evil",
-      hostId: "host_abc",
-    })
-    expect(Either.isLeft(result)).toBe(true)
+    expect(() =>
+      makeHostStreamPrefix({
+        namespace: "ns.firegrid.host.evil",
+        hostId: "host_abc" as HostId,
+      }),
+    ).toThrow()
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 encode rejects an empty hostId", () => {
-    const result = Schema.encodeUnknownEither(HostStreamPrefixSchema)({
-      namespace: "ns",
-      hostId: "",
-    })
-    expect(Either.isLeft(result)).toBe(true)
+    expect(() =>
+      makeHostStreamPrefix({ namespace: "ns", hostId: "" as HostId }),
+    ).toThrow()
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1 accepts a dotted namespace and produces a schema-valid wire prefix", () => {
@@ -154,7 +144,6 @@ describe("streamAuthority annotation", () => {
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1 marks HostStreamNameSchema and NamespaceRuntimeStreamNameSchema", () => {
     expect(isStreamAuthorityAst(HostStreamNameSchema.ast)).toBe(true)
     expect(isStreamAuthorityAst(NamespaceRuntimeStreamNameSchema.ast)).toBe(true)
-    expect(isStreamAuthorityAst(RuntimeContextOutputStreamNameSchema.ast)).toBe(true)
   })
 })
 
@@ -173,19 +162,16 @@ describe("HostStreamPrefixWireSchema", () => {
 })
 
 describe("HostStreamNameSchema", () => {
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 encodes parts into ${prefix}.${segment}", () => {
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 validates encoded ${prefix}.${segment}", () => {
     const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
     expect(
-      Schema.encodeSync(HostStreamNameSchema)({ prefix, segment: "workflow" }),
+      Schema.decodeUnknownSync(HostStreamNameSchema)(hostStreamName(prefix, "workflow")),
     ).toBe("ns.firegrid.host.host_abc.workflow")
   })
 
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 decodes a stream name into structured parts", () => {
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 accepts a valid stream name", () => {
     const decoded = Schema.decodeUnknownSync(HostStreamNameSchema)("ns.firegrid.host.host_abc.runtimeOutput")
-    expect(decoded).toEqual({
-      prefix: "ns.firegrid.host.host_abc",
-      segment: "runtimeOutput",
-    })
+    expect(decoded).toBe("ns.firegrid.host.host_abc.runtimeOutput")
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects a stream name with an unknown segment", () => {
@@ -204,50 +190,14 @@ describe("NamespaceRuntimeStreamNameSchema", () => {
     expect(namespaceRuntimeStreamName("ns")).toBe("ns.firegrid.runtime")
   })
 
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 decodes the canonical control-plane stream name back to namespace parts", () => {
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 validates the canonical control-plane stream name", () => {
     expect(
       Schema.decodeUnknownSync(NamespaceRuntimeStreamNameSchema)("ns.firegrid.runtime"),
-    ).toEqual({ namespace: "ns" })
+    ).toBe("ns.firegrid.runtime")
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects a wire string that does not end with .firegrid.runtime", () => {
     const result = Schema.decodeUnknownEither(NamespaceRuntimeStreamNameSchema)("ns.firegrid.workflow")
-    expect(Either.isLeft(result)).toBe(true)
-  })
-})
-
-describe("RuntimeContextOutputStreamNameSchema", () => {
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 encodes per-context output side-channel stream names", () => {
-    const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
-    expect(runtimeContextOutputStreamName({
-      prefix,
-      contextId: "ctx.with/slash",
-    })).toBe("ns.firegrid.host.host_abc.runtimeOutput.context.ctx.with%2Fslash")
-  })
-
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 decodes per-context output side-channel stream names", () => {
-    expect(
-      Schema.decodeUnknownSync(RuntimeContextOutputStreamNameSchema)(
-        "ns.firegrid.host.host_abc.runtimeOutput.context.ctx.with%2Fslash",
-      ),
-    ).toEqual({
-      prefix: "ns.firegrid.host.host_abc",
-      contextId: "ctx.with/slash",
-    })
-  })
-
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 keeps marker-like text inside encoded context ids", () => {
-    const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
-    const contextId = "ctx.runtimeOutput.context.child"
-    expect(Schema.decodeUnknownSync(RuntimeContextOutputStreamNameSchema)(
-      runtimeContextOutputStreamName({ prefix, contextId }),
-    )).toEqual({ prefix, contextId })
-  })
-
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects malformed per-context output names", () => {
-    const result = Schema.decodeUnknownEither(RuntimeContextOutputStreamNameSchema)(
-      "ns.firegrid.host.host_abc.runtimeOutput.context.",
-    )
     expect(Either.isLeft(result)).toBe(true)
   })
 })
@@ -273,18 +223,13 @@ describe("DurableStreamUrlSchema", () => {
       Schema.decodeUnknownSync(DurableStreamUrlSchema)(
         "https://api.electric-sql.cloud/v1/stream/svc-example/ns.firegrid.runtime",
       ),
-    ).toEqual({
-      baseUrl: "https://api.electric-sql.cloud/v1/stream/svc-example",
-      streamName: "ns.firegrid.runtime",
-    })
+    ).toBe("https://api.electric-sql.cloud/v1/stream/svc-example/ns.firegrid.runtime")
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects a bare /v1/stream base URL", () => {
-    const result = Schema.encodeUnknownEither(DurableStreamUrlSchema)({
-      baseUrl: "http://h/v1/stream/",
-      streamName: "ns.firegrid.runtime",
-    })
-    expect(Either.isLeft(result)).toBe(true)
+    expect(() =>
+      durableStreamUrl("http://h/v1/stream/", "ns.firegrid.runtime"),
+    ).toThrow()
   })
 
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects decoding a URL that does not include /v1/stream/", () => {
@@ -307,10 +252,9 @@ describe("runtimeControlPlaneStreamUrl + hostOwnedStreamUrl", () => {
     ).toBe("http://h/v1/stream/ns.firegrid.host.host_abc.workflow")
   })
 
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 per-context output URL chains runtimeContextOutputStreamName + durableStreamUrl", () => {
-    const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 output URL chains namespace runtime output name + durableStreamUrl", () => {
     expect(
-      runtimeContextOutputStreamUrl({ baseUrl: "http://h", prefix, contextId: "ctx/1" }),
-    ).toBe("http://h/v1/stream/ns.firegrid.host.host_abc.runtimeOutput.context.ctx%252F1")
+      runtimeOutputStreamUrl({ baseUrl: "http://h", namespace: "ns" }),
+    ).toBe("http://h/v1/stream/ns.firegrid.runtimeOutput")
   })
 })

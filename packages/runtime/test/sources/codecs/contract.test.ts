@@ -23,6 +23,9 @@ describe("AgentSession", () => {
               },
             },
             toolUseMode: "observation_only",
+            inboundKinds: new Set(
+              ["Prompt", "PermissionResponse", "Cancel", "Terminate"] as const,
+            ),
             send: () => Effect.void,
             outputs: Stream.empty,
           }),

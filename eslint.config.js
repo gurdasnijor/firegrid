@@ -532,14 +532,14 @@ const local = {
         type: "problem",
         docs: {
           description:
-            "Require tiny-firegrid simulation hosts to compose the real @firegrid/runtime FiregridHost factory.",
+            "Require tiny-firegrid simulation hosts to compose the real @firegrid/runtime FiregridRuntime factory.",
         },
         schema: [],
         messages: {
           missingFactoryImport:
-            "Simulation host.ts must import FiregridHost from @firegrid/runtime/unified and compose that real factory.",
+            "Simulation host.ts must import FiregridRuntime from @firegrid/runtime/unified and compose that real factory.",
           missingFactoryCall:
-            "Simulation host.ts must call the imported @firegrid/runtime/unified FiregridHost factory.",
+            "Simulation host.ts must call the imported @firegrid/runtime/unified FiregridRuntime factory.",
         },
       },
       create(context) {
@@ -556,7 +556,7 @@ const local = {
               if (
                 specifier.type === "ImportSpecifier" &&
                 specifier.imported.type === "Identifier" &&
-                specifier.imported.name === "FiregridHost"
+                specifier.imported.name === "FiregridRuntime"
               ) {
                 importedFactoryLocalName = specifier.local.name
               }
