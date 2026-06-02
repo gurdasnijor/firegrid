@@ -6,16 +6,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/bin/index.ts",
-      "default": "./src/bin/index.ts"
-    },
-    "./run": {
-      "types": "./src/bin/run.ts",
-      "default": "./src/bin/run.ts"
-    },
-    "./host": {
-      "types": "./src/bin/host.ts",
-      "default": "./src/bin/host.ts"
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
     }
   },
   "files": [
@@ -32,9 +24,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": {
-    "tsx": "^4.20.4"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0",
