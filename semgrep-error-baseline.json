@@ -36,6 +36,12 @@
       "path": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "line": 368,
       "justification": "Owned durable peer-event observer workflow: parks on the peer-event signal and then reads the corresponding owned peer-event row written before signal delivery."
+    },
+    {
+      "ruleId": "firegrid-no-unclassified-workflow-make",
+      "path": "packages/runtime/src/unified/mcp-host/tool-dispatch.ts",
+      "line": 163,
+      "justification": "Reviewed MCP-entry Shape D tool-dispatch owner workflow: one execution per toolUseId, uses Workflow idempotency and Activity memoization for at-most-once tool execution, then returns the synchronous MCP tools/call result without a relay."
     }
   ]
 }
