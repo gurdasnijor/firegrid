@@ -57,6 +57,9 @@ import {
   ProductionCodecAdapterLive,
 } from "./codec-adapter.ts"
 import {
+  FiregridRuntimeContextMcpBaseUrlLive,
+} from "./mcp-host/runtime-context-mcp-base-url.ts"
+import {
   CodecOutputJournalFromRuntimeOutputTableLive,
   ContextResolverFromControlPlaneTableLive,
 } from "../tables/codec-adapter-providers.ts"
@@ -332,6 +335,7 @@ export const FiregridHost = (options: FiregridHostOptions) => {
         Layer.provideMerge(engineLayer(options)),
         Layer.provideMerge(hostSessionLayer),
         Layer.provideMerge(tableLayer(options)),
+        Layer.provideMerge(FiregridRuntimeContextMcpBaseUrlLive),
       )
     }),
   )
