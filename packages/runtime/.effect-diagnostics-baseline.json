@@ -3,8 +3,8 @@
   "command": "pnpm run effect:diagnostics:baseline",
   "counts": {
     "error": 0,
-    "warning": 4,
-    "message": 12
+    "warning": 3,
+    "message": 10
   },
   "entries": [
     {
@@ -105,33 +105,6 @@
       "severity": "warning",
       "code": "globalErrorInEffectFailure",
       "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/unified/cross-attempt-output-flush.test.ts",
-      "line": 165,
-      "column": 26,
-      "severity": "message",
-      "code": "schemaSyncInEffect",
-      "message": "`Schema.decodeSync` is used inside an Effect generator. `Schema.decode` preserves the typed Effect error channel for this operation without throwing."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/unified/firegrid-runtime-composition-compile-spike.test.ts",
-      "line": 144,
-      "column": 22,
-      "severity": "message",
-      "code": "effectSucceedWithVoid",
-      "message": "`Effect.void` represents the same outcome as `Effect.succeed(undefined)` or `Effect.succeed(void 0)`."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/unified/firegrid-runtime-composition-compile-spike.test.ts",
-      "line": 343,
-      "column": 11,
-      "severity": "warning",
-      "code": "multipleEffectProvide",
-      "message": "This expression chains multiple `Effect.provide` calls. Providing Layers in multiple calls in a chain can break service lifecycle behavior compared with a single combined provide with merged layers."
     },
     {
       "project": "packages/runtime/tsconfig.json",

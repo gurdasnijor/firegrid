@@ -7,7 +7,21 @@ import type {
   StopReason,
 } from "../../../events/index.ts"
 import type { AgentByteStream } from "../../sandbox/byte-stream.ts"
-import { AgentCodecError, AgentSession } from "../contract.ts"
+import {
+  AgentCodecError,
+  AgentSession,
+  type AgentInputKind,
+} from "../contract.ts"
+
+// stdio-jsonl is a raw passthrough: it can deliver every inbound kind
+// (`client_result_roundtrip` includes ToolResult). Full witness.
+const stdioJsonlInboundKinds: ReadonlySet<AgentInputKind> = new Set<AgentInputKind>([
+  "Prompt",
+  "ToolResult",
+  "PermissionResponse",
+  "Cancel",
+  "Terminate",
+])
 
 const codec = "stdio-jsonl"
 const encoder = new TextEncoder()
@@ -317,6 +331,7 @@ export const StdioJsonlSessionLive = (
         capabilities: StdioJsonlCapabilities,
       },
       toolUseMode: "client_result_roundtrip",
+      inboundKinds: stdioJsonlInboundKinds,
       send: event => writeJsonLine(bytes.stdin, event),
       outputs: outputs(bytes),
     }),

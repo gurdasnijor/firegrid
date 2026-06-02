@@ -1,8 +1,9 @@
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import {
   ContextResolverTag,
+  defaultProductionAdapterLayer,
   ensurePathInput,
-  FiregridHost as RuntimeFiregridHost,
+  FiregridRuntime,
   FiregridMcpServerLayer,
   RuntimeControlPlaneTable,
   ToolDispatchLive,
@@ -30,15 +31,16 @@ const contextResolverFromControlPlaneTable = Layer.effect(
 export const codexAcpHost = (
   env: TinyFiregridHostEnv,
 ): Layer.Layer<FiregridHost, unknown> => {
-  const host = RuntimeFiregridHost({
-    durableStreamsBaseUrl: env.durableStreamsBaseUrl,
-    namespace: env.namespace,
-    codec: "acp",
-    envPolicy: RuntimeEnvResolverPolicy.withPolicy({
+  const host = FiregridRuntime(
+    {
+      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
+      namespace: env.namespace,
+    },
+    defaultProductionAdapterLayer(RuntimeEnvResolverPolicy.withPolicy({
       authorizedBindings: [["OPENAI_API_KEY", "OPENAI_API_KEY"]],
       lookupEnv: (name) => env.processEnv[name],
-    }),
-  })
+    })),
+  )
   const mcp = FiregridMcpServerLayer({
     host: mcpHost,
     port: mcpPort,

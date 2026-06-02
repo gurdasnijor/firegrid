@@ -13,11 +13,8 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Prompt, Response } from "@effect/ai"
 import {
-  makeHostStreamPrefix,
   RuntimeOutputTable,
-  runtimeContextOutputStreamUrl,
-  type HostId,
-  type HostStreamPrefix,
+  runtimeOutputStreamUrl,
 } from "@firegrid/protocol/launch"
 import { SessionAgentOutputChannelTarget } from "@firegrid/protocol/channels"
 import { Effect, type Scope } from "effect"
@@ -54,16 +51,11 @@ afterEach(async () => {
 })
 
 const ATTEMPT = 0
-const PREFIX: HostStreamPrefix = makeHostStreamPrefix({
-  namespace: "shape-c-cutover-route",
-  hostId: "shape-c-cutover-route_host" as HostId,
-})
-
-const outputUrl = (contextId: string) =>
-  runtimeContextOutputStreamUrl({
+const NAMESPACE = "shape-c-cutover-route"
+const outputUrl = () =>
+  runtimeOutputStreamUrl({
     baseUrl: baseUrl!,
-    prefix: PREFIX,
-    contextId,
+    namespace: NAMESPACE,
   })
 
 const ready: AgentOutputEvent = {
@@ -109,7 +101,7 @@ const populate = (
     }
   }).pipe(
     Effect.provide(RuntimeOutputTable.layer({
-      streamOptions: { url: outputUrl(contextId), contentType: "application/json" },
+      streamOptions: { url: outputUrl(), contentType: "application/json" },
     })),
   )
 
@@ -138,7 +130,7 @@ describe("Shape C — parent observes child output through the production channe
         forContext: (sessionId: string) =>
           sessionAgentOutputChannel({
             durableStreamsBaseUrl: baseUrl!,
-            streamPrefix: PREFIX,
+            namespace: NAMESPACE,
             contextId: sessionId,
           }),
       }

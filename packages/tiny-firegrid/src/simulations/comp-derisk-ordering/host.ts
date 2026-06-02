@@ -1,5 +1,6 @@
 import {
-  FiregridHost as RuntimeFiregridHost,
+  defaultProductionAdapterLayer,
+  FiregridRuntime,
   RuntimeOutputTable,
 } from "@firegrid/runtime/unified"
 import { Effect, Layer, Stream } from "effect"
@@ -54,10 +55,12 @@ export const host = (
 ): Layer.Layer<FiregridHost, unknown> =>
   outputOrderProbe.pipe(
     Layer.provideMerge(
-      RuntimeFiregridHost({
-        durableStreamsBaseUrl: env.durableStreamsBaseUrl,
-        namespace: env.namespace,
-        codec: "acp",
-      }),
+      FiregridRuntime(
+        {
+          durableStreamsBaseUrl: env.durableStreamsBaseUrl,
+          namespace: env.namespace,
+        },
+        defaultProductionAdapterLayer(),
+      ),
     ),
   )

@@ -901,30 +901,30 @@ describe("AcpSessionLive", () => {
     ])
   })
 
-  it("rejects ToolResult input until ACP out-of-band tool results are specified", async () => {
-    const result = await Effect.runPromise(
+  // tf-0awo.24 / SDD §3.2 Fix B: ACP is observation-only and cannot deliver a
+  // subscriber-produced ToolResult inbound. This is now structural — `ToolResult`
+  // is excluded from the session's accepted-kind set `K`, so `session.send` does
+  // not even type it (a compile gate where the narrow type is held), and the
+  // former runtime `Effect.fail("out-of-band")` → `orDie` session-kill path is
+  // gone. The codec-adapter consults `inboundKinds` and Skips an undeliverable
+  // relay rather than dispatching it. This test pins the witness the adapter
+  // relies on.
+  it("declares ToolResult as a non-deliverable inbound kind (observation-only; gated, not sent)", async () => {
+    const kinds = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const harness = yield* makeHarness
           startAgent(harness, connection => new FixtureAgent(connection))
           const session = yield* openSession(harness.bytes)
-          return yield* session.send({
-            _tag: "ToolResult",
-            part: Prompt.toolResultPart({
-              id: "tool-1",
-              name: "lookup",
-              result: { ok: true },
-              isFailure: false,
-              providerExecuted: false,
-            }),
-          }).pipe(Effect.either)
+          return session.inboundKinds
         }),
       ),
     )
 
-    expect(result._tag).toBe("Left")
-    if (result._tag === "Left") {
-      expect(result.left.message).toContain("out-of-band")
-    }
+    expect(kinds.has("ToolResult")).toBe(false)
+    expect(kinds.has("Prompt")).toBe(true)
+    expect(kinds.has("PermissionResponse")).toBe(true)
+    expect(kinds.has("Cancel")).toBe(true)
+    expect(kinds.has("Terminate")).toBe(true)
   })
 })

@@ -383,7 +383,16 @@ const buildSessionForContext = (
     return { session, scope: ctxScope, attempt, sequenceRef }
   })
 
-export const ProductionCodecAdapterLive = Layer.scoped(
+export const ProductionCodecAdapterLive: Layer.Layer<
+  RuntimeContextSessionAdapter,
+  never,
+  | CodecOutputJournalTag
+  | SandboxProvider
+  | IdGenerator.IdGenerator
+  | ContextResolverTag
+  | RuntimeEnvResolverPolicy
+  | FiregridRuntimeContextMcpBaseUrl
+> = Layer.scoped(
   RuntimeContextSessionAdapter,
   Effect.gen(function*() {
     const hostScope = yield* Effect.scope
@@ -471,6 +480,18 @@ export const ProductionCodecAdapterLive = Layer.scoped(
               `input payloadJson failed AgentInputEvent decode: ${outcome.message}`,
             )
           case "Decoded":
+            // tf-0awo.24 / SDD §3.2 Fix B — the inbound-capability gate runs
+            // here, where the live (K-erased) session is visible. If the codec
+            // did not declare this kind (e.g. a provider-owned `ToolResult`
+            // relay against ACP, which is observation-only), Skip rather than
+            // dispatch — removing the former `Effect.fail`→`orDie` session-kill.
+            if (!entry.session.inboundKinds.has(outcome.event._tag)) {
+              yield* Effect.annotateCurrentSpan({
+                "firegrid.unified.adapter.send.outcome": "skip_undeliverable_kind",
+                "firegrid.unified.adapter.send.event_tag": outcome.event._tag,
+              })
+              return
+            }
             yield* Effect.annotateCurrentSpan({
               "firegrid.unified.adapter.send.outcome": "decoded",
               "firegrid.unified.adapter.send.event_tag": outcome.event._tag,
