@@ -273,12 +273,28 @@ that. A proposal frames the PO decision; it does **not** decide it.
   + deletion map. Its four child proofs **`tf-4fy3` / `tf-u8w2` / `tf-28b8` /
   `tf-1r0o` are CLOSED** — but they predate the reviews, the synthesis verdict is
   still unwritten, and the groom flagged "no done-evidence" on the closures.
-- **GAP the reviews exposed → new bead `tf-c71h`** (P1, blocks `tf-tvg1`):
-  *return-and-re-drive* is unproven and the four closed proofs don't cover it. It
-  is the load-bearing proof for whether **A is even feasible**. Run it
-  (methodology-clean) **before** trusting any A/B/C synthesis.
+- **GAP the reviews exposed → new bead `tf-c71h`** (P1, blocks `tf-tvg1`).
+  **Reframed (see blast-radius analysis below):** *not* "return-and-re-drive"
+  (review 3 proved you can't re-drive a returned execution) — the actor target
+  spawns a **fresh execution per event** (the `PermissionRoundtrip` shape), reading
+  a durable cursor. `tf-c71h` = prove RuntimeContext can adopt that shape for the
+  multi-event-per-key session-input case. Build as a tiny-firegrid **workbench**
+  sim (spec in the analysis doc §4). Run it **before** any A/B/C synthesis.
 - Downstream cutover (gated on `tf-tvg1`): `tf-vrz6` (BLOCKED), `tf-w6qj` (OPEN),
   `tf-jpcg` (BLOCKED).
+
+**★ Blast-radius / integrity finding (added 2026-06-02) — read this if you fear the
+system is "built on the wrong model":** it is **not**.
+`docs/analysis/2026-06-02-runtime-shape-blast-radius-and-prior-art.md`. The actor /
+virtual-object model canon specifies (C1+C2+C4) is **already in production** —
+`PermissionRoundtripWorkflow` + `ToolDispatchWorkflow` are per-event fresh
+executions (await-once, return). **Exactly one body diverges** — `runtime-context.ts`'s
+parked loop — and canon (C2:282) **already documents it** as a known compatibility
+bridge. `signal.ts` is mostly **model-neutral plumbing** (durable event table +
+deliver/arm/recover) both models reuse; only the parked loop's use of it is banned.
+So the migration is "make `RuntimeContext` look like `PermissionRoundtrip`," not a
+re-architecture. (An earlier flat "Shipped=Temporal vs Canon=actor" framing
+overstated the spread — corrected in the analysis doc + proposal §9.)
 
 **The P0 leak (`tf-r06u.36` / `tf-ll90.5`, both P0 OPEN — SAME leg, dedupe):**
 trigger on **`Terminated` + explicit cancel/close ONLY** → `emitSessionTerminalSignal`

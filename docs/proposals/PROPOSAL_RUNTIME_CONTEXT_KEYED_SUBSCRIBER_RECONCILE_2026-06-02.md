@@ -2,16 +2,20 @@
 
 - **Date:** 2026-06-02
 - **Status:** proposal for review (decision is the PO's; this frames it)
-- **Revision:** v4 — reconciles **three** peer reviews, all verdict *amend*, every
-  correction independently source-verified by the coordinator: **#842** (Agent0),
-  the **Opus diversity-review** (`tf-1axl`), and a **third deep review** (the "D
-  pressure-test"). Net change from v3: **option D is demoted** — its re-drive
-  mechanism is internally contradictory and `tf-e5rf` does *not* prove it (review
-  3, §1, verified); the option set is back to **A/B/C with mechanism settled
-  (explicit arm) and shape open (per-event A vs parked B/C)**, D parked as an
-  *unvalidated* shape needing a new return-and-re-drive proof. §0.1 reframed from
-  "two co-equal docs" to "unified shipped a parked entity body past the canon SDD
-  Gate"; the §2.2 fix snippet corrected to typecheck. See §7.
+- **Revision:** v5 — adds the **blast-radius / prior-art** finding (§9): a
+  calibration challenge ("is the whole system on the wrong model?") was answered at
+  source — **no**; the divergence is **one body** (`RuntimeContext`), the actor
+  model is **already in production** (permission/tool handlers), and `signal.ts` is
+  mostly model-neutral plumbing. Full write-up:
+  `docs/analysis/2026-06-02-runtime-shape-blast-radius-and-prior-art.md`. This also
+  reframes `tf-c71h` (per-event fresh-execution, *not* return-and-re-drive — the
+  `PermissionRoundtrip` shape) and specifies the verifying sim.
+- **Revision history:** v4 reconciled **three** peer reviews (all *amend*): **#842**
+  (Agent0), the **Opus diversity-review** (`tf-1axl`), and the **"D pressure-test"**
+  review — option D demoted (re-drive of a returned execution is source-falsified,
+  `tf-e5rf` doesn't prove it); option set back to **A/B/C**, mechanism settled
+  (explicit arm), shape open (per-event A vs parked B/C); §0.1 reframed to "unified
+  shipped a parked entity body past the canon SDD Gate"; §2.2 snippet corrected. See §7.
 - **Main:** `origin/main` post-§12 (`c24c87f60`+)
 - **Surfaced by:** the `tf-0awo.34` alignment audit + a `bv --robot-insights`
   structural read (`tf-tvg1` / `tf-r06u.14` are betweenness keystones).
@@ -544,4 +548,38 @@ beads `tf-tvg1` (+ `tf-4fy3/.u8w2/.28b8/.1r0o`), `tf-vrz6` (STOP notes),
 `tf-w6qj`, `tf-jpcg`, `tf-9rpy`, `tf-r06u.36`/`tf-ll90.5`, `tf-1axl` ·
 peer reviews `docs/reviews/2026-06-02-runtime-context-reconcile-proposal-review.md` (#842, Agent0) +
 `docs/reviews/2026-06-02-runtime-context-reconcile-review-opus.md` (`tf-1axl`, Opus) ·
-`docs/analysis/2026-06-02-architecture-health-check.md`.
+`docs/analysis/2026-06-02-architecture-health-check.md` ·
+`docs/analysis/2026-06-02-runtime-shape-blast-radius-and-prior-art.md` (§9).
+
+---
+
+## §9 — Blast radius & prior-art finding (added v5)
+
+A calibration challenge asked whether the system's integrity is compromised — i.e.
+whether `signal.ts` quietly put the *whole system* on the Temporal model instead of
+the actor/virtual-object model canon and the RFCs align with. **Answered at source
+— it does not.** Full write-up + the verifying sim spec:
+`docs/analysis/2026-06-02-runtime-shape-blast-radius-and-prior-art.md`. Summary:
+
+- **The actor model is what canon specifies** (C1 keyed durable entity + C2
+  `(state,event)->(newState,actions)` run-to-completion + C4 await-once) — that's
+  the Restate-Virtual-Object / Orleans-grain / actor family, just unnamed in canon.
+- **The actor model already runs in production** — `PermissionRoundtripWorkflow`
+  and `ToolDispatchWorkflow` are per-event fresh executions that await once and
+  return (canon-compliant, C4). [verified]
+- **Exactly one body diverges** — `RuntimeContext`'s `while(!reachedTerminal)`
+  parked loop is the single C2/C5 violation. It is load-bearing but *localized*,
+  and the canon **already documents it** as a known compatibility bridge (C2:282).
+- **`signal.ts` is mostly model-neutral plumbing** (durable event table + deliver/
+  arm/recover) that *both* models need; only the RuntimeContext loop's *use* of it
+  is the banned shape. Under A you keep the table+arm, delete the parked loop.
+- **This dissolves the v4 "return-and-re-drive" puzzle:** the actor target spawns a
+  **fresh execution per event** (the `PermissionRoundtrip` shape), reading a durable
+  cursor from state — it never re-drives a returned execution (which review 3
+  correctly proved impossible). **`tf-c71h` is reframed accordingly**, and the
+  verifying tiny-firegrid workbench sim is specified in the analysis doc §4.
+
+> Net: the §0.1 decision is **migrate one documented holdout body to the shape the
+> rest of the system already uses**, or formally ratify the parked body (reverse
+> C2/C5). Far smaller than "re-architect the system." The v4 flat "Shipped=Temporal
+> vs Canon=actor" framing **overstated** the spread; corrected here.
