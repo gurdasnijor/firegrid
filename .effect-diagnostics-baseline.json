@@ -4,7 +4,7 @@
   "counts": {
     "error": 0,
     "warning": 10,
-    "message": 72
+    "message": 70
   },
   "entries": [
     {
@@ -627,24 +627,6 @@
       "severity": "message",
       "code": "preferSchemaOverJson",
       "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
-      "line": 27,
-      "column": 58,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/src/subscribers/runtime-control/workflows.ts",
-      "line": 32,
-      "column": 55,
-      "severity": "message",
-      "code": "schemaStructWithTag",
-      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
     },
     {
       "project": "packages/runtime/tsconfig.json",
