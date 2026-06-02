@@ -19,21 +19,18 @@ can't diverge.) This satisfies
 
 ## Gate Summary
 
-This section satisfies `firegrid-quality-gates.DOCS.1`.
-The runnable `check:specs` and `check:docs` scripts satisfy
-`firegrid-quality-gates.DOCS.3`.
+This section satisfies `firegrid-quality-gates.DOCS.1`. (The runnable
+`check:specs`/`check:docs` gates — `firegrid-quality-gates.DOCS.3` — were retired
+as low-value tool-wrappers and that ACID deprecated; see tf-dbxp.)
 
 | Gate | Script | What It Forbids | Canonical Replacement | Notes |
 |---|---|---|---|---|
-| Specs | `check:specs` | Invalid `features/*/*.feature.yaml` syntax | Fix YAML before changing code | `acai` specs are the behavior source of truth. |
-| Docs | `check:docs` | Trailing whitespace and conflict markers in docs/specs | Remove whitespace/markers | Covers `README.md`, `docs`, and `features`. |
 | TypeScript | `typecheck` | Type errors across workspace packages | Fix type/service requirements | Runs through Turbo package scripts. |
-| ESLint | `lint` | Style, unsafe TS, restricted imports | Follow local ESLint error and use public package roots | Includes `scripts/runtime-public-surface-check.mjs` and `scripts/tiny-firegrid-layout-check.mjs`. |
-| Dead code | `lint:dead` | Any Knip finding | Remove the dead export/import/file or wire it through a public surface intentionally | Baseline must remain zero. |
-| Duplicate code | `lint:dup` | jscpd duplicated lines above the ratchet | Extract a shared helper or keep the implementation single-source | Rebaseline only after reducing duplication. |
+| ESLint | `lint` | Style, unsafe TS, restricted imports | Follow local ESLint error and use public package roots | Single `eslint .` pass (type-aware + local rules). |
+| Dead code | `lint:dead` | Any Knip finding or config-hint | Remove the dead export/import/file (or fix knip.json) | Native strict-0: `knip --treat-config-hints-as-errors`, no baseline. |
+| Duplicate code | `lint:dup` | Any jscpd-detected duplication | Extract a shared helper or keep the implementation single-source | Native strict-0: `jscpd packages/*/src` (.jscpd.json threshold 0). |
 | Dependency boundaries | `lint:deps` | Forbidden package/app dependency edges | Move code to the owning package or depend on a public subpath | Uses `.dependency-cruiser.cjs`. |
-| Effect quality | `lint:effect-quality` | Regressions in AST-counted Effect/runtime anti-patterns (incl. the count-ratcheted rules relocated from Semgrep) | Use Effect services, scoped layers, typed errors, and approved adapters | Improvements print a rebaseline hint. |
-| host-sdk imports | `lint:host-sdk-imports` | New host-sdk → runtime kernel/streams/subscriber-symbol imports | Use the sanctioned narrow runtime subpath | Line-regex quarantine baseline. |
+| Effect quality | `lint:effect-quality` | Regressions in AST-counted Effect/runtime anti-patterns (incl. the count-ratcheted rules relocated from Semgrep) | Use Effect services, scoped layers, typed errors, and approved adapters | ts-morph count ratchet, pending conversion to strict-0 ESLint rules (tf-q6vf). |
 | Effect diagnostics | `effect:diagnostics` | Effect language-service diagnostics | Fix Effect-specific type/service issues | CI runs this separately from TS typecheck. |
 | Tests | `test` | Runtime behavior regressions | Add/fix tests near the owning feature | Runs workspace package tests through Turbo. |
 
@@ -79,19 +76,19 @@ preserved:
 
 ## Baselines
 
-Some ratchets have baselines:
+`lint:dead` (knip) and `lint:dup` (jscpd) are **native strict-0** — no baseline
+JSON. `.jscpd.json` holds the config (`threshold: 0`); there is no knip baseline.
 
-- `.knip-baseline.json` must stay at zero.
-- `.jscpd.json` stores the duplicate-line threshold.
+One ratchet still carries a baseline pending its conversion to strict-0 ESLint
+rules (tf-q6vf):
+
 - `effect-quality-metrics-baseline.json` stores per-metric maximums (including
   the count-ratcheted rules relocated from Semgrep; the grandfathered
   `Workflow.make` owners are listed in `docs/workflow-make-admission-ledger.md`).
-- `host-sdk-runtime-import-baseline.json` stores the host-sdk runtime-import
-  quarantine.
 
-Only update a baseline when the current code improved the metric or when a rule
-PR intentionally introduces a staged baseline. Do not add baseline entries to
-hide findings from an unrelated feature PR.
+Only update that baseline when the current code improved the metric or when a
+rule PR intentionally introduces a staged baseline. Do not add baseline entries
+to hide findings from an unrelated feature PR.
 
 This guide does not relax or remove ratchets, and it does not install local Git
 hooks automatically. Those boundaries are tracked by
