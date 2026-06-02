@@ -48,6 +48,7 @@ components:
       2: Product apps do not call runtime internals, host-owned table helpers, raw RuntimeEvent.raw parsing, or src/run.ts helpers to perform normal session operations.
       3: "Session launch writes durable intent and does not carry live process handles, provider SDK clients, raw secret values, host environment readers, or host execution policy."
       4: "The `sessions.createOrLoad` operation uses caller-owned `externalKey` to converge retries or repeated dispatches on one durable agent session; Firegrid must not replace this with a second `idempotencyKey` spelling."
+      4-1: The `sessions.createOrLoad` operation materializes or reuses the RuntimeContext row for its derived session identity before returning the session handle.
 
   LAUNCH_SUBSTRATE:
     requirements:
