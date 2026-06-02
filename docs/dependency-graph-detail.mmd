@@ -315,15 +315,20 @@ subgraph 6X["codex-acp-tool-calls"]
 6Z["host.ts"]
 70["index.ts"]
 end
-subgraph 71["control-plane-cancel-close"]
+subgraph 71["comp-derisk-ordering"]
 72["driver.ts"]
 73["host.ts"]
 74["index.ts"]
 end
-subgraph 75["unified-kernel-validation"]
+subgraph 75["control-plane-cancel-close"]
 76["driver.ts"]
 77["host.ts"]
 78["index.ts"]
+end
+subgraph 79["unified-kernel-validation"]
+7A["driver.ts"]
+7B["host.ts"]
+7C["index.ts"]
 end
 end
 6S["types.ts"]
@@ -714,12 +719,17 @@ Z-->L
 70-->6S
 70-->6Y
 70-->6Z
+72-->6
 73-->2D
 74-->6S
 74-->72
 74-->73
-76-->6
 77-->2D
 78-->6S
 78-->76
 78-->77
+7A-->6
+7B-->2D
+7C-->6S
+7C-->7A
+7C-->7B
