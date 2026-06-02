@@ -306,6 +306,9 @@ importers:
       effect-durable-operators:
         specifier: workspace:*
         version: link:../effect-durable-operators
+      effect-durable-streams:
+        specifier: workspace:*
+        version: link:../effect-durable-streams
     devDependencies:
       '@agentclientprotocol/sdk':
         specifier: 0.21.0

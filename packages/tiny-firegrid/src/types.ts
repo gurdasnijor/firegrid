@@ -4,6 +4,7 @@ import type {
 import type {
   FiregridRuntime as RuntimeFiregridRuntime,
 } from "@firegrid/runtime/unified"
+import type { ChannelRegistration } from "@firegrid/protocol/channels"
 import type { Effect, Layer } from "effect"
 
 export type FiregridHost = Layer.Layer.Success<
@@ -29,6 +30,10 @@ export interface TinyFiregridSimulationDefinition<A, E = unknown> {
   readonly host: (
     env: TinyFiregridHostEnv,
   ) => Layer.Layer<FiregridHost, E>
+  readonly channels?: (
+    env: TinyFiregridHostEnv,
+  ) => ReadonlyArray<ChannelRegistration>
+  readonly launchHost?: boolean
   readonly driver: Effect.Effect<A, E, Firegrid>
 }
 
