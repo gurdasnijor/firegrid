@@ -179,19 +179,16 @@ const getNumberAttribute = (
   spans: ReadonlyArray<SpanRecord>,
   key: string,
 ): number => {
-  for (const span of spans) {
-    const value = span.attributes[key]
-    if (typeof value === "number") {
-      return value
-    }
-    if (typeof value === "string") {
-      const parsed = Number(value)
-      if (Number.isFinite(parsed)) {
-        return parsed
-      }
-    }
-  }
-  return 0
+  const found = spans
+    .map(span => span.attributes[key])
+    .map(value =>
+      typeof value === "number"
+        ? value
+        : typeof value === "string"
+          ? Number(value)
+          : Number.NaN)
+    .find(value => Number.isFinite(value))
+  return found ?? 0
 }
 
 const spanContextId = (span: SpanRecord): string | undefined => {
@@ -206,17 +203,14 @@ const countTerminalBeforeDeregister = (
     span.name === "firegrid.unified.session.terminal_signal")
   const deregisters = spans.filter(span =>
     span.name === "firegrid.unified.adapter.deregister")
-  let count = 0
-  for (const deregister of deregisters) {
+  return deregisters.filter(deregister => {
     const contextId = spanContextId(deregister)
-    if (contextId === undefined) continue
+    if (contextId === undefined) return false
     const deregisterStart = startNs(deregister)
-    const ordered = terminalSignals.some(terminal =>
+    return terminalSignals.some(terminal =>
       spanContextId(terminal) === contextId &&
       startNs(terminal) <= deregisterStart)
-    if (ordered) count += 1
-  }
-  return count
+  }).length
 }
 
 const countAcpToolUseUpdates = (
@@ -393,14 +387,14 @@ const printSummary = (
     yield* Console.log(`Total spans in trace: ${summary.totalSpans}`)
     yield* Console.log("")
     yield* Console.log("UKV production-path assertions:")
-    for (const assertion of summary.productionAssertions) {
+    yield* Effect.forEach(summary.productionAssertions, assertion => {
       const mark = assertion.status === "pass" ? "✓" : "✗"
       const gate = assertion.gating ? "gating" : "report-only"
       const comparator = assertion.expectation === "exactly" ? "==" : ">="
-      yield* Console.log(
+      return Console.log(
         `  ${mark} ${assertion.id.padEnd(38)} ${String(assertion.count).padStart(4)}× ${comparator} ${String(assertion.threshold).padStart(1)} — ${assertion.description} (${assertion.source}, ${gate})`,
       )
-    }
+    })
     yield* Console.log("")
     yield* Console.log(
       "Report-only note: snapshot_run_count verifies the OUTPUT-READ-BACK / TERMINAL-RELAY path = tf-ll90.5 (recordExited writes RuntimeControlPlaneTable.runs); not built yet — add to the gate's pass-condition when .5 lands.",
@@ -410,10 +404,10 @@ const printSummary = (
       `Seams: ${summary.passing}/${SEAMS.length} covered${skipped > 0 ? ` (${skipped} optional skipped)` : ""}`,
     )
     yield* Console.log("")
-    for (const c of summary.seams) {
+    yield* Effect.forEach(summary.seams, c => {
       const mark = c.status === "pass" ? "✓" : c.status === "skipped" ? "⊘" : "✗"
-      yield* Console.log(`  ${mark} ${c.id.padEnd(38)} ${String(c.count).padStart(4)}× — ${c.description}`)
-    }
+      return Console.log(`  ${mark} ${c.id.padEnd(38)} ${String(c.count).padStart(4)}× — ${c.description}`)
+    })
     yield* Console.log("")
     yield* Console.log(`Wrote: ${outputPath}`)
 
