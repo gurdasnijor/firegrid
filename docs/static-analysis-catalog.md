@@ -2,6 +2,11 @@
 
 **Purpose.** A complete inventory of every static-analysis/lint rule in the repo and the *stack* (engine + file scope) it runs on. This is the working reference for consolidating the overlapping pattern-matching tooling onto fewer engines. Captured 2026-06-02 from `main`.
 
+> **STATUS: consolidation executed.** §1–§6 below are the *pre-consolidation
+> snapshot*. ast-grep and Semgrep have since been **retired**; see
+> "## Consolidation outcome (executed)" at the bottom for the current state and
+> where each rule now lives.
+
 > Headline: code-pattern enforcement is spread across **four** mechanisms that do the same *kind* of job — ESLint (type-aware AST + custom JS rules), Semgrep (53 YAML patterns), ast-grep (8 patterns, 1 gated), and ~7 bespoke node scripts. The genuinely-distinct stacks (dependency-cruiser = import graph, knip = reachability, jscpd = cross-file duplication, effect-language-service = Effect diagnostics) are *not* overlap and should stay.
 
 ## Stack summary
@@ -198,3 +203,58 @@ Invocation (`lint:deps`): `depcruise --config .dependency-cruiser.cjs packages` 
 **Keystone = ESLint** (only type-aware engine; already hosts custom + anti-forge rules). **Second code-static tool = jscpd** (cross-file duplication, which ESLint can't do). Retire **ast-grep** and **Semgrep** by migrating their rules into ESLint `local/` rules; keep the genuinely-distinct **dependency-cruiser** (graph), **knip** (reachability), **effect-language-service** (Effect diagnostics).
 
 Staged: **Phase 0** delete the confirmed ESLint↔Semgrep duplicates · **Phase 1** retire ast-grep (relocate `hrtime`, delete 7 ungated) · **Phase 2** migrate Semgrep's 35 portable rules to ESLint (audit the 15–18 semgrep-only ones; keep a thin Semgrep residue only if some can't port) · **Phase 3** fold the AST-shaped bespoke scripts into `local/` rules. Every migration must be byte-equivalent with fixtures ported — these are all enforcement gates.
+
+---
+
+## Consolidation outcome (executed)
+
+The plan above was executed. Two pattern engines were **fully retired**; ESLint
+is the keystone. No enforcement gate was weakened (the empirical no-weakening
+checks are recorded in the commit messages).
+
+### ast-grep — RETIRED
+- The one gated rule, `hrtime-number-arithmetic`, is now the type-aware ESLint
+  rule `local/hrtime-number-arithmetic` (byte-equivalent; 0 findings, as before).
+- The 7 ungated inventory rules, the `tooling/ast-grep/` pack, the `@ast-grep/cli`
+  dep, the `lint:ast-grep` script, and its CI/preflight wiring were deleted.
+
+### Semgrep — RETIRED (engine, CI job, pipx, baseline, fixtures, check script gone)
+All 53 rules preserved (regexes, scopes, intent), split by whether they had live
+findings:
+- **45 footprint guards (0 live findings) → ESLint `local/sg-*`** — a shared
+  source-text scanner (`makeSourceRegexBanRule` in `eslint.config.js`) applies
+  Semgrep's *exact* regexes, scoped per the original rule's `paths` via each
+  block's `files`/`ignores`; one ESLint rule id per Semgrep rule so overlapping
+  scopes never collide on ESLint's per-rule config merge. Plus a new AST
+  `local/no-date-now`, and `local/no-process-env-outside-bin` extended to
+  `globalThis.process.env.X` (trailing access only, faithful to Semgrep).
+- **8 rules WITH live findings → the `effect-quality` ts-morph count ratchet**
+  (`scripts/effect-artifacts/quality-metrics.mjs`): `workflowMakeSiteCount`
+  (the C2 admission gate; grandfathered owners in
+  `docs/workflow-make-admission-ledger.md`), `newDateIsoCount`, `switchOnTagCount`,
+  `manualTaggedErrorTypeCount`, `effectRunInLibraryCount`, `tryPromiseMultiAwaitCount`,
+  `mutableStateInEffectGenCount`, `fireAndForgetVoidPromiseCount`,
+  `detachedPromiseInEffectSyncCount` (strict-zero), `promiseThenCatchChainCount`.
+  Grandfathers current counts, fails on increase — strictly stronger than the old
+  advisory WARNINGs.
+
+### Bespoke node-script gates — KEPT (not folded; would weaken or don't fit ESLint)
+Evaluated in Phase 3; none should move to ESLint:
+- `effect-quality-metrics-check.mjs` / `host-sdk-runtime-import-baseline.mjs` —
+  **baseline-ratchet** semantics ESLint can't express (and now the home for the
+  relocated Semgrep rules above).
+- `effect-native-production-cutover-check.mjs` — a **whole-tree substring scan
+  across all extensions (`.js/.jsx/.mjs/.cjs/.ts/.tsx/.mts/.cts`) including
+  tests**. Porting to ESLint would narrow that scope (ESLint here lints `.ts/.tsx`
+  and the `sg-*` blocks exclude tests) → a weaker anti-regression gate. Kept.
+- `runtime-public-surface-check.mjs`, `test-layout-check.mjs`,
+  `tiny-firegrid-layout-check.mjs` — **filesystem/directory-shape** checks, not
+  code-pattern rules; out of ESLint's domain.
+
+### Resulting engine set
+ESLint (keystone: type-aware + custom `local/` + ported `local/sg-*`) ·
+`effect-quality` ts-morph ratchet · dependency-cruiser (import graph) · knip
+(reachability) · jscpd (cross-file duplication) · effect-language-service (Effect
+diagnostics) · the irreducible bespoke filesystem/baseline gates. The four
+overlapping pattern engines (ESLint, Semgrep, ast-grep, bespoke substring) are now
+**one** (ESLint) plus the baseline/structure gates ESLint structurally can't host.
