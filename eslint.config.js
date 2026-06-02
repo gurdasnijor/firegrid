@@ -720,6 +720,33 @@ const local = {
         }
       },
     },
+    // tf-0awo.21 §6: ban the `as unknown as T` double-launder cast (matches the
+    // inner `… as unknown`). A distinct rule id (not no-restricted-syntax) so a
+    // tier-scoped enabling block never clobbers the shared no-restricted-syntax
+    // config via ESLint's per-rule last-wins merge.
+    "no-launder-cast": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow `as unknown as T` casts; drive residual requirements to never and orDie infra errors at their boundary so composition is launchable by construction.",
+        },
+        schema: [],
+        messages: {
+          noLaunderCast:
+            "Do not launder types through `as unknown as`. Make the composition type-correct (drive residual R to `never`, orDie infra errors at their boundary) instead of asserting the shape (tf-0awo.21 §6).",
+        },
+      },
+      create(context) {
+        return {
+          TSAsExpression(node) {
+            if (node.typeAnnotation?.type === "TSUnknownKeyword") {
+              context.report({ node, messageId: "noLaunderCast" })
+            }
+          },
+        }
+      },
+    },
     // Ported Semgrep source-regex rules (Semgrep retirement). Each id shares the
     // one `sourceRegexBanRule` implementation; the enabling config block sets the
     // file scope (matching the original Semgrep `paths`) and passes that rule's
@@ -1545,6 +1572,12 @@ export default tseslint.config(
     // host-sdk / cli / lab / types restrictions still apply.
     files: ["packages/runtime/src/bin/**/*.ts"],
     rules: {
+      // tf-0awo.21 §6: bin/ is the cleaned launchability tier — bin/acp.ts no
+      // longer forges a launchable Layer with `as unknown as`. Lock the
+      // double-launder cast out so it cannot return. Rollout to the rest of
+      // runtime/src (channel-bindings.ts, mcp-host/toolkit.ts) + tests is tracked
+      // follow-up; those pre-existing bridges are out of this phase's scope.
+      "local/no-launder-cast": "error",
       "no-restricted-imports": [
         "error",
         {

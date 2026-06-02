@@ -132,10 +132,11 @@ export interface FiregridHostOptionsWithAdapter extends FiregridHostOptionsBase 
   /**
    * Compose the session adapter Layer yourself. Required for sims or
    * non-ACP hosts; use the `codec: "acp"` sugar option below for the
-   * default production path.
+   * default production path. Must be fully provided (R → never) so the
+   * composed host stays launchable; an `any` R-channel here would let an
+   * under-provided adapter leak a hidden requirement into the host (tf-0awo.21 §6).
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  readonly adapter: Layer.Layer<RuntimeContextSessionAdapter, never, any>
+  readonly adapter: Layer.Layer<RuntimeContextSessionAdapter, never, never>
 }
 
 export interface FiregridHostOptionsWithCodecSugar extends FiregridHostOptionsBase {
