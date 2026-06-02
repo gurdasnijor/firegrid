@@ -1,3 +1,13 @@
+/**
+ * Protocol-owned, browser-safe READ VIEWS over the runtime control-plane and
+ * output tables — the read side of the §12 composition (see
+ * docs/cannon/architecture/runtime-design-constraints.md). Pure row projections
+ * (filter/derive by contextId), no live resources, so a read-only consumer can
+ * follow runtime state without importing host/runtime internals.
+ *
+ * NOTE: repointing the client SDK read-path onto these views is tracked by the
+ * open bead tf-0awo.6 (it still reads the durable-table facades directly today).
+ */
 import { Stream } from "effect"
 import type {
   RuntimeControlPlaneTableService,
