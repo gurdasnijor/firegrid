@@ -71,3 +71,26 @@ The suspension surface was unified (merged `#805`, `tf-0awo.15`):
 2. Then the remaining `tf-0awo` slices: `.3` uniqueness gate, `.6` client read-leak (real boundary fix), `.10`–`.14` (the rest of the CLI + the tf-r1gz proof).
 3. When a batch is ready, **re-publish the OSS mirror** (`pnpm publish:oss`) — main is ahead of `smithery-ai/firegrid`.
 4. Pick up the deferred fail-loud-stubs hardening when the trunk is quiet.
+
+---
+
+## Update — 2026-06-02 (session 2, mid-epic)
+
+**Main HEAD: `c3e224427`.** `tf-0awo` is **10/15 closed**: `.1 .2 .4 .5 .7 .8 .9 .12 .15 .16` + new `.16`(toolAnnotations). Merged this session: `#805`(wait.*), `#806`(spawn), `#808`(**CLI rebuild** — `run`/`acp`/`host` as direct runtime bins, `@firegrid/cli` launcher retired, embedded `DurableStreamTestServer` default, `firegrid` dispatcher), `#809`(projectTool), `#810`(wrapper removed), `#811`(toolAnnotations), `#812`(projectChannelMethod).
+
+**Local run works now:** `pnpm firegrid -- run --agent codex-acp --agent-protocol acp --secret-env OPENAI_API_KEY --prompt "…" -- npx -y @zed-industries/codex-acp@0.14.0` (the dispatcher → `runtime/src/bin/run.ts`; embeds a server, no env needed). NOT `firegrid:host` (that's the daemon).
+
+**★ OPEN DECISION — `#813` / `tf-0awo.17` is HELD (quality fail).** It made the **daemon** (`runtime/src/bin/host.ts`) default to the *one-liner's* settings: ephemeral embedded server (random port) + **random namespace** (`firegrid-cli-${randomUUID}`). Result = a "daemon" no separate client can connect to and that loses state on restart. The embedded default is right for `run`/`acp` (self-contained), **wrong for the daemon.** Pick a direction before merging:
+- **(A, recommended)** daemon keeps *requiring* `DURABLE_STREAMS_BASE_URL`, but with a great error pointing at `firegrid run`/`acp` for the self-contained path.
+- **(B)** real local daemon: **stable** server (fixed/known port) + **stable** namespace (`firegrid-local`) so a separate client can connect.
+Re-steer Agent1 to the chosen shape; the current `#813` is neither.
+
+**In flight:** Agent1 → `#813` fix (awaiting A/B direction). Agent2 → `.6` (client read-leak: a protocol-owned `FiregridRuntimeReadSource` with an observation-shaped surface; plan-back already confirmed — review its *interface* first) → then `.3` (operationId uniqueness test).
+
+**Remaining:** `.6`, `.3`, `.10`/`.11` (`run`/`start` polish), `.13` (CLI flags via `@effect/cli` — converts #808's interim hand-rolled argv parser; the SDD calls for this), `.14` (live tf-r1gz Zed trace proof), `.17` (per the A/B call).
+
+**★ STEERING LESSON (cost two catches this session — `.16` and `#813`):** do NOT merge on "CI green + the one thing I steered." **Read the actual code/design every time** — `.16` was shallow polish, `#813` shipped an unusable daemon, both nearly merged on a badge check. Lanes are on **plan-back-before-build** for non-mechanical slices (agents message their approach first; I confirm the shape, then they build) — keep that.
+
+**Process notes:** lanes base off `origin/main` (scripts default to it now). PRs come from `task-exit` with a **generic `wip(...)` title** — fix the title/body on review (`gh pr edit`). Watch PR base: a stale-base lane PR shows a giant phantom diff (`#805` did — retargeted with `gh pr edit --base main`); review the true delta via `git merge-base origin/main <head>`. Agent3 (surface:34) is a **dead Codex session** — its work was reassigned to Agent2.
+
+**Housekeeping:** the OSS mirror (`smithery-ai/firegrid`) is **behind main** (README/SDDs updated) — re-run `pnpm publish:oss` when ready to batch-publish.
