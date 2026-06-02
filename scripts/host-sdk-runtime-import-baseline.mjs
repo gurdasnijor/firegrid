@@ -1,13 +1,13 @@
 // Wave C host-sdk import quarantine.
 //
 // Source: docs/architecture/host-sdk-runtime-boundary.md
-//   Cannon §3 (no host-sdk @effect/workflow imports — enforced by semgrep
-//   `firegrid-host-sdk-no-effect-workflow-import`)
-//   Cannon §6 (no host-sdk @firegrid/runtime root barrel — enforced by
-//   semgrep `firegrid-host-sdk-no-runtime-root-barrel-import`)
+//   Cannon §3 (no host-sdk @effect/workflow imports — enforced by the ESLint
+//   `local/sg-host-sdk-imports` rule)
+//   Cannon §6 (no host-sdk @firegrid/runtime root barrel — enforced by the
+//   ESLint `local/sg-host-sdk-imports` rule)
 //
 // This script covers the *broader* import/symbol quarantine the boundary
-// doc names that Semgrep does not already enforce:
+// doc names that the ESLint host-sdk import rule does not already enforce:
 //
 //   - `@firegrid/runtime/streams` imports (pre-channel/pre-target surface;
 //     CC1 Wave C target code uses tree-aligned typed channels instead)
@@ -30,16 +30,18 @@
 //     runtime-design-constraints.md "Runtime Input Mailbox" alongside the
 //     three above; deletion target tf-tvg1)
 //
-// Baseline shape mirrors `semgrep-error-baseline.json`: an array of
-// `{ ruleId, path, line, note? }` triplets. CI fails on any occurrence
-// not present in the baseline. Baseline shrinks as Wave C/D deletion
-// lanes retire the residue.
+// Baseline shape: an array of `{ ruleId, path, line, note? }` triplets. CI
+// fails on any occurrence not present in the baseline. Baseline shrinks as
+// Wave C/D deletion lanes retire the residue.
 //
-// Coverage split with semgrep is intentional and disjoint — each pattern
-// is enforced by exactly one gate to avoid double-baseline confusion:
-//   semgrep  -> @effect/workflow, @firegrid/runtime root barrel,
+// Coverage split with the ESLint host-sdk import rule is intentional and
+// disjoint — each pattern is enforced by exactly one gate to avoid
+// double-baseline confusion:
+//   ESLint `local/sg-host-sdk-imports`
+//            -> @effect/workflow, @firegrid/runtime root barrel,
 //               @firegrid/runtime/kernel, @firegrid/runtime/_archive,
-//               numbered runtime subpaths
+//               @firegrid/runtime/workflow-engine, @firegrid/runtime/streams;
+//        ESLint `local/sg-no-numbered-runtime-subpath` -> numbered subpaths
 //   script   -> the patterns enumerated above
 
 import { error, log } from "node:console"

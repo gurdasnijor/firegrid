@@ -121,7 +121,6 @@
     }
   },
   "ignore": [
-    "semgrep-tests/**",
     "repos/**"
   ],
   "ignoreDependencies": [
@@ -130,8 +129,7 @@
     "jscpd"
   ],
   "ignoreBinaries": [
-    "ruby",
-    "semgrep"
+    "ruby"
   ],
   "ignoreWorkspaces": [
     "tools/durable-streams-ui"

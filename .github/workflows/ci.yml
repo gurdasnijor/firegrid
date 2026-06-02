@@ -37,7 +37,6 @@ env:
 #
 # Gating jobs:
 #   lint              — docs/specs + eslint + dead-code + dup + effect-quality
-#   semgrep           — semgrep --test fixtures + production semgrep scan
 #   typecheck         — pnpm --recursive typecheck
 #   effect-diagnostics — effect-language-service diagnostics
 #   tests             — pnpm --recursive tests
@@ -107,29 +106,6 @@ jobs:
 
       - name: Check UKV production trace seams
         run: pnpm --filter @firegrid/tiny-firegrid run trace:seams:ukv
-
-  semgrep:
-    name: Semgrep
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm + Node + install
-        uses: ./.github/actions/setup
-
-      # Semgrep's npm packages are unmaintained; install the maintained CLI
-      # with pipx, matching docs/TOOLING.md.
-      - name: Install Semgrep CLI
-        run: pipx install semgrep
-
-      - name: Test structural duplication rules
-        run: pnpm run lint:semgrep:test
-
-      - name: Check structural duplication shapes
-        run: pnpm run lint:semgrep
 
   typecheck:
     name: Typecheck

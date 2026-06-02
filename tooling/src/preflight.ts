@@ -55,8 +55,6 @@ const gates = [
   { script: "typecheck", description: "TypeScript project references", weight: 2 },
   { script: "effect:diagnostics", description: "Effect language service diagnostics", weight: 2 },
   { script: "lint", description: "ESLint and production cutover checks", weight: 1 },
-  { script: "lint:semgrep", description: "Semgrep ERROR baseline gate", weight: 1 },
-  { script: "lint:semgrep:test", description: "Semgrep rule fixtures", weight: 1 },
   { script: "lint:dead", description: "Knip dead-code ratchet", weight: 1 },
   { script: "lint:dup", description: "jscpd duplicate-code ratchet", weight: 1 },
   { script: "lint:deps", description: "Dependency cruiser boundaries", weight: 1 },
