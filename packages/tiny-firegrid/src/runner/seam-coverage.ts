@@ -1,36 +1,25 @@
-#!/usr/bin/env tsx
-/**
- * Summarize the architectural-seam coverage of a tiny-firegrid run's
- * OTel trace. Reads `trace.jsonl`, counts spans per seam, asserts
- * every documented seam fired at least once, and prints a coverage
- * report.
- *
- * Used to prove the production-flow scenario exercises every
- * architectural path the unified architecture introduces. Run via:
- *
- *   pnpm tsx scripts/trace-seam-coverage.ts <runId>
- *
- * Or without an arg to read the latest run.
- */
+import { FileSystem, Path } from "@effect/platform"
+import { Console, Data, Effect } from "effect"
+import {
+  readTraceSpans,
+  resolveRunDir,
+  runsRoot,
+  type SpanRecord,
+  startNs,
+} from "./trace.ts"
 
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+// Summarize the architectural-seam coverage of a tiny-firegrid run's OTel
+// trace. Counts spans per seam, asserts every documented seam fired at least
+// once, and asserts the UKV production-path host/substrate spans a driver
+// cannot forge. The seam-analysis engine behind `trace:seams` (manual report)
+// and `trace:seams:ukv` (the preflight gate). Reads are delegated to the
+// runner's trace.ts (@effect/platform FileSystem/Path) — no raw node: I/O.
+//
+// The SEAMS array is canonical: when a new architectural seam is added it should
+// land here at the same time (docs/architecture/2026-05-31-production-flow-otel-coverage.md).
 
-interface Span {
-  readonly name: string
-  readonly traceId?: string
-  readonly spanId?: string
-  readonly parentSpanId?: string
-  readonly startTime?: readonly [number, number]
-  readonly endTime?: readonly [number, number]
-  readonly attributes?: Record<string, unknown>
-  readonly status?: { readonly code: number; readonly message?: string }
-}
-
-/**
- * The architectural seams the unified architecture introduces.
- * Each entry: { id, matcher: (span name → boolean), description }.
- */
+// The architectural seams the unified architecture introduces. Each entry:
+// { id, match: (span name → boolean), description, optional? }.
 const SEAMS = [
   {
     id: "client.channel.dispatch",
@@ -149,7 +138,7 @@ const SEAMS = [
   },
 ] as const
 
-interface Coverage {
+interface SeamCoverage {
   readonly id: string
   readonly description: string
   readonly count: number
@@ -168,12 +157,30 @@ interface ProductionAssertion {
   readonly status: "pass" | "fail"
 }
 
+interface SeamCoverageSummary {
+  readonly runDir: string
+  readonly totalSpans: number
+  readonly productionAssertions: ReadonlyArray<ProductionAssertion>
+  readonly seams: ReadonlyArray<SeamCoverage>
+  readonly passing: number
+  readonly failing: number
+  readonly nonGatingProductionFailing: number
+  readonly gatingProductionFailing: number
+  readonly verdict: "execution-spans-covered" | "missing-execution-spans"
+}
+
+class NoUnifiedKernelValidationRun extends Data.TaggedClass(
+  "NoUnifiedKernelValidationRun",
+)<{
+  readonly runsRoot: string
+}> {}
+
 const getNumberAttribute = (
-  spans: ReadonlyArray<Span>,
+  spans: ReadonlyArray<SpanRecord>,
   key: string,
 ): number => {
   for (const span of spans) {
-    const value = span.attributes?.[key]
+    const value = span.attributes[key]
     if (typeof value === "number") {
       return value
     }
@@ -187,160 +194,110 @@ const getNumberAttribute = (
   return 0
 }
 
-const startNanos = (span: Span): bigint | undefined => {
-  if (span.startTime === undefined) return undefined
-  return BigInt(span.startTime[0]) * 1_000_000_000n + BigInt(span.startTime[1])
-}
-
-const spanContextId = (span: Span): string | undefined => {
-  const value = span.attributes?.["firegrid.context.id"]
+const spanContextId = (span: SpanRecord): string | undefined => {
+  const value = span.attributes["firegrid.context.id"]
   return typeof value === "string" && value.length > 0 ? value : undefined
 }
 
 const countTerminalBeforeDeregister = (
-  spans: ReadonlyArray<Span>,
+  spans: ReadonlyArray<SpanRecord>,
 ): number => {
-  const terminalSignals = spans.filter((span) =>
+  const terminalSignals = spans.filter(span =>
     span.name === "firegrid.unified.session.terminal_signal")
-  const deregisters = spans.filter((span) =>
+  const deregisters = spans.filter(span =>
     span.name === "firegrid.unified.adapter.deregister")
   let count = 0
   for (const deregister of deregisters) {
     const contextId = spanContextId(deregister)
-    const deregisterStart = startNanos(deregister)
-    if (contextId === undefined || deregisterStart === undefined) continue
-    const ordered = terminalSignals.some((terminal) => {
-      const terminalStart = startNanos(terminal)
-      return spanContextId(terminal) === contextId &&
-        terminalStart !== undefined &&
-        terminalStart <= deregisterStart
-    })
+    if (contextId === undefined) continue
+    const deregisterStart = startNs(deregister)
+    const ordered = terminalSignals.some(terminal =>
+      spanContextId(terminal) === contextId &&
+      startNs(terminal) <= deregisterStart)
     if (ordered) count += 1
   }
   return count
 }
 
 const countAcpToolUseUpdates = (
-  spans: ReadonlyArray<Span>,
+  spans: ReadonlyArray<SpanRecord>,
 ): number =>
-  spans.filter((span) =>
-    span.name === "firegrid.agent_event_pipeline.acp.session_update" &&
-    typeof span.attributes?.["firegrid.agent_output.tag"] === "string" &&
-    span.attributes["firegrid.agent_output.tag"].includes("ToolUse")
-  ).length
+  spans.filter(span => {
+    const tag = span.attributes["firegrid.agent_output.tag"]
+    return span.name === "firegrid.agent_event_pipeline.acp.session_update" &&
+      typeof tag === "string" &&
+      tag.includes("ToolUse")
+  }).length
 
 const countAcpToolResultRejections = (
-  spans: ReadonlyArray<Span>,
+  spans: ReadonlyArray<SpanRecord>,
 ): number =>
-  spans.filter((span) =>
+  spans.filter(span =>
     span.name === "firegrid.agent_event_pipeline.acp.tool_result" &&
-    span.status?.message === "ACP ToolResult input is out-of-band for this codec slice"
-  ).length
+    span.status.message === "ACP ToolResult input is out-of-band for this codec slice").length
 
 const countToolResultCodecSendFailures = (
-  spans: ReadonlyArray<Span>,
+  spans: ReadonlyArray<SpanRecord>,
 ): number =>
-  spans.filter((span) =>
+  spans.filter(span =>
     span.name === "firegrid.unified.adapter.send" &&
-    span.status?.message === "codec send failed" &&
-    span.attributes?.["firegrid.unified.adapter.send.event_tag"] === "ToolResult"
-  ).length
+    span.status.message === "codec send failed" &&
+    span.attributes["firegrid.unified.adapter.send.event_tag"] === "ToolResult").length
 
-const findLatestRun = (runsRoot: string): string => {
-  const entries = readdirSync(runsRoot)
-    .filter((d) => d.includes("unified-kernel-validation"))
-    .map((d) => ({ name: d, mtime: statSync(join(runsRoot, d)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime)
-  if (entries.length === 0) {
-    throw new Error(`no unified-kernel-validation runs in ${runsRoot}`)
-  }
-  return join(runsRoot, entries[0]!.name)
-}
+const countMatching = (
+  spans: ReadonlyArray<SpanRecord>,
+  name: string,
+): number => spans.filter(span => span.name === name).length
 
-const readSpans = (tracePath: string): ReadonlyArray<Span> => {
-  const text = readFileSync(tracePath, "utf8")
-  return text
-    .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as Span)
-    .filter((s) => typeof s.name === "string")
-}
-
-const main = (): void => {
-  const cwd = process.cwd()
-  const runsRoot = join(cwd, "packages/tiny-firegrid/.simulate/runs")
-  const arg = process.argv[2]
-  const runDir = arg === undefined
-    ? findLatestRun(runsRoot)
-    : join(runsRoot, arg)
-  const tracePath = join(runDir, "trace.jsonl")
-
-  const spans = readSpans(tracePath)
+// Compute the full coverage summary for a run's spans. Pure — no I/O.
+const analyzeSeamCoverage = (
+  runDir: string,
+  spans: ReadonlyArray<SpanRecord>,
+): SeamCoverageSummary => {
   const terminalBeforeDeregisterCount = countTerminalBeforeDeregister(spans)
   const acpToolUseUpdateCount = countAcpToolUseUpdates(spans)
   const acpToolResultRejectionCount = countAcpToolResultRejections(spans)
   const toolResultCodecSendFailureCount = countToolResultCodecSendFailures(spans)
+  const snapshotRunCount = getNumberAttribute(spans, "firegrid.ukv.snapshot_run_count")
 
   const productionAssertions: ReadonlyArray<ProductionAssertion> = [
     {
       id: "workflow_engine.execution.execute",
       description: "Workflow engine executed a session workflow body",
-      count: spans.filter((s) =>
-        s.name === "firegrid.workflow_engine.execution.execute",
-      ).length,
+      count: countMatching(spans, "firegrid.workflow_engine.execution.execute"),
       threshold: 1,
       source: "host-substrate-span",
       gating: true,
-      status: spans.some((s) =>
-        s.name === "firegrid.workflow_engine.execution.execute",
-      )
-        ? "pass"
-        : "fail",
+      status: countMatching(spans, "firegrid.workflow_engine.execution.execute") > 0 ? "pass" : "fail",
     },
     {
       id: "adapter.start_or_attach",
       description: "Production codec adapter started or attached the agent",
-      count: spans.filter((s) =>
-        s.name === "firegrid.unified.adapter.start_or_attach",
-      ).length,
+      count: countMatching(spans, "firegrid.unified.adapter.start_or_attach"),
       threshold: 1,
       source: "host-substrate-span",
       gating: true,
-      status: spans.some((s) =>
-        s.name === "firegrid.unified.adapter.start_or_attach",
-      )
-        ? "pass"
-        : "fail",
+      status: countMatching(spans, "firegrid.unified.adapter.start_or_attach") > 0 ? "pass" : "fail",
     },
     {
       id: "local_process.open_byte_pipe",
       description: "LocalProcessSandboxProvider spawned a real subprocess",
-      count: spans.filter((s) =>
-        s.name === "firegrid.agent_event_pipeline.source.local_process.open_byte_pipe",
-      ).length,
+      count: countMatching(spans, "firegrid.agent_event_pipeline.source.local_process.open_byte_pipe"),
       threshold: 1,
       source: "host-substrate-span",
       gating: true,
-      status: spans.some((s) =>
-        s.name === "firegrid.agent_event_pipeline.source.local_process.open_byte_pipe",
-      )
+      status: countMatching(spans, "firegrid.agent_event_pipeline.source.local_process.open_byte_pipe") > 0
         ? "pass"
         : "fail",
     },
     {
       id: "adapter.deregister",
       description: "Session terminal signal drove adapter deregistration",
-      count: spans.filter((s) =>
-        s.name === "firegrid.unified.adapter.deregister",
-      ).length,
+      count: countMatching(spans, "firegrid.unified.adapter.deregister"),
       threshold: 1,
       source: "host-substrate-span",
       gating: true,
-      status: spans.some((s) =>
-        s.name === "firegrid.unified.adapter.deregister",
-      )
-        ? "pass"
-        : "fail",
+      status: countMatching(spans, "firegrid.unified.adapter.deregister") > 0 ? "pass" : "fail",
     },
     {
       id: "session.terminal_ordering",
@@ -383,18 +340,16 @@ const main = (): void => {
     {
       id: "firegrid.ukv.snapshot_run_count",
       description: "Driver snapshot corroborates that at least one run exists",
-      count: getNumberAttribute(spans, "firegrid.ukv.snapshot_run_count"),
+      count: snapshotRunCount,
       threshold: 1,
       source: "driver-corroboration",
       gating: false,
-      status: getNumberAttribute(spans, "firegrid.ukv.snapshot_run_count") > 0
-        ? "pass"
-        : "fail",
+      status: snapshotRunCount > 0 ? "pass" : "fail",
     },
   ]
 
-  const coverage: ReadonlyArray<Coverage> = SEAMS.map((seam) => {
-    const matched = spans.filter((s) => seam.match(s.name))
+  const seams: ReadonlyArray<SeamCoverage> = SEAMS.map(seam => {
+    const matched = spans.filter(span => seam.match(span.name))
     const optional = "optional" in seam ? Boolean(seam.optional) : false
     const status: "pass" | "fail" | "skipped" = matched.length > 0
       ? "pass"
@@ -410,70 +365,103 @@ const main = (): void => {
     }
   })
 
-  const passing = coverage.filter((c) => c.status === "pass").length
-  const failing = coverage.filter((c) => c.status === "fail").length
-  const skipped = coverage.filter((c) => c.status === "skipped").length
-  const productionFailing = productionAssertions.filter((a) =>
-    a.gating && a.status === "fail",
-  ).length
-  const nonGatingProductionFailing = productionAssertions.filter((a) =>
-    !a.gating && a.status === "fail",
-  ).length
+  const passing = seams.filter(s => s.status === "pass").length
+  const failing = seams.filter(s => s.status === "fail").length
+  const gatingProductionFailing = productionAssertions.filter(a => a.gating && a.status === "fail").length
+  const nonGatingProductionFailing = productionAssertions.filter(a => !a.gating && a.status === "fail").length
 
-  const summary = {
+  return {
     runDir,
     totalSpans: spans.length,
     productionAssertions,
-    seams: coverage,
+    seams,
     passing,
     failing,
     nonGatingProductionFailing,
-    verdict: productionFailing === 0
-      ? "execution-spans-covered"
-      : "missing-execution-spans",
-  }
-
-  const outputPath = join(runDir, "seam-coverage.json")
-  writeFileSync(outputPath, JSON.stringify(summary, null, 2))
-
-  console.log(`OTel seam coverage — ${runDir}`)
-  console.log(`Total spans in trace: ${spans.length}`)
-  console.log("")
-  console.log("UKV production-path assertions:")
-  for (const assertion of productionAssertions) {
-    const mark = assertion.status === "pass" ? "✓" : "✗"
-    const gate = assertion.gating ? "gating" : "report-only"
-    const comparator = assertion.expectation === "exactly" ? "==" : ">="
-    console.log(
-      `  ${mark} ${assertion.id.padEnd(38)} ${String(assertion.count).padStart(4)}× ${comparator} ${String(assertion.threshold).padStart(1)} — ${assertion.description} (${assertion.source}, ${gate})`,
-    )
-  }
-  console.log("")
-  console.log(
-    "Report-only note: snapshot_run_count verifies the OUTPUT-READ-BACK / TERMINAL-RELAY path = tf-ll90.5 (recordExited writes RuntimeControlPlaneTable.runs); not built yet — add to the gate's pass-condition when .5 lands.",
-  )
-  console.log("")
-  console.log(`Seams: ${passing}/${SEAMS.length} covered${skipped > 0 ? ` (${skipped} optional skipped)` : ""}`)
-  console.log("")
-  for (const c of coverage) {
-    const mark = c.status === "pass" ? "✓" : c.status === "skipped" ? "⊘" : "✗"
-    console.log(`  ${mark} ${c.id.padEnd(38)} ${String(c.count).padStart(4)}× — ${c.description}`)
-  }
-  console.log("")
-  console.log(`Wrote: ${outputPath}`)
-
-  if (productionFailing > 0) {
-    console.error(
-      `FAIL: ${productionFailing} gating production assertion(s) not covered. Report-only gaps: ${nonGatingProductionFailing} corroboration assertion(s), ${failing} seam(s).`,
-    )
-    process.exit(1)
-  }
-
-  if (failing > 0 || nonGatingProductionFailing > 0) {
-    console.warn(
-      `WARN: gate passed; report-only gaps remain: ${nonGatingProductionFailing} corroboration assertion(s), ${failing} seam(s).`,
-    )
+    gatingProductionFailing,
+    verdict: gatingProductionFailing === 0 ? "execution-spans-covered" : "missing-execution-spans",
   }
 }
 
-main()
+const printSummary = (
+  summary: SeamCoverageSummary,
+  outputPath: string,
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const skipped = summary.seams.filter(s => s.status === "skipped").length
+    yield* Console.log(`OTel seam coverage — ${summary.runDir}`)
+    yield* Console.log(`Total spans in trace: ${summary.totalSpans}`)
+    yield* Console.log("")
+    yield* Console.log("UKV production-path assertions:")
+    for (const assertion of summary.productionAssertions) {
+      const mark = assertion.status === "pass" ? "✓" : "✗"
+      const gate = assertion.gating ? "gating" : "report-only"
+      const comparator = assertion.expectation === "exactly" ? "==" : ">="
+      yield* Console.log(
+        `  ${mark} ${assertion.id.padEnd(38)} ${String(assertion.count).padStart(4)}× ${comparator} ${String(assertion.threshold).padStart(1)} — ${assertion.description} (${assertion.source}, ${gate})`,
+      )
+    }
+    yield* Console.log("")
+    yield* Console.log(
+      "Report-only note: snapshot_run_count verifies the OUTPUT-READ-BACK / TERMINAL-RELAY path = tf-ll90.5 (recordExited writes RuntimeControlPlaneTable.runs); not built yet — add to the gate's pass-condition when .5 lands.",
+    )
+    yield* Console.log("")
+    yield* Console.log(
+      `Seams: ${summary.passing}/${SEAMS.length} covered${skipped > 0 ? ` (${skipped} optional skipped)` : ""}`,
+    )
+    yield* Console.log("")
+    for (const c of summary.seams) {
+      const mark = c.status === "pass" ? "✓" : c.status === "skipped" ? "⊘" : "✗"
+      yield* Console.log(`  ${mark} ${c.id.padEnd(38)} ${String(c.count).padStart(4)}× — ${c.description}`)
+    }
+    yield* Console.log("")
+    yield* Console.log(`Wrote: ${outputPath}`)
+
+    if (summary.gatingProductionFailing > 0) {
+      yield* Console.error(
+        `FAIL: ${summary.gatingProductionFailing} gating production assertion(s) not covered. Report-only gaps: ${summary.nonGatingProductionFailing} corroboration assertion(s), ${summary.failing} seam(s).`,
+      )
+    } else if (summary.failing > 0 || summary.nonGatingProductionFailing > 0) {
+      yield* Console.warn(
+        `WARN: gate passed; report-only gaps remain: ${summary.nonGatingProductionFailing} corroboration assertion(s), ${summary.failing} seam(s).`,
+      )
+    }
+  })
+
+// The newest `*unified-kernel-validation*` run directory. Run dir names are
+// timestamp-prefixed, so a descending lexicographic sort is chronological —
+// matching the runner's resolveRunDir fallback (no statSync needed).
+const latestUnifiedKernelValidationRunDir = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const root = yield* runsRoot
+  // A missing runs dir (fresh checkout, no sim run yet) is "no runs", not a
+  // crash — mirror resolveRunDir's tolerance in trace.ts.
+  const names = yield* fs.readDirectory(root).pipe(
+    Effect.orElseSucceed(() => [] as ReadonlyArray<string>),
+  )
+  const ukv = names.filter(name => name.includes("unified-kernel-validation")).sort()
+  const latest = ukv.at(-1)
+  if (latest === undefined) {
+    return yield* Effect.fail(new NoUnifiedKernelValidationRun({ runsRoot: root }))
+  }
+  return path.join(root, latest)
+})
+
+// Resolve a run (explicit id, or the latest UKV run), read its trace, compute
+// coverage, write `seam-coverage.json` beside the trace, and print the report.
+// Returns the summary; callers (bins) map gatingProductionFailing → exit code.
+export const runSeamCoverage = (runId: string | undefined) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const runDir = runId === undefined
+      ? yield* latestUnifiedKernelValidationRunDir
+      : yield* resolveRunDir(runId)
+    const spans = yield* readTraceSpans(runDir)
+    const summary = analyzeSeamCoverage(runDir, spans)
+    const outputPath = path.join(runDir, "seam-coverage.json")
+    yield* fs.writeFileString(outputPath, JSON.stringify(summary, null, 2))
+    yield* printSummary(summary, outputPath)
+    return summary
+  })

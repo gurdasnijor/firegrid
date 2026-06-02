@@ -34,7 +34,7 @@
     "arch:deps:runtime:detail": "node scripts/tooling.mjs arch deps runtime-detail",
     "arch:graphs": "pnpm run arch:deps && pnpm run arch:deps:detail",
     "toy:coverage": "bash scripts/tiny-config-prod-coverage.sh",
-    "trace:seams": "tsx scripts/trace-seam-coverage.ts",
+    "trace:seams": "pnpm --filter @firegrid/tiny-firegrid run trace:seams",
     "trace:seams:ukv": "pnpm --filter @firegrid/tiny-firegrid run trace:seams:ukv",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
