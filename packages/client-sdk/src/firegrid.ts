@@ -533,56 +533,56 @@ const decodePublicPromptRequest = (
 const decodeSessionPromptInput = (
   request: SessionPromptToolInput,
 ): Effect.Effect<SessionPromptToolInput, PromptInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.sessions.prompt.inputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.prompt.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionCreateOrLoadInput = (
   request: SessionCreateOrLoadInput,
 ): Effect.Effect<SessionCreateOrLoadInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.sessions.createOrLoad.inputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.createOrLoad.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionAttachInput = (
   request: SessionAttachInput,
 ): Effect.Effect<SessionAttachDecodedInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.sessions.attach.inputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.attach.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionHandlePromptInput = (
   request: SessionHandlePromptInput,
 ): Effect.Effect<SessionHandlePromptInput, PromptInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.sessions.promptScoped.inputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.promptScoped.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionCancelInput = (
   request: SessionCancelToolInput,
 ): Effect.Effect<SessionCancelToolInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.sessions.cancel.inputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.cancel.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionCloseInput = (
   request: SessionCloseToolInput,
 ): Effect.Effect<SessionCloseToolInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.sessions.close.inputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.close.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodePermissionRespondInput = (
   request: PermissionRespondInput,
 ): Effect.Effect<PermissionRespondInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.permissions.respond.inputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.permissions.respond.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionPermissionRespondInput = (
   request: SessionPermissionRespondInput,
 ): Effect.Effect<SessionPermissionRespondInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.permissions.respondScoped.inputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.permissions.respondScoped.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
@@ -591,7 +591,7 @@ const decodeSessionPermissionRequestWaitInput = (
 ): Effect.Effect<SessionPermissionRequestWaitInput, LaunchInputError> =>
   request === undefined
     ? Effect.succeed({})
-    : Schema.decodeUnknown(FiregridClientOperations.wait.forPermissionRequest.inputSchema, {
+    : Schema.decodeUnknown(FiregridClientOperations.wait.forPermissionRequest.input, {
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
@@ -600,28 +600,28 @@ const decodeSessionAgentOutputWaitInput = (
 ): Effect.Effect<SessionAgentOutputWaitInput, LaunchInputError> =>
   request === undefined
     ? Effect.succeed({})
-    : Schema.decodeUnknown(FiregridClientOperations.wait.forAgentOutput.inputSchema, {
+    : Schema.decodeUnknown(FiregridClientOperations.wait.forAgentOutput.input, {
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeWaitForInput = (
   request: WaitForToolInput,
 ): Effect.Effect<WaitForToolInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridAgentToolOperations.waitFor.inputSchema, {
+  Schema.decodeUnknown(FiregridAgentToolOperations.waitFor.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeWaitUntilInput = (
   request: WaitUntilToolInput,
 ): Effect.Effect<WaitUntilToolInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridAgentToolOperations.waitUntil.inputSchema, {
+  Schema.decodeUnknown(FiregridAgentToolOperations.waitUntil.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeWaitAnyInput = (
   request: WaitAnyToolInput,
 ): Effect.Effect<WaitAnyToolInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridAgentToolOperations.waitAny.inputSchema, {
+  Schema.decodeUnknown(FiregridAgentToolOperations.waitAny.input, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 

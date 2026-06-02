@@ -21,7 +21,6 @@ import {
   FiregridRuntimeObservationSourceNames,
   type FiregridRuntimeObservationSourceName,
 } from "../observations/schema.ts"
-import { defineFiregridOperation } from "../operations/schema.ts"
 import {
   SessionAgentOutputWaitInputSchema,
   SessionAgentOutputWaitOutputSchema,
@@ -51,49 +50,49 @@ export {
 
 export const FiregridClientOperations = {
   sessions: {
-    createOrLoad: defineFiregridOperation(
-      SessionCreateOrLoadInputSchema,
-      SessionHandleReferenceSchema,
-    ),
-    attach: defineFiregridOperation(
-      SessionAttachInputSchema,
-      SessionHandleReferenceSchema,
-    ),
-    prompt: defineFiregridOperation(
-      SessionPromptToolInputSchema,
-      SessionPromptToolOutputSchema,
-    ),
-    promptScoped: defineFiregridOperation(
-      SessionHandlePromptInputSchema,
-      EventOffsetSchema,
-    ),
-    cancel: defineFiregridOperation(
-      SessionCancelToolInputSchema,
-      SessionCancelToolOutputSchema,
-    ),
-    close: defineFiregridOperation(
-      SessionCloseToolInputSchema,
-      SessionCloseToolOutputSchema,
-    ),
+    createOrLoad: {
+      input: SessionCreateOrLoadInputSchema,
+      output: SessionHandleReferenceSchema,
+    },
+    attach: {
+      input: SessionAttachInputSchema,
+      output: SessionHandleReferenceSchema,
+    },
+    prompt: {
+      input: SessionPromptToolInputSchema,
+      output: SessionPromptToolOutputSchema,
+    },
+    promptScoped: {
+      input: SessionHandlePromptInputSchema,
+      output: EventOffsetSchema,
+    },
+    cancel: {
+      input: SessionCancelToolInputSchema,
+      output: SessionCancelToolOutputSchema,
+    },
+    close: {
+      input: SessionCloseToolInputSchema,
+      output: SessionCloseToolOutputSchema,
+    },
   },
   wait: {
-    forAgentOutput: defineFiregridOperation(
-      SessionAgentOutputWaitInputSchema,
-      SessionAgentOutputWaitOutputSchema,
-    ),
-    forPermissionRequest: defineFiregridOperation(
-      SessionPermissionRequestWaitInputSchema,
-      SessionPermissionRequestWaitOutputSchema,
-    ),
+    forAgentOutput: {
+      input: SessionAgentOutputWaitInputSchema,
+      output: SessionAgentOutputWaitOutputSchema,
+    },
+    forPermissionRequest: {
+      input: SessionPermissionRequestWaitInputSchema,
+      output: SessionPermissionRequestWaitOutputSchema,
+    },
   },
   permissions: {
-    respond: defineFiregridOperation(
-      PermissionRespondInputSchema,
-      EventOffsetSchema,
-    ),
-    respondScoped: defineFiregridOperation(
-      SessionPermissionRespondInputSchema,
-      EventOffsetSchema,
-    ),
+    respond: {
+      input: PermissionRespondInputSchema,
+      output: EventOffsetSchema,
+    },
+    respondScoped: {
+      input: SessionPermissionRespondInputSchema,
+      output: EventOffsetSchema,
+    },
   },
 } as const

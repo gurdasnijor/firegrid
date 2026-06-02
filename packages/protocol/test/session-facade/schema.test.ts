@@ -103,16 +103,16 @@ describe("session facade protocol schema", () => {
   })
 
   it("firegrid-schema-projection-contract.SCHEMA_CATALOG.1 firegrid-schema-projection-contract.SCHEMA_CATALOG.3 defines client operations from protocol schemas without copying agent-tool shapes", () => {
-    expect(FiregridClientOperations.sessions.createOrLoad.inputSchema).toBe(
+    expect(FiregridClientOperations.sessions.createOrLoad.input).toBe(
       SessionCreateOrLoadInputSchema,
     )
-    expect(FiregridClientOperations.sessions.prompt.inputSchema).toBe(
+    expect(FiregridClientOperations.sessions.prompt.input).toBe(
       SessionPromptToolInputSchema,
     )
-    expect(FiregridClientOperations.wait.forAgentOutput.inputSchema).toBe(
+    expect(FiregridClientOperations.wait.forAgentOutput.input).toBe(
       SessionAgentOutputWaitInputSchema,
     )
-    expect(FiregridClientOperations.permissions.respond.inputSchema).toBe(
+    expect(FiregridClientOperations.permissions.respond.input).toBe(
       PermissionRespondInputSchema,
     )
   })
