@@ -1,3 +1,5 @@
+> **HISTORICAL (pre-#765).** References paths deleted in #765 (packages/substrate, packages/host-sdk/src/host, and legacy packages/runtime/src/{subscribers,durable-tools,workflow-engine,agent-event-pipeline,agent-tools,runtime-host,composition}); kept for provenance. Current architecture: docs/cannon/.
+
 # SDD: RuntimeControlRequestReconciler env enumeration (TFIND-045)
 
 **Status:** FRAMING DRAFT — architect-gated (Gurdas decides §0). No

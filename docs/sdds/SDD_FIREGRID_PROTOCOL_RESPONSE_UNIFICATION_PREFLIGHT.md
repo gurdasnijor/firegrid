@@ -1,3 +1,5 @@
+> **HISTORICAL (pre-#765).** References paths deleted in #765 (packages/substrate, packages/host-sdk/src/host, and legacy packages/runtime/src/{subscribers,durable-tools,workflow-engine,agent-event-pipeline,agent-tools,runtime-host,composition}); kept for provenance. Current architecture: docs/cannon/.
+
 # SDD: Protocol Response Unification — Phase 2 Pre-Flight
 
 Status: proposed (pre-flight for SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION Phase 2)

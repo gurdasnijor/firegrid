@@ -1,3 +1,5 @@
+> **HISTORICAL (pre-#765).** References paths deleted in #765 (packages/substrate, packages/host-sdk/src/host, and legacy packages/runtime/src/{subscribers,durable-tools,workflow-engine,agent-event-pipeline,agent-tools,runtime-host,composition}); kept for provenance. Current architecture: docs/cannon/.
+
 # SDD — `DurableOutputCursor`: replay-safe output observation bridge (tf-qk6h, Phase 0C)
 
 **Bead:** `tf-qk6h` (P0). Lane = primitive/design. **Not** lane 1's production

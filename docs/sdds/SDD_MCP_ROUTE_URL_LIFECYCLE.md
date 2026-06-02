@@ -1,3 +1,5 @@
+> **HISTORICAL (pre-#765).** References paths deleted in #765 (packages/substrate, packages/host-sdk/src/host, and legacy packages/runtime/src/{subscribers,durable-tools,workflow-engine,agent-event-pipeline,agent-tools,runtime-host,composition}); kept for provenance. Current architecture: docs/cannon/.
+
 # SDD: MCP Route + URL Lifecycle in the Client/Host Model
 
 Status: RATIFIED 2026-05-18 (Gurdas/coordinator: Reading 2, Option A).
