@@ -92,7 +92,8 @@ const scheduledPromptBody = (payload: ScheduledPromptPayload) =>
       inMemoryThreshold: Duration.zero,
     })
 
-    return { scheduleId: payload.scheduleId, firedAt: new Date().toISOString() }
+    const firedAtMs = yield* Clock.currentTimeMillis
+    return { scheduleId: payload.scheduleId, firedAt: new Date(firedAtMs).toISOString() }
   }) as Effect.Effect<
     Schema.Schema.Type<typeof ScheduledPromptResultSchema>,
     never,

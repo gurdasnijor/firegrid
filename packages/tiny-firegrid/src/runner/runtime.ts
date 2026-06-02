@@ -65,6 +65,8 @@ const sanitizeSegment = (value: string): string =>
 // Chronological-first format so `ls .simulate/runs/` reads newest-last by
 // default and tab-completion of "today's runs" actually narrows. Legacy
 // runner used the same shape; we keep it for consistency.
+// CLI artifact-directory filename stamp, not durable workflow state.
+// effect-quality-allow-wall-clock
 const newRunId = (simulationId: string): string =>
   `${new Date().toISOString().replace(/[:.]/g, "-")}__${sanitizeSegment(simulationId)}`
 

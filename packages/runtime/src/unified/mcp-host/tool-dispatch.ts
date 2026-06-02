@@ -254,10 +254,12 @@ const runWaitUntil = (
     Effect.flatMap(delay =>
       Clock.sleep(Duration.millis(delay)).pipe(
         Effect.andThen(appendPromptOnResolve(contextId, toolUseId, "wait_until", input.prompt)),
-        Effect.as({
-          waited: true,
-          firedAt: new Date().toISOString(),
-        } satisfies AgentToolSchemas.WaitUntilToolOutput),
+        Effect.andThen(
+          Effect.map(Clock.currentTimeMillis, (millis) => ({
+            waited: true,
+            firedAt: new Date(millis).toISOString(),
+          } satisfies AgentToolSchemas.WaitUntilToolOutput)),
+        ),
       ),
     ),
   )

@@ -27,6 +27,10 @@ import { Schema } from "effect"
 import { RowOtelContextSchema } from "../otel/row-otel.ts"
 import { PublicLaunchRuntimeIntentSchema } from "./schema.ts"
 
+// Pure row-builder default for `createdAt`; durable callers supply
+// `options.createdAt` from their Effect Clock, so this fires only in
+// non-durable/test construction.
+// effect-quality-allow-wall-clock
 const nowIso = (): string => new Date().toISOString()
 
 const sanitizeIdSegment = (value: string): string =>

@@ -120,6 +120,9 @@ const controlPlaneAllowComment = "durable-lint-allow-control-plane"
 // firegrid-remediation-hardening.STATIC_QUALITY.10
 const extendsErrorAllowComment = "effect-quality-allow-extends-error"
 const processEnvAllowComment = "effect-quality-allow-process-env"
+// Pure value-builders / non-durable metadata / CLI filename stamps may default
+// to wall-clock at a documented boundary; durable Effect code must read Clock.
+const wallClockAllowComment = "effect-quality-allow-wall-clock"
 
 const getStaticPropertyName = (node) => {
   if (node?.type !== "MemberExpression" || node.computed) {
@@ -738,6 +741,52 @@ const local = {
         }
       },
     },
+    // Relocated from the effect-quality ts-morph ratchet (`newDateIsoCount`).
+    // `new Date().toISOString()` (no-arg) reads wall-clock outside Effect, so it
+    // is not replay-safe; durable code must read `Clock.currentTimeMillis` and
+    // format `new Date(millis).toISOString()`. Pure value-builders / non-durable
+    // metadata / CLI filename stamps escape-hatch with the documented allow
+    // comment (matches the ratchet's AST-precise detector — no string/comment FPs).
+    "no-new-date-iso": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow `new Date().toISOString()` (no-arg) in library code; read Clock.currentTimeMillis and format `new Date(millis).toISOString()`.",
+        },
+        schema: [],
+        messages: {
+          noNewDateIso:
+            "`new Date().toISOString()` reads wall-clock and is not replay-safe. Read `yield* Clock.currentTimeMillis` (or `DateTime.now`) inside Effect code and format `new Date(millis).toISOString()`. Pure value-builders / CLI stamps may escape-hatch with `// effect-quality-allow-wall-clock`.",
+        },
+      },
+      create(context) {
+        return {
+          CallExpression(node) {
+            const callee = node.callee
+            if (
+              callee.type !== "MemberExpression" ||
+              callee.computed ||
+              callee.property?.type !== "Identifier" ||
+              callee.property.name !== "toISOString" ||
+              node.arguments.length !== 0
+            ) {
+              return
+            }
+            const receiver = callee.object
+            if (
+              receiver?.type === "NewExpression" &&
+              receiver.callee?.type === "Identifier" &&
+              receiver.callee.name === "Date" &&
+              receiver.arguments.length === 0 &&
+              !hasNearbyAllowComment(context, node, [wallClockAllowComment])
+            ) {
+              context.report({ node, messageId: "noNewDateIso" })
+            }
+          },
+        }
+      },
+    },
     // firegrid-remediation-hardening.STATIC_QUALITY.14 (relocated from ast-grep)
     "hrtime-number-arithmetic": {
       meta: {
@@ -1028,6 +1077,8 @@ export default tseslint.config(
       "local/no-process-env-outside-bin": "error",
       // ported from Semgrep firegrid-no-date-now (ERROR)
       "local/no-date-now": "error",
+      // relocated from the effect-quality ratchet (newDateIsoCount)
+      "local/no-new-date-iso": "error",
     },
   },
   {
@@ -1913,6 +1964,7 @@ export default tseslint.config(
     rules: {
       "local/no-process-env-outside-bin": "off",
       "local/no-date-now": "off",
+      "local/no-new-date-iso": "off",
     },
   },
 

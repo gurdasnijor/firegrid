@@ -25,7 +25,7 @@ import {
   Workflow,
   type WorkflowEngine,
 } from "@effect/workflow"
-import { Effect, Ref, Schema } from "effect"
+import { Clock, Effect, Ref, Schema } from "effect"
 import { awaitSignal, sendSignal, SignalTable } from "../signal.ts"
 import { UnifiedTable, permissionKey } from "../tables.ts"
 import {
@@ -114,13 +114,19 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
     yield* Activity.make({
       name: `unified.permission.request/${key}`,
       success: Schema.Void,
-      execute: table.permissions.insertOrGet({
-        permissionKey: key,
-        contextId: payload.contextId,
-        permissionRequestId: payload.permissionRequestId,
-        toolUseId: payload.toolUseId,
-        requestedAt: new Date().toISOString(),
-      }).pipe(Effect.orDie, Effect.asVoid),
+      execute: Clock.currentTimeMillis.pipe(
+        Effect.flatMap((millis) =>
+          table.permissions.insertOrGet({
+            permissionKey: key,
+            contextId: payload.contextId,
+            permissionRequestId: payload.permissionRequestId,
+            toolUseId: payload.toolUseId,
+            requestedAt: new Date(millis).toISOString(),
+          }),
+        ),
+        Effect.orDie,
+        Effect.asVoid,
+      ),
     })
 
     // Park until the responder sends the decision signal.
