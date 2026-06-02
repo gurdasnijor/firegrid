@@ -41,9 +41,22 @@
 
 import { Activity, Workflow, WorkflowEngine } from "@effect/workflow"
 import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
-import { HostPromptChannel } from "@firegrid/protocol/channels"
+import {
+  HostPromptChannel,
+  HostSessionsCreateOrLoadChannelTarget,
+  HostSessionsStartChannelTarget,
+  SessionCancelChannelTarget,
+  SessionCloseChannelTarget,
+  SessionPromptChannelTarget,
+} from "@firegrid/protocol/channels"
+import {
+  firegridRuntimeContextMcpName,
+  type PublicLaunchRuntimeIntent,
+  type RuntimeContext,
+} from "@firegrid/protocol/launch"
 import { Clock, Context, Duration, Effect, Layer, Option, ParseResult, Ref, Schema, Stream } from "effect"
-import { RuntimeChannelRouter } from "../../channels/router.ts"
+import { HostPlaneChannelRouter, RuntimeChannelRouter } from "../../channels/router.ts"
+import { ContextResolverTag } from "../../tables/codec-adapter-tags.ts"
 import { traversePath } from "../../transforms/field-equals.ts"
 import {
   ToolDispatchPayloadSchema,
@@ -154,12 +167,13 @@ const waitOnChannel = (
       onSome: router =>
         router.route(channelName).pipe(
           Effect.flatMap(route => route.stream === undefined
-            ? Effect.fail(
-              toolExecutionFailed(
-                toolUseId,
-                toolName,
-                `channel "${channelName}" is not ingress-capable`,
-              ),
+            ? router.dispatch({
+              target: channelName,
+              verb: "wait_for",
+              payload: match ?? {},
+            }).pipe(
+              Effect.mapError(cause =>
+                toolExecutionFailed(toolUseId, toolName, cause)),
             )
             : route.stream.pipe(
               Stream.filter(row => matchesRow(row, match)),
@@ -273,6 +287,227 @@ const runWaitAny = (
   )
 }
 
+const hostPlaneDispatch = (
+  toolUseId: string,
+  toolName: string,
+  target: string,
+  verb: "send" | "call",
+  payload: unknown,
+): Effect.Effect<unknown, ToolError> =>
+  Effect.serviceOption(HostPlaneChannelRouter).pipe(
+    Effect.flatMap(Option.match({
+      onNone: () =>
+        Effect.fail(
+          toolExecutionFailed(
+            toolUseId,
+            toolName,
+            "session tools require HostPlaneChannelRouter",
+          ),
+        ),
+      onSome: router =>
+        router.dispatch({ target, verb, payload }).pipe(
+          Effect.mapError(cause => toolExecutionFailed(toolUseId, toolName, cause)),
+        ),
+    })),
+  )
+
+const runtimeForChildSession = (
+  contextId: string,
+  toolUseId: string,
+): Effect.Effect<PublicLaunchRuntimeIntent, ToolError> =>
+  Effect.serviceOption(ContextResolverTag).pipe(
+    Effect.flatMap(Option.match({
+      onNone: () =>
+        Effect.fail(
+          toolExecutionFailed(
+            toolUseId,
+            "session_new",
+            "session_new requires ContextResolverTag",
+          ),
+        ),
+      onSome: resolver =>
+        resolver.resolve(contextId).pipe(
+          Effect.mapError(cause => toolExecutionFailed(toolUseId, "session_new", cause)),
+          Effect.flatMap(Option.match({
+            onNone: () =>
+              Effect.fail(
+                toolExecutionFailed(
+                  toolUseId,
+                  "session_new",
+                  `runtime context "${contextId}" was not found`,
+                ),
+              ),
+            onSome: context => Effect.succeed(childRuntimeIntent(context)),
+          })),
+        ),
+    })),
+  )
+
+const childRuntimeIntent = (
+  context: RuntimeContext,
+): PublicLaunchRuntimeIntent => {
+  const { mcpServers, ...configWithoutMcpServers } = context.runtime.config
+  const inheritedMcpServers = mcpServers?.filter(
+    declaration => declaration.name !== firegridRuntimeContextMcpName,
+  )
+  const childConfig = {
+    ...configWithoutMcpServers,
+    argv: [...configWithoutMcpServers.argv],
+    ...(configWithoutMcpServers.envBindings === undefined ? {} : {
+      envBindings: configWithoutMcpServers.envBindings.map(binding => ({ ...binding })),
+    }),
+    ...(inheritedMcpServers === undefined || inheritedMcpServers.length === 0
+      ? {}
+      : {
+        mcpServers: inheritedMcpServers.map(declaration => ({
+          ...declaration,
+          server: {
+            ...declaration.server,
+            ...(declaration.server.headers === undefined
+              ? {}
+              : { headers: { ...declaration.server.headers } }),
+          },
+        })),
+      }),
+  }
+  return {
+    provider: context.runtime.provider,
+    config: childConfig,
+  }
+}
+
+const runSessionNew = (
+  contextId: string,
+  toolUseId: string,
+  input: AgentToolSchemas.SessionNewToolInput,
+): Effect.Effect<AgentToolSchemas.SessionNewToolOutput, ToolError> =>
+  Effect.gen(function*() {
+    const parentRuntime = yield* runtimeForChildSession(contextId, toolUseId)
+    const runtime: PublicLaunchRuntimeIntent = {
+      provider: parentRuntime.provider,
+      config: {
+        ...parentRuntime.config,
+        agent: input.agentKind,
+      },
+    }
+    const child = yield* (hostPlaneDispatch(
+      toolUseId,
+      "session_new",
+      String(HostSessionsCreateOrLoadChannelTarget),
+      "call",
+      {
+        externalKey: {
+          source: "firegrid.mcp.session_new",
+          id: `${contextId}:${toolUseId}`,
+        },
+        runtime,
+        createdBy: `mcp:${contextId}`,
+      },
+    ) as Effect.Effect<
+      { readonly sessionId: string; readonly contextId: string },
+      ToolError
+    >)
+    const inputId = `input:${toolUseId}:initial`
+    yield* hostPlaneDispatch(
+      toolUseId,
+      "session_new",
+      String(SessionPromptChannelTarget),
+      "send",
+      {
+        sessionId: child.sessionId,
+        prompt: {
+          payload: input.prompt,
+          inputId,
+          idempotencyKey: `session_new:${toolUseId}:initial_prompt`,
+          metadata: {
+            agentKind: input.agentKind,
+            parentContextId: contextId,
+          },
+        },
+      },
+    )
+    yield* hostPlaneDispatch(
+      toolUseId,
+      "session_new",
+      String(HostSessionsStartChannelTarget),
+      "call",
+      { sessionId: child.sessionId },
+    )
+    return {
+      session: {
+        sessionId: child.sessionId,
+        contextId: child.contextId,
+        status: "running",
+        metadata: {
+          agentKind: input.agentKind,
+          parentContextId: contextId,
+        },
+      },
+    } satisfies AgentToolSchemas.SessionNewToolOutput
+  })
+
+const runSessionPrompt = (
+  toolUseId: string,
+  input: AgentToolSchemas.SessionPromptToolInput,
+): Effect.Effect<AgentToolSchemas.SessionPromptToolOutput, ToolError> => {
+  const inputId = input.inputId ?? `input:${toolUseId}`
+  return hostPlaneDispatch(
+    toolUseId,
+    "session_prompt",
+    String(SessionPromptChannelTarget),
+    "send",
+    {
+      sessionId: input.sessionId,
+      prompt: {
+        payload: input.prompt,
+        inputId,
+        idempotencyKey: inputId,
+        ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+      },
+    },
+  ).pipe(
+    Effect.as({
+      appended: true,
+      sessionId: input.sessionId,
+      inputId,
+    } satisfies AgentToolSchemas.SessionPromptToolOutput),
+  )
+}
+
+const runSessionCancel = (
+  toolUseId: string,
+  input: AgentToolSchemas.SessionCancelToolInput,
+): Effect.Effect<AgentToolSchemas.SessionCancelToolOutput, ToolError> =>
+  hostPlaneDispatch(
+    toolUseId,
+    "session_cancel",
+    String(SessionCancelChannelTarget),
+    "call",
+    input,
+  ).pipe(
+    Effect.as({
+      cancelled: true,
+      sessionId: input.sessionId,
+    } satisfies AgentToolSchemas.SessionCancelToolOutput),
+  )
+
+const runSessionClose = (
+  toolUseId: string,
+  input: AgentToolSchemas.SessionCloseToolInput,
+): Effect.Effect<AgentToolSchemas.SessionCloseToolOutput, ToolError> =>
+  hostPlaneDispatch(
+    toolUseId,
+    "session_close",
+    String(SessionCloseChannelTarget),
+    "call",
+    input,
+  ).pipe(
+    Effect.as({
+      closed: true,
+      sessionId: input.sessionId,
+    } satisfies AgentToolSchemas.SessionCloseToolOutput),
+  )
+
 /**
  * Lower a `(toolName, inputJson)` invocation to a typed arm, decode its
  * input against the protocol schema, run it, and JSON-encode the success
@@ -322,6 +557,42 @@ const dispatchArm = (
             ? toolInvalidInputFromParseError(toolUseId, "wait_any", cause)
             : toolExecutionFailed(toolUseId, "wait_any", cause)),
         Effect.flatMap(input => runWaitAny(contextId, toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
+    case "session_new":
+      return decodeJson(AgentToolSchemas.SessionNewToolInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "session_new", cause)
+            : toolExecutionFailed(toolUseId, "session_new", cause)),
+        Effect.flatMap(input => runSessionNew(contextId, toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
+    case "session_prompt":
+      return decodeJson(AgentToolSchemas.SessionPromptToolInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "session_prompt", cause)
+            : toolExecutionFailed(toolUseId, "session_prompt", cause)),
+        Effect.flatMap(input => runSessionPrompt(toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
+    case "session_cancel":
+      return decodeJson(AgentToolSchemas.SessionCancelToolInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "session_cancel", cause)
+            : toolExecutionFailed(toolUseId, "session_cancel", cause)),
+        Effect.flatMap(input => runSessionCancel(toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
+    case "session_close":
+      return decodeJson(AgentToolSchemas.SessionCloseToolInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "session_close", cause)
+            : toolExecutionFailed(toolUseId, "session_close", cause)),
+        Effect.flatMap(input => runSessionClose(toolUseId, input)),
         Effect.map((output) => JSON.stringify(output)),
       )
     default:

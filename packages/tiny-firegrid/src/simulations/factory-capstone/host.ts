@@ -1,11 +1,19 @@
 import {
   makeIngressChannel,
+  SessionAgentOutputChannel,
+  SessionAgentOutputChannelTarget,
 } from "@firegrid/protocol/channels"
 import {
   durableStreamUrl,
   RuntimeControlPlaneTable,
+  RuntimeOutputTable,
+  runtimeEventsForContextView,
   runtimeContextsView,
 } from "@firegrid/protocol/launch"
+import {
+  RuntimeAgentOutputObservationSchema,
+  runtimeAgentOutputObservationFromRow,
+} from "@firegrid/protocol/session-facade"
 import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import {
   ContextResolverTag,
@@ -16,9 +24,11 @@ import {
   ToolDispatchLive,
 } from "@firegrid/runtime/unified"
 import {
+  HostPlaneSessionControlRouterLive,
   makeRuntimeChannelRouter,
   RuntimeChannelRouter,
   runtimeRouteFromChannel,
+  sessionAgentOutputObservationRoute,
 } from "@firegrid/runtime/channels"
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import { AcpContextRows } from "@firegrid/runtime/sources/codecs/acp/stdio-edge"
@@ -130,6 +140,7 @@ const RuntimeChannelRouterLive = Layer.effect(
   RuntimeChannelRouter,
   Effect.gen(function*() {
     const table = yield* DarkFactoryFactTable
+    const sessionAgentOutput = yield* SessionAgentOutputChannel
     return makeRuntimeChannelRouter([
       runtimeRouteFromChannel(
         makeIngressChannel({
@@ -139,8 +150,27 @@ const RuntimeChannelRouterLive = Layer.effect(
           stream: darkFactoryFactRows(table),
         }),
       ),
+      sessionAgentOutputObservationRoute(sessionAgentOutput),
     ])
   }),
+)
+
+const GlobalSessionAgentOutputChannelLive = Layer.effect(
+  SessionAgentOutputChannel,
+  RuntimeOutputTable.pipe(
+    Effect.map(output =>
+      SessionAgentOutputChannel.of({
+        forContext: contextId =>
+          makeIngressChannel({
+            target: SessionAgentOutputChannelTarget,
+            schema: RuntimeAgentOutputObservationSchema,
+            sourceClass: "static-source",
+            stream: runtimeEventsForContextView(output, contextId).pipe(
+              Stream.filterMap(runtimeAgentOutputObservationFromRow),
+            ),
+          }),
+      })),
+  ),
 )
 
 const GlobalAcpContextRowsLive = Layer.effect(
@@ -194,13 +224,18 @@ export const factoryCapstoneHost = (
     ),
   )
   const appFactTable = darkFactoryFactTableLayer(env)
+  const appRuntimeRoutes = RuntimeChannelRouterLive.pipe(
+    Layer.provideMerge(GlobalSessionAgentOutputChannelLive),
+  )
   const appFacts = DarkFactoryCallerOwnedFactStreamsLive.pipe(
-    Layer.merge(RuntimeChannelRouterLive),
+    Layer.merge(appRuntimeRoutes),
     Layer.merge(seedTriggerFactLayer(env)),
     Layer.provideMerge(appFactTable),
   )
   const toolDispatch = ToolDispatchLive.pipe(
     Layer.provideMerge(appFacts),
+    Layer.provideMerge(contextResolverFromControlPlaneTable),
+    Layer.provideMerge(HostPlaneSessionControlRouterLive),
   )
   const mcp = FiregridMcpServerLayer({
     host: mcpHost,
