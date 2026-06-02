@@ -74,7 +74,7 @@ components:
       1:
         requirement: The primary runtime binary is named `firegrid`.
         deprecated: true
-      1-note: Deprecated. The runtime package binary was removed; the repository host process starts through the root `pnpm firegrid:host` script.
+      1-note: The original package binary (attached-mode/dev-server flags) was removed; #830 then re-introduced a unified `firegrid` CLI (`bin/firegrid.ts`, `@effect/cli`) with `run`/`acp`/`host`/`start` subcommands, run via `pnpm firegrid <sub>`.
       2:
         requirement: The short runtime binary alias is named `fg`.
         deprecated: true
@@ -99,12 +99,12 @@ components:
       8:
         requirement: The binary rejects launcher subcommands and runs only as an attached runtime process.
         deprecated: true
-      8-note: Deprecated because the package binary is removed; launcher subcommands are absent rather than rejected.
+      8-note: Superseded by #830 — the unified `firegrid` CLI provides `run`/`acp`/`host`/`start` launcher subcommands; they are present, not rejected.
       9:
         requirement: The binary remains available as the runtime launch/config entrypoint for development and production attached configurations without depending on the removed durable-clock surface.
         deprecated: true
-      9-note: Deprecated. The root `firegrid:host` script is the repository host launch entrypoint.
-      10: The repository root exposes `pnpm firegrid:host` as the single Firegrid host launch command.
+      9-note: The host launches via `pnpm firegrid host` — the unified CLI's host subcommand (#830).
+      10: The repository host process launches through the unified `firegrid` CLI as `pnpm firegrid host` (a long-running attached runtime); `pnpm firegrid:env host` adds `--env-file-if-exists=.env`.
       11: The root host command configures Durable Streams attachment only from environment variables and exposes no token, auth-token, stream-url, run, config, dev, or prod CLI surface.
       12: The root host program is a long-running `Effect.never` process whose scoped runtime and workflow DurableTable layers shut down through NodeRuntime interruption on SIGINT or SIGTERM.
 

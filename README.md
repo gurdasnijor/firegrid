@@ -283,7 +283,7 @@ pnpm --filter @firegrid/tiny-firegrid simulate:show   # inspect the captured tra
 Run a host that binds to a durable-streams backend and stays alive for clients:
 
 ```bash
-DURABLE_STREAMS_BASE_URL=... FIREGRID_RUNTIME_NAMESPACE=... pnpm firegrid:host
+DURABLE_STREAMS_BASE_URL=... FIREGRID_RUNTIME_NAMESPACE=... pnpm firegrid host
 ```
 
 The simulations in `packages/tiny-firegrid` are the best way to inspect real

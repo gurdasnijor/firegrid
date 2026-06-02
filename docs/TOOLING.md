@@ -125,15 +125,17 @@ the pnpm content-addressed store cache is shared across jobs in a run.
 
 ## CLI / runtime entrypoints
 
-The runtime ships a unified `@effect/cli` binary with subcommands:
+The runtime ships a unified `@effect/cli` CLI (`bin/firegrid.ts`) with subcommands:
 
 ```sh
-pnpm run firegrid -- run|acp|host|start [...]   # bin/firegrid.ts (unified)
+pnpm firegrid run|acp|host|start [...]    # the single Firegrid CLI entrypoint
+pnpm firegrid:env <sub> [...]             # same, with --env-file-if-exists=.env
 ```
 
-The `firegrid:run` / `firegrid:acp` / `firegrid:host` / `firegrid:start` scripts
-are thin shortcuts to the same per-subcommand bins. `firegrid:host:env` adds
-`--env-file-if-exists=.env`.
+(tf-636o collapsed the former per-subcommand `firegrid:run`/`:acp`/`:host`/`:start`
+shortcuts into the unified `firegrid <sub>`; the stale `firegrid-runtime-process`
+feature spec — which predated the #830 unified CLI and called `firegrid:host` the
+"single host launch command" — was corrected to match.)
 
 ## Static-analysis consolidation (Semgrep + ast-grep retired)
 

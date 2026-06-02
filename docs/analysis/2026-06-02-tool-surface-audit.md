@@ -10,7 +10,7 @@
 Nothing in the root `package.json` is *broken* after this PR (one regression — `verify` calling the now-deleted `lint:host-sdk-imports` — was introduced and fixed here). The real rot is **redundancy and stale analysis tooling**:
 
 - **Three "run the gates" surfaces** (`check`, `verify`, `preflight`) that had drifted. `preflight` is canonical; `verify` is now a thin alias (this PR); `check` is a different (build-inclusive) chain — keep but documented.
-- **Six `firegrid*` entrypoints** duplicate the unified `firegrid <sub>` bin — but they're documented/spec-referenced entrypoints (`firegrid:host` is named in a feature spec + README), so they're **kept** (collapsing them is a doc/spec migration, flagged not done).
+- **Six `firegrid*` entrypoints** duplicated the unified `firegrid <sub>` bin (#830). The feature spec that named `firegrid:host` canonical was itself **stale** (predated #830) — corrected this PR, and the redundant scripts collapsed into `firegrid` + `firegrid:env`.
 - **Removed this PR:** `effect:check` (orphan), `bootstrap` (trivial alias), `analysis:leaf` (+ its dead ast-grep `run-leaf-inventory.sh`).
 - **`runtime-corpus.sh` (runtime-shrink-loop corpus) was earlier-phase tooling** — broken (manifest referenced deleted sims) and wired to no gate; **retired this PR** along with `runtime-flow-map.py` + `docs/architecture/corpus/`.
 - A few **orphan/stale scripts**: `effect:check`, `analysis:leaf`.
@@ -27,7 +27,7 @@ Nothing in the root `package.json` is *broken* after this PR (one regression —
 | `effect:diagnostics(:baseline)` | ✅ works | gated in CI + preflight. |
 | `effect:patch` / `effect:unpatch` | ✅ works | opt-in devtools. |
 | `firegrid` | ✅ works | unified `@effect/cli` bin (`bin/firegrid.ts`) with `run`/`acp`/`host`/`start` subcommands (#830). |
-| `firegrid:run` / `:acp` / `:host` / `:start` / `:host:env` | ✅ KEEP (documented entrypoints) | duplicate the unified `firegrid <sub>` bin, BUT are referenced entrypoints — `firegrid:host` is named in the feature spec `features/firegrid/firegrid-runtime-process.feature.yaml` ("the single Firegrid host launch command") + README; `firegrid:run`/`:acp` in `runtime-env-boundary.md` + the CLI SDD. Collapsing them is a doc/spec migration (would edit a behavior spec), not a free delete — **kept** pending an explicit call. |
+| `firegrid:run`/`:acp`/`:host`/`:start`/`:host:env` | ❌ collapsed this PR | duplicated the unified `firegrid <sub>` bin (#830). The feature spec that named `firegrid:host` "the single host launch command" was itself **STALE** (it predated #830, which re-introduced the unified CLI — verified: `firegrid.ts` `withSubcommands(run/acp/host/start)`). Collapsed into `firegrid` + `firegrid:env` (the `.env`-loading variant); README + `runtime-env-boundary.md` repointed and the stale `firegrid-runtime-process` spec corrected. |
 | `format` | ✅ works | `eslint . --fix`. |
 | `publish:oss` | ✅ works | `scripts/publish-oss.sh`. |
 | `lint` | ✅ works | **edited this PR** — dropped the deleted `effect-native-production-cutover-check.mjs` + `test-layout-check.mjs`; now `eslint + runtime-public-surface-check + tiny-firegrid-layout-check`. |
@@ -40,7 +40,7 @@ Nothing in the root `package.json` is *broken* after this PR (one regression —
 | `trace:seams` / `trace:seams:ukv` | ✅ works | `trace-seam-coverage.ts` / tiny-firegrid filter. |
 | `analysis:leaf` | ❌ removed this PR | ran `tooling/analysis/run-leaf-inventory.sh`, which invokes **ast-grep** (retired; `tooling/ast-grep/` gone) → dead. Script + alias deleted. |
 
-**Done this PR:** removed `effect:check`, `bootstrap`, `analysis:leaf` (+ deleted the dead ast-grep `run-leaf-inventory.sh`). **Kept:** the `firegrid:<sub>` family — documented/spec-referenced entrypoints; collapsing them needs a doc/spec migration (would edit a behavior spec), flagged for a call. `check` vs `preflight` is documented in TOOLING.md.
+**Done this PR:** removed `effect:check`, `bootstrap`, `analysis:leaf` (+ dead `run-leaf-inventory.sh`), and collapsed the `firegrid:<sub>` family into the unified `firegrid` + `firegrid:env` — after verifying the feature spec that appeared to "protect" `firegrid:host` was itself stale (predated #830's unified CLI). Repointed README + `runtime-env-boundary.md` and corrected the `firegrid-runtime-process` spec. `check` vs `preflight` is documented in TOOLING.md.
 
 ## B. `scripts/` (23 files after this PR's 12 deletions)
 
@@ -81,4 +81,3 @@ current tooling. It was already broken (two of four `in_gate` scenarios —
 ## Recommended beads (follow-ups, non-blocking)
 
 1. **Resilient sim discovery** (P2) — per-sim try/catch in `runner/list.ts` so one bad/heavy import doesn't sink the whole runner (it currently does — §C).
-2. **Collapse the `firegrid:<sub>` shortcuts** (P3, optional) — only if worth the doc/spec migration: repoint README + `firegrid-runtime-process.feature.yaml` + `runtime-env-boundary.md` + the CLI SDD to the unified `firegrid <sub>`, then drop the 4 plain scripts (keep `firegrid` + `:host:env`). Deferred — touches a behavior spec.
