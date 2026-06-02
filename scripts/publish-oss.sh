@@ -28,8 +28,6 @@ OSS_TPL="$REPO_ROOT/scripts/oss"
 # Only these tracked paths from origin/main are published. Edit deliberately.
 ALLOWLIST=(
   packages
-  experiments/agent-coordination-patterns
-  features/firegrid/agent-coordination-patterns-experiment.feature.yaml
   docs/cannon
   package.json
   pnpm-lock.yaml
@@ -42,7 +40,7 @@ ALLOWLIST=(
 
 # Top-level entries permitted in the published tree (allowlist basenames +
 # the mirror-only files this script stamps + git internals).
-ALLOWED_TOP=(packages experiments features docs package.json pnpm-lock.yaml pnpm-workspace.yaml \
+ALLOWED_TOP=(packages docs package.json pnpm-lock.yaml pnpm-workspace.yaml \
   README.md eslint.config.js tsconfig.eslint.json turbo.json LICENSE .gitignore .git)
 
 DRY_RUN=false
