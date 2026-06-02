@@ -25,8 +25,8 @@ The target is deliberately aggressive:
 
 Authoritative architecture:
 
-- `docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
-- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
+- `docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
+- `docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
 
 Empirical baseline and investigations:
 

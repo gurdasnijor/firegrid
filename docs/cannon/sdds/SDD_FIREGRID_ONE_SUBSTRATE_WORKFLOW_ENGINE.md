@@ -10,7 +10,7 @@ Related artifacts:
 - `docs/handoffs/HANDOFF_tf-qoyg_shape-a-narrow.md` — Lane 1's halt establishing the engine-contract gap that this SDD reframes from "design a bridge" to "delete the bridge layer."
 - `docs/research/tf-9ut-workflow-core-paths-empirical-finding.md` — substrate baseline.
 - `docs/research/durable-tools-vs-workflow-engine-convergence.md` lines 84-89 — "Shape A should ride with the deferred-input rewrite"; this SDD operationalizes that ride-with constraint as a fuller collapse.
-- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md` — downstream presentation-layer SDD. Slice A's channel Layer sits on top of the one-substrate model this SDD lands.
+- `docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md` — downstream presentation-layer SDD. Slice A's channel Layer sits on top of the one-substrate model this SDD lands.
 - `repos/effect/packages/cluster/src/ClusterWorkflowEngine.ts` — template that informed Firegrid's engine; primitive set is identical.
 - `packages/runtime/test/workflow-engine/DurableStreamsWorkflowEngine.test.ts` (932 lines) — empirical evidence Firegrid's engine already supports Activity + DurableClock + DurableDeferred + replay; no engine-side extension needed for this SDD.
 

@@ -217,7 +217,7 @@ durable or otherwise. The correct shape is an **engine-native primitive**
 that handles multi-source coordination internally and exposes a single
 suspension point to the body.
 
-Per `docs/sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md`, the
+Per `docs/cannon/sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md`, the
 `streamWaitAny` primitive is the right resolution:
 
 ```ts
@@ -330,7 +330,7 @@ body runs on, but PR reviews should flag them and require either:
 - Lane 2 engine-runtime patches (recycling Ref + force-interrupt-on-deferred-done):
   `packages/runtime/src/workflow-engine/internal/engine-runtime.ts` tf-xw0w branch
 - Forward-looking primitive:
-  `docs/sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md` §
+  `docs/cannon/sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md` §
   Candidate Primitives §2 `streamWaitAny`
 - Workflow engine execution model:
   `repos/effect/packages/workflow/src/Activity.ts:239-259` (single-fiber

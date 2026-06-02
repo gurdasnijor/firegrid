@@ -1,7 +1,7 @@
 # FINDING — tf-0du factory choreography support (3 full-§6 gaps)
 
 Status authority: bead `tf-0du`. Governing contract:
-`docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md` +
+`docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md` +
 `firegrid-typed-wait-source-redesign` feature. Contract treated as
 non-negotiable; HALT-RULE applied where additive build would breach it.
 

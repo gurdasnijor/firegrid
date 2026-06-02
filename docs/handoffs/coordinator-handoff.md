@@ -29,7 +29,7 @@ Start with these files, in order:
 2. `docs/handoffs/TEAM_INDEX.md`
 3. `docs/sdds/SDD_FIREGRID_HOST_SDK.md`
 4. `features/firegrid/firegrid-host-sdk.feature.yaml`
-5. `docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+5. `docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
 6. `features/firegrid/firegrid-schema-projection-contract.feature.yaml`
 7. `packages/runtime/ARCHITECTURE.md`
 8. `packages/runtime/src/agent-event-pipeline/README.md`

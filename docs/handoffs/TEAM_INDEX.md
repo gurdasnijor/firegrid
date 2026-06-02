@@ -16,7 +16,7 @@ than old runtime internals.
    - Canonical SDK plane split SDD.
 3. `features/firegrid/firegrid-host-sdk.feature.yaml`
    - Source-of-truth ACIDs for the SDK split.
-4. `docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+4. `docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
    - Operation projection contract that governs client/tool/CLI bindings.
 5. `features/firegrid/firegrid-schema-projection-contract.feature.yaml`
    - Source-of-truth ACIDs for schema projection.
@@ -90,7 +90,7 @@ router through it without moving packages or changing behavior.
 Read:
 
 - `docs/sdds/SDD_FIREGRID_HOST_SDK.md`
-- `docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+- `docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
 - `packages/protocol/src/operations/schema.ts`
 - `packages/protocol/src/session-facade/operations.ts`
 - `packages/client/src/firegrid.ts`
