@@ -8,7 +8,8 @@
  *
  *   - `PermissionRoundtripWorkflow.execute(...)` on each
  *     `PermissionRequest` observation.
- *   - `ToolDispatchWorkflow.execute(...)` on each `ToolUse` observation.
+ *   - `ToolDispatchWorkflow.execute(...)` on host-dispatched `ToolUse`
+ *     observations.
  *
  * Workflow-level idempotency (`Workflow.idempotencyKey`) deduplicates
  * across restarts and replay — same `(contextId, permissionRequestId)`
@@ -68,6 +69,9 @@ const triggerForObservation = (
       )
 
     case "ToolUse":
+      // firegrid-runtime-host-modularity.CODEC_RUNTIME.4
+      // firegrid-runtime-host-modularity.CODEC_RUNTIME.5
+      if (observation.event.part.providerExecuted === true) return Effect.void
       return Effect.fork(
         ToolDispatchWorkflow.execute({
           contextId: observation.contextId,
