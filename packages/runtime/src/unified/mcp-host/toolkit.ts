@@ -11,9 +11,8 @@
  * `ToolDispatchWorkflow`).
  *
  * Adding a tool requires (a) a protocol Effect Schema in
- * `@firegrid/protocol/agent-tools`, (b) a new `Tool.make(...)` here with
- * `setParameters` / `setSuccess` pointing at that schema, (c) inclusion
- * in `Toolkit.make(...)`, and (d) a handler in `FiregridAgentToolkitLayer`
+ * `@firegrid/protocol/agent-tools`, (b) inclusion in the schema group list
+ * here, and (c) a handler in `FiregridAgentToolkitLayer`
  * (in `./toolkit-layer.ts`) routing through `ToolDispatch.call`.
  *
  * Implements (feature spec):
@@ -109,13 +108,6 @@ const FiregridToolDependencies: Array<
   IdGenerator.IdGenerator,
 ]
 
-const schemaToolName = <Name extends string>(
-  schema: { readonly ast: SchemaAST.AST },
-  expected: Name,
-): Name =>
-  (Option.getOrUndefined(getFiregridProjectionMetadata(schema))?.toolName ??
-    expected) as Name
-
 const schemaDescription = (
   schema: { readonly ast: SchemaAST.AST },
   fallback: string,
@@ -124,180 +116,119 @@ const schemaDescription = (
   return typeof description === "string" ? description : fallback
 }
 
-/**
- * `sleep` — durably suspend until a duration elapses.
- * Maps onto the unified durable clock (`DurableClock.sleep`) in
- * `FiregridAgentToolExecutor` (`./tool-dispatch.ts`).
- */
-export const SleepTool = Tool.make(schemaToolName(AgentToolSchemas.SleepToolInputSchema, "sleep"), {
-  description: schemaDescription(AgentToolSchemas.SleepToolInputSchema, "sleep"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.SleepToolInputSchema)
-  .setSuccess(AgentToolSchemas.SleepToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
+const AGENT_TOOL_GROUPS = [
+  {
+    input: AgentToolSchemas.SleepToolInputSchema,
+    output: AgentToolSchemas.SleepToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.WaitForToolInputSchema,
+    output: AgentToolSchemas.WaitForToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.WaitUntilToolInputSchema,
+    output: AgentToolSchemas.WaitUntilToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.WaitAnyToolInputSchema,
+    output: AgentToolSchemas.WaitAnyToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.SendToolInputSchema,
+    output: AgentToolSchemas.SendToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.SessionNewToolInputSchema,
+    output: AgentToolSchemas.SessionNewToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.SessionPromptToolInputSchema,
+    output: AgentToolSchemas.SessionPromptToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.SessionCancelToolInputSchema,
+    output: AgentToolSchemas.SessionCancelToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.SessionCloseToolInputSchema,
+    output: AgentToolSchemas.SessionCloseToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.ExecuteToolInputSchema,
+    output: AgentToolSchemas.ExecuteToolOutputSchema,
+  },
+  {
+    input: AgentToolSchemas.CallToolInputSchema,
+    output: AgentToolSchemas.CallToolOutputSchema,
+  },
+] as const
 
-/**
- * `wait_for` — wait until a matching durable event appears.
- * Maps onto an ingress channel + `awaitSignal` (`../signal.ts`,
- * `../channel-bindings.ts`) in `FiregridAgentToolExecutor`.
- */
-export const WaitForTool = Tool.make(schemaToolName(AgentToolSchemas.WaitForToolInputSchema, "wait_for"), {
-  description: schemaDescription(AgentToolSchemas.WaitForToolInputSchema, "wait_for"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.WaitForToolInputSchema)
-  .setSuccess(AgentToolSchemas.WaitForToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
+type AgentToolGroup = (typeof AGENT_TOOL_GROUPS)[number]
 
-/**
- * `wait_until` — wait until an absolute or relative time. With a prompt,
- * the prompt is appended as a new turn after the timer resolves.
- */
-export const WaitUntilTool = Tool.make(schemaToolName(AgentToolSchemas.WaitUntilToolInputSchema, "wait_until"), {
-  description: schemaDescription(AgentToolSchemas.WaitUntilToolInputSchema, "wait_until"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.WaitUntilToolInputSchema)
-  .setSuccess(AgentToolSchemas.WaitUntilToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
+const projectTool = (group: AgentToolGroup) => {
+  const metadata = Option.getOrThrow(getFiregridProjectionMetadata(group.input))
+  const toolName = metadata.toolName ?? metadata.operationId
+  return Tool.make(toolName, {
+    description: schemaDescription(group.input, toolName),
+    dependencies: FiregridToolDependencies,
+  })
+    .setParameters(group.input)
+    .setSuccess(group.output)
+    .setFailure(FiregridMcpToolFailureSchema)
+}
 
-/**
- * `send` — append a payload to an egress channel.
- * firegrid-agent-body-plan.SLICE_D_VERBS.1
- */
-export const SendTool = Tool.make(schemaToolName(AgentToolSchemas.SendToolInputSchema, "send"), {
-  description: schemaDescription(AgentToolSchemas.SendToolInputSchema, "send"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.SendToolInputSchema)
-  .setSuccess(AgentToolSchemas.SendToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
+type AgentToolNames = [
+  "sleep",
+  "wait_for",
+  "wait_until",
+  "wait_any",
+  "send",
+  "session_new",
+  "session_prompt",
+  "session_cancel",
+  "session_close",
+  "execute",
+  "call",
+]
 
-/**
- * `wait_any` — race waits over ingress channels and return the first
- * matching row.
- * firegrid-agent-body-plan.SLICE_D_VERBS.1
- */
-export const WaitAnyTool = Tool.make(schemaToolName(AgentToolSchemas.WaitAnyToolInputSchema, "wait_any"), {
-  description: schemaDescription(AgentToolSchemas.WaitAnyToolInputSchema, "wait_any"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.WaitAnyToolInputSchema)
-  .setSuccess(AgentToolSchemas.WaitAnyToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
+type ProjectedTool<
+  Name extends string,
+  Group,
+> = Group extends {
+  readonly input: infer Input extends Schema.Struct<infer _Fields>
+  readonly output: infer Output extends Schema.Schema.Any
+}
+  ? Tool.Tool<
+    Name,
+    {
+      readonly parameters: Input
+      readonly success: Output
+      readonly failure: typeof FiregridMcpToolFailureSchema
+      readonly failureMode: "error"
+    },
+    typeof FiregridAgentToolContext | typeof IdGenerator.IdGenerator
+  >
+  : never
 
-/**
- * `spawn` — run a child RuntimeContextWorkflow and await its terminal
- * state. Maps onto `RuntimeContextSessionWorkflow`
- * (`../subscribers/runtime-context.ts`) + signal in
- * `FiregridAgentToolExecutor`.
- */
-export const SpawnTool = Tool.make(schemaToolName(AgentToolSchemas.SpawnToolInputSchema, "spawn"), {
-  description: schemaDescription(AgentToolSchemas.SpawnToolInputSchema, "spawn"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.SpawnToolInputSchema)
-  .setSuccess(AgentToolSchemas.SpawnToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
+type ProjectedAgentTools = [
+  ProjectedTool<AgentToolNames[0], (typeof AGENT_TOOL_GROUPS)[0]>,
+  ProjectedTool<AgentToolNames[1], (typeof AGENT_TOOL_GROUPS)[1]>,
+  ProjectedTool<AgentToolNames[2], (typeof AGENT_TOOL_GROUPS)[2]>,
+  ProjectedTool<AgentToolNames[3], (typeof AGENT_TOOL_GROUPS)[3]>,
+  ProjectedTool<AgentToolNames[4], (typeof AGENT_TOOL_GROUPS)[4]>,
+  ProjectedTool<AgentToolNames[5], (typeof AGENT_TOOL_GROUPS)[5]>,
+  ProjectedTool<AgentToolNames[6], (typeof AGENT_TOOL_GROUPS)[6]>,
+  ProjectedTool<AgentToolNames[7], (typeof AGENT_TOOL_GROUPS)[7]>,
+  ProjectedTool<AgentToolNames[8], (typeof AGENT_TOOL_GROUPS)[8]>,
+  ProjectedTool<AgentToolNames[9], (typeof AGENT_TOOL_GROUPS)[9]>,
+  ProjectedTool<AgentToolNames[10], (typeof AGENT_TOOL_GROUPS)[10]>,
+]
 
-/**
- * `spawn_all` — fan out child workflows and await every terminal state.
- * Maps onto a fan-out of `RuntimeContextSessionWorkflow` executions in
- * `FiregridAgentToolExecutor`.
- */
-export const SpawnAllTool = Tool.make(schemaToolName(AgentToolSchemas.SpawnAllToolInputSchema, "spawn_all"), {
-  description: schemaDescription(AgentToolSchemas.SpawnAllToolInputSchema, "spawn_all"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.SpawnAllToolInputSchema)
-  .setSuccess(AgentToolSchemas.SpawnAllToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
+const AGENT_TOOLS = AGENT_TOOL_GROUPS.map(group =>
+  projectTool(group),
+) as unknown as ProjectedAgentTools
 
-/**
- * `session_new` — create a child RuntimeContext-backed session.
- * Maps onto `RuntimeContextSessionWorkflow`
- * (`../subscribers/runtime-context.ts`) in `FiregridAgentToolExecutor`.
- */
-export const SessionNewTool = Tool.make(schemaToolName(AgentToolSchemas.SessionNewToolInputSchema, "session_new"), {
-  description: schemaDescription(AgentToolSchemas.SessionNewToolInputSchema, "session_new"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.SessionNewToolInputSchema)
-  .setSuccess(AgentToolSchemas.SessionNewToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
-
-/**
- * `session_prompt` — append a prompt to an existing session using
- * host-owned runtime ingress.
- */
-export const SessionPromptTool = Tool.make(schemaToolName(AgentToolSchemas.SessionPromptToolInputSchema, "session_prompt"), {
-  description: schemaDescription(AgentToolSchemas.SessionPromptToolInputSchema, "session_prompt"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.SessionPromptToolInputSchema)
-  .setSuccess(AgentToolSchemas.SessionPromptToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
-
-/**
- * `session_cancel` — request cancellation of an existing session.
- */
-export const SessionCancelTool = Tool.make(schemaToolName(AgentToolSchemas.SessionCancelToolInputSchema, "session_cancel"), {
-  description: schemaDescription(AgentToolSchemas.SessionCancelToolInputSchema, "session_cancel"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.SessionCancelToolInputSchema)
-  .setSuccess(AgentToolSchemas.SessionCancelToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
-
-/**
- * `session_close` — request closure of an existing session.
- */
-export const SessionCloseTool = Tool.make(schemaToolName(AgentToolSchemas.SessionCloseToolInputSchema, "session_close"), {
-  description: schemaDescription(AgentToolSchemas.SessionCloseToolInputSchema, "session_close"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.SessionCloseToolInputSchema)
-  .setSuccess(AgentToolSchemas.SessionCloseToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
-
-/**
- * `execute` — invoke a SandboxProvider-backed tool by sandbox-neutral
- * reference. Maps onto the unified sandbox/codec path
- * (`../codec-adapter.ts`) in `FiregridAgentToolExecutor`.
- */
-export const ExecuteTool = Tool.make(schemaToolName(AgentToolSchemas.ExecuteToolInputSchema, "execute"), {
-  description: schemaDescription(AgentToolSchemas.ExecuteToolInputSchema, "execute"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.ExecuteToolInputSchema)
-  .setSuccess(AgentToolSchemas.ExecuteToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
-
-/**
- * `call` — invoke an approval call channel.
- * Maps onto an egress call channel request/response
- * (`../channel-bindings.ts`) in `FiregridAgentToolExecutor`.
- */
-export const CallTool = Tool.make(schemaToolName(AgentToolSchemas.CallToolInputSchema, "call"), {
-  description: schemaDescription(AgentToolSchemas.CallToolInputSchema, "call"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.CallToolInputSchema)
-  .setSuccess(AgentToolSchemas.CallToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
-
-/**
- * Canonical Firegrid agent toolkit. The single source of truth for tool
- * exposure: codecs publish this set, MCP `tools/list` projects this
- * set, and `FiregridAgentToolExecutor` (`./tool-dispatch.ts`) switches on
- * the tool name against the same `@firegrid/protocol/agent-tools` Effect
- * Schemas these `Tool.make` values bind. The toolkit value and the
- * executor's name-switch share one schema source of truth
- * (`@firegrid/protocol/agent-tools`); they do not maintain parallel
- * registries.
- */
-export const FiregridAgentToolkit = Toolkit.make(
+export const [
   SleepTool,
   WaitForTool,
   WaitUntilTool,
@@ -309,7 +240,19 @@ export const FiregridAgentToolkit = Toolkit.make(
   SessionCloseTool,
   ExecuteTool,
   CallTool,
-)
+] = AGENT_TOOLS
+
+/**
+ * Canonical Firegrid agent toolkit. The single source of truth for tool
+ * exposure: codecs publish this set, MCP `tools/list` projects this
+ * set, and `FiregridAgentToolExecutor` (`./tool-dispatch.ts`) switches on
+ * the tool name against the same `@firegrid/protocol/agent-tools` Effect
+ * Schemas these `Tool.make` values bind. The toolkit value and the
+ * executor's name-switch share one schema source of truth
+ * (`@firegrid/protocol/agent-tools`); they do not maintain parallel
+ * registries.
+ */
+export const FiregridAgentToolkit = Toolkit.make(...AGENT_TOOLS)
 
 /**
  * Locked primitive profile for showcase participants.
