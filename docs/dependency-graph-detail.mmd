@@ -333,6 +333,11 @@ subgraph 7C["unified-kernel-validation"]
 7E["host.ts"]
 7F["index.ts"]
 end
+subgraph 7G["verified-webhook-wait"]
+7H["driver.ts"]
+7I["host.ts"]
+7J["index.ts"]
+end
 end
 6R["types.ts"]
 end
@@ -744,3 +749,14 @@ Z-->L
 7F-->6R
 7F-->7D
 7F-->7E
+7H-->6
+7I-->W
+7I-->1U
+7I-->4F
+7I-->2E
+7I-->5D
+7I-->16
+7I-->1B
+7J-->6R
+7J-->7H
+7J-->7I
