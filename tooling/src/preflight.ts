@@ -8,9 +8,35 @@
 // sum(gate). A forked reporter fiber drains a Queue of gate events to give live
 // start/finish feedback while full output is buffered (bounded tail) for replay.
 
-import { Command } from "@effect/platform"
-import { NodeContext, NodeRuntime } from "@effect/platform-node"
-import { Console, Data, Effect, Fiber, Queue, Ref, Stream } from "effect"
+// Dependency guard. `pnpm preflight` delegates to this runner; in a fresh
+// worktree without node_modules the @effect/* imports below would throw
+// ERR_MODULE_NOT_FOUND before any of our code runs, surfacing as a cryptic pnpm
+// ELIFECYCLE + a buried "node_modules missing" WARN. ESM resolves static imports
+// before module evaluation, so the check must run first with builtins only and
+// the runtime libraries must be loaded AFTER it via dynamic import(). (task-enter.sh
+// installs on worktree creation; this covers the paths that bypass it.)
+import { existsSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+import type * as EffectNS from "effect"
+
+const workspaceRoot = join(dirname(fileURLToPath(import.meta.url)), "../..")
+const missingDeps = ["node_modules", "tooling/node_modules"].filter(
+  (rel) => !existsSync(join(workspaceRoot, rel)),
+)
+if (missingDeps.length > 0) {
+  process.stderr.write(
+    `\npreflight: dependencies are not installed (missing: ${missingDeps.join(", ")}).\n` +
+      `Run \`pnpm install\` in this worktree, then re-run \`pnpm preflight\`.\n\n`,
+  )
+  process.exit(1)
+}
+
+// Deps confirmed present — load the runtime libraries now. Deferred via dynamic
+// import() so the guard above runs first (static imports would be hoisted).
+const { Command } = await import("@effect/platform")
+const { NodeContext, NodeRuntime } = await import("@effect/platform-node")
+const { Console, Data, Effect, Fiber, Queue, Ref, Stream } = await import("effect")
 
 // Grandchild workers (e.g. tinypool under vitest) can still be writing to a
 // stdio pipe at the moment a gate's scope tears the child process down. That
@@ -57,7 +83,7 @@ const capacity = Math.max(requested, maxWeight)
 
 const TAIL_LINES = 40
 
-type GateEvent = Data.TaggedEnum<{
+type GateEvent = EffectNS.Data.TaggedEnum<{
   Started: { readonly script: string }
   Finished: {
     readonly script: string
@@ -97,7 +123,7 @@ const render = (event: GateEvent) => {
 }
 
 const runGate = (
-  events: Queue.Queue<GateEvent>,
+  events: EffectNS.Queue.Queue<GateEvent>,
   gate: (typeof schedule)[number],
 ) =>
   Effect.gen(function* () {

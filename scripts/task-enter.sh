@@ -56,6 +56,7 @@ branch_exists=0
 git -C "$RR" show-ref --verify --quiet "refs/heads/$BR" && branch_exists=1
 git -C "$RR" show-ref --verify --quiet "refs/remotes/origin/$BR" && branch_exists=1
 
+CREATED=0
 if [ -d "$WT" ]; then
   echo "task-enter: worktree already exists → $WT  (cd there and continue)"
 elif [ "$RESUME" = 1 ]; then
@@ -65,6 +66,7 @@ elif [ "$RESUME" = 1 ]; then
   else
     git -C "$RR" worktree add -q "$WT" -b "$BR" --track "origin/$BR"  # local tracking branch from remote tip
   fi
+  CREATED=1
   echo "✓ worktree: $WT  (RESUMED branch $BR — existing commits preserved, not forked off main)"
 elif [ "$branch_exists" = 1 ]; then
   echo "✋ task-enter: branch '$BR' already exists (local or origin)." >&2
@@ -73,7 +75,23 @@ elif [ "$branch_exists" = 1 ]; then
   exit 1
 else
   git -C "$RR" worktree add -q "$WT" -b "$BR" "$BASE"
+  CREATED=1
   echo "✓ worktree: $WT  (branch $BR, fresh off $BASE)"
+fi
+
+# Install deps into the fresh worktree. The fast `pnpm preflight` delegates to
+# the `tooling` workspace package, so a worktree without node_modules fails the
+# moment a lane runs gates — with a cryptic pnpm ELIFECYCLE + buried
+# "node_modules missing" WARN (cost a lane a diagnosis cycle). Install once here
+# so the lane is gate-ready. Best-effort: a hiccup warns and continues — never
+# blocks starting the task (the lane can always `pnpm install` by hand).
+if [ "$CREATED" = 1 ] && command -v pnpm >/dev/null 2>&1; then
+  echo "→ installing dependencies (pnpm install)…"
+  if (cd "$WT" && pnpm install); then
+    echo "✓ dependencies installed — pnpm preflight is ready"
+  else
+    echo "⚠ pnpm install failed in $WT — run it manually before pnpm preflight" >&2
+  fi
 fi
 
 # Claim the bead through the canonical store inherited from the shell
@@ -86,6 +104,8 @@ cat <<EOF
 
 NEXT:
   cd "$WT"
+  # deps were installed above; \`pnpm preflight\` is ready (re-run \`pnpm install\`
+  # only if the step above warned it failed).
   # tag your lane so lane-sweep can see you (your cmux tab label):
   br update $BEAD --assignee <your-lane-label> --add-label pr-<n>
   # …work, commit here (NEVER in the primary)…
