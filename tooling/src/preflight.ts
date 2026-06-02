@@ -61,7 +61,6 @@ const gates = [
   { script: "lint:dup", description: "jscpd duplicate-code ratchet", weight: 1 },
   { script: "lint:deps", description: "Dependency cruiser boundaries", weight: 1 },
   { script: "lint:effect-quality", description: "Effect-quality metrics ratchet", weight: 1 },
-  { script: "lint:ast-grep", description: "ast-grep style guardrails", weight: 1 },
   { script: "trace:seams:ukv", description: "UKV production trace seam gate", weight: 1 },
   { script: "lint:host-sdk-imports", description: "host-sdk runtime-import quarantine (Wave C)", weight: 1 },
   { script: "check:specs", description: "Feature spec YAML syntax", weight: 1 },

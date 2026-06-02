@@ -126,7 +126,6 @@
   ],
   "ignoreDependencies": [
     "@agentclientprotocol/sdk",
-    "@ast-grep/cli",
     "@modelcontextprotocol/sdk",
     "jscpd"
   ],

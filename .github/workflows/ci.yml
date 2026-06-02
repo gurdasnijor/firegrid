@@ -36,7 +36,7 @@ env:
 # version bumps touch one file rather than every job.
 #
 # Gating jobs:
-#   lint              — docs/specs + eslint + dead-code + dup + effect-quality + ast-grep
+#   lint              — docs/specs + eslint + dead-code + dup + effect-quality
 #   semgrep           — semgrep --test fixtures + production semgrep scan
 #   typecheck         — pnpm --recursive typecheck
 #   effect-diagnostics — effect-language-service diagnostics
@@ -87,9 +87,6 @@ jobs:
 
       - name: Check Effect-quality metric ratchet
         run: pnpm run lint:effect-quality
-
-      - name: Check ast-grep style guardrails
-        run: pnpm run lint:ast-grep
 
   # The UKV production trace gate runs a live sim (~40s) and is the single
   # heaviest step. It used to sit last in the Lint job, serializing behind every

@@ -211,7 +211,6 @@ Command map:
 | --- | --- | --- | --- |
 | Ready-for-review static/test gate | `pnpm verify` | none | Yes, CI authoritative |
 | Strict dependency boundary check | `pnpm run lint:deps` | none | Yes |
-| Focused ast-grep guardrails | `pnpm run lint:ast-grep` | none | Yes |
 | Dependency graph evidence refresh | `pnpm run arch:deps` | `docs/dependency-graph*.mmd` | No |
 | Detailed module graph refresh | `pnpm run arch:deps:detail` | `docs/dependency-graph*-detail.mmd` | No |
 | Focused package Mermaid graph | `pnpm run arch:deps:<package>` | one focused `.mmd` file | No |
@@ -246,14 +245,12 @@ To add a semgrep rule, add a focused rule to `.semgrep.yml`, keep production sca
 pnpm run lint:semgrep:test
 ```
 
-The checked-in ast-grep config under `tooling/ast-grep/` is mostly an
-informational syntax-footprint inventory. Focused rules can be promoted to CI
-by adding a dedicated root script that runs only that rule as `--error` over
-`packages apps`, then adding the script to `pnpm verify`, preflight, and the CI
-lint job. `lint:ast-grep` currently enforces
-`hrtime-number-arithmetic`, which blocks direct OpenTelemetry hrtime tuple math
-in number space; use the `packages/tiny-firegrid/src/runner/trace.ts` bigint
-helpers instead.
+ast-grep has been retired (its one gated rule was relocated; the rest were an
+informational inventory that ran in no gate). Its sole CI-blocking rule,
+`hrtime-number-arithmetic`, now lives as the type-aware ESLint rule
+`local/hrtime-number-arithmetic`, which blocks direct OpenTelemetry hrtime tuple
+math in number space; use the `packages/tiny-firegrid/src/runner/trace.ts`
+bigint helpers (`nsFromHrTime`/`startNs`/`endNs`) instead.
 
 To add a dependency-cruiser rule, add it to `.dependency-cruiser.cjs` and keep CI strict once the rule lands. Temporary warning-only triage requires an explicit remediation note and a follow-up to promote the rule.
 

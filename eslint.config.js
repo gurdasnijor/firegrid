@@ -185,6 +185,22 @@ const hasLoopAncestor = (node) => {
   return false
 }
 
+// firegrid-remediation-hardening.STATIC_QUALITY.14 — relocated from the retired
+// ast-grep rule pack. OpenTelemetry hrtime tuples [seconds, nanos] need bigint
+// arithmetic to preserve precision; direct Number() math on index [0] loses
+// precision past ~2^53 ns (~26h). Flags any `<x>.{startTime,endTime,duration}[0]`
+// used as the left operand of a `*` (the reach-around the trace.ts helpers).
+const hrtimeTupleProperties = new Set(["startTime", "endTime", "duration"])
+const isHrtimeTupleIndexZero = (node) =>
+  node?.type === "MemberExpression" &&
+  node.computed &&
+  node.property?.type === "Literal" &&
+  node.property.value === 0 &&
+  node.object?.type === "MemberExpression" &&
+  !node.object.computed &&
+  node.object.property?.type === "Identifier" &&
+  hrtimeTupleProperties.has(node.object.property.name)
+
 const hasNearbyAllowComment = (context, node, allowedTags) => {
   if (node?.loc == null) {
     return false
@@ -567,6 +583,30 @@ const local = {
         }
       },
     },
+    // firegrid-remediation-hardening.STATIC_QUALITY.14 (relocated from ast-grep)
+    "hrtime-number-arithmetic": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow OpenTelemetry hrtime tuple arithmetic in number space; use the nsFromHrTime / startNs / endNs bigint helpers.",
+        },
+        schema: [],
+        messages: {
+          noHrtimeMath:
+            "hrtime tuple arithmetic in number space — use nsFromHrTime / startNs / endNs (precision loss above ~26h).",
+        },
+      },
+      create(context) {
+        return {
+          BinaryExpression(node) {
+            if (node.operator === "*" && isHrtimeTupleIndexZero(node.left)) {
+              context.report({ node, messageId: "noHrtimeMath" })
+            }
+          },
+        }
+      },
+    },
   },
 }
 
@@ -642,6 +682,7 @@ export default tseslint.config(
       "@typescript-eslint/no-base-to-string": "warn",
       "local/relative-ts-extensions": "error",
       "local/no-node-process-import": "error",
+      "local/hrtime-number-arithmetic": "error",
       "no-restricted-imports": [
         "error",
         {
