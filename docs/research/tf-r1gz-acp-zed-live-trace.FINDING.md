@@ -92,6 +92,52 @@ path. `agentText: "MCP_OBS listCount=11 callOk=true"`. 919 spans total.
 The artifact lives under ignored `.firegrid/`; this finding records the durable
 result while keeping the large machine-local trace out of git.
 
+## tf-0awo.14 post-Fix-A replay (2026-06-02)
+
+The black-box proof is now a regression smoke:
+
+```bash
+pnpm --filter @firegrid/runtime exec vitest run test/bin/acp-cli-smoke.test.ts
+```
+
+It spawns the real `firegrid acp` CLI from a non-repo cwd, passes
+`--cwd <tmp>` and relative `--otel-file .firegrid/acp-trace.jsonl`, leaves
+`DURABLE_STREAMS_BASE_URL` unset, drives the process through the real ACP
+TypeScript SDK, then reaches the injected runtime-context MCP route with MCP
+`initialize` / `tools/list` / `tools/call`.
+
+The 2026-06-02 run produced 574 JSONL rows, 287 completed spans, and the same
+seven completed spans exactly once:
+
+| Span | Count |
+| --- | ---: |
+| `firegrid.acp_stdio_edge.initialize` | 1 |
+| `firegrid.acp_stdio_edge.new_session` | 1 |
+| `firegrid.acp_stdio_edge.prompt` | 1 |
+| `firegrid.mcp.register_toolkit` | 1 |
+| `McpServer.initialize` | 1 |
+| `McpServer.tools/list` | 1 |
+| `McpServer.tools/call` | 1 |
+
+The full profile remains `tool_count=11`; after the wait-family rename, the
+registered tool names are:
+
+```json
+{
+  "firegrid.mcp.tool_count": 11,
+  "firegrid.mcp.tool_names": "call,execute,send,session_cancel,session_close,session_new,session_prompt,sleep,wait_any,wait_for,wait_until",
+  "firegrid.mcp.tool_profile": "full"
+}
+```
+
+The ACP prompt turn included a real ACP `tool_call` notification from the
+backing agent. The replay asserted neither
+`ACP ToolResult input is out-of-band for this codec slice` nor
+`codec send failed` appeared in stderr or the trace, proving the post-Fix-A
+observer gate handles provider-executed ACP tool calls end-to-end. A compact
+captured excerpt of the seven completed spans is checked in at
+`docs/research/tf-0awo.14-zed-acp-trace.required-spans.jsonl`.
+
 ## Gates
 
 `@firegrid/observability` test (2), `@firegrid/host-sdk` test (133), typecheck

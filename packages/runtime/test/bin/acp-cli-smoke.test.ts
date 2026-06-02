@@ -1,11 +1,12 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
-import { mkdirSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { Readable, Writable } from "node:stream"
+import { setTimeout as delay } from "node:timers/promises"
 import { afterEach, describe, expect, it } from "vitest"
 
 const repoRoot = path.resolve(import.meta.dirname, "../../../..")
@@ -16,9 +17,34 @@ const fakeAgent = path.join(
   "packages/tiny-firegrid/src/bin/fake-acp-agent-process.ts",
 )
 
-const readTraceNames = (traceFile: string): ReadonlyArray<string> =>
-  readTraceRows(traceFile)
-    .map(row => typeof row.name === "string" ? row.name : "")
+const REQUIRED_ZED_TRACE_SPANS = [
+  "firegrid.acp_stdio_edge.initialize",
+  "firegrid.acp_stdio_edge.new_session",
+  "firegrid.acp_stdio_edge.prompt",
+  "firegrid.mcp.register_toolkit",
+  "McpServer.initialize",
+  "McpServer.tools/list",
+  "McpServer.tools/call",
+] as const
+
+const EXPECTED_FULL_TOOL_NAMES = [
+  "call",
+  "execute",
+  "send",
+  "session_cancel",
+  "session_close",
+  "session_new",
+  "session_prompt",
+  "sleep",
+  "wait_any",
+  "wait_for",
+  "wait_until",
+] as const
+
+const FORBIDDEN_ACP_TOOL_RESULT_FAILURES = [
+  "ACP ToolResult input is out-of-band for this codec slice",
+  "codec send failed",
+] as const
 
 const readTraceRows = (traceFile: string): ReadonlyArray<Record<string, unknown>> =>
   readFileSync(traceFile, "utf8")
@@ -32,14 +58,71 @@ const readTraceRows = (traceFile: string): ReadonlyArray<Record<string, unknown>
         : {}
     })
 
+const waitForTraceRows = async (
+  traceFile: string,
+  label: string,
+  predicate: (rows: ReadonlyArray<Record<string, unknown>>) => boolean,
+): Promise<ReadonlyArray<Record<string, unknown>>> => {
+  const deadline = Date.now() + 15_000
+  let lastRows: ReadonlyArray<Record<string, unknown>> = []
+
+  while (Date.now() < deadline) {
+    if (existsSync(traceFile)) {
+      try {
+        const rows = readTraceRows(traceFile)
+        lastRows = rows
+        if (predicate(rows)) return rows
+      } catch {
+        // The file exporter writes continuously; retry if we observe a partial line.
+      }
+    }
+    await delay(50)
+  }
+
+  throw new Error(
+    `timed out waiting for ${label}; saw spans: ${
+      readTraceNamesFromRows(lastRows).join(", ")
+    }`,
+  )
+}
+
+const readTraceNamesFromRows = (
+  rows: ReadonlyArray<Record<string, unknown>>,
+): ReadonlyArray<string> =>
+  rows.map(row => typeof row.name === "string" ? row.name : "")
+
+const traceAttributes = (
+  row: Record<string, unknown>,
+): Record<string, unknown> => {
+  const attributes = row.attributes
+  return typeof attributes === "object" &&
+      attributes !== null &&
+      !Array.isArray(attributes)
+    ? attributes as Record<string, unknown>
+    : {}
+}
+
+const completedSpanCount = (
+  rows: ReadonlyArray<Record<string, unknown>>,
+  name: string,
+): number =>
+  rows.filter(row => row.name === name && row.phase !== "start").length
+
+const completedSpanNamed = (
+  rows: ReadonlyArray<Record<string, unknown>>,
+  name: string,
+): Record<string, unknown> => {
+  const span = rows.find(row => row.name === name && row.phase !== "start")
+  if (span === undefined) {
+    throw new Error(`trace did not contain completed span ${name}`)
+  }
+  return span
+}
+
 const injectedMcpUrlFromTrace = (traceFile: string): string => {
   for (const row of readTraceRows(traceFile)) {
-    const attributes = row.attributes
-    if (
-      typeof attributes === "object" &&
-      attributes !== null &&
-      !Array.isArray(attributes) &&
-      "firegrid.mcp.injected_url" in attributes &&
+    const attributes = traceAttributes(row)
+    if ("firegrid.mcp.injected_url" in attributes &&
       typeof attributes["firegrid.mcp.injected_url"] === "string"
     ) {
       return attributes["firegrid.mcp.injected_url"]
@@ -70,6 +153,30 @@ const postMcpJsonRpc = async (
   return parsed as Record<string, unknown>
 }
 
+const mcpToolNames = (
+  response: Record<string, unknown>,
+): ReadonlyArray<string> => {
+  const result = response.result
+  expect(typeof result).toBe("object")
+  expect(result).not.toBeNull()
+  expect(Array.isArray(result)).toBe(false)
+
+  const tools = (result as Record<string, unknown>).tools
+  expect(Array.isArray(tools)).toBe(true)
+  const names: Array<string> = []
+  for (const tool of tools as ReadonlyArray<unknown>) {
+    if (
+      typeof tool === "object" &&
+      tool !== null &&
+      !Array.isArray(tool)
+    ) {
+      const name = (tool as { readonly name?: unknown }).name
+      if (typeof name === "string") names.push(name)
+    }
+  }
+  return names.sort()
+}
+
 class SmokeClient implements acp.Client {
   readonly updates: Array<acp.SessionNotification> = []
 
@@ -92,7 +199,7 @@ describe("firegrid acp CLI", () => {
     child = undefined
   })
 
-  it("firegrid-zed-acp-stdio-external-agent.CLI_HELPER.1 firegrid-zed-acp-stdio-external-agent.CLI_HELPER.2 firegrid-zed-acp-stdio-external-agent.CLI_HELPER.3 firegrid-zed-acp-stdio-external-agent.CLI_HELPER.4 runs as an ACP stdio server over the fake ACP agent process", async () => {
+  it("firegrid-zed-acp-stdio-external-agent.CLI_HELPER.1 firegrid-zed-acp-stdio-external-agent.CLI_HELPER.2 firegrid-zed-acp-stdio-external-agent.CLI_HELPER.3 firegrid-zed-acp-stdio-external-agent.CLI_HELPER.4 firegrid-zed-acp-stdio-external-agent.VALIDATION.6 reproduces the Zed ACP trace shape creds-free", async () => {
     const cwd = path.join(tmpdir(), `firegrid-acp-cli-${randomUUID()}`)
     mkdirSync(cwd, { recursive: true })
     const traceFile = ".firegrid/acp-trace.jsonl"
@@ -164,6 +271,8 @@ describe("firegrid acp CLI", () => {
     })
     expect(prompt.stopReason).toBe("end_turn")
     expect(client.updates.length).toBeGreaterThan(0)
+    const updateKinds = client.updates.map(update => update.update.sessionUpdate)
+    expect(updateKinds).toContain("tool_call")
 
     const mcpUrl = injectedMcpUrlFromTrace(absoluteTraceFile)
     await postMcpJsonRpc(mcpUrl, {
@@ -181,19 +290,50 @@ describe("firegrid acp CLI", () => {
       method: "notifications/initialized",
       params: {},
     })
-    await postMcpJsonRpc(mcpUrl, {
+    const toolsList = await postMcpJsonRpc(mcpUrl, {
       jsonrpc: "2.0",
       id: 2,
+      method: "tools/list",
+      params: {},
+    })
+    expect(mcpToolNames(toolsList)).toEqual([...EXPECTED_FULL_TOOL_NAMES])
+
+    const toolsCall = await postMcpJsonRpc(mcpUrl, {
+      jsonrpc: "2.0",
+      id: 3,
       method: "tools/call",
       params: { name: "sleep", arguments: { durationMs: 1 } },
     })
+    expect(toolsCall.error).toBeUndefined()
 
     child.kill("SIGTERM")
 
-    expect(stderrChunks.join("")).toContain(`firegrid acp: writing OTEL spans to ${absoluteTraceFile}`)
-    const traceNames = readTraceNames(absoluteTraceFile)
-    expect(traceNames).toContain("firegrid.mcp.register_toolkit")
-    expect(traceNames).toContain("firegrid.acp_stdio_edge.prompt")
+    const stderr = stderrChunks.join("")
+    expect(stderr).toContain(`firegrid acp: writing OTEL spans to ${absoluteTraceFile}`)
+
+    const traceRows = await waitForTraceRows(
+      absoluteTraceFile,
+      "tf-r1gz Zed ACP trace spans",
+      rows => REQUIRED_ZED_TRACE_SPANS.every(name =>
+        completedSpanCount(rows, name) === 1,
+      ),
+    )
+    for (const name of REQUIRED_ZED_TRACE_SPANS) {
+      expect(completedSpanCount(traceRows, name)).toBe(1)
+    }
+
+    const registerToolkit = completedSpanNamed(traceRows, "firegrid.mcp.register_toolkit")
+    const registerAttributes = traceAttributes(registerToolkit)
+    expect(registerAttributes["firegrid.mcp.tool_count"]).toBe(11)
+    expect(registerAttributes["firegrid.mcp.tool_names"]).toBe(EXPECTED_FULL_TOOL_NAMES.join(","))
+    expect(registerAttributes["firegrid.mcp.tool_profile"]).toBe("full")
+
+    const traceText = traceRows.map(row => JSON.stringify(row)).join("\n")
+    for (const marker of FORBIDDEN_ACP_TOOL_RESULT_FAILURES) {
+      expect(`${stderr}\n${traceText}`).not.toContain(marker)
+    }
+
+    const traceNames = readTraceNamesFromRows(traceRows)
     expect(traceNames).toContain("firegrid.channel.dispatch")
   }, 60_000)
 })
