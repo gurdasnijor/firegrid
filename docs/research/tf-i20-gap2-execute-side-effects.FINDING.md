@@ -1,7 +1,7 @@
 # DELIVERY — tf-i20 Gap 2: execute provider side-effect substrate
 
 Status authority: bead `tf-i20`. Governing contract:
-`docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`. Follow-on to the
+`docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`. Follow-on to the
 tf-0du finding which HALTed `execute` as non-additive.
 
 ## Delivered (full CI gate green; validated through the public surface)

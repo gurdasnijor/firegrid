@@ -19,11 +19,11 @@ lanes should apply.
 
 Inputs:
 
-- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
-- `docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
+- `docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
+- `docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
 - `docs/sdds/SDD_FIREGRID_AGGRESSIVE_ONE_SUBSTRATE_SWAPOVER.md`
-- `docs/sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md`
-- `docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+- `docs/cannon/sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md`
+- `docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
 - landed `tf-ho99`: control-request reconciler as workflow-backed hybrid
 - landed `tf-ws2x`: runtime-context engine registry collapsed into
   Layer-provided runtime services

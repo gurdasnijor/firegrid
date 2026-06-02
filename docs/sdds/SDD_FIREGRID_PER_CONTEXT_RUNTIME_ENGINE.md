@@ -14,7 +14,7 @@ Related specs:
 Related SDDs:
 
 - `docs/sdds/SDD_PATH_X_IMPLEMENTATION.md`
-- `docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+- `docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
 - `docs/sdds/SDD_FIREGRID_HOST_SDK.md`
 
 ## Decision

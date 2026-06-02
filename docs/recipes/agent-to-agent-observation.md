@@ -199,7 +199,7 @@ row.
   `RuntimeAgentOutputObservation` union.
 - `docs/cannon/architecture/runtime-design-constraints.md` § C6 — the
   typed-source + cursor + match contract.
-- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md` Slice C.2 — the
+- `docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md` Slice C.2 — the
   `event(name)` peer-pheromone design.
 - Simulations:
   `child-output-existing-channel-router/`,

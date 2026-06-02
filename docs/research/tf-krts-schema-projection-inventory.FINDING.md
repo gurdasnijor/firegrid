@@ -11,7 +11,7 @@ Canonical target:
 - `@firegrid/client-sdk` owns runtime-source-free app/browser binding over protocol schemas.
 - `@firegrid/runtime` owns workflow definitions, runtime event pipeline, durable authorities, adapters, and runtime operation execution.
 
-References: [docs/architecture/host-sdk-runtime-boundary.md:31](../architecture/host-sdk-runtime-boundary.md), [docs/architecture/host-sdk-runtime-boundary.md:95](../architecture/host-sdk-runtime-boundary.md), [docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md:53](../sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md), [docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md:141](../sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md).
+References: [docs/architecture/host-sdk-runtime-boundary.md:31](../architecture/host-sdk-runtime-boundary.md), [docs/architecture/host-sdk-runtime-boundary.md:95](../architecture/host-sdk-runtime-boundary.md), [docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md](../cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md).
 
 ## Mismatches
 

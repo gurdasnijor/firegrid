@@ -5,7 +5,7 @@ Status: prep note, blocked on `tf-kddg` first draft or ping-back for the generic
 ## Source Of Truth
 
 - `docs/architecture/host-sdk-runtime-boundary.md`
-- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
+- `docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
 - `br show tf-kddg`
 - `packages/tiny-firegrid/src/simulations/dark-factory/host.ts`
 

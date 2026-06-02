@@ -1,7 +1,7 @@
 # FINDING — tf-4ni session_cancel/session_close clean-unwind substrate
 
 Status authority: bead `tf-4ni`. Governing contract:
-`docs/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`. Builds on the
+`docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`. Builds on the
 `tf-0du` FINDING (Gap 2 = session.cancel/session.close).
 
 > **PR scope (coordinator decision (b) — SPLIT).** This PR is the §8
