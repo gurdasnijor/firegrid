@@ -8,9 +8,11 @@ code PR:
 pnpm run preflight
 ```
 
-`pnpm run verify` still exists for CI parity and stops at the first failure.
-`preflight` runs the same practical gate set but continues after failures and
-prints a summary at the end. This satisfies
+`pnpm run verify` is a thin alias of `pnpm run preflight` (kept for existing
+references); both run the same complete gate set, continue after failures, and
+print a summary at the end. (`verify` was previously a separate serial subset
+that drifted from `preflight`; it was collapsed to an alias in tf-636o so the two
+can't diverge.) This satisfies
 `firegrid-quality-gates.PREFLIGHT.1` and
 `firegrid-quality-gates.PREFLIGHT.2`. Its docs/spec entries satisfy
 `firegrid-quality-gates.PREFLIGHT.3`.
@@ -26,8 +28,7 @@ The runnable `check:specs` and `check:docs` scripts satisfy
 | Specs | `check:specs` | Invalid `features/*/*.feature.yaml` syntax | Fix YAML before changing code | `acai` specs are the behavior source of truth. |
 | Docs | `check:docs` | Trailing whitespace and conflict markers in docs/specs | Remove whitespace/markers | Covers `README.md`, `docs`, and `features`. |
 | TypeScript | `typecheck` | Type errors across workspace packages | Fix type/service requirements | Runs through Turbo package scripts. |
-| ESLint | `lint` | Style, unsafe TS, restricted imports, production cutover violations | Follow local ESLint error and use public package roots | Includes `scripts/effect-native-production-cutover-check.mjs`, `scripts/runtime-public-surface-check.mjs`, and `scripts/test-layout-check.mjs`. |
-| Test layout | `lint:test-layout` | `*.test.*` / `*.spec.*` files or `__tests__/` directories anywhere under the repo-root `src/` tree or a workspace unit's production `src/` tree | Move the test to the unit's sibling `test/` directory, fix relative imports, and add `test/**` to that unit's tsconfig / vitest `include` | Zero-state gate, no baseline. Scans the repo-root `src/` (the `firegrid` binary) plus every pnpm workspace unit. Runs as part of `lint`. Documented exceptions live in `scripts/test-layout-check.mjs`. Satisfies `firegrid-quality-gates.TEST_LAYOUT.1`/`.2`. |
+| ESLint | `lint` | Style, unsafe TS, restricted imports | Follow local ESLint error and use public package roots | Includes `scripts/runtime-public-surface-check.mjs` and `scripts/tiny-firegrid-layout-check.mjs`. |
 | Dead code | `lint:dead` | Any Knip finding | Remove the dead export/import/file or wire it through a public surface intentionally | Baseline must remain zero. |
 | Duplicate code | `lint:dup` | jscpd duplicated lines above the ratchet | Extract a shared helper or keep the implementation single-source | Rebaseline only after reducing duplication. |
 | Dependency boundaries | `lint:deps` | Forbidden package/app dependency edges | Move code to the owning package or depend on a public subpath | Uses `.dependency-cruiser.cjs`. |

@@ -29,7 +29,7 @@ The local-process provider builds a child env from:
 
 It does not inherit unrelated host process env vars by default.
 
-For `pnpm firegrid:run`, command-level env vars come from `--secret-env`
+For `pnpm firegrid run`, command-level env vars come from `--secret-env`
 bindings:
 
 ```sh

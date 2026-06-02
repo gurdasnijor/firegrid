@@ -10,6 +10,12 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base"
 import { Config, Effect, Layer, Option } from "effect"
+// The OTel file span-exporter writes trace.jsonl through a node WriteStream
+// (`createWriteStream`) — @effect/platform FileSystem has no OTel-exporter sink
+// equivalent, so this is a genuine node-observability boundary. Documented
+// escape-hatch from the local/no-raw-node-io ban (tf-636o); revisit if the
+// exporter moves onto a platform Sink.
+// eslint-disable-next-line local/no-raw-node-io
 import {
   accessSync,
   constants as fsConstants,
@@ -18,6 +24,7 @@ import {
   mkdirSync,
   type WriteStream,
 } from "node:fs"
+// eslint-disable-next-line local/no-raw-node-io
 import path from "node:path"
 
 export type {

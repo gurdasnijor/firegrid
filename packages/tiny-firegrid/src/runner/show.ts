@@ -1,6 +1,5 @@
+import { FileSystem, Path } from "@effect/platform"
 import { Console, Effect } from "effect"
-import { readdir } from "node:fs/promises"
-import path from "node:path"
 import {
   compareNs,
   durationNs,
@@ -99,6 +98,7 @@ const summary = (spans: ReadonlyArray<SpanRecord>): string => {
 }
 
 export const formatShowOutput = (
+  path: Path.Path,
   runDir: string,
   spans: ReadonlyArray<SpanRecord>,
 ): string =>
@@ -112,9 +112,10 @@ export const formatShowOutput = (
 
 export const showRun = (runId: string | undefined) =>
   Effect.gen(function*() {
+    const path = yield* Path.Path
     const runDir = yield* resolveRunDir(runId)
     const spans = yield* readTraceSpans(runDir)
-    yield* Console.log(formatShowOutput(runDir, spans))
+    yield* Console.log(formatShowOutput(path, runDir, spans))
   })
 
 // A "run" is a folder that contains `trace.jsonl`. Legacy folders left by
@@ -122,24 +123,20 @@ export const showRun = (runId: string | undefined) =>
 // silently — they're on disk for archival inspection but `simulate show`
 // can't read them. Filtering here keeps the listing honest.
 export const listRuns = Effect.gen(function*() {
-  const entries = yield* Effect.promise(() =>
-    readdir(runsRoot, { withFileTypes: true }).catch(() => []),
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const runsDir = yield* runsRoot
+  const names = yield* fs.readDirectory(runsDir).pipe(
+    Effect.orElseSucceed(() => [] as ReadonlyArray<string>),
   )
-  const candidates = entries
-    .filter(e => e.isDirectory())
-    .map(e => e.name)
-    .sort()
-  const dirs = yield* Effect.promise(async () => {
-    const checks = await Promise.all(
-      candidates.map(async dir => ({
-        dir,
-        ok: await hasTraceJsonl(path.join(runsRoot, dir)),
-      })),
-    )
-    return checks.filter(c => c.ok).map(c => c.dir)
-  })
+  // A "run" is a folder containing `trace.jsonl`. Legacy folders left by the
+  // pre-#426 runner (run.json + trace.md + duckdb/) lack one and are filtered
+  // out silently — they remain on disk for archival inspection, but
+  // `simulate show` can't read them, so listing them would be dishonest.
+  const dirs = yield* Effect.filter([...names].sort(), name =>
+    hasTraceJsonl(path.join(runsDir, name)))
   if (dirs.length === 0) {
-    yield* Console.log(`(no runs in ${runsRoot})`)
+    yield* Console.log(`(no runs in ${runsDir})`)
     return
   }
   yield* Effect.forEach(dirs, dir => Console.log(dir), { discard: true })

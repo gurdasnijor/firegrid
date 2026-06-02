@@ -53,8 +53,8 @@ br dep add <gated-id> <id>        # ensure the bead blocks what it gates
 The bead **title** is the topic. Everything else the decisioner needs is at
 `external_ref`. There is no prose template to fill in or get wrong.
 
-**Coordinator** — read-only router. Runs `bash scripts/signoff-queue.sh`,
-routes `signoff:pending` items to the decisioner, bounces any with no
+**Coordinator** — read-only router. Surfaces `signoff:pending` beads (via
+`bv` / `br`), routes them to the decisioner, bounces any with no
 `external_ref` back to the owning lane. **Never mutates `br`.**
 
 **Decisioner** (br-owner) — runs the queue, opens `external_ref`, decides,
@@ -62,15 +62,14 @@ and closes with the one transition above. Done.
 
 ## Seeing the queue
 
-```bash
-bash scripts/signoff-queue.sh            # ranked digest, keystone-first
-bash scripts/signoff-queue.sh show <id>  # one item: topic, gates, ref, PR state
-bash scripts/signoff-queue.sh --json     # for agents
-```
+The queue is exactly the set of open beads carrying the **`signoff:pending`**
+label — surface it with the beads tooling (`bv --robot-insights`, `br`). It is a
+pure structured query (labels, status, `external_ref`, the dependency graph, `bv`
+rank); no markdown is parsed anywhere.
 
-It is a pure structured query (labels, status, `external_ref`, the dependency
-graph, `bv` rank). No markdown is parsed anywhere — there is nothing to be
-brittle about. `<id>` accepts a bead id, `TFIND-NNN`, or `#PR`.
+> The ranked-digest wrapper `scripts/signoff-queue.sh` was retired (tf-636o, with
+> the cron/coordination tooling). The underlying `signoff:pending` structured
+> state above is unchanged — only the bespoke viewer is gone.
 
 Ranking is keystone-label → `bv` blocker → priority → age. The `keystone`
 label is the authoritative load-bearing signal (bv's marginal gain

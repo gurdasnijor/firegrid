@@ -25,7 +25,7 @@
 ## Consolidation-relevant findings
 
 1. **ast-grep is 7/8 dead weight.** `lint:ast-grep` runs `sg scan ... --filter hrtime-number-arithmetic --error=hrtime-number-arithmetic packages` — only `hrtime-number-arithmetic` is gated. The other 7 rules are self-described "archaeology/inventory — findings are INFORMATION" and run in no gate. → Retiring ast-grep means relocating **one** rule and deleting 7 ungated ones.
-2. **The host-sdk→runtime boundary is enforced in five places**: dependency-cruiser (`host-sdk-no-unsanctioned-runtime-subpaths-scan` + `host-sdk-public-composition-surface-only-unified`), `host-sdk-runtime-import-baseline.mjs`, `clean-room-hard-root-guard.mjs` (ungated), 7 Semgrep `firegrid-host-sdk-no-*` rules, and ESLint `no-restricted-imports`.
+2. **The host-sdk→runtime boundary is enforced** (this was a pre-consolidation snapshot; Semgrep retired #814 and `host-sdk-runtime-import-baseline.mjs` retired tf-636o): dependency-cruiser (`host-sdk-no-unsanctioned-runtime-subpaths-scan` + `host-sdk-public-composition-surface-only-unified`), `clean-room-hard-root-guard.mjs` (ungated), and ESLint `no-restricted-imports`.
 3. **Confirmed duplicate rules across ESLint ↔ Semgrep**: `process.env` outside bin (`local/no-process-env-outside-bin` == `firegrid-no-process-env-outside-bin`), timers/`Date.now`, `extends Error`, `Effect.run*`. ESLint's variants are type-aware.
 4. **`effect-quality-metrics-check.mjs` self-describes as "a redundant gate layered over ESLint/Semgrep"** — its unique value is count-ratchet semantics.
 5. **Gating gaps**: Semgrep WARNING rules (≈10) never block CI and Semgrep only scans `packages/` (rules scoped to `apps/`/`/src` aren't enforced); `clean-room-hard-root-guard.mjs` is wired to no gate; ast-grep's 7 inventory rules aren't enforced.
@@ -180,13 +180,11 @@ Invocation (`lint:deps`): `depcruise --config .dependency-cruiser.cjs packages` 
 
 | gate (script) | enforces | scope | mechanism | gated in |
 |---|---|---|---|---|
-| `effect-native-production-cutover-check.mjs` | no regression of 9 forbidden durable-streams/runtime tokens | all `packages/**` code files | substring (whole-file), no baseline | `lint` |
 | `runtime-public-surface-check.mjs` | `runtime/src` root-dir shape: required semantic dirs+READMEs, no numeric-prefix dirs, only `{README,index,runtime-errors}` root files, no stale dirs/exports | `runtime/src` + `runtime/package.json` + 2 docs | filesystem + JSON, no baseline | `lint` |
-| `test-layout-check.mjs` | no `*.test/*.spec` files or `__tests__` dirs under any prod `src/` | repo + every `packages/*` | filesystem, zero-state | `lint` |
 | `tiny-firegrid-layout-check.mjs` | **R1** tiny-firegrid `src` top-level allowlist; each `simulations/<id>/` = exactly `{index,driver,host}.ts` | `tiny-firegrid/src` | filesystem exact-set | `lint` |
 | `effect-quality-metrics-check.mjs` | ratchet on 10 ts-morph AST counts (`extendsError`, `processEnvOutsideBin` [strict-0], `throwOutsideBin`, `forOfInPackageSource`, `anyNoContextCast`, `nodeCryptoImport`, `dataTaggedErrorDeclaration`, `newDurableStreamSite`, `perCallLayerProvide`, `effectOrDie`) | `packages/**/src` (ts-morph) | **AST + baseline ratchet** | `verify` (`lint:effect-quality`) |
-| `host-sdk-runtime-import-baseline.mjs` | 13 line-regex quarantine rules over host-sdk (runtime/streams + subscriber/symbol bans), disjoint from semgrep by design | `host-sdk/src` | line-regex + baseline (currently empty) | `verify` (`lint:host-sdk-imports`) |
 | `clean-room-hard-root-guard.mjs` | runtime root-dir allowlist (diverges from `runtime-public-surface`); `_archive` no prod importers; host-sdk runtime subpath/barrel rules | `runtime/src` + `packages/**/src` + `host-sdk/src` | filesystem + line-regex, zero-state | **not wired** (`lint:clean-room-hard-root` only) |
+| _(retired tf-636o)_ | `effect-native-production-cutover-check.mjs`, `test-layout-check.mjs`, `host-sdk-runtime-import-baseline.mjs` removed — stale/dormant gates (forbade already-deleted tokens; generic test-placement; vacuous while `host-sdk` is `export {}`). host-sdk→runtime boundary still enforced by dependency-cruiser + ESLint `no-restricted-imports`. | — | — | — |
 
 ---
 
@@ -240,16 +238,17 @@ findings:
 
 ### Bespoke node-script gates — KEPT (not folded; would weaken or don't fit ESLint)
 Evaluated in Phase 3; none should move to ESLint:
-- `effect-quality-metrics-check.mjs` / `host-sdk-runtime-import-baseline.mjs` —
-  **baseline-ratchet** semantics ESLint can't express (and now the home for the
-  relocated Semgrep rules above).
-- `effect-native-production-cutover-check.mjs` — a **whole-tree substring scan
-  across all extensions (`.js/.jsx/.mjs/.cjs/.ts/.tsx/.mts/.cts`) including
-  tests**. Porting to ESLint would narrow that scope (ESLint here lints `.ts/.tsx`
-  and the `sg-*` blocks exclude tests) → a weaker anti-regression gate. Kept.
-- `runtime-public-surface-check.mjs`, `test-layout-check.mjs`,
-  `tiny-firegrid-layout-check.mjs` — **filesystem/directory-shape** checks, not
-  code-pattern rules; out of ESLint's domain.
+- `effect-quality-metrics-check.mjs` — **baseline-ratchet** semantics ESLint
+  can't express (and now the home for the relocated Semgrep rules above).
+- `runtime-public-surface-check.mjs`, `tiny-firegrid-layout-check.mjs` —
+  **filesystem/directory-shape** checks, not code-pattern rules; out of ESLint's
+  domain.
+
+> Retired (tf-636o): `effect-native-production-cutover-check.mjs` (forbade
+> already-deleted durable-streams tokens), `test-layout-check.mjs` (generic
+> test-placement), and `host-sdk-runtime-import-baseline.mjs` (vacuous while
+> `@firegrid/host-sdk` is `export {}`). The host-sdk→runtime boundary remains
+> enforced by dependency-cruiser + ESLint `no-restricted-imports`.
 
 ### Resulting engine set
 ESLint (keystone: type-aware + custom `local/` + ported `local/sg-*`) ·

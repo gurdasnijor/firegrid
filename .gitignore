@@ -23,3 +23,13 @@ scripts/__pycache__/
 
 # runtime-shrink corpus: regenerated, disposable (recipe is the source of truth)
 docs/architecture/corpus/.runs/
+
+# Auto-generated dependency-cruiser graphs (tf-636o): no longer committed — the
+# architectural-change signal is surfaced as an advisory PR comment instead (see
+# .github/workflows/arch-graph-comment.yml). Regenerate locally with `pnpm run arch:graphs`.
+/docs/dependency-graph.mmd
+/docs/dependency-graph-detail.mmd
+/docs/dependency-graph-client.mmd
+/docs/dependency-graph-protocol.mmd
+/docs/dependency-graph-runtime.mmd
+/docs/dependency-graph-runtime-detail.mmd

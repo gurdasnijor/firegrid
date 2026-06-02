@@ -1,11 +1,18 @@
-import { readdir } from "node:fs/promises"
-import { Data, Effect } from "effect"
+import { FileSystem, Path } from "@effect/platform"
+import { Data, Effect, Option } from "effect"
 import type { TinyFiregridSimulation } from "../types.ts"
 
-const simulationsUrl = new URL("../simulations/", import.meta.url)
+// Simulations live exactly one level deep: `simulations/<id>/index.ts`, where the
+// folder name IS the `id` (enforced by scripts/tiny-firegrid-layout-check.mjs).
+// No recursion, no per-folder denylist: discovery lists folder names only (never
+// imports), and loading a sim is isolated per-id, so one sim's bad import can no
+// longer sink the whole runner.
+const simulationsDirUrl = new URL("../simulations/", import.meta.url)
+const moduleUrlFor = (id: string): string =>
+  new URL(`${id}/index.ts`, simulationsDirUrl).href
 
 class SimulationFolderInvalid extends Data.TaggedClass("SimulationFolderInvalid")<{
-  readonly folder: string
+  readonly id: string
   readonly reason: string
 }> {}
 
@@ -25,107 +32,88 @@ const isSimulation = (
     candidate["driver"] !== undefined
 }
 
-// Folders that hold scaffolding / not-yet-real simulations. Hidden from
-// discovery so they don't show up in `simulate list` or get picked up as
-// runnable. Add to this set rather than relying on placeholder `index.ts`
-// files that the discovery walk would otherwise happily load.
-//
-// The shape-c / shape-d / wave-d-a entries below are probe-test-only
-// sims (their `index.ts` exports vocabulary used by the sibling
-// `test/<sim>/probe.test.ts` but has no `defineSimulation(...)` default
-// export). They were never runnable through the standard
-// `simulate:run`/`simulate:list` flow and remain probe-only by design.
-// Without this hiding the discovery walk fails on the first such
-// folder it encounters, which previously masked the consumer-retarget
-// breakage that PR #738's host-sdk deletion would have exposed and now
-// surfaces during `simulate list`.
-const hiddenFolders = new Set([
-  "sim2-multi-surface-projection",
-  "shape-c-channel-router-turn",
-  "shape-d-tool-dispatch-mcp-entry",
-  "wave-d-a-shape-b-input-identity-dedup",
-])
-
-const isHidden = (folder: string): boolean =>
-  hiddenFolders.has(folder) || folder.startsWith("_") || folder.startsWith(".")
-
-export const listSimulations = Effect.gen(function*() {
-  const candidates = yield* discoverSimulationCandidates(simulationsUrl)
-
-  return yield* Effect.forEach(candidates, candidate =>
-    Effect.gen(function*() {
-      const module = yield* Effect.promise(
-        () => import(candidate.moduleUrl.href) as Promise<{ readonly default?: unknown }>,
-      )
-      if (!isSimulation(module.default)) {
-        return yield* Effect.fail(new SimulationFolderInvalid({
-          folder: candidate.folder,
-          reason: "missing default export of simulation shape",
-        }))
-      }
-      if (module.default.id !== candidate.directory) {
-        return yield* Effect.fail(new SimulationFolderInvalid({
-          folder: candidate.folder,
-          reason: `id ${module.default.id} does not match folder`,
-        }))
-      }
-      return module.default
-    }))
+// The available simulation ids: immediate subdirectories of `simulations/` that
+// contain an `index.ts`. Pure directory listing — imports nothing, so it cannot
+// be broken by any single sim's import error. `_`/`.`-prefixed folders are
+// skipped by convention (scaffolding / hidden).
+const simulationIds = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const dir = yield* path.fromFileUrl(simulationsDirUrl)
+  const names = yield* fs.readDirectory(dir)
+  const candidates = names
+    .filter(name => !name.startsWith("_") && !name.startsWith("."))
+    .sort()
+  return yield* Effect.filter(candidates, name =>
+    fs.exists(path.join(dir, name, "index.ts")))
 })
 
-interface SimulationCandidate {
-  readonly directory: string
-  readonly folder: string
-  readonly moduleUrl: URL
-}
-
-const discoverSimulationCandidates = (
-  directoryUrl: URL,
-  parts: ReadonlyArray<string> = [],
-): Effect.Effect<ReadonlyArray<SimulationCandidate>> =>
+// Import + validate a single sim by id. `Effect.tryPromise` (not `Effect.promise`)
+// so a failing module import surfaces as a typed, catchable `SimulationFolderInvalid`
+// rather than an uncatchable defect — that is what lets `listSimulations` skip a
+// broken sim and `selectedSimulation` import only the one requested.
+const loadSimulationById = (
+  id: string,
+): Effect.Effect<TinyFiregridSimulation<unknown>, SimulationFolderInvalid> =>
   Effect.gen(function*() {
-    const entries = yield* Effect.promise(() =>
-      readdir(directoryUrl, { withFileTypes: true }),
-    )
-    const visibleDirectories = entries
-      .filter(entry => entry.isDirectory() && !isHidden(entry.name))
-      .map(entry => entry.name)
-      .sort()
-    const hasIndex = entries.some(entry => entry.isFile() && entry.name === "index.ts")
-    const current = hasIndex && parts.length > 0
-      ? [{
-        directory: parts[parts.length - 1] ?? "",
-        folder: parts.join("/"),
-        moduleUrl: new URL("index.ts", directoryUrl),
-      }]
-      : []
-    const nested = yield* Effect.forEach(visibleDirectories, directory =>
-      discoverSimulationCandidates(
-        new URL(`${directory}/`, directoryUrl),
-        [...parts, directory],
-      ), { concurrency: "unbounded" })
-
-    return current.concat(nested.flat())
+    const module = yield* Effect.tryPromise({
+      try: () =>
+        import(moduleUrlFor(id)) as Promise<{ readonly default?: unknown }>,
+      catch: cause =>
+        new SimulationFolderInvalid({
+          id,
+          reason: `import failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        }),
+    })
+    if (!isSimulation(module.default)) {
+      return yield* Effect.fail(new SimulationFolderInvalid({
+        id,
+        reason: "missing default export of simulation shape",
+      }))
+    }
+    if (module.default.id !== id) {
+      return yield* Effect.fail(new SimulationFolderInvalid({
+        id,
+        reason: `id "${module.default.id}" does not match folder "${id}"`,
+      }))
+    }
+    return module.default
   })
 
-// Resolve a simulation by id; on miss, fail with the available ids so the
-// CLI error message lists them. There is no "default simulation" — running
-// without an explicit id must error rather than silently picking the
-// alphabetically-first folder. Implicit defaults in dev tooling cause
-// exactly the "wait, why did it run that one" confusion the runner is
-// supposed to prevent.
+// `simulate list`: load every discovered sim, but isolate failures — a sim whose
+// import or shape is broken is skipped with a warning, not fatal to the listing.
+export const listSimulations = Effect.gen(function*() {
+  const ids = yield* simulationIds
+  const loaded = yield* Effect.forEach(
+    ids,
+    id =>
+      loadSimulationById(id).pipe(
+        Effect.map(Option.some),
+        Effect.catchAll(error =>
+          Effect.logWarning(
+            `tiny-firegrid: skipping simulation "${id}" — ${error.reason}`,
+          ).pipe(Effect.as(Option.none<TinyFiregridSimulation<unknown>>())),
+        ),
+      ),
+    { concurrency: "unbounded" },
+  )
+  return loaded.filter(Option.isSome).map(some => some.value)
+})
+
+// Resolve a simulation by id. Imports ONLY the requested sim — running one sim
+// never loads (and so never trips over) any other. On miss, fail with the
+// available ids (a pure folder listing) so the CLI lists them. There is no
+// "default simulation": running without an explicit id must error rather than
+// silently picking the alphabetically-first folder.
 export const selectedSimulation = (
   simulationId: string,
-): Effect.Effect<
-  TinyFiregridSimulation<unknown>,
-  SimulationFolderInvalid | UnknownSimulation
-> =>
-  Effect.flatMap(listSimulations, simulations => {
-    const simulation = simulations.find(s => s.id === simulationId)
-    return simulation === undefined
-      ? Effect.fail(new UnknownSimulation({
-        id: simulationId,
-        available: simulations.map(s => s.id),
-      }))
-      : Effect.succeed(simulation)
+) =>
+  Effect.gen(function*() {
+    const ids = yield* simulationIds
+    if (!ids.includes(simulationId)) {
+      return yield* Effect.fail(
+        new UnknownSimulation({ id: simulationId, available: ids }),
+      )
+    }
+    return yield* loadSimulationById(simulationId)
   })

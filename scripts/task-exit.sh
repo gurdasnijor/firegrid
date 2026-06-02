@@ -182,7 +182,7 @@ fi
 cat <<EOF
 
 DONE on $BR (pushed). Lifecycle remainder:
-  • durable beads: the canonical owner runs  bash scripts/beads-sync.sh
+  • durable beads: the canonical owner flushes/syncs beads (see docs/contributing/beads-operating-guide.md)
   • cleanup: when the PR merges, reap thoroughly with
       bash scripts/task-reap.sh            # all merged worktrees
       bash scripts/task-reap.sh $BR        # just this one
