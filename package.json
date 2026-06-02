@@ -23,7 +23,6 @@
     "format": "eslint . --fix",
     "publish:oss": "bash scripts/publish-oss.sh",
     "lint": "eslint . --max-warnings 0 --cache --cache-location .eslintcache && node scripts/effect-native-production-cutover-check.mjs && node scripts/runtime-public-surface-check.mjs && node scripts/test-layout-check.mjs && node scripts/tiny-firegrid-layout-check.mjs",
-    "lint:clean-room-hard-root": "node scripts/clean-room-hard-root-guard.mjs",
     "lint:test-layout": "node scripts/test-layout-check.mjs",
     "lint:dead": "node scripts/knip-check-baseline.mjs",
     "lint:dead:baseline": "node scripts/knip-update-baseline.mjs",
