@@ -148,46 +148,82 @@ const matchesRow = (
     traversePath(row, key.split(".").filter(segment => segment.length > 0)) === value)
 }
 
+const requireOptionalService = <A, R>(
+  service: Effect.Effect<Option.Option<A>, never, R>,
+  toolUseId: string,
+  toolName: string,
+  message: string,
+): Effect.Effect<A, ToolError, R> =>
+  service.pipe(
+    Effect.flatMap(Option.match({
+      onNone: () => Effect.fail(toolExecutionFailed(toolUseId, toolName, message)),
+      onSome: Effect.succeed,
+    })),
+  )
+
+type ChannelRouterDispatchService = Pick<RuntimeChannelRouter["Type"], "dispatch">
+
+const dispatchOnRouter = (
+  router: ChannelRouterDispatchService,
+  toolUseId: string,
+  toolName: string,
+  target: string,
+  verb: "send" | "call",
+  payload: unknown,
+): Effect.Effect<unknown, ToolError> =>
+  router.dispatch({ target, verb, payload }).pipe(
+    Effect.mapError(cause => toolExecutionFailed(toolUseId, toolName, cause)),
+  )
+
+const dispatchWithOptionalRouter = <A extends ChannelRouterDispatchService, R>(
+  service: Effect.Effect<Option.Option<A>, never, R>,
+  missingMessage: string,
+  toolUseId: string,
+  toolName: string,
+  target: string,
+  verb: "send" | "call",
+  payload: unknown,
+): Effect.Effect<unknown, ToolError, R> =>
+  requireOptionalService(service, toolUseId, toolName, missingMessage).pipe(
+    Effect.flatMap(router => dispatchOnRouter(router, toolUseId, toolName, target, verb, payload)),
+  )
+
 const waitOnChannel = (
   toolUseId: string,
   toolName: string,
   channelName: string,
   match: AgentToolSchemas.WaitForToolMatch | undefined,
 ): Effect.Effect<unknown, ToolError> =>
-  Effect.serviceOption(RuntimeChannelRouter).pipe(
-    Effect.flatMap(Option.match({
-      onNone: () =>
-        Effect.fail(
-          toolExecutionFailed(
-            toolUseId,
-            toolName,
-            "wait tools require RuntimeChannelRouter",
-          ),
-        ),
-      onSome: router =>
-        router.route(channelName).pipe(
-          Effect.flatMap(route => route.stream === undefined
-            ? router.dispatch({
-              target: channelName,
-              verb: "wait_for",
-              payload: match ?? {},
-            }).pipe(
-              Effect.mapError(cause =>
-                toolExecutionFailed(toolUseId, toolName, cause)),
-            )
-            : route.stream.pipe(
-              Stream.filter(row => matchesRow(row, match)),
-              Stream.runHead,
-              Effect.flatMap(Option.match({
-                onNone: () => Effect.never,
-                onSome: row => Effect.succeed(row),
-              })),
-              Effect.mapError(cause =>
-                toolExecutionFailed(toolUseId, toolName, cause)),
-            )),
-          Effect.mapError(cause => toolExecutionFailed(toolUseId, toolName, cause)),
-        ),
-    })),
+  requireOptionalService(
+    Effect.serviceOption(RuntimeChannelRouter),
+    toolUseId,
+    toolName,
+    "wait tools require RuntimeChannelRouter",
+  ).pipe(
+    Effect.flatMap(router =>
+      router.route(channelName).pipe(
+        Effect.flatMap(route => route.stream === undefined
+          ? router.dispatch({
+            target: channelName,
+            verb: "wait_for",
+            payload: match ?? {},
+          }).pipe(
+            Effect.mapError(cause =>
+              toolExecutionFailed(toolUseId, toolName, cause)),
+          )
+          : route.stream.pipe(
+            Stream.filter(row => matchesRow(row, match)),
+            Stream.runHead,
+            Effect.flatMap(Option.match({
+              onNone: () => Effect.never,
+              onSome: row => Effect.succeed(row),
+            })),
+            Effect.mapError(cause =>
+              toolExecutionFailed(toolUseId, toolName, cause)),
+          )),
+        Effect.mapError(cause => toolExecutionFailed(toolUseId, toolName, cause)),
+      ),
+    ),
   )
 
 /**
@@ -287,6 +323,39 @@ const runWaitAny = (
   )
 }
 
+const runSend = (
+  toolUseId: string,
+  input: AgentToolSchemas.SendToolInput,
+): Effect.Effect<AgentToolSchemas.SendToolOutput, ToolError> =>
+  dispatchWithOptionalRouter(
+    Effect.serviceOption(RuntimeChannelRouter),
+    "channel tools require RuntimeChannelRouter",
+    toolUseId,
+    "send",
+    input.channel,
+    "send",
+    input.payload,
+  ).pipe(
+    Effect.as({
+      sent: true,
+      channel: input.channel,
+    } satisfies AgentToolSchemas.SendToolOutput),
+  )
+
+const runCall = (
+  toolUseId: string,
+  input: AgentToolSchemas.CallToolInput,
+): Effect.Effect<AgentToolSchemas.CallToolOutput, ToolError> =>
+  dispatchWithOptionalRouter(
+    Effect.serviceOption(RuntimeChannelRouter),
+    "channel tools require RuntimeChannelRouter",
+    toolUseId,
+    "call",
+    input.channel,
+    "call",
+    input.request,
+  )
+
 const hostPlaneDispatch = (
   toolUseId: string,
   toolName: string,
@@ -294,21 +363,14 @@ const hostPlaneDispatch = (
   verb: "send" | "call",
   payload: unknown,
 ): Effect.Effect<unknown, ToolError> =>
-  Effect.serviceOption(HostPlaneChannelRouter).pipe(
-    Effect.flatMap(Option.match({
-      onNone: () =>
-        Effect.fail(
-          toolExecutionFailed(
-            toolUseId,
-            toolName,
-            "session tools require HostPlaneChannelRouter",
-          ),
-        ),
-      onSome: router =>
-        router.dispatch({ target, verb, payload }).pipe(
-          Effect.mapError(cause => toolExecutionFailed(toolUseId, toolName, cause)),
-        ),
-    })),
+  dispatchWithOptionalRouter(
+    Effect.serviceOption(HostPlaneChannelRouter),
+    "session tools require HostPlaneChannelRouter",
+    toolUseId,
+    toolName,
+    target,
+    verb,
+    payload,
   )
 
 const runtimeForChildSession = (
@@ -557,6 +619,24 @@ const dispatchArm = (
             ? toolInvalidInputFromParseError(toolUseId, "wait_any", cause)
             : toolExecutionFailed(toolUseId, "wait_any", cause)),
         Effect.flatMap(input => runWaitAny(contextId, toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
+    case "send":
+      return decodeJson(AgentToolSchemas.SendToolInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "send", cause)
+            : toolExecutionFailed(toolUseId, "send", cause)),
+        Effect.flatMap(input => runSend(toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
+    case "call":
+      return decodeJson(AgentToolSchemas.CallToolInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "call", cause)
+            : toolExecutionFailed(toolUseId, "call", cause)),
+        Effect.flatMap(input => runCall(toolUseId, input)),
         Effect.map((output) => JSON.stringify(output)),
       )
     case "session_new":

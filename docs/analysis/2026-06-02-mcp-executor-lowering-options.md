@@ -10,22 +10,26 @@ This is a source-verified options note for the unified MCP executor mismatch:
 the MCP toolkit can expose tools whose names are not handled by
 `dispatchArm`, causing the default typed failure
 `tool "<name>" is not yet ported onto the unified executor`
-([`tool-dispatch.ts:598-605`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L598)).
+([`tool-dispatch.ts:678-685`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L678)).
 
 The current dispatcher handles only:
 
 - `sleep`, `wait_until`, `wait_for`, `wait_any`
-  ([`tool-dispatch.ts:526-561`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L526)).
+  ([`tool-dispatch.ts:589-623`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L589)).
+- `send`, `call`, lowered through `RuntimeChannelRouter.dispatch`
+  ([`tool-dispatch.ts:178-189`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L178),
+  [`tool-dispatch.ts:326-357`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L326),
+  [`tool-dispatch.ts:624-641`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L624)).
 - `session_new`, `session_prompt`, `session_cancel`, `session_close`
-  ([`tool-dispatch.ts:562-597`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L562)).
+  ([`tool-dispatch.ts:642-677`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L642)).
 
 The session tools are the local template for "lower onto the real host/channel
 route": `hostPlaneDispatch` resolves `HostPlaneChannelRouter` and calls
 `router.dispatch({ target, verb, payload })`
-([`tool-dispatch.ts:290-312`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L290)).
+([`tool-dispatch.ts:359-374`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L359)).
 `session_new` then creates/loads a child session, sends the initial prompt, and
 starts the child via host-plane channel targets
-([`tool-dispatch.ts:379-447`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L379)).
+([`tool-dispatch.ts:441-509`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L441)).
 That lowering was added by commit `9c063a4fe` (`tf-0awo.32 port MCP session tools`),
 which changed `tool-dispatch.ts`, added `channels/host-plane-router.ts`, and
 updated the capstone host composition.
@@ -69,39 +73,32 @@ Current state:
   [`toolkit.ts:265-270`](../../packages/runtime/src/unified/mcp-host/toolkit.ts#L265).
 - Handler routes `send` through `ToolDispatch.call`
   ([`toolkit-layer.ts:84-99`](../../packages/runtime/src/unified/mcp-host/toolkit-layer.ts#L84)).
-- No `case "send"` exists in `dispatchArm`; it reaches the default failure
-  ([`tool-dispatch.ts:525-605`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L525)).
+- Implemented in PR #847 follow-up: `runSend` calls
+  `RuntimeChannelRouter.dispatch({ target: input.channel, verb: "send",
+  payload: input.payload })` through the shared `dispatchWithOptionalRouter`
+  guard, then returns `{ sent: true, channel }`
+  ([`tool-dispatch.ts:178-189`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L178),
+  [`tool-dispatch.ts:326-343`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L326),
+  [`tool-dispatch.ts:624-632`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L624)).
 - Protocol input is `{ channel, payload }`; output is `{ sent: true, channel }`
   ([`schema.ts:265-292`](../../packages/protocol/src/agent-tools/schema.ts#L265)).
 
-Clean lowering option:
+Implemented lowering:
 
 ```ts
-const runtimeChannelDispatch = (
-  toolUseId: string,
-  toolName: string,
-  target: string,
-  verb: "send" | "call",
-  payload: unknown,
-): Effect.Effect<unknown, ToolError> =>
-  Effect.serviceOption(RuntimeChannelRouter).pipe(
-    Effect.flatMap(Option.match({
-      onNone: () => Effect.fail(toolExecutionFailed(
-        toolUseId,
-        toolName,
-        "channel tools require RuntimeChannelRouter",
-      )),
-      onSome: router => router.dispatch({ target, verb, payload }).pipe(
-        Effect.mapError(cause => toolExecutionFailed(toolUseId, toolName, cause)),
-      ),
-    })),
-  )
-
 const runSend = (
   toolUseId: string,
   input: AgentToolSchemas.SendToolInput,
 ): Effect.Effect<AgentToolSchemas.SendToolOutput, ToolError> =>
-  runtimeChannelDispatch(toolUseId, "send", input.channel, "send", input.payload).pipe(
+  dispatchWithOptionalRouter(
+    Effect.serviceOption(RuntimeChannelRouter),
+    "channel tools require RuntimeChannelRouter",
+    toolUseId,
+    "send",
+    input.channel,
+    "send",
+    input.payload,
+  ).pipe(
     Effect.as({ sent: true, channel: input.channel }),
   )
 
@@ -138,7 +135,7 @@ Remove-advertisement option:
 
 Call classification:
 
-- Clean engineering call: lower `send` through `RuntimeChannelRouter`.
+- Done as clean engineering: `send` lowers through `RuntimeChannelRouter`.
 - PO-owned only if the product wants to remove channel-authoring from the
   primitive profile despite the current primitive-profile spec.
 
@@ -156,21 +153,33 @@ Current state:
   [`toolkit.ts:265-270`](../../packages/runtime/src/unified/mcp-host/toolkit.ts#L265).
 - Handler routes `call` through `ToolDispatch.call`
   ([`toolkit-layer.ts:84-99`](../../packages/runtime/src/unified/mcp-host/toolkit-layer.ts#L84)).
-- No `case "call"` exists in `dispatchArm`; it reaches the default failure
-  ([`tool-dispatch.ts:525-605`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L525)).
+- Implemented in PR #847 follow-up: `runCall` calls
+  `RuntimeChannelRouter.dispatch({ target: input.channel, verb: "call",
+  payload: input.request })` through the shared `dispatchWithOptionalRouter`
+  guard and returns the call-channel response payload
+  ([`tool-dispatch.ts:178-189`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L178),
+  [`tool-dispatch.ts:345-357`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L345),
+  [`tool-dispatch.ts:633-641`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L633)).
 - Protocol input is `{ channel, request }`; output is unknown call-channel
   response payload
   ([`schema.ts:839-866`](../../packages/protocol/src/agent-tools/schema.ts#L839)).
 
-Clean lowering option:
+Implemented lowering:
 
 ```ts
 const runCall = (
   toolUseId: string,
   input: AgentToolSchemas.CallToolInput,
 ): Effect.Effect<AgentToolSchemas.CallToolOutput, ToolError> =>
-  runtimeChannelDispatch(toolUseId, "call", input.channel, "call", input.request) as
-    Effect.Effect<AgentToolSchemas.CallToolOutput, ToolError>
+  dispatchWithOptionalRouter(
+    Effect.serviceOption(RuntimeChannelRouter),
+    "channel tools require RuntimeChannelRouter",
+    toolUseId,
+    "call",
+    input.channel,
+    "call",
+    input.request,
+  )
 
 // dispatchArm:
 case "call":
@@ -201,7 +210,7 @@ Remove-advertisement option:
 
 Call classification:
 
-- Clean engineering call: lower `call` through `RuntimeChannelRouter`.
+- Done as clean engineering: `call` lowers through `RuntimeChannelRouter`.
 - PO-owned only if the product wants the primitive profile to stop exposing
   channel calls.
 
@@ -220,7 +229,7 @@ Current state:
 - Not in the primitive profile
   ([`toolkit.ts:265-270`](../../packages/runtime/src/unified/mcp-host/toolkit.ts#L265)).
 - No `case "execute"` exists in `dispatchArm`; it reaches the default failure
-  ([`tool-dispatch.ts:525-605`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L525)).
+  ([`tool-dispatch.ts:576-686`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L576)).
 - Protocol shape accepts either session-bound capability fields
   (`sessionId`, `capability`) or legacy `sandbox`, plus `input`
   ([`schema.ts:673-722`](../../packages/protocol/src/agent-tools/schema.ts#L673)).
@@ -321,7 +330,7 @@ Current state:
   ([`firegrid-factory-aligned-agent-tools.feature.yaml:15-24`](../../features/firegrid/firegrid-factory-aligned-agent-tools.feature.yaml#L15)).
 - A direct `ToolDispatch.call({ toolName: "spawn", ... })` would still hit the
   `dispatchArm` default because there is no `case "spawn"`
-  ([`tool-dispatch.ts:525-605`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L525)).
+  ([`tool-dispatch.ts:576-686`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L576)).
   Current MCP clients should not receive `spawn` from this toolkit because it
   is not registered.
 
@@ -331,7 +340,7 @@ The session-tool template could create a child context and return a session
 handle today, as `session_new` already does through
 `HostSessionsCreateOrLoadChannelTarget`, `SessionPromptChannelTarget`, and
 `HostSessionsStartChannelTarget`
-([`tool-dispatch.ts:379-447`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L379)).
+([`tool-dispatch.ts:441-509`](../../packages/runtime/src/unified/mcp-host/tool-dispatch.ts#L441)).
 But that would not satisfy the current `SpawnToolOutputSchema`, which demands a
 terminal state
 ([`schema.ts:398-407`](../../packages/protocol/src/agent-tools/schema.ts#L398)).
@@ -386,10 +395,11 @@ Call classification:
 The implementation acceptance should be:
 
 1. No tool advertised by the selected MCP toolkit profile reaches
-   `tool "<name>" is not yet ported onto the unified executor`.
-2. The primitive profile remains internally consistent: it either lowers both
-   `send` and `call`, or stops advertising them and updates
-   `agentic-patterns-primitive-profile`.
+   `tool "<name>" is not yet ported onto the unified executor`, except the
+   still-advertised full-profile `execute` tool pending the PO-owned cap-6
+   decision.
+2. The primitive profile remains internally consistent: both advertised channel
+   tools, `send` and `call`, now lower through `RuntimeChannelRouter`.
 3. The full profile either lowers `execute` through a PO-approved capability
    path or removes it from `FiregridAgentToolkit`.
 4. `spawn` is not treated as an accidental P0 code bug in current `mcp-host`
@@ -401,13 +411,11 @@ The implementation acceptance should be:
 
 ## Recommended Non-Decision Sequence
 
-1. Implement `send` and `call` lowerings through `RuntimeChannelRouter`.
-2. Add a focused MCP dispatch test with one egress/send route and one callable
-   route, plus a tools-list/advertised-vs-dispatch coverage assertion for the
-   selected profile.
+1. Done: implement `send` and `call` lowerings through `RuntimeChannelRouter`.
+2. Done: add focused MCP dispatch tests with one egress/send route and one
+   callable route.
 3. Leave `execute` as a PO-owned decision: either remove it from full toolkit
    until the capability executor is real, or add the real executor contract and
    tests as the cap-6 implementation.
 4. Leave `spawn` to `tf-r06u.48`; do not re-add it to MCP exposure before the
    output contract is reshaped or the await-terminal route exists.
-
