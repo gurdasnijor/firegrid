@@ -78,6 +78,17 @@ strictly one level deep), plus raw `node:fs/promises`.
 (Still run `pnpm install` after merging `main` so the workspace symlinks exist —
 but a stale dep can no longer sink unrelated sims.)
 
+**Enforcement (tf-636o):** a custom ESLint rule `local/no-raw-node-io` bans
+`node:fs`/`fs/promises`/`path`/`url`/`child_process` in product source (a custom
+rule, not `no-restricted-imports`, so it composes with the per-package import
+blocks instead of clobbering them under flat-config merge). Bins/tests are scoped
+out; the OTel file-exporter boundary (`observability/src/node.ts`) carries a
+documented escape-hatch. The remaining infrastructure node: usage —
+`node:http`/`net` (webhook ingress + MCP host servers) and `node:stream` (ACP
+stdio) — is a larger `@effect/platform` `HttpServer`/`Stream` migration tracked
+by **tf-h1ld** (its own PR), which will extend the rule to those + drop the bin
+exemption + remove the escape-hatches.
+
 ## D. Corpus (`runtime-corpus.sh` + `docs/architecture/corpus/`) — RETIRED
 
 This was the **runtime-shrink-loop** corpus tooling from an earlier phase, not

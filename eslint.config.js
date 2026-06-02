@@ -43,6 +43,18 @@ const productImplementationDurableTableMessage =
   "Consume declared DurableTable services; do not import the operators package in product implementation code."
 const nodeProcessImportMessage =
   "Do not import node:process from product source; use @effect/platform / @effect/platform-node runtime boundaries instead."
+
+// Raw node: I/O builtins banned from product source — use the @effect/platform
+// services (provided by NodeContext.layer at the CLI/runtime boundary). Genuine
+// boundaries (bin entrypoints, the OTel-node integration) are scoped out / escape-
+// hatched with a documented reason. tf-636o.
+const rawNodeIoImportMessages = {
+  "node:fs": "Use @effect/platform FileSystem (`yield* FileSystem.FileSystem`) instead of node:fs.",
+  "node:fs/promises": "Use @effect/platform FileSystem (`yield* FileSystem.FileSystem`) instead of node:fs/promises.",
+  "node:path": "Use @effect/platform Path (`yield* Path.Path`) instead of node:path.",
+  "node:url": "Use @effect/platform Path (`fromFileUrl` / `toFileUrl`) instead of node:url.",
+  "node:child_process": "Use @effect/platform Command (`Command.make` / `Command.string`) instead of node:child_process.",
+}
 const legacyDurableAgentSubstrateImportPatterns = [
   {
     group: [
@@ -297,6 +309,36 @@ const local = {
           }
         }
 
+        return {
+          ImportDeclaration: report,
+          ExportAllDeclaration: report,
+          ExportNamedDeclaration: report,
+        }
+      },
+    },
+    "no-raw-node-io": {
+      meta: {
+        type: "problem",
+        docs: {
+          description: "Disallow raw node:fs/path/url/child_process in product source; use @effect/platform services.",
+        },
+        schema: [],
+        messages: { noRawNodeIo: "{{guidance}}" },
+      },
+      create(context) {
+        const report = (node) => {
+          const source = node?.source?.value
+          if (
+            typeof source === "string" &&
+            Object.prototype.hasOwnProperty.call(rawNodeIoImportMessages, source)
+          ) {
+            context.report({
+              node,
+              messageId: "noRawNodeIo",
+              data: { guidance: rawNodeIoImportMessages[source] },
+            })
+          }
+        }
         return {
           ImportDeclaration: report,
           ExportAllDeclaration: report,
@@ -1208,6 +1250,26 @@ export default tseslint.config(
             "tiny-firegrid/src must not self-run effects. Export a host(env)+driver; the runner executes the sim (simulate run) and emits the trace. A spike that needs to drive a private seam belongs in the owning package's test/ (docs/findings/tf-r06u-25-tiny-firegrid-asset-inventory.md).",
         },
       ],
+    },
+  },
+  {
+    // tf-636o: ban raw node: I/O builtins in product source — use the
+    // @effect/platform services (FileSystem / Path / Command), provided by
+    // NodeContext.layer at the CLI/runtime boundary. A custom rule (not
+    // no-restricted-imports) so it composes with the per-package import blocks
+    // rather than clobbering them under flat-config rule-merge. Bin entrypoints
+    // and tests are scoped out (genuine node boundaries); the one remaining
+    // boundary (the OTel-node file exporter) carries a documented escape-hatch.
+    files: ["packages/*/src/**/*.ts", "apps/*/src/**/*.ts"],
+    ignores: [
+      "**/bin/**",
+      "**/*.test.ts",
+      "**/*.spec.ts",
+      "**/__tests__/**",
+    ],
+    plugins: { local },
+    rules: {
+      "local/no-raw-node-io": "error",
     },
   },
   {

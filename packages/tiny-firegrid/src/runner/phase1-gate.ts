@@ -1,5 +1,5 @@
+import { Path } from "@effect/platform"
 import { Console, Effect } from "effect"
-import path from "node:path"
 import {
   readTraceSpans,
   resolveRunDir,
@@ -223,11 +223,12 @@ const formatCheck = (check: GateCheck): string => {
 
 export const showPhase1WorkflowCoreGate = (runId: string | undefined) =>
   Effect.gen(function*() {
+    const path = yield* Path.Path
     const runDir = yield* resolveRunDir(runId)
     const spans = yield* readTraceSpans(runDir)
     const report = analyzePhase1WorkflowCoreGate(spans)
     yield* Console.log(`run: ${path.basename(runDir)}`)
-    yield* Console.log(`trace: ${tracePathForRunDir(runDir)}`)
+    yield* Console.log(`trace: ${tracePathForRunDir(path, runDir)}`)
     yield* Console.log(`spans: ${report.spanCount}`)
     yield* Console.log("")
     yield* Effect.forEach(report.checks, check =>

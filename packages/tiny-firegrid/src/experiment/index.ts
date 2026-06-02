@@ -7,8 +7,8 @@ import type {
   SessionHandlePromptInput,
 } from "@firegrid/protocol/session-facade"
 import type { ChannelRouteMetadata } from "@firegrid/protocol/channels/router"
+import { Path } from "@effect/platform"
 import { Effect } from "effect"
-import path from "node:path"
 import {
   analyzePerf,
   formatPerfOutput,
@@ -217,9 +217,10 @@ export const loadExperimentArtifacts = (
   options: ExperimentArtifactsOptions = {},
 ) =>
   Effect.gen(function*() {
+    const path = yield* Path.Path
     const runDir = yield* resolveRunDir(options.runId)
     const spans = yield* readTraceSpans(runDir)
-    const tracePath = tracePathForRunDir(runDir)
+    const tracePath = tracePathForRunDir(path, runDir)
     const perfOptions: PerfOptions = {
       ...defaultPerfOptions,
       ...options.perf,
@@ -248,7 +249,7 @@ export const loadExperimentArtifacts = (
       runDir,
       tracePath,
       spans,
-      show: formatShowOutput(runDir, spans),
+      show: formatShowOutput(path, runDir, spans),
       perf: {
         report: perfReport,
         stdout: perfOutput.stdout,

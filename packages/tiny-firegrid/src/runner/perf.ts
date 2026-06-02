@@ -1,5 +1,5 @@
+import { Path } from "@effect/platform"
 import { Console, Effect } from "effect"
-import path from "node:path"
 import {
   compareNs,
   durationNs,
@@ -319,10 +319,11 @@ export const formatPerfOutput = (
 
 export const showPerf = (runId: string, options: PerfOptions) =>
   Effect.gen(function*() {
+    const path = yield* Path.Path
     const runDir = yield* resolveRunDir(runId)
     const spans = yield* readTraceSpans(runDir)
     // firegrid-observability.TINY_FIREGRID_SIMULATIONS.11
-    const report = analyzePerf(spans, options, path.basename(runDir), tracePathForRunDir(runDir))
+    const report = analyzePerf(spans, options, path.basename(runDir), tracePathForRunDir(path, runDir))
     const output = formatPerfOutput(report, options)
     yield* Console.log(output.stdout)
     // firegrid-observability.TINY_FIREGRID_SIMULATIONS.12

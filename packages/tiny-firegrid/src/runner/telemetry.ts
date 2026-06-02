@@ -6,48 +6,39 @@ import type {
   FiregridOtelResource,
   SpanProcessor,
 } from "@firegrid/observability/node"
-import { execSync } from "node:child_process"
-import { readFileSync } from "node:fs"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
-import type { Layer } from "effect"
+import { Command, FileSystem, Path } from "@effect/platform"
+import { Effect, Layer } from "effect"
 import type { TinyFiregridSimulation } from "../types.ts"
 
-// Run-provenance attributes (Item E of the §6 observability batch).
-// Resolved once at module load — they identify the binary that produced the
-// trace, independent of the run. Failures are silently degraded to undefined:
-// a non-git checkout or a sandboxed environment is a normal condition, not
-// an error, and the trace stays useful without the attributes.
-const safeExecSync = (cmd: string): string | undefined => {
-  try {
-    return execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim()
-  } catch {
-    return undefined
-  }
-}
+// Run-provenance attributes (Item E of the §6 observability batch). They
+// identify the binary that produced the trace, independent of the run. Each
+// source degrades to absent on failure — a non-git checkout or a sandboxed
+// environment is a normal condition, not an error, and the trace stays useful
+// without the attributes. Resolved through @effect/platform Command (git) +
+// FileSystem (package version) so there is no synchronous module-load I/O.
+const gitOutput = (...args: ReadonlyArray<string>) =>
+  Command.string(Command.make("git", ...args)).pipe(
+    Effect.map(out => out.trim()),
+    Effect.orElseSucceed(() => ""),
+  )
 
-const pkgVersion = (): string | undefined => {
-  try {
-    const pkgPath = path.resolve(
-      fileURLToPath(new URL("../../package.json", import.meta.url)),
+const provenanceAttributes = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const commit = yield* gitOutput("rev-parse", "HEAD")
+  const branch = yield* gitOutput("rev-parse", "--abbrev-ref", "HEAD")
+  const version = yield* fs
+    .readFileString(yield* path.fromFileUrl(new URL("../../package.json", import.meta.url)))
+    .pipe(
+      Effect.map(text => (JSON.parse(text) as { version?: string }).version ?? ""),
+      Effect.orElseSucceed(() => ""),
     )
-    const json = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string }
-    return json.version
-  } catch {
-    return undefined
-  }
-}
-
-const provenanceAttributes: Record<string, string> = (() => {
-  const commit = safeExecSync("git rev-parse HEAD")
-  const branch = safeExecSync("git rev-parse --abbrev-ref HEAD")
-  const version = pkgVersion()
   const entries: Array<readonly [string, string]> = []
-  if (commit !== undefined) entries.push(["firegrid.git.commit", commit])
-  if (branch !== undefined && branch !== "HEAD") entries.push(["firegrid.git.branch", branch])
-  if (version !== undefined) entries.push(["firegrid.tiny_firegrid.version", version])
+  if (commit.length > 0) entries.push(["firegrid.git.commit", commit])
+  if (branch.length > 0 && branch !== "HEAD") entries.push(["firegrid.git.branch", branch])
+  if (version.length > 0) entries.push(["firegrid.tiny_firegrid.version", version])
   return Object.fromEntries(entries)
-})()
+})
 
 const resource = (
   simulation: TinyFiregridSimulation<unknown>,
@@ -56,6 +47,7 @@ const resource = (
     readonly namespace: string
     readonly durableStreamsBaseUrl: string
   },
+  provenance: Record<string, string>,
 ): FiregridOtelResource => ({
   serviceName: "tiny-firegrid",
   attributes: {
@@ -64,7 +56,7 @@ const resource = (
     "firegrid.namespace": options.namespace,
     "firegrid.durable_streams.base_url": options.durableStreamsBaseUrl,
     "firegrid.process.role": "tiny-firegrid",
-    ...provenanceAttributes,
+    ...provenance,
   },
 })
 
@@ -74,12 +66,12 @@ const resource = (
 export type TelemetryDestination = FiregridOtelDestination
 
 // Routing precedence:
-//   1. OTEL_EXPORTER_OTLP_ENDPOINT set → send to OTLP HTTP (production
-//      observability backend; everything else is ignored).
-//   2. destination._tag === "console" → ConsoleSpanExporter (opt-in via
-//      --console; noisy, multi-paragraph util.inspect output, but
-//      occasionally useful when there's no good place to write a file).
+//   1. OTEL_EXPORTER_OTLP_ENDPOINT set → OTLP HTTP (production backend).
+//   2. destination._tag === "console" → ConsoleSpanExporter (opt-in --console).
 //   3. default → file destination — one JSON line per span at filePath.
+// The resource (incl. run-provenance) is resolved in an Effect, then the layer
+// is built — `Layer.unwrapEffect` over a config Effect is the idiomatic
+// @effect/opentelemetry shape (`NodeSdk.layer` likewise accepts an Effect config).
 export const TelemetryLive = (
   simulation: TinyFiregridSimulation<unknown>,
   runId: string,
@@ -89,11 +81,14 @@ export const TelemetryLive = (
     readonly destination: TelemetryDestination
     readonly heartbeatProcessor: SpanProcessor | undefined
   },
-): Layer.Layer<never, unknown> =>
-  FiregridOtelLive({
-    resource: resource(simulation, runId, options),
-    destination: options.destination,
-    spanProcessors: options.heartbeatProcessor === undefined
-      ? []
-      : [options.heartbeatProcessor],
-  })
+) =>
+  Layer.unwrapEffect(
+    Effect.map(provenanceAttributes, provenance =>
+      FiregridOtelLive({
+        resource: resource(simulation, runId, options, provenance),
+        destination: options.destination,
+        spanProcessors: options.heartbeatProcessor === undefined
+          ? []
+          : [options.heartbeatProcessor],
+      })),
+  )
