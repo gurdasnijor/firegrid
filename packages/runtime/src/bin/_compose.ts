@@ -51,6 +51,7 @@ export interface FiregridCliCompositionOptions {
   readonly cwd?: string
   readonly namespace?: string
   readonly otelFile?: string
+  readonly mcpPort?: number
   readonly authorizedBindings?: ReadonlyArray<LaunchAuthorizedBinding>
 }
 
@@ -224,7 +225,7 @@ export const FiregridCliCompositionLive = (
       )
       const mcp = FiregridMcpServerLayer({
         host: "127.0.0.1",
-        port: 0,
+        port: options.mcpPort ?? 0,
         path: "/mcp",
       }).pipe(
         Layer.provideMerge(ContextResolverFromControlPlaneTableLive),
