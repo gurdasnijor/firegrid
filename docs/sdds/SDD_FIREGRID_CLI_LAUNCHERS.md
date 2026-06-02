@@ -9,17 +9,21 @@ exits 1; the README Quickstart and Zed external-agent integration are both broke
 
 ## §0 — The load-bearing decision
 
-**Rebuild the three launchers on the unified `FiregridHost`, with the launcher
-*logic* living in `packages/runtime/src/bin/{run,acp,start}.ts` and the
-`@firegrid/cli` package staying a thin `tsx` child-process launcher.**
+**Rebuild the three commands on the unified `FiregridHost`, with the logic in
+`packages/runtime/src/bin/{run,acp,start}.ts` as the DIRECT entry points** (root
+scripts run them via `tsx`). The former `@firegrid/cli` subprocess-launcher layer
+is **retired** — no spawned child process.
 
 Two things are load-bearing and everything else follows from them:
 
-1. **Boundary.** The Shape-C cutover rule is "the CLI package must not import
-   `@firegrid/runtime` or `@effect/workflow`" — it only forwards argv/stdio to a
-   runtime bin run under `tsx` (this is exactly how `firegrid:host` works today,
-   via `bin/host.ts` → `launcher.ts` → `runtime/src/bin/host.ts`). So the new
-   commands are runtime bins; the CLI bins are 3-line launchers.
+1. **Composition tier, not a launcher.** `runtime/src/bin/**` is the blessed
+   "process composition tier" that may import runtime + client-sdk (the
+   dep-cruiser rules already bless it). The bins parse argv (`@effect/cli`) and
+   compose the host directly; root scripts point straight at them
+   (`firegrid:acp = tsx packages/runtime/src/bin/acp.ts`). So there is no
+   `@firegrid/cli` indirection, no extra process layer between Zed and the ACP
+   edge, and no hardcoded `../../../runtime/src/bin` source-path coupling. The old
+   `cli-no-runtime` rule is moot once there is no `@firegrid/cli` execution code.
 
 2. **Host model — self-contained ephemeral vs. client-to-daemon.**
    - `run` and `acp` are **self-contained**: they embed an in-process
@@ -82,11 +86,15 @@ pnpm firegrid -- acp --agent codex-acp --agent-protocol acp \
 ## §3 — Architecture
 
 ```
-@firegrid/cli  (thin, tsx-only)            @firegrid/runtime  (the logic)
-  bin/run.ts  ─ launchRuntimeBin ─▶  runtime/src/bin/run.ts
-  bin/acp.ts  ─ launchRuntimeBin ─▶  runtime/src/bin/acp.ts
-  bin/host.ts ─ launchRuntimeBin ─▶  runtime/src/bin/host.ts   (exists; `start`)
+root package.json scripts        @firegrid/runtime  (entry = the logic, run via tsx)
+  firegrid:run  ─▶  runtime/src/bin/run.ts
+  firegrid:acp  ─▶  runtime/src/bin/acp.ts
+  firegrid:host ─▶  runtime/src/bin/host.ts   (exists)
 ```
+
+No `@firegrid/cli` package in the path: each bin is the direct entry — it parses
+argv (`@effect/cli`) and composes the host in-process. The old
+`cli/src/bin/{index,host,launcher}.ts` subprocess shims are removed.
 
 The shared composition (a single `runtime/src/bin/_compose.ts` helper):
 
