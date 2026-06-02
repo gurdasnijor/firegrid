@@ -1,5 +1,0 @@
-# ast-grep config for Firegrid architecture-archaeology (Phase 1).
-# Syntactic smell inventory only — findings are INFORMATION, not defects.
-# Rules are checked-in institutional knowledge; adding one = drop a .yml here.
-ruleDirs:
-  - rules

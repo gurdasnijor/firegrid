@@ -45,8 +45,8 @@
 //      ./tool-executor, ./workflows, etc.) fails.
 //
 //   4. The runtime root barrel `@firegrid/runtime` is forbidden in
-//      host-sdk (already covered by an existing semgrep rule on
-//      shape-c-cutover; the script re-asserts it for completeness).
+//      host-sdk (already covered by the ESLint `local/sg-host-sdk-imports`
+//      rule; the script re-asserts it for completeness).
 
 import { error, log } from "node:console"
 import { existsSync, readdirSync, readFileSync } from "node:fs"

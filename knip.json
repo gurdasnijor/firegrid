@@ -121,18 +121,15 @@
     }
   },
   "ignore": [
-    "semgrep-tests/**",
     "repos/**"
   ],
   "ignoreDependencies": [
     "@agentclientprotocol/sdk",
-    "@ast-grep/cli",
     "@modelcontextprotocol/sdk",
     "jscpd"
   ],
   "ignoreBinaries": [
-    "ruby",
-    "semgrep"
+    "ruby"
   ],
   "ignoreWorkspaces": [
     "tools/durable-streams-ui"

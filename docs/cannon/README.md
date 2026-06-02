@@ -43,7 +43,7 @@ index anchors to:
   The target replacement is a sparse workflow-owned output transition log: the
   runtime body consumes only semantic transition triggers, not raw text chunks.
 - **Workflow-identity admission guard** — `tf-gomx`/#611. A static `Workflow.make`
-  inventory plus a CI gate (`tooling/ast-grep/rules/workflow-make-inventory.yml`,
+  inventory plus a CI gate (the `firegrid-no-unclassified-workflow-make` rule in
   `.semgrep.yml`): new production workflow identities must be owner-shaped and
   SDD-justified. Operation-shaped workflows already in production are migration
   debt, not precedent (feature `firegrid-workflow-driven-runtime.WORKFLOW_ADMISSION`).

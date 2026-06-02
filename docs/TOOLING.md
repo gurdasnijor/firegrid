@@ -81,7 +81,7 @@ full local `pnpm verify`.
 ### CI workflow shape
 
 The repo's CI workflow at `.github/workflows/ci.yml` runs five gating jobs in
-parallel — `Lint`, `Semgrep`, `Typecheck`, `Effect diagnostics`, and `Tests`.
+parallel — `Lint`, `Typecheck`, `Effect diagnostics`, and `Tests`.
 Dependency-cruiser boundary checks run inside the `Lint` job. Dependency graph
 refreshes are local review evidence, not CI artifacts.
 
@@ -138,7 +138,7 @@ This runs dependency-cruiser with `.dependency-cruiser.cjs`. Unlike direct impor
 Architecture reports are review evidence, not the ready-for-review gate. They
 answer "what does the package dependency graph look like right now?" before a
 package-structure or boundary cleanup. They do not prove runtime behavior,
-durable transition correctness, or Semgrep/ESLint policy compliance. Use
+durable transition correctness, or ESLint policy compliance. Use
 `pnpm verify`, `pnpm run lint:deps`, and GitHub CI for those gates.
 
 Spec anchors:
@@ -211,49 +211,35 @@ Command map:
 | --- | --- | --- | --- |
 | Ready-for-review static/test gate | `pnpm verify` | none | Yes, CI authoritative |
 | Strict dependency boundary check | `pnpm run lint:deps` | none | Yes |
-| Focused ast-grep guardrails | `pnpm run lint:ast-grep` | none | Yes |
 | Dependency graph evidence refresh | `pnpm run arch:deps` | `docs/dependency-graph*.mmd` | No |
 | Detailed module graph refresh | `pnpm run arch:deps:detail` | `docs/dependency-graph*-detail.mmd` | No |
 | Focused package Mermaid graph | `pnpm run arch:deps:<package>` | one focused `.mmd` file | No |
 
-Run structural duplication-shape checks:
+Semgrep has been retired (static-analysis consolidation). ESLint is the keystone
+source-pattern engine. Its former rules moved to two homes, preserving the exact
+regexes, scopes, and intent:
 
-```sh
-pnpm run lint:semgrep
-```
+- Footprint guards with no live findings → ESLint `local/sg-*` rules in
+  `eslint.config.js` (a shared source-text scanner that applies Semgrep's exact
+  regexes, scoped per the original rule's `paths` via each block's `files`/
+  `ignores`). They run under `pnpm run lint`.
+- Rules with live findings → the `effect-quality` ts-morph count ratchet
+  (`pnpm run lint:effect-quality`), which grandfathers current counts and fails
+  on any increase. See `docs/contributing/quality-gates.md`.
 
-Semgrep is installed outside npm because the npm packages are not maintained. Locally, install the CLI with:
-
-```sh
-pipx install semgrep
-```
-
-The CI workflow uses the same `pipx install semgrep` path before running the root `.semgrep.yml` rules. The current blocking rule catches `process.env` reads outside binary, script, and test boundaries. Production scans are scoped to `packages apps`; fixtures live under `semgrep-tests/`.
-
-Test the Semgrep ruleset fixtures:
-
-```sh
-pnpm run lint:semgrep:test
-```
-
-`pnpm verify` and CI run this fixture test before the production Semgrep scan so rule refinements cannot silently stop matching. Each rule should carry `metadata` with the review/source ACID and category. Production Semgrep runs with `--error`; new rules need fixtures and clean path scopes before entering the blocking scan.
+To add a new source-pattern guard, prefer a type-aware ESLint rule; for a pure
+text shape add an entry to the relevant `local/sg-*` block, or — if it would have
+live findings — add a counter to `scripts/effect-artifacts/quality-metrics.mjs`
+and re-baseline.
 
 The Effect ESLint plugin currently ships only two rules in `@effect/eslint-plugin@0.3.2`: `dprint` and `no-import-from-barrel-package`. `dprint` conflicts with this repo's existing stylistic formatter stack, so only `@effect/no-import-from-barrel-package` is enabled. If the plugin adds or changes rules during an upgrade, audit the shipped rule list before enabling anything new.
 
-To add a semgrep rule, add a focused rule to `.semgrep.yml`, keep production scanning scoped to `packages apps`, and add a matching fixture in `semgrep-tests/` with `ruleid` and `ok` comments. Verify it with:
-
-```sh
-pnpm run lint:semgrep:test
-```
-
-The checked-in ast-grep config under `tooling/ast-grep/` is mostly an
-informational syntax-footprint inventory. Focused rules can be promoted to CI
-by adding a dedicated root script that runs only that rule as `--error` over
-`packages apps`, then adding the script to `pnpm verify`, preflight, and the CI
-lint job. `lint:ast-grep` currently enforces
-`hrtime-number-arithmetic`, which blocks direct OpenTelemetry hrtime tuple math
-in number space; use the `packages/tiny-firegrid/src/runner/trace.ts` bigint
-helpers instead.
+ast-grep has been retired (its one gated rule was relocated; the rest were an
+informational inventory that ran in no gate). Its sole CI-blocking rule,
+`hrtime-number-arithmetic`, now lives as the type-aware ESLint rule
+`local/hrtime-number-arithmetic`, which blocks direct OpenTelemetry hrtime tuple
+math in number space; use the `packages/tiny-firegrid/src/runner/trace.ts`
+bigint helpers (`nsFromHrTime`/`startNs`/`endNs`) instead.
 
 To add a dependency-cruiser rule, add it to `.dependency-cruiser.cjs` and keep CI strict once the rule lands. Temporary warning-only triage requires an explicit remediation note and a follow-up to promote the rule.
 
@@ -276,13 +262,12 @@ The baseline script refuses to ratchet upward automatically. A regression must e
 Strict-zero gates layered alongside the metric ratchet:
 
 - `local/no-extends-error` ESLint rule errors on `class … extends Error` declarations in package source. Current count is 0 after R7's `Data.TaggedError` migration.
-- `local/no-process-env-outside-bin` ESLint rule errors on `process.env[…]` reads outside `bin/` and `scripts/`. Current count is 0.
-- `firegrid-no-process-env-outside-bin` Semgrep rule complements the ESLint guard with a structural pattern.
+- `local/no-process-env-outside-bin` ESLint rule errors on `process.env[…]` (and `globalThis.process.env.X`) reads outside `bin/` and `scripts/`. Current count is 0.
 
 Tracked metrics in the ratchet baseline:
 
 - `extendsErrorCount` — `class … extends Error` declarations in package source. Strict-zero target; redundantly enforced by the ESLint rule above.
-- `processEnvOutsideBinCount` — `process.env[…]` reads outside `bin/` and `scripts/`. Strict-zero target; redundantly enforced by the ESLint and Semgrep rules above.
+- `processEnvOutsideBinCount` — `process.env[…]` reads outside `bin/` and `scripts/`. Strict-zero target; redundantly enforced by the ESLint rule above.
 - `throwOutsideBinScriptCount` — `throw` statements in package source outside `bin/` and `scripts/`. Ratcheted; reduce via per-site refactor to typed Effect failures.
 - `forOfInPackageSourceCount` — `for…of` and `for await` loops in package source. Ratcheted; convert to `Array.forEach` / `Effect.forEach` / `Stream` per the code-style review.
 - `anyNoContextCastCount` — `as Schema.Schema.AnyNoContext` casts. Ratcheted; centralize behind a single helper at the descriptor or schema boundary (Q3 owns).

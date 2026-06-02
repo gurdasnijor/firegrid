@@ -49,7 +49,7 @@ interface ActivityContract {
   readonly seamKind: FiregridSeamKind
   /**
    * A resolving `firegrid.contract.id`: an ACID token (declared in a
-   * `*.feature.yaml` / `.semgrep.yml`) or an existing repo path to the governing
+   * `*.feature.yaml`) or an existing repo path to the governing
    * ACID/SDD/decision doc. Unresolved ids (incl. `"TODO"`) fail the gate.
    */
   readonly contractId: string

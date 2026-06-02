@@ -6,9 +6,19 @@
     "forOfInPackageSourceCount": 0,
     "anyNoContextCastCount": 0,
     "nodeCryptoImportCount": 0,
-    "dataTaggedErrorDeclarationCount": 13,
+    "dataTaggedErrorDeclarationCount": 12,
     "newDurableStreamSiteCount": 0,
     "perCallLayerProvideSiteCount": 0,
-    "effectOrDieSiteCount": 2
+    "effectOrDieSiteCount": 1,
+    "workflowMakeSiteCount": 7,
+    "effectRunInLibraryCount": 4,
+    "newDateIsoCount": 11,
+    "switchOnTagCount": 6,
+    "manualTaggedErrorTypeCount": 10,
+    "tryPromiseMultiAwaitCount": 2,
+    "mutableStateInEffectGenCount": 8,
+    "fireAndForgetVoidPromiseCount": 1,
+    "detachedPromiseInEffectSyncCount": 0,
+    "promiseThenCatchChainCount": 0
   }
 }

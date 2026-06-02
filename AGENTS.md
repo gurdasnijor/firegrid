@@ -181,7 +181,7 @@ adapter code together, never bundled with product changes.
 ## Preflight Before Pushing
 
 CI runs `lint`, `lint:dead`, `lint:dup`, `lint:deps`, `lint:effect-quality`,
-`lint:semgrep`, `lint:semgrep:test`, `typecheck`, and the full test suite. The
+`lint:host-sdk-imports`, `typecheck`, and the full test suite. The
 root `package.json` chains all of these as `pnpm run verify`. Run it before
 pushing if you've touched code; CI feedback is slow and the Effect-quality
 metric in particular is easy to miss locally:

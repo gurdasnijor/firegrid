@@ -13,7 +13,7 @@ components:
   DOCS:
     requirements:
       1: Contributor documentation lists each quality gate, the script that runs it, what it forbids, and the canonical remediation path.
-      2: Contributor documentation lists Semgrep rule ids with severity, purpose, canonical replacement, and excluded paths.
+      2: Contributor documentation lists the source-pattern guard rules, their enforcing engine (ESLint local rules or the effect-quality count ratchet), purpose, canonical replacement, and excluded paths.
       3: The workspace exposes runnable docs and feature spec checks for contributors and CI.
 
   TEST_LAYOUT:

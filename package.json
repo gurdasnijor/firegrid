@@ -32,10 +32,6 @@
     "lint:dup:baseline": "node scripts/jscpd-update-baseline.mjs",
     "lint:effect-quality": "node scripts/effect-quality-metrics-check.mjs",
     "lint:effect-quality:baseline": "node scripts/effect-quality-metrics-baseline.mjs",
-    "lint:ast-grep": "sg scan --config tooling/ast-grep/sgconfig.yml --filter hrtime-number-arithmetic --error=hrtime-number-arithmetic packages",
-    "lint:semgrep": "node scripts/semgrep-check-baseline.mjs",
-    "lint:semgrep:report": "semgrep --config .semgrep.yml packages",
-    "lint:semgrep:test": "semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts && semgrep --test --config .semgrep.yml semgrep-tests/wave-a-runtime-boundary.ts",
     "lint:host-sdk-imports": "node scripts/host-sdk-runtime-import-baseline.mjs",
     "lint:host-sdk-imports:baseline": "node scripts/host-sdk-runtime-import-baseline.mjs --write-baseline > host-sdk-runtime-import-baseline.json.new && mv host-sdk-runtime-import-baseline.json.new host-sdk-runtime-import-baseline.json",
     "preflight": "pnpm --filter tooling run preflight",
@@ -53,11 +49,10 @@
     "analysis:leaf": "bash tooling/analysis/run-leaf-inventory.sh",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run check:specs && pnpm run check:docs && pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:ast-grep && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run lint:host-sdk-imports && pnpm run test",
+    "verify": "pnpm run check:specs && pnpm run check:docs && pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:host-sdk-imports && pnpm run test",
     "toy:coverage:check": "bash scripts/tiny-config-prod-coverage.sh --check"
   },
   "devDependencies": {
-    "@ast-grep/cli": "^0.42.2",
     "@durable-streams/server": "^0.3.1",
     "@effect/eslint-plugin": "^0.3.2",
     "@effect/language-service": "^0.85.1",

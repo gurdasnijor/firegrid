@@ -31,46 +31,50 @@ The runnable `check:specs` and `check:docs` scripts satisfy
 | Dead code | `lint:dead` | Any Knip finding | Remove the dead export/import/file or wire it through a public surface intentionally | Baseline must remain zero. |
 | Duplicate code | `lint:dup` | jscpd duplicated lines above the ratchet | Extract a shared helper or keep the implementation single-source | Rebaseline only after reducing duplication. |
 | Dependency boundaries | `lint:deps` | Forbidden package/app dependency edges | Move code to the owning package or depend on a public subpath | Uses `.dependency-cruiser.cjs`. |
-| Effect quality | `lint:effect-quality` | Regressions in AST-counted Effect/runtime anti-patterns | Use Effect services, scoped layers, typed errors, and approved adapters | Improvements print a rebaseline hint. |
-| Semgrep fixtures | `lint:semgrep:test` | Semgrep rule fixtures no longer match expectations | Fix `.semgrep.yml` or the fixture | Required when editing guardrails. |
-| Semgrep baseline | `lint:semgrep` | New unbaselined ERROR findings | Use the rule's canonical replacement; remove baseline entries only after remediation | Existing ERROR findings live in `semgrep-error-baseline.json`. |
+| Effect quality | `lint:effect-quality` | Regressions in AST-counted Effect/runtime anti-patterns (incl. the count-ratcheted rules relocated from Semgrep) | Use Effect services, scoped layers, typed errors, and approved adapters | Improvements print a rebaseline hint. |
+| host-sdk imports | `lint:host-sdk-imports` | New host-sdk → runtime kernel/streams/subscriber-symbol imports | Use the sanctioned narrow runtime subpath | Line-regex quarantine baseline. |
 | Effect diagnostics | `effect:diagnostics` | Effect language-service diagnostics | Fix Effect-specific type/service issues | CI runs this separately from TS typecheck. |
 | Tests | `test` | Runtime behavior regressions | Add/fix tests near the owning feature | Runs workspace package tests through Turbo. |
 
-## Semgrep Rules
+## Source-pattern guard rules (formerly Semgrep)
 
 This section satisfies `firegrid-quality-gates.DOCS.2`.
 
-The Semgrep gate has two severities:
+Semgrep was retired in the static-analysis consolidation (ESLint is the keystone
+engine). Its rules moved to two homes; the regexes, scopes, and intent are
+preserved:
 
-- `ERROR`: CI-blocking unless the exact finding is already in
-  `semgrep-error-baseline.json`.
-- `WARNING`: backlog signal. Do not add new warnings casually, but they are not
-  currently baseline-blocking.
+- **ESLint `local/sg-*` rules** (`lint`, zero-tolerance) — the footprint guards
+  that had no live findings. They scan source text with Semgrep's exact regexes,
+  scoped per the original rule's `paths` via the enabling block's `files`/
+  `ignores`. Edit them in `eslint.config.js` (search `sg-`).
+- **`effect-quality` ts-morph count ratchet** (`lint:effect-quality`) — the rules
+  that had live findings (so a zero-tolerance ESLint rule would break the build):
+  `workflowMakeSiteCount` (the C2 workflow-admission guard; grandfathered owners
+  in `docs/workflow-make-admission-ledger.md`), `newDateIsoCount`,
+  `manualTaggedErrorTypeCount`, `switchOnTagCount`, `effectRunInLibraryCount`,
+  `tryPromiseMultiAwaitCount`, `mutableStateInEffectGenCount`,
+  `fireAndForgetVoidPromiseCount`, `detachedPromiseInEffectSyncCount` (strict-zero),
+  and `promiseThenCatchChainCount`. The ratchet grandfathers current counts and
+  fails CI on any increase.
 
-| Rule ID | Severity | What It Forbids | Canonical Replacement | Main Exclusions |
-|---|---:|---|---|---|
-| `firegrid-no-process-env-outside-bin` | ERROR | `process.env` / `globalThis.process.env` reads in package/app source | Use Effect `Config` at the binary boundary or accept config as an explicit parameter | Tests, `__tests__`, package/app `src/bin`. |
-| `firegrid-no-date-now` | ERROR | `Date.now()` in library/app source | `Clock.currentTimeMillis` or caller-provided timestamp from an Effect scope | Tests, `__tests__`, `src/bin`. |
-| `firegrid-no-new-date-iso-in-library` | WARNING | `new Date().toISOString()` in library source | `Clock.currentTimeMillis` then format from that value | Tests, `__tests__`, package `src/bin`. |
-| `firegrid-no-effect-run-in-library` | WARNING | `Effect.runPromise`, `runSync`, `runFork`, or exit variants in library code | Capture runtime with `Effect.runtime` and bridge with `Runtime.runPromise(runtime)` | Tests, `__tests__`, package/app `src/bin`. |
-| `firegrid-no-manual-tagged-error-type` | WARNING | Hand-written `_tag` error type/interface declarations | `Data.TaggedError` or `Schema.TaggedError` | Tests and `__tests__`. |
-| `firegrid-no-inline-tagged-error-fail` | WARNING | `Effect.fail({ _tag: "...", ... })` objects | Instantiate the tagged error class | Tests and `__tests__`. |
-| `firegrid-prefer-match-tag-over-switch` | WARNING | `switch (value._tag)` dispatch | `Match.value(...).pipe(Match.tag(...), Match.exhaustive)` | Tests and `__tests__`. |
-| `firegrid-no-promise-chain-in-effect-code` | WARNING | Promise `.then/.catch` chains in package/app source | `Effect.tryPromise`, `Effect.promise`, or runtime bridge APIs | Tests, `__tests__`, app `main.tsx`. |
-| `firegrid-tryPromise-single-await` | WARNING | Multi-step async bodies inside `Effect.tryPromise` | Move sequencing into `Effect.gen`; keep `tryPromise` to one awaited external call | Tests and `__tests__`. |
-| `firegrid-no-inline-stream-url-construction` | ERROR | Inline Firegrid Durable Streams authority strings | `namespaceRuntimeStreamName`, `hostStreamName`, `runtimeControlPlaneStreamUrl`, `hostOwnedStreamUrl`, or `durableStreamUrl` | Tests, protocol schema/table files, runtime-host internals where allowed. |
-| `firegrid-no-filesystem-in-runtime-package` | ERROR | `fs`, `path`, `os`, or Effect `FileSystem` usage in `packages/runtime/src` | Keep runtime identity/resources explicit; put filesystem policy in bin/app deployment code | Runtime tests and `__tests__`. |
-| `firegrid-no-host-id-env-authority` | ERROR | `FIREGRID_HOST_ID` / `VITE_FIREGRID_HOST_ID` as runtime authority | Compose host identity through the approved host authority layer | Runtime/app source; tests excluded. |
-| `firegrid-no-source-collections-production` | ERROR | `SourceCollections` / `sourceCollectionStreamHandle` / `registerRuntimeHostAppSource` in package/app source | Select a typed `RuntimeWaitSource` variant resolved from `RuntimeWaitStreams`; add a router `Match` arm for new runtime observations | Tests and `__tests__`. |
-| `firegrid-runtime-context-workflow-requires-local-authority` | ERROR | Direct `RuntimeContextWorkflow` execution without local authority gate | `requireLocalContext` before workflow execution | Runtime-host internal exceptions only. |
-| `firegrid-no-random-durable-identity` | ERROR | `crypto.randomUUID()` for host/worker/durable execution identity | Derive durable identity from schema-owned authority or caller-provided durable identity | Tests and `__tests__`. |
-| `firegrid-no-raw-stream-authority-string-schema` | ERROR | `Schema.String.pipe(streamAuthority)` without validation/brand | Define a schema-owned authority encoder with validation and brand | Authority implementation exceptions only. |
-| `firegrid-no-mutable-identity-let` | WARNING | Empty mutable string identity placeholders | Use typed `Option`, `Ref`, or construct the identity once | Tests and `__tests__`. |
-| `firegrid-fire-and-forget-promise-uses-fork` | WARNING | Detached `void promise.then(...)` in Effect-adjacent code | `Effect.fork`, `Effect.forkScoped`, or explicit runtime bridge with supervision | Tests, `__tests__`, scripts. |
-| `firegrid-no-detached-promise-in-effect-sync` | ERROR | Detached promise chains inside `Effect.sync` | Use `Effect.promise` / `Effect.tryPromise` or a supervised fiber | Tests and `__tests__`. |
-| `firegrid-match-should-be-exhaustive` | WARNING | `Match.value(...).pipe(Match.tag(...))` without `Match.exhaustive` | Add `Match.exhaustive` | Tests and `__tests__`. |
-| `firegrid-mutable-state-in-effect-gen` | WARNING | Mutating `Map` state directly inside `Effect.gen` | Use `Ref`, `SynchronizedRef`, scoped stores, or isolate mutation in `Effect.sync` | Tests and `__tests__`. |
+| Guard | Engine / id | What It Forbids | Canonical Replacement | Main Exclusions |
+|---|---|---|---|---|
+| process.env / globalThis.process.env reads | ESLint `local/no-process-env-outside-bin` | env reads in package/app source | Effect `Config` at the binary boundary, or an explicit parameter | tests, `__tests__`, `src/bin` |
+| `Date.now()` | ESLint `local/no-date-now` | `Date.now()` in library source | `Clock.currentTimeMillis` or a caller-provided timestamp | tests, `__tests__`, `src/bin` |
+| OTel hrtime tuple math | ESLint `local/hrtime-number-arithmetic` | `.{startTime,endTime,duration}[0] * …` | `nsFromHrTime` / `startNs` / `endNs` bigint helpers | — |
+| Durable-stream authority strings | ESLint `local/sg-no-inline-stream-url-construction` | inline `*.firegrid.*` stream names/URLs | schema/table authority encoders | schema/table files, runtime-host internals |
+| Runtime filesystem use | ESLint `local/sg-no-filesystem-in-runtime-package` | `fs`/`os`/`path`/Effect `FileSystem` in `packages/runtime/src` | explicit config or Durable Streams state | runtime tests, `src/bin` |
+| Host-id env authority | ESLint `local/sg-no-host-id-env-authority` | `FIREGRID_HOST_ID` / `VITE_FIREGRID_HOST_ID` | the approved host authority layer | tests |
+| Random durable identity | ESLint `local/sg-no-random-durable-identity` | `crypto.randomUUID()` for host/worker/exec identity | schema-owned or caller-provided durable identity | tests |
+| Raw stream-authority schema | ESLint `local/sg-no-raw-stream-authority-string-schema` | `Schema.String.pipe(streamAuthority)` | a validated/branded authority encoder | — |
+| Runtime authority surface bans | ESLint `local/sg-runtime-no-*` (authority singletons, wrapper types, static helpers, specifiers, registry surface/API, old tag keys, table writes/yields/type-params, second provider) | reintroducing the bundled runtime-authority surface | split Effect `Context.Tag` capabilities + provider layers | `authorities/`, `producers/`, `tables/`, `channels/`, `control-plane/` |
+| Source-collection registry | ESLint `local/sg-runtime-host-no-direct-source-collection-registration` | `SourceCollections` / `sourceCollectionStreamHandle` / `registerRuntimeHostAppSource` | a typed `RuntimeWaitSource` from `RuntimeWaitStreams` | tests |
+| host-sdk → runtime/substrate imports | ESLint `local/sg-host-sdk-imports`, `local/sg-no-numbered-runtime-subpath` | kernel/_archive/workflow-engine/streams/root-barrel/`@effect/workflow`/numbered subpaths | narrow semantic runtime subpaths | tests |
+| Runtime host-internal / runtime-errors imports | ESLint `local/sg-runtime-no-host-internal-imports-outside-host`, `local/sg-runtime-no-runtime-errors-imports-outside-runtime` | importing runtime host impl files / `runtime-errors.ts` externally | the host barrel / public `@firegrid/runtime` exports | inside `runtime/src` |
+| Cannon C4/C6/C7 + Shape-C guards | ESLint `local/sg-c4-*`, `local/sg-c6-*`, `local/sg-c7-*`, `local/sg-shape-c-*`, `local/sg-transforms-purity-import-boundary`, `local/sg-composition-no-legacy-imports` | DurableDeferred waits / cursor taxonomies / edge terminal synthesis / workflow machinery in Shape-C / impure transforms / legacy composition imports | the design-constraint-compliant shape | tests |
+| Inline tagged-error fail / mutable-identity let / non-exhaustive Match | ESLint `local/sg-no-inline-tagged-error-fail`, `local/sg-no-mutable-identity-let`, `local/sg-match-should-be-exhaustive` | the respective shapes | `Data.TaggedError`; const-before-use identity; `Match.exhaustive` | tests |
+| Workflow.make admission (C2) + the live-finding Effect idioms | `lint:effect-quality` ratchet | net-new `Workflow.make`; growth of new-Date-ISO / manual tagged-error type / switch-on-`_tag` / library `Effect.run*` / multi-await `tryPromise` / mutable Map in `Effect.gen` / detached & fire-and-forget promises | see each rule's canonical replacement above | tests, `src/bin`, scripts |
 
 ## Baselines
 
@@ -78,9 +82,11 @@ Some ratchets have baselines:
 
 - `.knip-baseline.json` must stay at zero.
 - `.jscpd.json` stores the duplicate-line threshold.
-- `effect-quality-metrics-baseline.json` stores per-metric maximums.
-- `semgrep-error-baseline.json` stores exact existing ERROR findings by rule,
-  path, and line.
+- `effect-quality-metrics-baseline.json` stores per-metric maximums (including
+  the count-ratcheted rules relocated from Semgrep; the grandfathered
+  `Workflow.make` owners are listed in `docs/workflow-make-admission-ledger.md`).
+- `host-sdk-runtime-import-baseline.json` stores the host-sdk runtime-import
+  quarantine.
 
 Only update a baseline when the current code improved the metric or when a rule
 PR intentionally introduces a staged baseline. Do not add baseline entries to

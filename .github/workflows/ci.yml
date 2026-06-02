@@ -36,8 +36,7 @@ env:
 # version bumps touch one file rather than every job.
 #
 # Gating jobs:
-#   lint              — docs/specs + eslint + dead-code + dup + effect-quality + ast-grep
-#   semgrep           — semgrep --test fixtures + production semgrep scan
+#   lint              — docs/specs + eslint + dead-code + dup + effect-quality
 #   typecheck         — pnpm --recursive typecheck
 #   effect-diagnostics — effect-language-service diagnostics
 #   tests             — pnpm --recursive tests
@@ -88,9 +87,6 @@ jobs:
       - name: Check Effect-quality metric ratchet
         run: pnpm run lint:effect-quality
 
-      - name: Check ast-grep style guardrails
-        run: pnpm run lint:ast-grep
-
   # The UKV production trace gate runs a live sim (~40s) and is the single
   # heaviest step. It used to sit last in the Lint job, serializing behind every
   # lint check; as its own job it runs in parallel and stops gating the lint
@@ -110,29 +106,6 @@ jobs:
 
       - name: Check UKV production trace seams
         run: pnpm --filter @firegrid/tiny-firegrid run trace:seams:ukv
-
-  semgrep:
-    name: Semgrep
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm + Node + install
-        uses: ./.github/actions/setup
-
-      # Semgrep's npm packages are unmaintained; install the maintained CLI
-      # with pipx, matching docs/TOOLING.md.
-      - name: Install Semgrep CLI
-        run: pipx install semgrep
-
-      - name: Test structural duplication rules
-        run: pnpm run lint:semgrep:test
-
-      - name: Check structural duplication shapes
-        run: pnpm run lint:semgrep
 
   typecheck:
     name: Typecheck
