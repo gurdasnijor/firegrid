@@ -91,6 +91,23 @@ jobs:
       - name: Check ast-grep style guardrails
         run: pnpm run lint:ast-grep
 
+  # The UKV production trace gate runs a live sim (~40s) and is the single
+  # heaviest step. It used to sit last in the Lint job, serializing behind every
+  # lint check; as its own job it runs in parallel and stops gating the lint
+  # critical path. Not turbo-cacheable (the sim spawns real subprocesses — same
+  # reason tiny-firegrid#test is cache:false), so no cache step here.
+  trace-seams:
+    name: UKV trace seams
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm + Node + install
+        uses: ./.github/actions/setup
+
       - name: Check UKV production trace seams
         run: pnpm --filter @firegrid/tiny-firegrid run trace:seams:ukv
 
