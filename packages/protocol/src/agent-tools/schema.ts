@@ -23,14 +23,9 @@
 
 import { Schema } from "effect"
 import { firegridProjection } from "../projection/schema.ts"
-import { defineFiregridOperation } from "../operations/schema.ts"
 import { PermissionOptionSchema } from "../agent-output/schema.ts"
 import { EventOffsetSchema } from "../channels/core.ts"
 
-export {
-  defineFiregridOperation,
-  type FiregridOperationEntry,
-} from "../operations/schema.ts"
 export {
   firegridProjection,
   FiregridProjectionAnnotationId,
@@ -826,19 +821,19 @@ export const CallToolOutputSchema = Schema.Unknown.annotations({
 export type CallToolOutput = Schema.Schema.Type<typeof CallToolOutputSchema>
 
 export const FiregridAgentToolOperations = {
-  sleep: defineFiregridOperation(SleepToolInputSchema, SleepToolOutputSchema),
-  waitFor: defineFiregridOperation(WaitForToolInputSchema, WaitForToolOutputSchema),
-  waitUntil: defineFiregridOperation(WaitUntilToolInputSchema, WaitUntilToolOutputSchema),
-  waitAny: defineFiregridOperation(WaitAnyToolInputSchema, WaitAnyToolOutputSchema),
-  send: defineFiregridOperation(SendToolInputSchema, SendToolOutputSchema),
-  spawn: defineFiregridOperation(SpawnToolInputSchema, SpawnToolOutputSchema),
-  spawnAll: defineFiregridOperation(SpawnAllToolInputSchema, SpawnAllToolOutputSchema),
-  sessionCreate: defineFiregridOperation(SessionNewToolInputSchema, SessionNewToolOutputSchema),
-  sessionPrompt: defineFiregridOperation(SessionPromptToolInputSchema, SessionPromptToolOutputSchema),
-  sessionStatus: defineFiregridOperation(SessionStatusInputSchema, SessionStatusOutputSchema),
-  sessionCancel: defineFiregridOperation(SessionCancelToolInputSchema, SessionCancelToolOutputSchema),
-  sessionClose: defineFiregridOperation(SessionCloseToolInputSchema, SessionCloseToolOutputSchema),
-  execute: defineFiregridOperation(ExecuteToolInputSchema, ExecuteToolOutputSchema),
-  permissionRespond: defineFiregridOperation(PermissionRespondInputSchema, EventOffsetSchema),
-  call: defineFiregridOperation(CallToolInputSchema, CallToolOutputSchema),
+  sleep: { input: SleepToolInputSchema, output: SleepToolOutputSchema },
+  waitFor: { input: WaitForToolInputSchema, output: WaitForToolOutputSchema },
+  waitUntil: { input: WaitUntilToolInputSchema, output: WaitUntilToolOutputSchema },
+  waitAny: { input: WaitAnyToolInputSchema, output: WaitAnyToolOutputSchema },
+  send: { input: SendToolInputSchema, output: SendToolOutputSchema },
+  spawn: { input: SpawnToolInputSchema, output: SpawnToolOutputSchema },
+  spawnAll: { input: SpawnAllToolInputSchema, output: SpawnAllToolOutputSchema },
+  sessionCreate: { input: SessionNewToolInputSchema, output: SessionNewToolOutputSchema },
+  sessionPrompt: { input: SessionPromptToolInputSchema, output: SessionPromptToolOutputSchema },
+  sessionStatus: { input: SessionStatusInputSchema, output: SessionStatusOutputSchema },
+  sessionCancel: { input: SessionCancelToolInputSchema, output: SessionCancelToolOutputSchema },
+  sessionClose: { input: SessionCloseToolInputSchema, output: SessionCloseToolOutputSchema },
+  execute: { input: ExecuteToolInputSchema, output: ExecuteToolOutputSchema },
+  permissionRespond: { input: PermissionRespondInputSchema, output: EventOffsetSchema },
+  call: { input: CallToolInputSchema, output: CallToolOutputSchema },
 } as const

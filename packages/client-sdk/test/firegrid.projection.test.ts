@@ -18,39 +18,39 @@ import { FiregridClientOperations } from "../src/operations.ts"
 
 describe("Firegrid client schema projection", () => {
   it("firegrid-schema-projection-contract.CLIENT_PROJECTION.1 exposes namespaced client operations from the session schema catalog", () => {
-    expect(FiregridClientOperations.sessions.createOrLoad.inputSchema).toBe(
+    expect(FiregridClientOperations.sessions.createOrLoad.input).toBe(
       SessionCreateOrLoadInputSchema,
     )
-    expect(FiregridClientOperations.sessions.promptScoped.inputSchema).toBe(
+    expect(FiregridClientOperations.sessions.promptScoped.input).toBe(
       SessionHandlePromptInputSchema,
     )
-    expect(FiregridClientOperations.permissions.respondScoped.inputSchema).toBe(
+    expect(FiregridClientOperations.permissions.respondScoped.input).toBe(
       SessionPermissionRespondInputSchema,
     )
   })
 
   it("firegrid-schema-projection-contract.CLIENT_PROJECTION.1 exposes protocol-owned wait client operations", () => {
-    expect(FiregridAgentToolOperations.waitFor.inputSchema).toBe(
+    expect(FiregridAgentToolOperations.waitFor.input).toBe(
       WaitForToolInputSchema,
     )
-    expect(FiregridAgentToolOperations.waitUntil.inputSchema).toBe(
+    expect(FiregridAgentToolOperations.waitUntil.input).toBe(
       WaitUntilToolInputSchema,
     )
-    expect(FiregridAgentToolOperations.waitAny.inputSchema).toBe(
+    expect(FiregridAgentToolOperations.waitAny.input).toBe(
       WaitAnyToolInputSchema,
     )
   })
 
   it("firegrid-schema-projection-contract.SCHEMA_CATALOG.4 projects spawn operation ids without legacy suffixes", () => {
-    expect(FiregridAgentToolOperations.spawn.inputSchema).toBe(
+    expect(FiregridAgentToolOperations.spawn.input).toBe(
       SpawnToolInputSchema,
     )
-    expect(FiregridAgentToolOperations.spawnAll.inputSchema).toBe(
+    expect(FiregridAgentToolOperations.spawnAll.input).toBe(
       SpawnAllToolInputSchema,
     )
     expect(
       getFiregridProjectionMetadata(
-        FiregridAgentToolOperations.spawn.inputSchema,
+        FiregridAgentToolOperations.spawn.input,
       ),
     ).toMatchObject({
       _tag: "Some",
@@ -61,7 +61,7 @@ describe("Firegrid client schema projection", () => {
     })
     expect(
       getFiregridProjectionMetadata(
-        FiregridAgentToolOperations.spawnAll.inputSchema,
+        FiregridAgentToolOperations.spawnAll.input,
       ),
     ).toMatchObject({
       _tag: "Some",
@@ -75,7 +75,7 @@ describe("Firegrid client schema projection", () => {
   it("firegrid-schema-projection-contract.SCHEMA_CATALOG.4 reads client projection metadata from Effect Schema annotations", () => {
     expect(
       getFiregridProjectionMetadata(
-        FiregridClientOperations.sessions.createOrLoad.inputSchema,
+        FiregridClientOperations.sessions.createOrLoad.input,
       ),
     ).toMatchObject({
       _tag: "Some",
@@ -89,7 +89,7 @@ describe("Firegrid client schema projection", () => {
   it("firegrid-schema-projection-contract.SCHEMA_CATALOG.4 reads wait.* projection metadata from Effect Schema annotations", () => {
     expect(
       getFiregridProjectionMetadata(
-        FiregridAgentToolOperations.waitFor.inputSchema,
+        FiregridAgentToolOperations.waitFor.input,
       ),
     ).toMatchObject({
       _tag: "Some",
@@ -101,7 +101,7 @@ describe("Firegrid client schema projection", () => {
     })
     expect(
       getFiregridProjectionMetadata(
-        FiregridAgentToolOperations.waitUntil.inputSchema,
+        FiregridAgentToolOperations.waitUntil.input,
       ),
     ).toMatchObject({
       _tag: "Some",
@@ -113,7 +113,7 @@ describe("Firegrid client schema projection", () => {
     })
     expect(
       getFiregridProjectionMetadata(
-        FiregridAgentToolOperations.waitAny.inputSchema,
+        FiregridAgentToolOperations.waitAny.input,
       ),
     ).toMatchObject({
       _tag: "Some",
@@ -127,7 +127,7 @@ describe("Firegrid client schema projection", () => {
 
   it("firegrid-schema-projection-contract.CLIENT_PROJECTION.2 decodes scoped programmer-facing permission responses through the session schema catalog", () => {
     const decoded = Schema.decodeUnknownSync(
-      FiregridClientOperations.permissions.respondScoped.inputSchema,
+      FiregridClientOperations.permissions.respondScoped.input,
     )({
       permissionRequestId: "permission-1",
       decision: { _tag: "Deny", reason: "not approved" },

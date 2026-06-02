@@ -130,7 +130,7 @@ Real shape today (`client-sdk/src/firegrid.ts`, `createOrLoadSession`):
 
 ```ts
 const decoded = yield* Schema.decodeUnknown(
-  FiregridClientOperations.sessions.createOrLoad.inputSchema, { onExcessProperty: "error" },
+  FiregridClientOperations.sessions.createOrLoad.input, { onExcessProperty: "error" },
 )(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const response = yield* hostSessionsCreateOrLoadChannel.binding.call({
@@ -172,9 +172,9 @@ import and never a durable-table write. Read methods return **normalized
 observations** (`RuntimeAgentOutputObservationSchema`), projected via
 `Schema.transform`, not raw rows.
 
-Migration note: `FiregridClientOperations` is the protocol catalog re-exported,
-but it is built with `defineFiregridOperation`, so methods read `.inputSchema`.
-Slice 3 swaps those to plain `{ input, output }` groups (`.input`).
+Migration note: `FiregridClientOperations` is the protocol catalog re-exported
+as plain `{ input, output }` groups. Methods read `.input`; names and help come
+from the input schema's projection annotations.
 
 ---
 
