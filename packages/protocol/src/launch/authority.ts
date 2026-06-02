@@ -131,7 +131,11 @@ const HostStreamPrefixPartsSchema = Schema.Struct({
 })
 type HostStreamPrefixParts = Schema.Schema.Type<typeof HostStreamPrefixPartsSchema>
 
-export const HostStreamPrefixSchema = HostStreamPrefixWireSchema
+export const HostStreamPrefixSchema = Schema.String.pipe(
+  Schema.filter(validateHostStreamPrefixWire),
+  Schema.brand("HostStreamPrefix"),
+  streamAuthority,
+)
 
 /** Encode parts → branded wire host stream prefix. */
 export const makeHostStreamPrefix = (

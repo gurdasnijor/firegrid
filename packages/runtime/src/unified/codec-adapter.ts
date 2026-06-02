@@ -383,7 +383,16 @@ const buildSessionForContext = (
     return { session, scope: ctxScope, attempt, sequenceRef }
   })
 
-export const ProductionCodecAdapterLive = Layer.scoped(
+export const ProductionCodecAdapterLive: Layer.Layer<
+  RuntimeContextSessionAdapter,
+  never,
+  | CodecOutputJournalTag
+  | SandboxProvider
+  | IdGenerator.IdGenerator
+  | ContextResolverTag
+  | RuntimeEnvResolverPolicy
+  | FiregridRuntimeContextMcpBaseUrl
+> = Layer.scoped(
   RuntimeContextSessionAdapter,
   Effect.gen(function*() {
     const hostScope = yield* Effect.scope

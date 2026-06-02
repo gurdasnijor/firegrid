@@ -16,7 +16,9 @@ import {
 } from "@firegrid/protocol/channels"
 import {
   type LaunchAuthorizedBinding,
+  RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  runtimeContextsView,
   runtimeEventsForContextView,
 } from "@firegrid/protocol/launch"
 import {
@@ -39,6 +41,7 @@ import { FiregridMcpServerLayer } from "../unified/mcp-host/mcp-host.ts"
 import { ToolDispatchLive } from "../unified/mcp-host/tool-dispatch.ts"
 import { ContextResolverFromControlPlaneTableLive } from "../tables/codec-adapter-providers.ts"
 import { RuntimeEnvResolverPolicy } from "../sources/sandbox/secrets.ts"
+import { AcpContextRows } from "../sources/codecs/acp/stdio-edge.ts"
 
 export class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
   readonly message: string
@@ -201,6 +204,13 @@ const GlobalSessionAgentOutputChannelLive = Layer.effect(
   ),
 )
 
+const GlobalAcpContextRowsLive = Layer.effect(
+  AcpContextRows,
+  RuntimeControlPlaneTable.pipe(
+    Effect.map(control => runtimeContextsView(control)),
+  ),
+)
+
 export const FiregridCliCompositionLive = (
   options: FiregridCliCompositionOptions,
 ) =>
@@ -222,6 +232,7 @@ export const FiregridCliCompositionLive = (
       )
       const services = Layer.mergeAll(
         mcp,
+        GlobalAcpContextRowsLive,
         GlobalSessionAgentOutputChannelLive,
       ).pipe(
         Layer.provideMerge(HostPlaneAcpRouterLive),

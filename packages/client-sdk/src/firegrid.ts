@@ -20,7 +20,6 @@ import {
   runtimeControlPlaneStreamUrl,
   runtimeContextsView,
   runtimeEventsForContextView,
-  runtimeLogsForContextView,
   runtimeOutputStreamUrl,
   type PublicLaunchRequest,
   type PublicLaunchRuntimeIntent,
@@ -503,18 +502,6 @@ const resolveConfig = (
       contextReflectionTimeoutMs: cfg.contextReflectionTimeoutMs ?? 30_000,
     }
   })
-
-const durableTableOptions = (
-  config: ResolvedConfig,
-  url: string,
-) => ({
-  streamOptions: {
-    url,
-    contentType: config.contentType,
-    ...(config.headers === undefined ? {} : { headers: config.headers }),
-  },
-  txTimeoutMs: config.txTimeoutMs,
-})
 
 const decodePublicLaunchRequest = (
   request: PublicLaunchRequest,

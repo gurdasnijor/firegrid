@@ -51,6 +51,7 @@ import { DurableStreamsWorkflowEngine } from "../engine/durable-streams-workflow
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
+  type SandboxProvider,
 } from "../sources/sandbox/index.ts"
 import { type RuntimeContextSessionAdapter } from "./adapter.ts"
 import {
@@ -64,6 +65,10 @@ import {
   CodecOutputJournalFromRuntimeOutputTableLive,
   ContextResolverFromControlPlaneTableLive,
 } from "../tables/codec-adapter-providers.ts"
+import type {
+  CodecOutputJournalTag,
+  ContextResolverTag,
+} from "../tables/codec-adapter-tags.ts"
 import { buildCurrentHostSessionLayer } from "./host-identity.ts"
 import {
   armSession,
@@ -129,7 +134,7 @@ export interface FiregridRuntimeSpec {
   readonly envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>
 }
 
-export interface FiregridHostOptionsBase extends FiregridRuntimeSpec {}
+export type FiregridHostOptionsBase = FiregridRuntimeSpec
 
 export interface FiregridHostOptionsWithAdapter extends FiregridHostOptionsBase {
   /**
@@ -177,20 +182,30 @@ const hasAdapter = (
 
 export const defaultProductionAdapterLayer = (
   envPolicy: Layer.Layer<RuntimeEnvResolverPolicy> = RuntimeEnvResolverPolicy.denyAll,
-): FiregridRuntimeAdapterLayer =>
-  ProductionCodecAdapterLive.pipe(
-    Layer.provide(
-      LocalProcessSandboxProvider.layer().pipe(
-        Layer.provide(NodeContext.layer),
-      ),
-    ),
-    Layer.provide(
-      Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
-    ),
-    Layer.provide(ContextResolverFromControlPlaneTableLive),
-    Layer.provide(CodecOutputJournalFromRuntimeOutputTableLive),
-    Layer.provide(envPolicy),
+): FiregridRuntimeAdapterLayer => {
+  const sandbox: Layer.Layer<SandboxProvider> = LocalProcessSandboxProvider.layer().pipe(
+    Layer.provide(NodeContext.layer),
   )
+  const idGenerator: Layer.Layer<IdGenerator.IdGenerator> = Layer.succeed(
+    IdGenerator.IdGenerator,
+    IdGenerator.defaultIdGenerator,
+  )
+  const support = ContextResolverFromControlPlaneTableLive.pipe(
+    Layer.provideMerge(CodecOutputJournalFromRuntimeOutputTableLive),
+    Layer.provideMerge(sandbox),
+    Layer.provideMerge(idGenerator),
+    Layer.provideMerge(envPolicy),
+  ) as Layer.Layer<
+    | SandboxProvider
+    | IdGenerator.IdGenerator
+    | ContextResolverTag
+    | CodecOutputJournalTag
+    | RuntimeEnvResolverPolicy,
+    never,
+    RuntimeControlPlaneTable | RuntimeOutputTable
+  >
+  return Layer.provide(ProductionCodecAdapterLive, support)
+}
 
 const jsonStreamOptions = (
   url: string,

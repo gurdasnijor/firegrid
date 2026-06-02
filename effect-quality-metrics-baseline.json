@@ -12,7 +12,7 @@
     "effectOrDieSiteCount": 1,
     "workflowMakeSiteCount": 7,
     "effectRunInLibraryCount": 4,
-    "newDateIsoCount": 11,
+    "newDateIsoCount": 10,
     "switchOnTagCount": 6,
     "manualTaggedErrorTypeCount": 10,
     "tryPromiseMultiAwaitCount": 2,

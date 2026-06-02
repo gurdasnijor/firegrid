@@ -10,7 +10,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 291,
+      "line": 383,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -19,7 +19,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 292,
+      "line": 384,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -28,7 +28,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 299,
+      "line": 391,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -37,7 +37,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 670,
+      "line": 729,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -46,7 +46,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 674,
+      "line": 733,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",
@@ -55,7 +55,7 @@
     {
       "project": "packages/protocol/tsconfig.json",
       "file": "packages/protocol/src/agent-tools/schema.ts",
-      "line": 678,
+      "line": 737,
       "column": 3,
       "severity": "message",
       "code": "schemaStructWithTag",

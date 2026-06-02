@@ -8,9 +8,8 @@ import {
   SessionPromptChannelTarget,
 } from "@firegrid/protocol/channels"
 import {
-  RuntimeControlPlaneTable,
-  runtimeContextsView,
   type PublicLaunchRuntimeIntent,
+  type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
@@ -18,6 +17,10 @@ import { HostPlaneChannelRouter } from "../../../channels/index.ts"
 import { Clock, Context, Duration, Effect, Layer, Option, Runtime, Schema, Stream } from "effect"
 
 type RunEffect = <A, E>(effect: Effect.Effect<A, E, never>) => Promise<A>
+
+export class AcpContextRows extends Context.Tag(
+  "firegrid/runtime/sources/codecs/acp/AcpContextRows",
+)<AcpContextRows, Stream.Stream<RuntimeContext, unknown>>() {}
 
 export interface AcpStdioSessionRuntimeRequest {
   readonly acpSessionId: string
@@ -225,7 +228,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
   constructor(
     private readonly connection: acp.AgentSideConnection,
     private readonly router: HostPlaneChannelRouter["Type"],
-    private readonly control: RuntimeControlPlaneTable["Type"],
+    private readonly contexts: AcpContextRows["Type"],
     private readonly sessionAgentOutput: SessionAgentOutputChannel["Type"],
     private readonly run: RunEffect,
     private readonly options: AcpStdioEdgeOptions,
@@ -393,7 +396,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
   private waitForContext(
     contextId: string,
   ): Effect.Effect<void, unknown> {
-    const wait = runtimeContextsView(this.control).pipe(
+    const wait = this.contexts.pipe(
       Stream.filter(context => context.contextId === contextId),
       Stream.runHead,
       Effect.as(true),
@@ -619,13 +622,13 @@ export const AcpStdioEdgeLive = (
 ): Layer.Layer<
   AcpStdioEdge,
   never,
-  HostPlaneChannelRouter | RuntimeControlPlaneTable | SessionAgentOutputChannel
+  HostPlaneChannelRouter | AcpContextRows | SessionAgentOutputChannel
 > =>
   Layer.scoped(
     AcpStdioEdge,
     Effect.gen(function*() {
       const router = yield* HostPlaneChannelRouter
-      const control = yield* RuntimeControlPlaneTable
+      const contexts = yield* AcpContextRows
       const sessionAgentOutput = yield* SessionAgentOutputChannel
       const runtime = yield* Effect.runtime<never>()
       const runPromise = Runtime.runPromise(runtime)
@@ -636,7 +639,7 @@ export const AcpStdioEdgeLive = (
             client => new FiregridAcpStdioAgent(
               client,
               router,
-              control,
+              contexts,
               sessionAgentOutput,
               runPromise,
               options,
