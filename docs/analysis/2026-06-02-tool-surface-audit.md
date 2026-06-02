@@ -10,7 +10,8 @@
 Nothing in the root `package.json` is *broken* after this PR (one regression — `verify` calling the now-deleted `lint:host-sdk-imports` — was introduced and fixed here). The real rot is **redundancy and stale analysis tooling**:
 
 - **Three "run the gates" surfaces** (`check`, `verify`, `preflight`) that had drifted. `preflight` is canonical; `verify` is now a thin alias (this PR); `check` is a different (build-inclusive) chain — keep but documented.
-- **Six `firegrid*` entrypoints** where the unified `firegrid` bin already exposes `run`/`acp`/`host`/`start` subcommands — the four `firegrid:<sub>` scripts are redundant.
+- **Six `firegrid*` entrypoints** duplicate the unified `firegrid <sub>` bin — but they're documented/spec-referenced entrypoints (`firegrid:host` is named in a feature spec + README), so they're **kept** (collapsing them is a doc/spec migration, flagged not done).
+- **Removed this PR:** `effect:check` (orphan), `bootstrap` (trivial alias), `analysis:leaf` (+ its dead ast-grep `run-leaf-inventory.sh`).
 - **`runtime-corpus.sh` (runtime-shrink-loop corpus) was earlier-phase tooling** — broken (manifest referenced deleted sims) and wired to no gate; **retired this PR** along with `runtime-flow-map.py` + `docs/architecture/corpus/`.
 - A few **orphan/stale scripts**: `effect:check`, `analysis:leaf`.
 
@@ -18,15 +19,15 @@ Nothing in the root `package.json` is *broken* after this PR (one regression —
 
 | Script | Status | Evidence / action |
 |---|---|---|
-| `bootstrap` | redundant | `= pnpm install`. Harmless alias; could drop. |
+| `bootstrap` | ❌ removed this PR | was `= pnpm install` (trivial alias, no consumers). |
 | `build` / `test` / `typecheck` | ✅ works | turbo passthrough. |
 | `check` | ⚠️ overlaps | `check:specs+check:docs+lint+effect:diagnostics+turbo run build check` — a 3rd gate chain, but uniquely includes `build`. Keep; doc its relation to `preflight`. |
 | `check:specs` / `check:docs` | ✅ works | `tooling.mjs`. |
-| `effect:check` | 🔸 orphan | `effect-language-service check`; referenced **nowhere** but package.json. Redundant with `effect:diagnostics` (the gated one). Candidate to drop. |
+| `effect:check` | ❌ removed this PR | `effect-language-service check`; orphan (no consumers), redundant with the gated `effect:diagnostics`. |
 | `effect:diagnostics(:baseline)` | ✅ works | gated in CI + preflight. |
 | `effect:patch` / `effect:unpatch` | ✅ works | opt-in devtools. |
 | `firegrid` | ✅ works | unified `@effect/cli` bin (`bin/firegrid.ts`) with `run`/`acp`/`host`/`start` subcommands (#830). |
-| `firegrid:run` / `:acp` / `:host` / `:start` / `:host:env` | 🔸 redundant | duplicate the unified bin's subcommands (verified `firegrid.ts` defines all four). Keep only if used as muscle-memory shortcuts; otherwise collapse to `firegrid <sub>`. (`:host:env` adds `--env-file-if-exists` — the one with extra value.) |
+| `firegrid:run` / `:acp` / `:host` / `:start` / `:host:env` | ✅ KEEP (documented entrypoints) | duplicate the unified `firegrid <sub>` bin, BUT are referenced entrypoints — `firegrid:host` is named in the feature spec `features/firegrid/firegrid-runtime-process.feature.yaml` ("the single Firegrid host launch command") + README; `firegrid:run`/`:acp` in `runtime-env-boundary.md` + the CLI SDD. Collapsing them is a doc/spec migration (would edit a behavior spec), not a free delete — **kept** pending an explicit call. |
 | `format` | ✅ works | `eslint . --fix`. |
 | `publish:oss` | ✅ works | `scripts/publish-oss.sh`. |
 | `lint` | ✅ works | **edited this PR** — dropped the deleted `effect-native-production-cutover-check.mjs` + `test-layout-check.mjs`; now `eslint + runtime-public-surface-check + tiny-firegrid-layout-check`. |
@@ -37,9 +38,9 @@ Nothing in the root `package.json` is *broken* after this PR (one regression —
 | `arch:deps*` (8) | ✅ works | `tooling.mjs arch deps <t>` (`all`/`detail` are aggregate targets). **Output is now git-ignored** (this PR) — the committed graphs were retired for the advisory PR comment. `arch:graphs:check` removed. |
 | `toy:coverage(:check)` | ✅ works | `tiny-config-prod-coverage.sh`. |
 | `trace:seams` / `trace:seams:ukv` | ✅ works | `trace-seam-coverage.ts` / tiny-firegrid filter. |
-| `analysis:leaf` | 🔸 stale | `tooling/analysis/run-leaf-inventory.sh` exists, but its only consumer reference is a **closed** ast-grep-era bead (tf-lt6); ast-grep is retired. Verify + likely drop. |
+| `analysis:leaf` | ❌ removed this PR | ran `tooling/analysis/run-leaf-inventory.sh`, which invokes **ast-grep** (retired; `tooling/ast-grep/` gone) → dead. Script + alias deleted. |
 
-**Recommendation (root scripts):** collapse the 4 redundant `firegrid:<sub>` shortcuts (keep `firegrid` + `:host:env`), drop `effect:check` and `bootstrap`, verify/drop `analysis:leaf`. Document `check` vs `preflight`. (Left as a follow-up bead — non-breaking, and the consolidation is a maintainer preference call.)
+**Done this PR:** removed `effect:check`, `bootstrap`, `analysis:leaf` (+ deleted the dead ast-grep `run-leaf-inventory.sh`). **Kept:** the `firegrid:<sub>` family — documented/spec-referenced entrypoints; collapsing them needs a doc/spec migration (would edit a behavior spec), flagged for a call. `check` vs `preflight` is documented in TOOLING.md.
 
 ## B. `scripts/` (23 files after this PR's 12 deletions)
 
@@ -49,7 +50,7 @@ Nothing in the root `package.json` is *broken* after this PR (one regression —
 | Lane/coordination | `cmux-dispatch.sh`, `cmux-broadcast.sh`, `lane-sweep.sh`, `dispatch-gap.sh`, `task-{enter,exit,reap}.sh` | ✅ live (worktree flow) |
 | Setup/publish | `install-git-hooks.sh` (+ `git-hooks/`), `publish-oss.sh` (+ `oss/`) | ✅ live |
 | Earlier-phase analysis | `runtime-corpus.sh`, `runtime-flow-map.py` (+ `docs/architecture/corpus/`) | ❌ **RETIRED this PR** — runtime-shrink-loop tooling from an earlier phase; not wired to any gate/CI; manifest referenced deleted sims. |
-| | `acp-trace-health.py` (+ `scripts/fixtures/acp-trace-health/`) | 🔸 adjacent May ACP-validation-phase trace probe; referenced only by historical investigation docs — likely also retire (left pending confirmation). |
+| ACP trace analysis | `acp-trace-health.py` (+ `scripts/fixtures/acp-trace-health/`) | ✅ KEEP — still useful (maintainer-confirmed): standalone ACP-trace health/analysis CLI. |
 | Retired this PR | `arch-graphs-check.sh`, `beads-sync*.sh`, `state-watch*.sh`, `install-*-cron.sh`, `signoff-queue.sh`, `phase1-workflow-core-paths-gate.sh`, `effect-native-production-cutover-check.mjs`, `test-layout-check.mjs`, `host-sdk-runtime-import-baseline.mjs`, `runtime-corpus.sh`, `runtime-flow-map.py` | ❌ deleted |
 
 ## C. tiny-firegrid sim runner
@@ -80,5 +81,4 @@ current tooling. It was already broken (two of four `in_gate` scenarios —
 ## Recommended beads (follow-ups, non-blocking)
 
 1. **Resilient sim discovery** (P2) — per-sim try/catch in `runner/list.ts` so one bad/heavy import doesn't sink the whole runner (it currently does — §C).
-2. **Collapse redundant root scripts** (P3) — the 4 `firegrid:<sub>` shortcuts, `effect:check`, `bootstrap`, `analysis:leaf`.
-3. **Confirm/retire `acp-trace-health.py`** (P3) — adjacent May-phase probe; retire with its fixture if the ACP-trace-health investigations are closed.
+2. **Collapse the `firegrid:<sub>` shortcuts** (P3, optional) — only if worth the doc/spec migration: repoint README + `firegrid-runtime-process.feature.yaml` + `runtime-env-boundary.md` + the CLI SDD to the unified `firegrid <sub>`, then drop the 4 plain scripts (keep `firegrid` + `:host:env`). Deferred — touches a behavior spec.
