@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-# task-enter — start a lane task in a dedicated worktree off the integration
-# trunk (origin/sim/unified-kernel-validation until PR #765 lands; revert the
-# BASE default to origin/main once #765 is merged — see DEFAULT_BASE below).
+# task-enter — start a lane task in a dedicated worktree off origin/main.
 # NEVER squats the primary checkout. Deterministic on the bead id (lanes get
 # renamed mid-session; beads don't).
 #
 # Base branch (where fresh worktrees fork from): --base <ref> | $FIREGRID_TASK_BASE
-# | DEFAULT_BASE. INTEGRATION WINDOW: defaults to the unified-kernel trunk
-# (origin/sim/unified-kernel-validation) because main lacks the kernel; when
-# PR #765 lands, set DEFAULT_BASE back to origin/main (or unset).
+# | DEFAULT_BASE (origin/main).
 #
 # Usage:
 #   bash scripts/task-enter.sh <bead-id> <slug> [--class codex|sidecar]
@@ -21,10 +17,8 @@
 # Fork base precedence: --base <ref>  >  $FIREGRID_TASK_BASE  >  DEFAULT_BASE.
 #
 set -eu
-# POST-#765: revert DEFAULT_BASE to "origin/main". Until #765 lands,
-# sim/unified-kernel-validation is the integration trunk and lane work must
-# fork off IT (task-enter forked off main → giant phantom diffs vs the kernel).
-DEFAULT_BASE="origin/sim/unified-kernel-validation"
+# #765 (unified-kernel cutover) is merged to main; main is canonical.
+DEFAULT_BASE="origin/main"
 BEAD="${1:?usage: task-enter.sh <bead-id> <slug> [--class codex|sidecar] [--base ref] [--resume]}"
 SLUG="${2:?need a short slug}"
 CLASS="codex"
