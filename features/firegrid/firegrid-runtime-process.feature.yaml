@@ -95,7 +95,10 @@ components:
         requirement: Attached mode uses `DURABLE_STREAMS_URL` or an explicit CLI stream URL rather than Firegrid-specific stream URL environment variables.
         deprecated: true
       6-note: Deprecated. The root host uses `DURABLE_STREAMS_BASE_URL` plus Firegrid-specific namespace/input/token environment variables and has no stream URL CLI flag.
-      7: The binary does not start, stop, or supervise a Durable Streams server.
+      7:
+        requirement: The binary does not start, stop, or supervise a Durable Streams server.
+        deprecated: true
+      7-note: Deprecated. The root host command may acquire an embedded Durable Streams server for local development when DURABLE_STREAMS_BASE_URL is unset.
       8:
         requirement: The binary rejects launcher subcommands and runs only as an attached runtime process.
         deprecated: true
@@ -107,6 +110,8 @@ components:
       10: The repository root exposes `pnpm firegrid:host` as the single Firegrid host launch command.
       11: The root host command configures Durable Streams attachment only from environment variables and exposes no token, auth-token, stream-url, run, config, dev, or prod CLI surface.
       12: The root host program is a long-running `Effect.never` process whose scoped runtime and workflow DurableTable layers shut down through NodeRuntime interruption on SIGINT or SIGTERM.
+      13: When DURABLE_STREAMS_BASE_URL is unset, the root host command starts an embedded loopback DurableStreamTestServer as a scoped local-development resource, announces the resolved URL on stderr, and warns that state is ephemeral.
+      14: When DURABLE_STREAMS_BASE_URL is set, the root host command uses that endpoint unchanged and does not announce an embedded local-development backend.
 
   DEV_ENV_INJECTION:
     requirements:
@@ -154,6 +159,7 @@ constraints:
         deprecated: true
       6-note: Deprecated. The root host attaches through `DURABLE_STREAMS_BASE_URL`; Durable Streams still runs outside Firegrid.
       7: Runtime host configuration reads `DURABLE_STREAMS_BASE_URL`, `FIREGRID_RUNTIME_NAMESPACE`, `FIREGRID_RUNTIME_INPUT_ENABLED`, and `FIREGRID_DURABLE_STREAMS_TOKEN` from environment configuration, with the token retained as redacted data until request-header construction.
+      8: When the root host command uses the embedded local-development Durable Streams backend and FIREGRID_RUNTIME_NAMESPACE is unset, it chooses a generated local namespace rather than failing startup.
 
   RUNTIME_HOT_PATH:
     requirements:

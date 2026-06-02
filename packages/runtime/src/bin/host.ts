@@ -10,36 +10,33 @@
  */
 
 import { NodeRuntime } from "@effect/platform-node"
-import { Console, Data, Effect, Layer } from "effect"
+import { Effect, Layer, Logger } from "effect"
 import { FiregridHost } from "../unified/host.ts"
-
-class MissingHostEnv extends Data.TaggedError("MissingHostEnv")<{
-  readonly name: string
-}> {}
-
-const requiredEnv = (name: string): Effect.Effect<string, MissingHostEnv> =>
-  Effect.sync(() => process.env[name]).pipe(
-    Effect.flatMap((value) =>
-      value === undefined || value.trim() === ""
-        ? Effect.fail(new MissingHostEnv({ name }))
-        : Effect.succeed(value),
-    ),
-  )
-
-const optionalEnv = (name: string): Effect.Effect<string | undefined> =>
-  Effect.sync(() => {
-    const value = process.env[name]
-    return value === undefined || value.trim() === "" ? undefined : value
-  })
+import {
+  defaultNamespace,
+  embeddedOrConfiguredDurableStreams,
+  nonEmptyEnv,
+} from "./_compose.ts"
 
 const makeHostLayer = Effect.gen(function*() {
-  const durableStreamsBaseUrl = yield* requiredEnv("DURABLE_STREAMS_BASE_URL")
-  const namespace = yield* requiredEnv("FIREGRID_RUNTIME_NAMESPACE")
-  const hostId = yield* optionalEnv("FIREGRID_HOST_ID")
+  const endpoint = yield* embeddedOrConfiguredDurableStreams
+  const namespace = nonEmptyEnv("FIREGRID_RUNTIME_NAMESPACE") ?? defaultNamespace()
+  const hostId = nonEmptyEnv("FIREGRID_HOST_ID")
+
+  if (endpoint.embedded) {
+    // firegrid-runtime-process.BINARIES.13
+    // firegrid-runtime-process.CONFIG_SURFACE.8
+    process.stderr.write(
+      [
+        `firegrid host: embedded durable-streams at ${endpoint.durableStreamsBaseUrl}`,
+        "firegrid host: local dev: ephemeral in-process durable-streams; state lost on exit; set DURABLE_STREAMS_BASE_URL for a real backend",
+      ].join("\n") + "\n",
+    )
+  }
 
   return FiregridHost({
     codec: "acp",
-    durableStreamsBaseUrl,
+    durableStreamsBaseUrl: endpoint.durableStreamsBaseUrl,
     namespace,
     ...(hostId === undefined ? {} : { hostId }),
   })
@@ -47,8 +44,11 @@ const makeHostLayer = Effect.gen(function*() {
 
 const program = Effect.gen(function*() {
   const hostLayer = yield* makeHostLayer
-  yield* Console.log("Firegrid host started")
+  process.stderr.write("Firegrid host started\n")
   return yield* Layer.launch(hostLayer).pipe(Effect.zipRight(Effect.never))
 }).pipe(Effect.scoped)
 
-NodeRuntime.runMain(program)
+NodeRuntime.runMain(
+  program.pipe(Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none))),
+  { disablePrettyLogger: true },
+)

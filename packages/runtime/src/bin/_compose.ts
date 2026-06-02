@@ -50,16 +50,27 @@ export interface FiregridCliCompositionOptions {
   readonly authorizedBindings?: ReadonlyArray<LaunchAuthorizedBinding>
 }
 
-const defaultNamespace = (): string => `firegrid-cli-${crypto.randomUUID()}`
+export interface FiregridCliDurableStreamsEndpoint {
+  readonly durableStreamsBaseUrl: string
+  readonly embedded: boolean
+}
 
-const nonEmptyEnv = (name: string): string | undefined => {
+export const defaultNamespace = (): string => `firegrid-cli-${crypto.randomUUID()}`
+
+export const nonEmptyEnv = (name: string): string | undefined => {
   const value = process.env[name]
   return value === undefined || value.trim() === "" ? undefined : value
 }
 
-const embeddedOrConfiguredDurableStreamsBaseUrl = Effect.gen(function*() {
+export const embeddedOrConfiguredDurableStreams = Effect.gen(function*() {
   const configured = nonEmptyEnv("DURABLE_STREAMS_BASE_URL")
-  if (configured !== undefined) return configured
+  if (configured !== undefined) {
+    // firegrid-runtime-process.BINARIES.14
+    return {
+      durableStreamsBaseUrl: configured,
+      embedded: false,
+    } satisfies FiregridCliDurableStreamsEndpoint
+  }
   const server = yield* Effect.acquireRelease(
     Effect.promise(async () => {
       const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
@@ -68,7 +79,10 @@ const embeddedOrConfiguredDurableStreamsBaseUrl = Effect.gen(function*() {
     }),
     ({ server }) => Effect.promise(() => server.stop()),
   )
-  return server.baseUrl
+  return {
+    durableStreamsBaseUrl: server.baseUrl,
+    embedded: true,
+  } satisfies FiregridCliDurableStreamsEndpoint
 })
 
 export const resolveFiregridCliCwd = (
@@ -206,11 +220,11 @@ export const FiregridCliCompositionLive = (
 ) =>
   Layer.unwrapScoped(
     Effect.gen(function*() {
-      const durableStreamsBaseUrl = yield* embeddedOrConfiguredDurableStreamsBaseUrl
+      const endpoint = yield* embeddedOrConfiguredDurableStreams
       const namespace = options.namespace ?? nonEmptyEnv("FIREGRID_RUNTIME_NAMESPACE") ?? defaultNamespace()
       const host = FiregridHost({
         codec: "acp",
-        durableStreamsBaseUrl,
+        durableStreamsBaseUrl: endpoint.durableStreamsBaseUrl,
         namespace,
         envPolicy: envPolicyLayer(options.authorizedBindings),
       })
