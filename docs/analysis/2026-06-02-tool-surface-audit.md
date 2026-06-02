@@ -53,12 +53,30 @@ Nothing in the root `package.json` is *broken* after this PR (one regression —
 | ACP trace analysis | `acp-trace-health.py` (+ `scripts/fixtures/acp-trace-health/`) | ✅ KEEP — still useful (maintainer-confirmed): standalone ACP-trace health/analysis CLI. |
 | Retired this PR | `arch-graphs-check.sh`, `beads-sync*.sh`, `state-watch*.sh`, `install-*-cron.sh`, `signoff-queue.sh`, `phase1-workflow-core-paths-gate.sh`, `effect-native-production-cutover-check.mjs`, `test-layout-check.mjs`, `host-sdk-runtime-import-baseline.mjs`, `runtime-corpus.sh`, `runtime-flow-map.py` | ❌ deleted |
 
-## C. tiny-firegrid sim runner
+## C. tiny-firegrid sim runner — FIXED this PR
 
-The runner discovers sims by eagerly importing **every** `simulations/<id>/index.ts` at startup. Consequence (observed): in a checkout with stale `node_modules` (e.g. the primary checkout that hasn't `pnpm install`-ed since #832/#833 added the `effect-durable-streams`/`effect-durable-operators` workspace deps), `verified-webhook-wait/host.ts`'s import of `effect-durable-streams` fails to resolve and **crashes discovery for *every* sim** — `simulate run <any-id>` dies with `Cannot find package 'effect-durable-streams'`, masking unrelated failures.
+The runner *used to* discover sims by eagerly importing **every**
+`simulations/<id>/index.ts` at startup, so one sim's unresolved import crashed
+discovery for *every* sim — e.g. in a stale-`node_modules` checkout (no
+`pnpm install` since #832/#833 added the `effect-durable-streams` workspace dep),
+`verified-webhook-wait/host.ts`'s import killed `simulate run <any-id>`. It also
+carried a hardcoded `hiddenFolders` denylist (a band-aid for non-conforming
+folders that crashed the walk) and a recursive nested-folder walk (sims are
+strictly one level deep), plus raw `node:fs/promises`.
 
-- **Immediate cause:** stale deps → run `pnpm install` after merging `main` (the recurring post-merge rule). In a fresh-installed worktree the symlink (`packages/tiny-firegrid/node_modules/effect-durable-streams → ../../effect-durable-streams`) exists and discovery succeeds.
-- **Design smell (bead-worthy):** one sim's unresolved import shouldn't sink the whole runner. `runner/list.ts` should load sims resiliently (per-sim try/catch, report the failing sim id, continue) so a single bad/heavy import is a localized error.
+**Rewritten (`runner/list.ts` + `runner/runtime.ts`):**
+- `selectedSimulation(id)` imports **only the requested sim** — running one sim
+  never loads (and so never trips over) any other.
+- `listSimulations` loads each sim with **per-sim isolation** (`Effect.tryPromise`
+  so a failing import is a typed, catchable error): a broken sim is skipped with a
+  warning, not fatal.
+- Dropped the stale `hiddenFolders` denylist (all 4 folders were already deleted)
+  and the dead recursion; discovery is now a flat directory listing.
+- Migrated `node:fs`/`node:path`/`node:url` → `@effect/platform` `FileSystem` +
+  `Path` services (already provided by the CLI's `NodeContext.layer`).
+
+(Still run `pnpm install` after merging `main` so the workspace symlinks exist —
+but a stale dep can no longer sink unrelated sims.)
 
 ## D. Corpus (`runtime-corpus.sh` + `docs/architecture/corpus/`) — RETIRED
 
@@ -80,4 +98,4 @@ current tooling. It was already broken (two of four `in_gate` scenarios —
 
 ## Recommended beads (follow-ups, non-blocking)
 
-1. **Resilient sim discovery** (P2) — per-sim try/catch in `runner/list.ts` so one bad/heavy import doesn't sink the whole runner (it currently does — §C).
+1. ~~Resilient sim discovery~~ — **DONE this PR** (§C): per-sim isolation + lazy single-sim load + `@effect/platform` FileSystem/Path. Remaining (optional): migrate the read-side runner utilities (`show.ts`, `trace.ts`, `telemetry.ts` — incl. `execSync` git → `@effect/platform` `Command`, `perf.ts`, `phase1-gate.ts`) off raw `node:fs/path/child_process` for consistency.

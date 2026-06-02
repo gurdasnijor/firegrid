@@ -2,6 +2,7 @@ import {
   FiregridConfig,
   FiregridLive,
 } from "@firegrid/client-sdk/firegrid"
+import { FileSystem, Path } from "@effect/platform"
 import {
   Console,
   Config,
@@ -17,10 +18,6 @@ import {
 // Accepted bin-only local simulation escape hatch.
 // eslint-disable-next-line no-restricted-imports
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { mkdirSync } from "node:fs"
-import { stat, writeFile } from "node:fs/promises"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
 import type {
   FiregridHost,
   TinyFiregridHostEnv,
@@ -38,18 +35,6 @@ const NamespaceConfig = Config.string("FIREGRID_RUNTIME_NAMESPACE").pipe(
 const DurableStreamsBaseUrlConfig = Config.string("DURABLE_STREAMS_BASE_URL").pipe(
   Config.option,
 )
-
-interface LatestPointerWriteFailed {
-  readonly _tag: "LatestPointerWriteFailed"
-  readonly cause: unknown
-}
-
-const latestPointerWriteFailed = (
-  cause: unknown,
-): LatestPointerWriteFailed => ({
-  _tag: "LatestPointerWriteFailed",
-  cause,
-})
 
 type SimulationOutcome =
   | { readonly _tag: "DriverCompleted" }
@@ -83,14 +68,10 @@ const sanitizeSegment = (value: string): string =>
 const newRunId = (simulationId: string): string =>
   `${new Date().toISOString().replace(/[:.]/g, "-")}__${sanitizeSegment(simulationId)}`
 
-// Package-relative .simulate/ root. Resolved off this module's URL so it
-// stays correct regardless of cwd (the script may be invoked from anywhere
-// in the monorepo via `pnpm --filter`).
-const simulateRoot = path.resolve(
-  fileURLToPath(new URL("../../.simulate/", import.meta.url)),
-)
-const runsRoot = path.join(simulateRoot, "runs")
-const latestPath = path.join(simulateRoot, "latest.json")
+// Package-relative .simulate/ root. Resolved off this module's URL (via the
+// Path service inside the run Effect) so it stays correct regardless of cwd —
+// the script may be invoked from anywhere in the monorepo via `pnpm --filter`.
+const simulateRootUrl = new URL("../../.simulate/", import.meta.url)
 
 const firegridClientLayer = (
   durableStreamsBaseUrl: string,
@@ -138,38 +119,37 @@ const maybeWriteLatest = (
   simulationId: string,
   runDir: string,
   tracePath: string,
+  latestPath: string,
 ) =>
-  Effect.tryPromise({
-    try: async () => {
-      const size = await stat(tracePath).then(s => s.size, () => 0)
-      if (size === 0) return false
-      await writeFile(
-        latestPath,
-        JSON.stringify({ runId, simulationId, runDir }, null, 2) + "\n",
-        "utf8",
-      )
-      return true
-    },
-    catch: latestPointerWriteFailed,
-  }).pipe(
-    Effect.tap(written =>
-      written ? Effect.logDebug("latest pointer updated") : Effect.void,
-    ),
-    Effect.asVoid,
-  )
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    if (!(yield* fs.exists(tracePath))) return
+    const info = yield* fs.stat(tracePath)
+    if (Number(info.size) === 0) return
+    yield* fs.writeFileString(
+      latestPath,
+      JSON.stringify({ runId, simulationId, runDir }, null, 2) + "\n",
+    )
+    yield* Effect.logDebug("latest pointer updated")
+  })
 
 export const runSimulation = (
   simulation: TinyFiregridSimulation<unknown>,
   options: RunOptions,
 ) =>
   Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const simulateRoot = yield* path.fromFileUrl(simulateRootUrl)
+    const runsRoot = path.join(simulateRoot, "runs")
+    const latestPath = path.join(simulateRoot, "latest.json")
     const baseUrl = yield* durableStreamsBaseUrl
     const namespace = yield* NamespaceConfig
     const stopSignal = yield* Deferred.make<void>()
     const sigintCount = yield* Ref.make(0)
     const runId = newRunId(simulation.id)
     const runDir = path.join(runsRoot, runId)
-    mkdirSync(runDir, { recursive: true })
+    yield* fs.makeDirectory(runDir, { recursive: true })
 
     const tracePath = path.join(runDir, "trace.jsonl")
     const destination: TelemetryDestination = options.console
@@ -304,7 +284,7 @@ export const runSimulation = (
       // Only writes latest.json if at least one span actually flushed to
       // the trace file.
       Effect.ensuring(
-        maybeWriteLatest(runId, simulation.id, runDir, tracePath).pipe(
+        maybeWriteLatest(runId, simulation.id, runDir, tracePath, latestPath).pipe(
           Effect.ignore,
         ),
       ),
