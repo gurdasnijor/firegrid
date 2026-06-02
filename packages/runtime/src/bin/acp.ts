@@ -1,5 +1,5 @@
 import { local, decodeLaunchSecretEnvCliValue, type RuntimeAgentProtocol } from "@firegrid/protocol/launch"
-import { Context, Effect, Either, Layer, Logger } from "effect"
+import { Effect, Either, Layer, Logger } from "effect"
 import { Readable, Writable } from "node:stream"
 import { pathToFileURL } from "node:url"
 import {
@@ -147,23 +147,29 @@ export const acpProgram = (
     })
     const input = Readable.toWeb(inputStream) as ReadableStream<Uint8Array>
     const output = Writable.toWeb(outputStream) as WritableStream<Uint8Array>
-    const layer = AcpStdioEdgeLive({
+    // The edge composition is launchable by construction (tf-0awo.21 §6): the
+    // CLI composition provides every channel the edge requires (R → never) and
+    // its only error — OTel acquisition — is orDie'd at its boundary in
+    // `_compose.ts` (E → never). No `as unknown as` cast. The launchability gate
+    // (acp-edge-launchable.type-test.ts) asserts the `never, never` shape.
+    const edgeLayer = AcpStdioEdgeLive({
       input,
       output,
       runtime: () => runtime,
       permissionPolicy: options.permission,
     }).pipe(
-      Layer.provideMerge(
+      Layer.provide(
         FiregridCliCompositionLive({
           ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
           ...(options.otelFile === undefined ? {} : { otelFile: options.otelFile }),
           authorizedBindings: bindings.map(binding => binding.authorizedBinding),
         }),
       ),
-    ) as unknown as Layer.Layer<AcpStdioEdge, unknown, never>
-    const services = yield* Layer.build(layer)
-    const edge = Context.get(services, AcpStdioEdge)
-    yield* edge.closed
+    )
+    yield* Effect.gen(function*() {
+      const edge = yield* AcpStdioEdge
+      yield* edge.closed
+    }).pipe(Effect.provide(edgeLayer))
   }).pipe(Effect.scoped)
 
 export const runAcpMain = (

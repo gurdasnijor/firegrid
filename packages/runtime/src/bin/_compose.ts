@@ -232,6 +232,14 @@ export const FiregridCliCompositionLive = (
       return services.pipe(
         Layer.provideMerge(otelLayer(options)),
         Layer.provide(Logger.remove(Logger.defaultLogger)),
+        // The composition's only errors are infra-acquisition defects, surfaced
+        // as an untyped `unknown`: OTel exporter setup (FiregridOtelLive) and the
+        // MCP HTTP server bind (NodeHttpServer.layer inside FiregridMcpServerLayer).
+        // orDie them at this composition boundary — a host that cannot acquire its
+        // substrate is a startup defect, not a typed domain failure — so the bin's
+        // edge stays launchable (E → never) without an `as unknown as` cast
+        // (tf-0awo.21 §6). This is the cast's hidden error channel, made honest.
+        Layer.orDie,
       )
     }),
   )
