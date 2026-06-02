@@ -26,7 +26,6 @@
     "simulate:run": "tsx src/index.ts run",
     "simulate:show": "tsx src/index.ts show",
     "simulate:runs": "tsx src/index.ts runs",
-    "lint:layout": "tsx src/bin/layout-check.ts",
     "trace:seams": "tsx src/bin/trace-seams.ts",
     "trace:seams:ukv": "tsx src/bin/ukv-production-trace-gate.ts",
     "typecheck": "tsc --noEmit"

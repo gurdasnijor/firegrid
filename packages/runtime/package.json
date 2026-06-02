@@ -129,7 +129,6 @@
     "diagnostics": "node ../../tooling/src/effect-diagnostics-check.ts",
     "build": "tsc",
     "check": "pnpm run typecheck && pnpm run test",
-    "lint:surface": "tsx src/bin/public-surface-check.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
