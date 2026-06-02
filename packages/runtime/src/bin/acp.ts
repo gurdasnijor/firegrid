@@ -1,5 +1,4 @@
-import { local, decodeLaunchSecretEnvCliValue, type RuntimeAgentProtocol } from "@firegrid/protocol/launch"
-import { Effect, Either, Layer, Logger } from "effect"
+import { Effect, Layer, Logger } from "effect"
 import { Readable, Writable } from "node:stream"
 import { pathToFileURL } from "node:url"
 import {
@@ -12,139 +11,61 @@ import {
 import {
   FiregridCliCompositionLive,
   FiregridCliUsageError,
-  resolveFiregridCliCwd,
 } from "./_compose.ts"
+import {
+  compositionOptionsFromAgentOptions,
+  decodeAgentSecretEnv,
+  localJsonlRuntimeFromAgentOptions,
+  parseAgentProcessCliArgs,
+  type AgentProcessCliOptions,
+} from "./_agent-cli.ts"
 import { runFiregridBinMain } from "./_main.ts"
 
-interface AcpCliOptions {
-  readonly agent?: string
-  readonly agentProtocol: RuntimeAgentProtocol
-  readonly secretEnv: ReadonlyArray<string>
-  readonly cwd?: string
-  readonly otelFile?: string
+export interface AcpCliOptions extends AgentProcessCliOptions {
   readonly permission: AcpPermissionPolicy
-  readonly agentArgv: ReadonlyArray<string>
 }
 
 const usage = [
   "Usage: firegrid acp [--agent NAME] [--agent-protocol acp] [--secret-env NAME[=HOST_NAME]] [--cwd PATH] [--otel-file PATH] [--permission forward|deny|allow] -- <agent-argv>",
 ].join("\n")
 
-const flagNeedsValue = (flag: string): FiregridCliUsageError =>
-  new FiregridCliUsageError({ message: `${flag} expects a value\n${usage}` })
-
 const parseArgs = (
   argv: ReadonlyArray<string>,
 ): Effect.Effect<AcpCliOptions, FiregridCliUsageError> =>
-  Effect.gen(function*() {
-    const secretEnv: Array<string> = []
-    let agent: string | undefined
-    let agentProtocol: RuntimeAgentProtocol = "acp"
-    let cwd: string | undefined
-    let otelFile: string | undefined
-    let permission: AcpPermissionPolicy = defaultAcpPermissionPolicy
-    let index = 0
-    while (index < argv.length) {
-      const arg = argv[index]!
-      if (arg === "--") {
-        const agentArgv = argv.slice(index + 1)
-        if (agentArgv.length === 0) {
-          return yield* new FiregridCliUsageError({
-            message: `agent argv after -- must be non-empty\n${usage}`,
-          })
-        }
-        const resolvedCwd = resolveFiregridCliCwd(cwd)
-        return {
-          ...(agent === undefined ? {} : { agent }),
-          agentProtocol,
-          secretEnv,
-          ...(resolvedCwd === undefined ? {} : { cwd: resolvedCwd }),
-          ...(otelFile === undefined ? {} : { otelFile }),
-          permission,
-          agentArgv,
-        }
-      }
-      const next = (): Effect.Effect<string, FiregridCliUsageError> =>
-        index + 1 >= argv.length
-          ? Effect.fail(flagNeedsValue(arg))
-          : Effect.succeed(argv[index + 1]!)
-      switch (arg) {
-        case "--agent":
-          agent = yield* next()
-          index += 2
-          break
-        case "--agent-protocol": {
-          const value = yield* next()
-          if (value !== "acp") {
-            return yield* new FiregridCliUsageError({
-              message: `--agent-protocol must be acp for firegrid acp\n${usage}`,
-            })
+  parseAgentProcessCliArgs<{ permission: AcpPermissionPolicy }>({
+    argv,
+    usage,
+    commandName: "acp",
+    defaultAgentProtocol: "acp",
+    allowedAgentProtocols: ["acp"],
+    extra: { permission: defaultAcpPermissionPolicy },
+    parseExtra: (arg, next, extra) =>
+      Effect.gen(function*() {
+        switch (arg) {
+          case "--permission": {
+            const value = yield* next()
+            if (!acpPermissionPolicies.includes(value as AcpPermissionPolicy)) {
+              return yield* new FiregridCliUsageError({
+                message: `--permission must be one of forward, deny, allow\n${usage}`,
+              })
+            }
+            extra.permission = value as AcpPermissionPolicy
+            return 2
           }
-          agentProtocol = value
-          index += 2
-          break
+          default:
+            return 0
         }
-        case "--secret-env":
-          secretEnv.push(yield* next())
-          index += 2
-          break
-        case "--cwd":
-          cwd = yield* next()
-          index += 2
-          break
-        case "--otel-file":
-          otelFile = yield* next()
-          index += 2
-          break
-        case "--permission": {
-          const value = yield* next()
-          if (!acpPermissionPolicies.includes(value as AcpPermissionPolicy)) {
-            return yield* new FiregridCliUsageError({
-              message: `--permission must be one of forward, deny, allow\n${usage}`,
-            })
-          }
-          permission = value as AcpPermissionPolicy
-          index += 2
-          break
-        }
-        case "--help":
-        case "-h":
-          return yield* new FiregridCliUsageError({ message: usage })
-        default:
-          return yield* new FiregridCliUsageError({
-            message: `unknown firegrid acp argument: ${arg}\n${usage}`,
-          })
-      }
-    }
-    return yield* new FiregridCliUsageError({
-      message: `missing -- <agent-argv>\n${usage}`,
-    })
+      }),
   })
 
-const decodeSecretEnv = (values: ReadonlyArray<string>) =>
-  Effect.forEach(values, (value) =>
-    Either.match(decodeLaunchSecretEnvCliValue(value), {
-      onLeft: (message) =>
-        Effect.fail(new FiregridCliUsageError({ message })),
-      onRight: Effect.succeed,
-    }))
-
-export const acpProgram = (
-  argv: ReadonlyArray<string>,
+export const acpProgramFromOptions = (
+  options: AcpCliOptions,
   inputStream: NodeJS.ReadStream = process.stdin,
   outputStream: NodeJS.WriteStream = process.stdout,
 ): Effect.Effect<void, unknown, never> =>
   Effect.gen(function*() {
-    const options = yield* parseArgs(argv)
-    const bindings = yield* decodeSecretEnv(options.secretEnv)
-    const runtime = local.jsonl({
-      argv: [...options.agentArgv],
-      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      ...(options.agent === undefined ? {} : { agent: options.agent }),
-      agentProtocol: options.agentProtocol,
-      envBindings: bindings.map(binding => binding.envBinding),
-      runtimeContextMcp: { enabled: true },
-    })
+    const bindings = yield* decodeAgentSecretEnv(options.secretEnv)
+    const runtime = localJsonlRuntimeFromAgentOptions(options, bindings)
     const input = Readable.toWeb(inputStream) as ReadableStream<Uint8Array>
     const output = Writable.toWeb(outputStream) as WritableStream<Uint8Array>
     // The edge composition is launchable by construction (tf-0awo.21 §6): the
@@ -159,11 +80,7 @@ export const acpProgram = (
       permissionPolicy: options.permission,
     }).pipe(
       Layer.provide(
-        FiregridCliCompositionLive({
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          ...(options.otelFile === undefined ? {} : { otelFile: options.otelFile }),
-          authorizedBindings: bindings.map(binding => binding.authorizedBinding),
-        }),
+        FiregridCliCompositionLive(compositionOptionsFromAgentOptions(options, bindings)),
       ),
     )
     yield* Effect.gen(function*() {
@@ -171,6 +88,15 @@ export const acpProgram = (
       yield* edge.closed
     }).pipe(Effect.provide(edgeLayer))
   }).pipe(Effect.scoped)
+
+export const acpProgram = (
+  argv: ReadonlyArray<string>,
+  inputStream: NodeJS.ReadStream = process.stdin,
+  outputStream: NodeJS.WriteStream = process.stdout,
+): Effect.Effect<void, unknown, never> =>
+  parseArgs(argv).pipe(
+    Effect.flatMap(options => acpProgramFromOptions(options, inputStream, outputStream)),
+  )
 
 export const runAcpMain = (
   argv: ReadonlyArray<string> = process.argv.slice(2),

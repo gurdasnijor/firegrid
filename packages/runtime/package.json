@@ -136,6 +136,7 @@
     "@agentclientprotocol/sdk": "0.21.0",
     "@durable-streams/server": "^0.3.1",
     "@effect/ai": "^0.35.0",
+    "@effect/cli": "0.75.1",
     "@effect/experimental": "0.60.0",
     "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",

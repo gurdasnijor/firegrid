@@ -70,6 +70,14 @@ const postMcpJsonRpc = async (
   return parsed as Record<string, unknown>
 }
 
+const waitForExit = (
+  child: ChildProcessWithoutNullStreams,
+): Promise<number | null> =>
+  new Promise((resolve, reject) => {
+    child.once("error", reject)
+    child.once("close", code => resolve(code))
+  })
+
 class SmokeClient implements acp.Client {
   readonly updates: Array<acp.SessionNotification> = []
 
@@ -195,5 +203,56 @@ describe("firegrid acp CLI", () => {
     expect(traceNames).toContain("firegrid.mcp.register_toolkit")
     expect(traceNames).toContain("firegrid.acp_stdio_edge.prompt")
     expect(traceNames).toContain("firegrid.channel.dispatch")
+  }, 60_000)
+
+  it("firegrid-zed-acp-stdio-external-agent.VALIDATION.6 runs a creds-free ACP agent turn through firegrid run", async () => {
+    const cwd = path.join(tmpdir(), `firegrid-run-cli-${randomUUID()}`)
+    mkdirSync(cwd, { recursive: true })
+    const stdoutChunks: Array<string> = []
+    const stderrChunks: Array<string> = []
+
+    child = spawn(
+      "pnpm",
+      [
+        "--silent",
+        "firegrid",
+        "--",
+        "run",
+        "--cwd",
+        cwd,
+        "--prompt",
+        "hello from firegrid run smoke",
+        "--agent",
+        "fake-acp-agent-process",
+        "--agent-protocol",
+        "acp",
+        "--",
+        process.execPath,
+        tsxCli,
+        fakeAgent,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          DURABLE_STREAMS_BASE_URL: "",
+          FIREGRID_RUNTIME_NAMESPACE: `run-cli-smoke-${randomUUID()}`,
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    )
+    child.stdout.setEncoding("utf8")
+    child.stdout.on("data", (chunk: string) => {
+      stdoutChunks.push(chunk)
+    })
+    child.stderr.setEncoding("utf8")
+    child.stderr.on("data", (chunk: string) => {
+      stderrChunks.push(chunk)
+    })
+
+    const exitCode = await waitForExit(child)
+    expect(exitCode).toBe(0)
+    expect(stdoutChunks.join("")).toContain("Perfect! I've successfully updated the configuration.")
+    expect(stderrChunks.join("")).toContain("firegrid run: allowing permission")
   }, 60_000)
 })

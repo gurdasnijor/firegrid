@@ -9,48 +9,40 @@
  * firegrid-runtime-process.CONFIG_SURFACE.1
  */
 
-import { NodeRuntime } from "@effect/platform-node"
-import { Console, Data, Effect, Layer } from "effect"
-import { defaultProductionAdapterLayer, FiregridRuntime } from "../unified/host.ts"
+import { Console, Effect, Layer } from "effect"
+import { pathToFileURL } from "node:url"
+import { FiregridCliCompositionLive } from "./_compose.ts"
+import { runFiregridBinMain } from "./_main.ts"
 
-class MissingHostEnv extends Data.TaggedError("MissingHostEnv")<{
-  readonly name: string
-}> {}
+export interface HostCliOptions {
+  readonly namespace?: string
+  readonly cwd?: string
+  readonly otelFile?: string
+  readonly mcpPort?: number
+}
 
-const requiredEnv = (name: string): Effect.Effect<string, MissingHostEnv> =>
-  Effect.sync(() => process.env[name]).pipe(
-    Effect.flatMap((value) =>
-      value === undefined || value.trim() === ""
-        ? Effect.fail(new MissingHostEnv({ name }))
-        : Effect.succeed(value),
-    ),
-  )
+export const hostProgramFromOptions = (
+  options: HostCliOptions,
+): Effect.Effect<void, unknown, never> =>
+  Effect.gen(function*() {
+    yield* Console.error("Firegrid host started")
+    return yield* Layer.launch(
+      FiregridCliCompositionLive({
+        ...(options.namespace === undefined ? {} : { namespace: options.namespace }),
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.otelFile === undefined ? {} : { otelFile: options.otelFile }),
+        ...(options.mcpPort === undefined ? {} : { mcpPort: options.mcpPort }),
+      }),
+    ).pipe(Effect.zipRight(Effect.never))
+  }).pipe(Effect.scoped)
 
-const optionalEnv = (name: string): Effect.Effect<string | undefined> =>
-  Effect.sync(() => {
-    const value = process.env[name]
-    return value === undefined || value.trim() === "" ? undefined : value
-  })
+export const runFiregridHostMain = (): void => {
+  runFiregridBinMain(hostProgramFromOptions({}))
+}
 
-const makeHostLayer = Effect.gen(function*() {
-  const durableStreamsBaseUrl = yield* requiredEnv("DURABLE_STREAMS_BASE_URL")
-  const namespace = yield* requiredEnv("FIREGRID_RUNTIME_NAMESPACE")
-  const hostId = yield* optionalEnv("FIREGRID_HOST_ID")
+const isDirectRun = process.argv[1] !== undefined
+  && pathToFileURL(process.argv[1]).href === import.meta.url
 
-  return FiregridRuntime(
-    {
-      durableStreamsBaseUrl,
-      namespace,
-      ...(hostId === undefined ? {} : { hostId }),
-    },
-    defaultProductionAdapterLayer(),
-  )
-})
-
-const program = Effect.gen(function*() {
-  const hostLayer = yield* makeHostLayer
-  yield* Console.log("Firegrid host started")
-  return yield* Layer.launch(hostLayer).pipe(Effect.zipRight(Effect.never))
-}).pipe(Effect.scoped)
-
-NodeRuntime.runMain(program)
+if (isDirectRun) {
+  runFiregridHostMain()
+}
