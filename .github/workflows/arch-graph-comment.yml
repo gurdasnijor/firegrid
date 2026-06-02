@@ -58,6 +58,7 @@ jobs:
               echo
               echo '```mermaid'
               cat /tmp/affected.mmd
+              echo ''   # depcruise emits no trailing newline — keep the closing fence on its own line
               echo '```'
             else
               echo 'No `packages/` module-dependency graph change is affected by this PR.'
