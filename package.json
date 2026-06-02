@@ -19,6 +19,7 @@
     "firegrid:host:env": "node --env-file-if-exists=.env --import tsx packages/runtime/src/bin/host.ts",
     "firegrid:acp": "tsx packages/runtime/src/bin/acp.ts",
     "firegrid:run": "tsx packages/runtime/src/bin/run.ts",
+    "firegrid:start": "tsx packages/runtime/src/bin/start.ts",
     "firegrid": "tsx packages/runtime/src/bin/firegrid.ts",
     "format": "eslint . --fix",
     "publish:oss": "bash scripts/publish-oss.sh",
