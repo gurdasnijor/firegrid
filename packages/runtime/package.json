@@ -17,10 +17,6 @@
       "types": "./src/channels/index.ts",
       "default": "./src/channels/index.ts"
     },
-    "./per-context-output": {
-      "types": "./src/tables/per-context-output.ts",
-      "default": "./src/tables/per-context-output.ts"
-    },
     "./runtime-output": {
       "types": "./src/tables/runtime-output-public.ts",
       "default": "./src/tables/runtime-output-public.ts"
@@ -85,10 +81,6 @@
       "types": "./src/channels/session-self/live.ts",
       "default": "./src/channels/session-self/live.ts"
     },
-    "./channels/session-agent-output/live": {
-      "types": "./src/channels/session-agent-output/live.ts",
-      "default": "./src/channels/session-agent-output/live.ts"
-    },
     "./channels/verified-webhook/live": {
       "types": "./src/channels/verified-webhook/live.ts",
       "default": "./src/channels/verified-webhook/live.ts"
@@ -112,10 +104,6 @@
     "./sources/sandbox": {
       "types": "./src/sources/sandbox/index.ts",
       "default": "./src/sources/sandbox/index.ts"
-    },
-    "./channels/runtime-host-config": {
-      "types": "./src/channels/runtime-host-config.ts",
-      "default": "./src/channels/runtime-host-config.ts"
     },
     "./transforms": {
       "types": "./src/transforms/index.ts",

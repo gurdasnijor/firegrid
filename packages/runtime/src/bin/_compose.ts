@@ -17,6 +17,7 @@ import {
 import {
   type LaunchAuthorizedBinding,
   RuntimeOutputTable,
+  runtimeEventsForContextView,
 } from "@firegrid/protocol/launch"
 import {
   RuntimeAgentOutputObservationSchema,
@@ -33,7 +34,7 @@ import {
   runtimeRouteFromChannel,
   runtimeRouteFromFactoryChannel,
 } from "../channels/router.ts"
-import { FiregridHost } from "../unified/host.ts"
+import { defaultProductionAdapterLayer, FiregridRuntime } from "../unified/host.ts"
 import { FiregridMcpServerLayer } from "../unified/mcp-host/mcp-host.ts"
 import { ToolDispatchLive } from "../unified/mcp-host/tool-dispatch.ts"
 import { ContextResolverFromControlPlaneTableLive } from "../tables/codec-adapter-providers.ts"
@@ -192,8 +193,7 @@ const GlobalSessionAgentOutputChannelLive = Layer.effect(
           target: SessionAgentOutputChannelTarget,
           schema: RuntimeAgentOutputObservationSchema,
           sourceClass: "static-source",
-          stream: output.events.rows().pipe(
-            Stream.filter(row => row.contextId === contextId),
+          stream: runtimeEventsForContextView(output, contextId).pipe(
             Stream.filterMap(runtimeAgentOutputObservationFromRow),
           ),
         }),
@@ -208,12 +208,10 @@ export const FiregridCliCompositionLive = (
     Effect.gen(function*() {
       const durableStreamsBaseUrl = yield* embeddedOrConfiguredDurableStreamsBaseUrl
       const namespace = options.namespace ?? nonEmptyEnv("FIREGRID_RUNTIME_NAMESPACE") ?? defaultNamespace()
-      const host = FiregridHost({
-        codec: "acp",
-        durableStreamsBaseUrl,
-        namespace,
-        envPolicy: envPolicyLayer(options.authorizedBindings),
-      })
+      const host = FiregridRuntime(
+        { durableStreamsBaseUrl, namespace },
+        defaultProductionAdapterLayer(envPolicyLayer(options.authorizedBindings)),
+      )
       const mcp = FiregridMcpServerLayer({
         host: "127.0.0.1",
         port: 0,

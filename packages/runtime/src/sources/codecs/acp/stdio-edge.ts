@@ -1,6 +1,5 @@
 import * as acp from "@agentclientprotocol/sdk"
 import {
-  HostContextsChannel,
   HostPermissionRespondChannelTarget,
   HostSessionsCreateOrLoadChannelTarget,
   HostSessionsCreateOrLoadResponseSchema,
@@ -8,7 +7,11 @@ import {
   SessionAgentOutputChannel,
   SessionPromptChannelTarget,
 } from "@firegrid/protocol/channels"
-import type { PublicLaunchRuntimeIntent } from "@firegrid/protocol/launch"
+import {
+  RuntimeControlPlaneTable,
+  runtimeContextsView,
+  type PublicLaunchRuntimeIntent,
+} from "@firegrid/protocol/launch"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 import { HostPlaneChannelRouter } from "../../../channels/index.ts"
@@ -222,7 +225,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
   constructor(
     private readonly connection: acp.AgentSideConnection,
     private readonly router: HostPlaneChannelRouter["Type"],
-    private readonly hostContexts: HostContextsChannel["Type"],
+    private readonly control: RuntimeControlPlaneTable["Type"],
     private readonly sessionAgentOutput: SessionAgentOutputChannel["Type"],
     private readonly run: RunEffect,
     private readonly options: AcpStdioEdgeOptions,
@@ -390,7 +393,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
   private waitForContext(
     contextId: string,
   ): Effect.Effect<void, unknown> {
-    const wait = this.hostContexts.binding.stream.pipe(
+    const wait = runtimeContextsView(this.control).pipe(
       Stream.filter(context => context.contextId === contextId),
       Stream.runHead,
       Effect.as(true),
@@ -616,13 +619,13 @@ export const AcpStdioEdgeLive = (
 ): Layer.Layer<
   AcpStdioEdge,
   never,
-  HostPlaneChannelRouter | HostContextsChannel | SessionAgentOutputChannel
+  HostPlaneChannelRouter | RuntimeControlPlaneTable | SessionAgentOutputChannel
 > =>
   Layer.scoped(
     AcpStdioEdge,
     Effect.gen(function*() {
       const router = yield* HostPlaneChannelRouter
-      const hostContexts = yield* HostContextsChannel
+      const control = yield* RuntimeControlPlaneTable
       const sessionAgentOutput = yield* SessionAgentOutputChannel
       const runtime = yield* Effect.runtime<never>()
       const runPromise = Runtime.runPromise(runtime)
@@ -633,7 +636,7 @@ export const AcpStdioEdgeLive = (
             client => new FiregridAcpStdioAgent(
               client,
               router,
-              hostContexts,
+              control,
               sessionAgentOutput,
               runPromise,
               options,

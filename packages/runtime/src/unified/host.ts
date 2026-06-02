@@ -58,6 +58,7 @@ import {
 } from "./codec-adapter.ts"
 import {
   FiregridRuntimeContextMcpBaseUrlLive,
+  type FiregridRuntimeContextMcpBaseUrl,
 } from "./mcp-host/runtime-context-mcp-base-url.ts"
 import {
   CodecOutputJournalFromRuntimeOutputTableLive,
@@ -94,7 +95,7 @@ import {
 import { JournalObserverLive } from "./observers.ts"
 import { HostControlChannelBindingsLive } from "../channels/host-control.ts"
 
-export interface FiregridHostOptionsBase {
+export interface FiregridRuntimeSpec {
   /** Durable-streams base URL (e.g. `http://durable-streams:4437`). */
   readonly durableStreamsBaseUrl: string
   /** Namespace prefix for all this host's durable streams. */
@@ -127,6 +128,8 @@ export interface FiregridHostOptionsBase {
    */
   readonly envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>
 }
+
+export interface FiregridHostOptionsBase extends FiregridRuntimeSpec {}
 
 export interface FiregridHostOptionsWithAdapter extends FiregridHostOptionsBase {
   /**
@@ -162,13 +165,19 @@ export type FiregridHostOptions =
   | FiregridHostOptionsWithAdapter
   | FiregridHostOptionsWithCodecSugar
 
+export type FiregridRuntimeAdapterLayer = Layer.Layer<
+  RuntimeContextSessionAdapter,
+  never,
+  RuntimeControlPlaneTable | RuntimeOutputTable | FiregridRuntimeContextMcpBaseUrl
+>
+
 const hasAdapter = (
   options: FiregridHostOptions,
 ): options is FiregridHostOptionsWithAdapter => "adapter" in options
 
-const defaultProductionAdapterLayer = (
+export const defaultProductionAdapterLayer = (
   envPolicy: Layer.Layer<RuntimeEnvResolverPolicy> = RuntimeEnvResolverPolicy.denyAll,
-) =>
+): FiregridRuntimeAdapterLayer =>
   ProductionCodecAdapterLive.pipe(
     Layer.provide(
       LocalProcessSandboxProvider.layer().pipe(
@@ -192,7 +201,7 @@ const jsonStreamOptions = (
   ...(headers === undefined ? {} : { headers }),
 })
 
-const tableLayer = (options: FiregridHostOptions) =>
+const tableLayer = (options: FiregridRuntimeSpec) =>
   Layer.mergeAll(
     RuntimeControlPlaneTable.layer({
       streamOptions: jsonStreamOptions(
@@ -234,13 +243,20 @@ const tableLayer = (options: FiregridHostOptions) =>
     }),
   )
 
-const engineLayer = (options: FiregridHostOptions) =>
+const engineLayer = (options: FiregridRuntimeSpec) =>
   DurableStreamsWorkflowEngine.layer({
     streamUrl: durableStreamUrl(
       options.durableStreamsBaseUrl,
       `${options.namespace}.firegrid.engine`,
     ),
   })
+
+const runtimeProvideFloor = (spec: FiregridRuntimeSpec) =>
+  Layer.mergeAll(
+    tableLayer(spec),
+    engineLayer(spec),
+    FiregridRuntimeContextMcpBaseUrlLive,
+  )
 
 const RuntimeContextSessionSignalRecoveryLive = Layer.scopedDiscard(
   Effect.gen(function*() {
@@ -294,17 +310,21 @@ const RuntimeContextSessionSignalRecoveryLive = Layer.scopedDiscard(
  *
  * Override any individual Tag via `.pipe(Layer.provide(MyLive))`.
  */
-export const FiregridHost = (options: FiregridHostOptions) => {
+export const FiregridRuntime = (
+  spec: FiregridRuntimeSpec,
+  adapter: FiregridRuntimeAdapterLayer,
+) => {
   const toolExecutorEffect = makeToolExecutor((p) =>
     JSON.stringify({ tool: p.toolName, input: JSON.parse(p.inputJson) as unknown }),
   )
 
-  const adapterLayer = hasAdapter(options)
-    ? options.adapter
-    : defaultProductionAdapterLayer(options.envPolicy)
+  const adapterLayer = adapter.pipe(
+    Layer.provide(runtimeProvideFloor(spec)),
+    Layer.orDie,
+  )
   const hostSessionLayer = buildCurrentHostSessionLayer({
-    namespace: options.namespace,
-    ...(options.hostId === undefined ? {} : { hostId: options.hostId }),
+    namespace: spec.namespace,
+    ...(spec.hostId === undefined ? {} : { hostId: spec.hostId }),
   })
 
   return Layer.unwrapEffect(
@@ -319,10 +339,7 @@ export const FiregridHost = (options: FiregridHostOptions) => {
         buildPeerEventObserverLayer(),
       )
       const channelsAndObserver = Layer.mergeAll(
-        HostControlChannelBindingsLive({
-          durableStreamsBaseUrl: options.durableStreamsBaseUrl,
-          ...(options.headers === undefined ? {} : { headers: options.headers }),
-        }),
+        HostControlChannelBindingsLive,
         UnifiedSignalingChannelBindingsLive,
         JournalObserverLive,
       )
@@ -333,14 +350,24 @@ export const FiregridHost = (options: FiregridHostOptions) => {
         workflowLayersWithRecovery,
         channelsAndObserver,
       ).pipe(
-        Layer.provideMerge(engineLayer(options)),
+        Layer.provideMerge(runtimeProvideFloor(spec)),
         Layer.provideMerge(hostSessionLayer),
-        Layer.provideMerge(tableLayer(options)),
-        Layer.provideMerge(FiregridRuntimeContextMcpBaseUrlLive),
       )
     }),
   )
 }
+
+/**
+ * Backward-compatible wrapper for existing call sites. New code should prefer
+ * `FiregridRuntime(spec, adapter)` so the adapter/floor boundary is explicit.
+ */
+export const FiregridHost = (options: FiregridHostOptions) =>
+  FiregridRuntime(
+    options,
+    hasAdapter(options)
+      ? options.adapter
+      : defaultProductionAdapterLayer(options.envPolicy),
+  )
 
 // Re-export primitive layers for users wanting full control or
 // overriding individual substrate pieces.

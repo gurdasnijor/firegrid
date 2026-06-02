@@ -9,7 +9,7 @@
 // marks each schema so AST traversals can locate authority-bearing
 // fields, mirroring `DurableTable.primaryKey`'s annotation discipline.
 
-import { ParseResult, Schema, type SchemaAST } from "effect"
+import { Schema, type SchemaAST } from "effect"
 
 const streamAuthorityAnnotationId = Symbol.for(
   "@firegrid/protocol/launch/streamAuthority",
@@ -30,6 +30,7 @@ export type HostSessionId = Schema.Schema.Type<typeof HostSessionIdSchema>
 const HOST_STREAM_PREFIX_INFIX = ".firegrid.host."
 const FIREGRID_DURABLE_NAMESPACE = "firegrid"
 const RUNTIME_TABLE_NAME = "runtime"
+const RUNTIME_OUTPUT_TABLE_NAME = "runtimeOutput"
 const STREAM_COLLECTION_PATH = "/v1/stream"
 const STREAM_PATH_INFIX = `${STREAM_COLLECTION_PATH}/`
 
@@ -130,375 +131,104 @@ const HostStreamPrefixPartsSchema = Schema.Struct({
 })
 type HostStreamPrefixParts = Schema.Schema.Type<typeof HostStreamPrefixPartsSchema>
 
-/**
- * Bidirectional codec between the branded wire form and structured
- * `{namespace, hostId}` parts. `Schema.encodeSync` on this schema is
- * the only sanctioned path from parts to wire — `makeHostStreamPrefix`
- * is the public wrapper.
- */
-export const HostStreamPrefixSchema = Schema.transformOrFail(
-  HostStreamPrefixWireSchema,
-  HostStreamPrefixPartsSchema,
-  {
-    strict: false,
-    decode: (validated) => {
-      const idx = validated.indexOf(HOST_STREAM_PREFIX_INFIX)
-      return ParseResult.succeed({
-        namespace: validated.slice(0, idx),
-        hostId: validated.slice(idx + HOST_STREAM_PREFIX_INFIX.length) as HostId,
-      })
-    },
-    encode: ({ namespace, hostId }) =>
-      ParseResult.succeed(
-        `${namespace}${HOST_STREAM_PREFIX_INFIX}${hostId}` as HostStreamPrefix,
-      ),
-  },
-).pipe(streamAuthority)
+export const HostStreamPrefixSchema = HostStreamPrefixWireSchema
 
 /** Encode parts → branded wire host stream prefix. */
 export const makeHostStreamPrefix = (
   parts: HostStreamPrefixParts,
-): HostStreamPrefix =>
-  // `Schema.encodeSync(HostStreamPrefixSchema)` returns the encoded
-  // form of the composed transform, which TypeScript widens to
-  // `string`. Re-decode through the branded wire schema to recover
-  // the brand without duplicating the validator.
-  Schema.decodeSync(HostStreamPrefixWireSchema)(
-    Schema.encodeSync(HostStreamPrefixSchema)(parts),
+): HostStreamPrefix => {
+  const decoded = Schema.decodeSync(HostStreamPrefixPartsSchema)(parts)
+  return Schema.decodeSync(HostStreamPrefixWireSchema)(
+    `${decoded.namespace}${HOST_STREAM_PREFIX_INFIX}${decoded.hostId}`,
   )
+}
 
-const HostStreamNamePartsSchema = Schema.Struct({
-  prefix: HostStreamPrefixWireSchema,
-  segment: HostStreamSegmentSchema,
-})
-
-const RuntimeContextOutputStreamNamePartsSchema = Schema.Struct({
-  prefix: HostStreamPrefixWireSchema,
-  contextId: Schema.String.pipe(
-    Schema.filter((value) =>
-      value.length > 0 ? undefined : "runtime output contextId must be non-empty"),
-  ),
-})
-
-const RuntimeContextWorkflowStreamNamePartsSchema = Schema.Struct({
-  namespace: Schema.String.pipe(
-    Schema.filter((value) =>
-      value.length > 0 ? undefined : "runtime context workflow namespace must be non-empty"),
-  ),
-  contextId: Schema.String.pipe(
-    Schema.filter((value) =>
-      value.length > 0 ? undefined : "runtime context workflow contextId must be non-empty"),
-  ),
-})
-
-/**
- * Bidirectional codec for `${prefix}.${segment}` host-owned stream
- * names. Decode parses the last dot, decodes the right-hand side
- * through `HostStreamSegmentSchema`, and decodes the left-hand side
- * through `HostStreamPrefixWireSchema` — no parallel segment array.
- */
 const HOST_STREAM_SEGMENT_LITERALS = HostStreamSegmentSchema.literals
 
-export const HostStreamNameSchema = Schema.transformOrFail(
-  Schema.String,
-  HostStreamNamePartsSchema,
-  {
-    strict: false,
-    decode: (encoded, _options, ast) => {
-      const dot = encoded.lastIndexOf(".")
-      if (dot <= 0 || dot === encoded.length - 1) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            ast,
-            encoded,
-            "host stream name must be {prefix}.{segment}",
-          ),
-        )
-      }
-      const prefixWire = encoded.slice(0, dot)
-      const segmentWire = encoded.slice(dot + 1)
-      const segmentMatch = HOST_STREAM_SEGMENT_LITERALS.find(
-        (candidate) => candidate === segmentWire,
-      )
-      if (segmentMatch === undefined) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            ast,
-            encoded,
-            "host stream name segment is not one of the supported literals",
-          ),
-        )
-      }
-      const prefixValidation = validateHostStreamPrefixWire(prefixWire)
-      if (prefixValidation !== undefined) {
-        return ParseResult.fail(
-          new ParseResult.Type(ast, encoded, prefixValidation),
-        )
-      }
-      return ParseResult.succeed({
-        prefix: prefixWire as HostStreamPrefix,
-        segment: segmentMatch,
-      })
-    },
-    encode: ({ prefix, segment }) =>
-      ParseResult.succeed(`${prefix}.${segment}`),
-  },
-).pipe(streamAuthority)
+const validateHostStreamNameWire = (encoded: string): string | undefined => {
+  const dot = encoded.lastIndexOf(".")
+  if (dot <= 0 || dot === encoded.length - 1) {
+    return "host stream name must be {prefix}.{segment}"
+  }
+  const prefixWire = encoded.slice(0, dot)
+  const segmentWire = encoded.slice(dot + 1)
+  if (!HOST_STREAM_SEGMENT_LITERALS.some(candidate => candidate === segmentWire)) {
+    return "host stream name segment is not one of the supported literals"
+  }
+  return validateHostStreamPrefixWire(prefixWire)
+}
+
+export const HostStreamNameSchema = Schema.String.pipe(
+  Schema.filter(validateHostStreamNameWire),
+  streamAuthority,
+)
 
 /** Encode parts → host-owned stream name. */
 export const hostStreamName = (
   prefix: HostStreamPrefix,
   segment: HostStreamSegment,
-): string => Schema.encodeSync(HostStreamNameSchema)({ prefix, segment })
-
-const RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER = ".runtimeOutput.context."
-const RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER = `.${FIREGRID_DURABLE_NAMESPACE}.context.`
-const RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX = ".workflow"
-
-export const RuntimeContextOutputStreamNameSchema = Schema.transformOrFail(
-  Schema.String,
-  RuntimeContextOutputStreamNamePartsSchema,
-  {
-    strict: false,
-    decode: (encoded, _options, ast) => {
-      const marker = encoded.indexOf(RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER)
-      if (marker <= 0 || marker === encoded.length - RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER.length) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            ast,
-            encoded,
-            "runtime context output stream name must be {prefix}.runtimeOutput.context.{contextId}",
-          ),
-        )
-      }
-      const prefixWire = encoded.slice(0, marker)
-      const contextIdWire = encoded.slice(marker + RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER.length)
-      const prefixValidation = validateHostStreamPrefixWire(prefixWire)
-      if (prefixValidation !== undefined) {
-        return ParseResult.fail(
-          new ParseResult.Type(ast, encoded, prefixValidation),
-        )
-      }
-      let contextId: string
-      try {
-        contextId = decodeURIComponent(contextIdWire)
-      } catch {
-        return ParseResult.fail(
-          new ParseResult.Type(ast, encoded, "runtime output contextId is not valid URI encoding"),
-        )
-      }
-      if (contextId.length === 0) {
-        return ParseResult.fail(
-          new ParseResult.Type(ast, encoded, "runtime output contextId must be non-empty"),
-        )
-      }
-      return ParseResult.succeed({
-        prefix: prefixWire as HostStreamPrefix,
-        contextId,
-      })
-    },
-    encode: ({ prefix, contextId }) =>
-      ParseResult.succeed(
-        `${prefix}${RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER}${encodeURIComponent(contextId)}`,
-      ),
-  },
-).pipe(streamAuthority)
-
-export const RuntimeContextWorkflowStreamNameSchema = Schema.transformOrFail(
-  Schema.String,
-  RuntimeContextWorkflowStreamNamePartsSchema,
-  {
-    strict: false,
-    decode: (encoded, _options, ast) => {
-      const marker = encoded.indexOf(RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER)
-      if (
-        marker <= 0 ||
-        !encoded.endsWith(RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX) ||
-        marker === encoded.length - RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER.length -
-          RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX.length
-      ) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            ast,
-            encoded,
-            "runtime context workflow stream name must be {namespace}.firegrid.context.{contextId}.workflow",
-          ),
-        )
-      }
-      const namespace = encoded.slice(0, marker)
-      const contextIdWire = encoded.slice(
-        marker + RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER.length,
-        -RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX.length,
-      )
-      if (namespace.length === 0) {
-        return ParseResult.fail(
-          new ParseResult.Type(ast, encoded, "runtime context workflow namespace must be non-empty"),
-        )
-      }
-      let contextId: string
-      try {
-        contextId = decodeURIComponent(contextIdWire)
-      } catch {
-        return ParseResult.fail(
-          new ParseResult.Type(ast, encoded, "runtime context workflow contextId is not valid URI encoding"),
-        )
-      }
-      if (contextId.length === 0) {
-        return ParseResult.fail(
-          new ParseResult.Type(ast, encoded, "runtime context workflow contextId must be non-empty"),
-        )
-      }
-      return ParseResult.succeed({ namespace, contextId })
-    },
-    encode: ({ namespace, contextId }) =>
-      ParseResult.succeed(
-        `${namespace}${RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER}${encodeURIComponent(contextId)}${RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX}`,
-      ),
-  },
-).pipe(streamAuthority)
-
-export const runtimeContextOutputStreamName = (input: {
-  readonly prefix: HostStreamPrefix
-  readonly contextId: string
-}): string =>
-  Schema.encodeSync(RuntimeContextOutputStreamNameSchema)(input)
-
-export const runtimeContextWorkflowStreamName = (input: {
-  readonly namespace: string
-  readonly contextId: string
-}): string =>
-  Schema.encodeSync(RuntimeContextWorkflowStreamNameSchema)(input)
+): string =>
+  Schema.decodeSync(HostStreamNameSchema)(
+    `${Schema.decodeSync(HostStreamPrefixWireSchema)(prefix)}.${Schema.decodeSync(HostStreamSegmentSchema)(segment)}`,
+  )
 
 const NAMESPACE_RUNTIME_SUFFIX = `.${FIREGRID_DURABLE_NAMESPACE}.${RUNTIME_TABLE_NAME}`
 
-const NamespaceRuntimeStreamNamePartsSchema = Schema.Struct({
-  namespace: Schema.String.pipe(
-    Schema.filter((value) =>
-      value.length > 0 ? undefined : "namespace must be non-empty"),
-  ),
-})
+const NamespaceSchema = Schema.String.pipe(
+  Schema.filter((value) =>
+    value.length > 0 ? undefined : "namespace must be non-empty"),
+)
 
-/**
- * Bidirectional codec for the namespace-scoped runtime control-plane
- * stream name `{namespace}.{firegrid}.{runtime}` (composed via the
- * private suffix constant). The RuntimeContext index is
- * namespace-scoped (not host-scoped) so cross-host lookup does not
- * depend on host directory state.
- */
-export const NamespaceRuntimeStreamNameSchema = Schema.transformOrFail(
-  Schema.String,
-  NamespaceRuntimeStreamNamePartsSchema,
-  {
-    strict: false,
-    decode: (encoded, _options, ast) => {
-      if (!encoded.endsWith(NAMESPACE_RUNTIME_SUFFIX)) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            ast,
-            encoded,
-            `namespace runtime stream must end with ${NAMESPACE_RUNTIME_SUFFIX}`,
-          ),
-        )
-      }
-      return ParseResult.succeed({
-        namespace: encoded.slice(0, -NAMESPACE_RUNTIME_SUFFIX.length),
-      })
-    },
-    encode: ({ namespace }) =>
-      ParseResult.succeed(`${namespace}${NAMESPACE_RUNTIME_SUFFIX}`),
-  },
-).pipe(streamAuthority)
+export const NamespaceRuntimeStreamNameSchema = Schema.String.pipe(
+  Schema.filter((encoded) =>
+    encoded.endsWith(NAMESPACE_RUNTIME_SUFFIX)
+      ? undefined
+      : `namespace runtime stream must end with ${NAMESPACE_RUNTIME_SUFFIX}`),
+  streamAuthority,
+)
 
 /** Encode namespace → namespace-scoped runtime stream name. */
 export const namespaceRuntimeStreamName = (namespace: string): string =>
-  Schema.encodeSync(NamespaceRuntimeStreamNameSchema)({ namespace })
+  Schema.decodeSync(NamespaceRuntimeStreamNameSchema)(
+    `${Schema.decodeSync(NamespaceSchema)(namespace)}${NAMESPACE_RUNTIME_SUFFIX}`,
+  )
 
 export const namespaceRuntimeOutputStreamName = (namespace: string): string =>
-  `${namespace}.${FIREGRID_DURABLE_NAMESPACE}.runtimeOutput`
+  `${Schema.decodeSync(NamespaceSchema)(namespace)}.${FIREGRID_DURABLE_NAMESPACE}.${RUNTIME_OUTPUT_TABLE_NAME}`
 
-const DurableStreamUrlPartsSchema = Schema.Struct({
-  baseUrl: Schema.String.pipe(
-    Schema.filter((value) => {
-      if (value.length === 0) return "baseUrl must be non-empty"
-      if (value.replace(/\/+$/, "").endsWith(STREAM_COLLECTION_PATH)) {
-        return `baseUrl must be the Durable Streams service root or an Electric service-scoped root; bare ${STREAM_COLLECTION_PATH} is not accepted`
-      }
-      return undefined
-    }),
-  ),
-  streamName: Schema.String.pipe(
-    Schema.filter((value) =>
-      value.length > 0 ? undefined : "streamName must be non-empty"),
-  ),
-})
+const BaseDurableStreamUrlSchema = Schema.String.pipe(
+  Schema.filter((value) => {
+    if (value.length === 0) return "baseUrl must be non-empty"
+    if (value.replace(/\/+$/, "").endsWith(STREAM_COLLECTION_PATH)) {
+      return `baseUrl must be the Durable Streams service root or an Electric service-scoped root; bare ${STREAM_COLLECTION_PATH} is not accepted`
+    }
+    return undefined
+  }),
+)
 
-const decodeDurableStreamUrlParts = (
-  encoded: string,
-  ast: SchemaAST.AST,
-) => {
-  const idx = encoded.lastIndexOf(STREAM_PATH_INFIX)
-  if (idx < 0) {
-    return ParseResult.fail(
-      new ParseResult.Type(
-        ast,
-        encoded,
-        `durable stream URL must contain ${STREAM_PATH_INFIX}`,
-      ),
-    )
-  }
-  const path = encoded.slice(idx + STREAM_PATH_INFIX.length)
-  if (path.length === 0) {
-    return ParseResult.fail(
-      new ParseResult.Type(
-        ast,
-        encoded,
-        `durable stream URL must carry a stream name after ${STREAM_PATH_INFIX}`,
-      ),
-    )
-  }
-  const serviceSeparator = path.startsWith("svc-") ? path.indexOf("/") : -1
-  if (serviceSeparator > 0) {
-    return ParseResult.succeed({
-      baseUrl: encoded.slice(0, idx + STREAM_PATH_INFIX.length + serviceSeparator),
-      streamName: decodeURIComponent(path.slice(serviceSeparator + 1)),
-    })
-  }
-  return ParseResult.succeed({
-    baseUrl: encoded.slice(0, idx),
-    streamName: decodeURIComponent(path),
-  })
-}
+const DurableStreamNameSchema = Schema.String.pipe(
+  Schema.filter((value) =>
+    value.length > 0 ? undefined : "streamName must be non-empty"),
+)
 
-/**
- * Bidirectional codec for a Durable Streams stream URL. The encoder
- * appends `/v1/stream/` to generic service roots and appends `/` to
- * Electric Cloud service-scoped roots shaped as `/v1/stream/<service>`.
- * Callers still configure a root, not a pre-built stream URL.
- */
-export const DurableStreamUrlSchema = Schema.transformOrFail(
-  Schema.String,
-  DurableStreamUrlPartsSchema,
-  {
-    strict: false,
-    decode: (encoded, _options, ast) => decodeDurableStreamUrlParts(encoded, ast),
-    encode: ({ baseUrl, streamName }) => {
-      const trimmed = baseUrl.replace(/\/+$/, "")
-      const separator = trimmed.includes(STREAM_PATH_INFIX)
-        ? "/"
-        : STREAM_PATH_INFIX
-      return ParseResult.succeed(
-        `${trimmed}${separator}${encodeURIComponent(streamName)}`,
-      )
-    },
-  },
+export const DurableStreamUrlSchema = Schema.String.pipe(
+  Schema.filter((value) =>
+    value.includes(STREAM_PATH_INFIX)
+      ? undefined
+      : `durable stream URL must contain ${STREAM_PATH_INFIX}`),
 )
 
 /** Encode parts → Durable Streams stream URL. */
 export const durableStreamUrl = (
   baseUrl: string,
   streamName: string,
-): string =>
-  Schema.encodeSync(DurableStreamUrlSchema)({ baseUrl, streamName })
+): string => {
+  const trimmed = Schema.decodeSync(BaseDurableStreamUrlSchema)(baseUrl).replace(/\/+$/, "")
+  const separator = trimmed.includes(STREAM_PATH_INFIX) ? "/" : STREAM_PATH_INFIX
+  return Schema.decodeSync(DurableStreamUrlSchema)(
+    `${trimmed}${separator}${encodeURIComponent(Schema.decodeSync(DurableStreamNameSchema)(streamName))}`,
+  )
+}
 
 /** Encode namespace + base URL → control-plane stream URL. */
 export const runtimeControlPlaneStreamUrl = (input: {
@@ -520,26 +250,6 @@ export const hostOwnedStreamUrl = (input: {
   readonly segment: HostStreamSegment
 }): string =>
   durableStreamUrl(input.baseUrl, hostStreamName(input.prefix, input.segment))
-
-export const runtimeContextOutputStreamUrl = (input: {
-  readonly baseUrl: string
-  readonly prefix: HostStreamPrefix
-  readonly contextId: string
-}): string =>
-  durableStreamUrl(input.baseUrl, runtimeContextOutputStreamName({
-    prefix: input.prefix,
-    contextId: input.contextId,
-  }))
-
-export const runtimeContextWorkflowStreamUrl = (input: {
-  readonly baseUrl: string
-  readonly namespace: string
-  readonly contextId: string
-}): string =>
-  durableStreamUrl(input.baseUrl, runtimeContextWorkflowStreamName({
-    namespace: input.namespace,
-    contextId: input.contextId,
-  }))
 
 /**
  * Conceptual host session row. V1 does not persist a HostSession

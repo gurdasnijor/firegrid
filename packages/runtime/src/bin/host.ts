@@ -11,7 +11,7 @@
 
 import { NodeRuntime } from "@effect/platform-node"
 import { Console, Data, Effect, Layer } from "effect"
-import { FiregridHost } from "../unified/host.ts"
+import { defaultProductionAdapterLayer, FiregridRuntime } from "../unified/host.ts"
 
 class MissingHostEnv extends Data.TaggedError("MissingHostEnv")<{
   readonly name: string
@@ -37,12 +37,14 @@ const makeHostLayer = Effect.gen(function*() {
   const namespace = yield* requiredEnv("FIREGRID_RUNTIME_NAMESPACE")
   const hostId = yield* optionalEnv("FIREGRID_HOST_ID")
 
-  return FiregridHost({
-    codec: "acp",
-    durableStreamsBaseUrl,
-    namespace,
-    ...(hostId === undefined ? {} : { hostId }),
-  })
+  return FiregridRuntime(
+    {
+      durableStreamsBaseUrl,
+      namespace,
+      ...(hostId === undefined ? {} : { hostId }),
+    },
+    defaultProductionAdapterLayer(),
+  )
 })
 
 const program = Effect.gen(function*() {

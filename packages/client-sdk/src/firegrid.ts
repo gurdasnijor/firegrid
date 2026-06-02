@@ -16,10 +16,12 @@ import {
   PublicLaunchRuntimeIntentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  type RuntimeOutputTableService,
   local,
   runtimeControlPlaneStreamUrl,
-  runtimeContextOutputStreamUrl,
+  runtimeContextsView,
+  runtimeEventsForContextView,
+  runtimeLogsForContextView,
+  runtimeOutputStreamUrl,
   type PublicLaunchRequest,
   type PublicLaunchRuntimeIntent,
   type RuntimeContext,
@@ -42,7 +44,6 @@ import {
 } from "@firegrid/protocol/runtime-ingress"
 import type { EventOffset } from "@firegrid/protocol/channels"
 import {
-  makeIngressChannel,
   SessionAgentOutputChannelTarget,
   type BidirectionalChannel,
   type CallableChannel,
@@ -57,7 +58,6 @@ import {
 import {
   runtimeAgentOutputObservationFromRow,
   runtimePermissionRequestObservationFromAgentOutput,
-  RuntimeAgentOutputObservationSchema,
   sessionContextIdForExternalKey,
   type FiregridSessionId,
   type RuntimeAgentOutputObservation,
@@ -83,7 +83,6 @@ import {
 } from "@firegrid/protocol/agent-tools"
 import { getFiregridProjectionMetadata } from "@firegrid/protocol/projection"
 import {
-  HostContextsChannel,
   HostContextsCreateChannel,
   HostPermissionRespondChannel,
   HostPromptChannel,
@@ -93,7 +92,7 @@ import {
   SessionCloseChannel,
   SessionPromptChannel,
 } from "@firegrid/protocol/channels"
-import { Clock, Context, Data, Duration, Effect, Exit, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
+import { Clock, Context, Data, Duration, Effect, Layer, Option, Ref, Schema, type Scope, Stream } from "effect"
 import { projectionWait } from "./internal/projection-wait.ts"
 import { FiregridClientOperations } from "./operations.ts"
 import {
@@ -117,6 +116,7 @@ export interface ClientOptions {
   readonly namespace?: string
   readonly runtimeStreamUrl?: string
   readonly controlPlaneStreamUrl?: string
+  readonly outputStreamUrl?: string
   readonly contentType?: string
   readonly headers?: DurableTableHeaders
   readonly txTimeoutMs?: number
@@ -396,12 +396,6 @@ const latestStatus = (
   ).at(-1)?.status
 }
 
-const compareJournalRows = (
-  left: { readonly activityAttempt: number; readonly sequence: number },
-  right: { readonly activityAttempt: number; readonly sequence: number },
-): number =>
-  left.activityAttempt - right.activityAttempt || left.sequence - right.sequence
-
 const makeContextId = (): string => `ctx_${crypto.randomUUID()}`
 
 const withClientSpan = <A, E, R>(
@@ -461,6 +455,7 @@ interface ResolvedConfig {
   readonly baseUrl: string
   readonly namespace: string | undefined
   readonly controlPlaneStreamUrl: string
+  readonly outputStreamUrl: string
   readonly contentType: string
   readonly headers: DurableTableHeaders | undefined
   readonly txTimeoutMs: number
@@ -480,11 +475,19 @@ const resolveConfig = (
           namespace: cfg.namespace,
         })
         : undefined)
+    const outputStreamUrl =
+      cfg.outputStreamUrl ??
+      (cfg.durableStreamsBaseUrl !== undefined && cfg.namespace !== undefined
+        ? runtimeOutputStreamUrl({
+          baseUrl: cfg.durableStreamsBaseUrl,
+          namespace: cfg.namespace,
+        })
+        : undefined)
 
-    if (controlPlaneStreamUrl === undefined) {
+    if (controlPlaneStreamUrl === undefined || outputStreamUrl === undefined) {
       return yield* new FiregridConfigError({
         cause: new Error(
-          "FiregridConfig requires durableStreamsBaseUrl + namespace or a runtime/control-plane stream URL",
+          "FiregridConfig requires durableStreamsBaseUrl + namespace or explicit control-plane and output stream URLs",
         ),
       })
     }
@@ -493,6 +496,7 @@ const resolveConfig = (
       baseUrl: cfg.durableStreamsBaseUrl ?? "",
       namespace: cfg.namespace,
       controlPlaneStreamUrl,
+      outputStreamUrl,
       contentType: cfg.contentType ?? "application/json",
       headers: cfg.headers,
       txTimeoutMs: cfg.txTimeoutMs ?? 2_000,
@@ -511,50 +515,6 @@ const durableTableOptions = (
   },
   txTimeoutMs: config.txTimeoutMs,
 })
-
-const outputLayerForContext = (
-  config: ResolvedConfig,
-  context: RuntimeContext,
-) =>
-  RuntimeOutputTable.layer(
-    durableTableOptions(
-      config,
-      runtimeContextOutputStreamUrl({
-        baseUrl: config.baseUrl,
-        prefix: context.host.streamPrefix,
-        contextId: context.contextId,
-      }),
-    ),
-  )
-
-const clientSessionAgentOutputChannel = (
-  output: RuntimeOutputTableService,
-): IngressChannel<typeof RuntimeAgentOutputObservationSchema> =>
-  makeIngressChannel({
-    target: SessionAgentOutputChannelTarget,
-    schema: RuntimeAgentOutputObservationSchema,
-    sourceClass: "static-source",
-    stream: output.events.rows().pipe(
-      Stream.filterMap(runtimeAgentOutputObservationFromRow),
-      Stream.withSpan("firegrid.client.channel.session_agent_output", {
-        kind: "client",
-        attributes: {
-          "firegrid.channel.target": String(SessionAgentOutputChannelTarget),
-          "firegrid.channel.direction": "ingress",
-        },
-      }),
-    ),
-  })
-
-// tf-ivl6: per-contextId cache entry for getOutputService. Each
-// handle owns its own CloseableScope so the make-body finalizer can
-// tear down all materialized RuntimeOutputTable layers on service
-// shutdown. The cached service is the already-extracted
-// RuntimeOutputTableService, not the Context<any> the Layer builds into.
-interface OutputContextHandle {
-  readonly service: RuntimeOutputTableService
-  readonly scope: Scope.CloseableScope
-}
 
 const decodePublicLaunchRequest = (
   request: PublicLaunchRequest,
@@ -957,14 +917,12 @@ const snapshotFromJournal = (
 ): RuntimeContextSnapshot => {
   const events = inputs.events
     .filter(row => row.contextId === contextId)
-    .sort(compareJournalRows)
   const agentOutputs = events.flatMap(row => {
     const observation = runtimeAgentOutputObservationFromRow(row)
     return Option.isSome(observation) ? [observation.value] : []
   })
   const logs = inputs.logs
     .filter(row => row.contextId === contextId)
-    .sort(compareJournalRows)
   const runs = [...inputs.runs].sort((left, right) =>
     left.at.localeCompare(right.at))
   const status = latestStatus(runs)
@@ -985,6 +943,7 @@ const make = (
 ) =>
   Effect.gen(function* () {
     const control = yield* RuntimeControlPlaneTable
+    const output = yield* RuntimeOutputTable
     // tf-35f4 Sim 2: createOrLoad now dispatches via the protocol-owned
     // HostSessionsCreateOrLoadChannel Tag. Capturing the resolved channel
     // here keeps the requirement at make-time (Layer composition), so the
@@ -1004,64 +963,7 @@ const make = (
     const sessionCancelChannel = yield* SessionCancelChannel
     const sessionCloseChannel = yield* SessionCloseChannel
     const hostPermissionRespondChannel = yield* HostPermissionRespondChannel
-    // tf-qu7l: read-path ingress. watchContexts and the internal
-    // awaitContextMaterialized barrier consume the HostContextsChannel
-    // binding.stream (the RuntimeContext ProjectionStream over
-    // control.contexts.rows()) instead of poking control.contexts directly.
-    // The "context materialized" signal is contexts.rows (NOT SessionLifecycle).
-    const hostContextsChannel = yield* HostContextsChannel
-
-    // tf-ivl6 / tf-tw49 concern #1: per-contextId RuntimeOutputTable
-    // cache. Baseline trace showed 75 of 80 layer.acquire spans landing
-    // on firegrid.runtimeOutput with ~2.5x amplification per public
-    // client call (readSnapshot + waitForAgentOutputObservation each
-    // built a fresh layer on every invocation). Caching by contextId
-    // for the service lifetime collapses the per-call createStreamDB
-    // preload + open subscription onto a shared connection; per-call
-    // projectionWait / .query each still get their own sub-scope on
-    // top.
-    const outputContextHandles = yield* Ref.make(
-      new Map<string, OutputContextHandle>(),
-    )
-    yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        const current = yield* Ref.get(outputContextHandles)
-        yield* Effect.forEach(
-          current.values(),
-          handle => Scope.close(handle.scope, Exit.void),
-          { discard: true },
-        )
-        yield* Ref.set(outputContextHandles, new Map())
-      }))
-
-    const getOutputService = (
-      context: RuntimeContext,
-    ): Effect.Effect<RuntimeOutputTableService, PreloadError> =>
-      Effect.gen(function* () {
-        const cached0 = (yield* Ref.get(outputContextHandles)).get(context.contextId)
-        if (cached0 !== undefined) return cached0.service
-        const scope = yield* Scope.make()
-        const built = yield* Layer.buildWithScope(
-          outputLayerForContext(config, context),
-          scope,
-        ).pipe(
-          Effect.mapError(cause => new PreloadError({ cause })),
-        )
-        const service = Context.get(built, RuntimeOutputTable)
-        // Lost-race resolution: another fiber may have raced us. Adopt
-        // the winner's handle and tear down our orphan so the cache
-        // holds exactly one handle per contextId.
-        const adopted = yield* Ref.modify(outputContextHandles, m => {
-          const winner = m.get(context.contextId)
-          if (winner !== undefined) return [winner, m] as const
-          const handle: OutputContextHandle = { service, scope }
-          return [handle, new Map([...m, [context.contextId, handle]])] as const
-        })
-        if (adopted.scope !== scope) {
-          yield* Scope.close(scope, Exit.void)
-        }
-        return adopted.service
-      })
+    const contextRows = runtimeContextsView(control)
 
     /**
      * Resolve a context row from the namespace-scoped control plane.
@@ -1099,16 +1001,11 @@ const make = (
           })
         }
 
-        // firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
-        // Output is still read from the context-owned stream. Runtime
-        // input delivery is workflow-deferred and host-owned; the
-        // client does not open the legacy durable input table.
-        const outputTable = yield* getOutputService(context)
-        const events = yield* outputTable.events.query((coll) =>
+        const events = yield* output.events.query((coll) =>
           coll.toArray.filter(row => row.contextId === contextId)).pipe(
             Effect.mapError(cause => new PreloadError({ cause })),
           )
-        const logs = yield* outputTable.logs.query((coll) =>
+        const logs = yield* output.logs.query((coll) =>
           coll.toArray.filter(row => row.contextId === contextId)).pipe(
             Effect.mapError(cause => new PreloadError({ cause })),
           )
@@ -1129,10 +1026,7 @@ const make = (
     const watchContexts = (
       predicate: (context: RuntimeContext) => boolean = () => true,
     ): Stream.Stream<RuntimeContext, PreloadError> =>
-      // tf-qu7l: ingress over HostContextsChannel.binding.stream (the
-      // RuntimeContext ProjectionStream: current rows + live changes) filtered
-      // by predicate — replaces the bespoke control.contexts.subscribe block.
-      hostContextsChannel.binding.stream.pipe(
+      contextRows.pipe(
         Stream.filter(predicate),
         Stream.mapError(cause => new PreloadError({ cause })),
       )
@@ -1153,17 +1047,14 @@ const make = (
         // is why a forked permissions.autoApprove loop no longer needs an
         // explicit whenReady before it; a provably-absent id errors bounded.
         yield* awaitContextMaterializedForRead(contextId)
-        const context = yield* resolveContext(contextId)
-        if (context === undefined) {
+        if ((yield* resolveContext(contextId)) === undefined) {
           return yield* new PreloadError({
             cause: new Error(`runtime context ${contextId} not found`),
           })
         }
-        const output = yield* getOutputService(context)
-        const channel = clientSessionAgentOutputChannel(output)
-        const run = channel.binding.stream.pipe(
+        const run = runtimeEventsForContextView(output, contextId).pipe(
+          Stream.filterMap(runtimeAgentOutputObservationFromRow),
           Stream.filter(observation =>
-            observation.contextId === contextId &&
             (input.afterSequence === undefined ||
               observation.sequence > input.afterSequence) &&
             predicate(observation),
@@ -1172,8 +1063,8 @@ const make = (
           Effect.withSpan("firegrid.client.channel.wait_for", {
             kind: "client",
             attributes: {
-              "firegrid.channel.target": String(channel.target),
-              "firegrid.channel.direction": channel.direction,
+              "firegrid.channel.target": String(SessionAgentOutputChannelTarget),
+              "firegrid.channel.direction": "ingress",
               "firegrid.wait.bucket": "projection",
             },
           }),
@@ -1235,12 +1126,8 @@ const make = (
     const waitUntilContextReady = (
       contextId: string,
     ): Effect.Effect<void, PreloadError> =>
-      // tf-qu7l: "context materialized" wait over the same HostContextsChannel
-      // ingress stream (NOT SessionLifecycle, which is run-lifecycle events).
-      // Preserves the contexts.rows() first-match semantics CLIENT_SESSION.6
-      // pins.
       projectionWait(
-        hostContextsChannel.binding.stream,
+        contextRows,
         context => context.contextId === contextId,
       ).pipe(
         Effect.mapError(cause => new PreloadError({ cause })),
@@ -1667,6 +1554,23 @@ export const FiregridControlPlaneTableLive = Layer.unwrapEffect(
   Effect.flatMap(FiregridConfig, configuredFiregridControlPlaneLayer),
 )
 
+const configuredFiregridOutputLayer = (
+  cfg: ClientOptions,
+) =>
+  Effect.map(resolveConfig(cfg), (resolved) =>
+    RuntimeOutputTable.layer({
+      streamOptions: {
+        url: resolved.outputStreamUrl,
+        contentType: resolved.contentType,
+        ...(resolved.headers === undefined ? {} : { headers: resolved.headers }),
+      },
+      txTimeoutMs: resolved.txTimeoutMs,
+    }))
+
+export const FiregridOutputTableLive = Layer.unwrapEffect(
+  Effect.flatMap(FiregridConfig, configuredFiregridOutputLayer),
+)
+
 const firegridServiceLayer = Layer.scoped(
   Firegrid,
   Effect.flatMap(FiregridConfig, (cfg) =>
@@ -1677,17 +1581,15 @@ const firegridServiceLayer = Layer.scoped(
  * The Firegrid client service layer.
  *
  * Requires from scope:
- *   - `RuntimeControlPlaneTable` (shared with the runtime host layer
- *     so durable context/start requests and runtime projections share
- *     one materialized RuntimeContext index)
+ *   - `RuntimeControlPlaneTable`
+ *   - `RuntimeOutputTable`
  *   - the protocol-owned channel Tags the rewired methods dispatch
  *     through (createOrLoad / contexts.create / sessions.start /
  *     permissions.respond), provided below by the client-sdk
  *     standalone-default Layers. Production hosts may override by
  *     providing the host-sdk-owned channel Live Layers upstream.
  *
- * Standalone consumers can fall back to `FiregridControlPlaneTableLive`
- * for the table Tag.
+ * Standalone consumers can fall back to the exported table Lives.
  */
 // `FiregridLive` no longer provides standalone channel defaults — the
 // host-side unified channel-bindings module is the canonical source of
@@ -1702,5 +1604,8 @@ export const FiregridLive = firegridServiceLayer
  * surface only).
  */
 export const FiregridStandaloneLive = FiregridLive.pipe(
-  Layer.provide(FiregridControlPlaneTableLive),
+  Layer.provide(Layer.mergeAll(
+    FiregridControlPlaneTableLive,
+    FiregridOutputTableLive,
+  )),
 )
