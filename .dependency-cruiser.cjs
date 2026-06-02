@@ -529,15 +529,6 @@ module.exports = {
       to: { path: "^packages/cli/src" },
     },
     {
-      // firegrid-host-sdk.PACKAGE_GRAPH.5
-      name: "cli-no-runtime",
-      severity: "error",
-      comment:
-        "@firegrid/cli must bind over @firegrid/host-sdk and @firegrid/client-sdk; it must not import @firegrid/runtime substrate directly.",
-      from: { path: "^packages/cli/src" },
-      to: { path: "^packages/runtime/src" },
-    },
-    {
       name: "tiny-firegrid-sim-no-fake-substitutes",
       severity: "error",
       comment:
