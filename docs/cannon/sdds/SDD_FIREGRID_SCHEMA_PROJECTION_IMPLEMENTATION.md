@@ -51,22 +51,26 @@ These are **not duplicates to merge blindly** — agent and app surfaces are
 different actors with different inputs (`session_new(prompt)` vs
 `sessions.createOrLoad(externalKey)`). The concrete questions:
 
-1. **Federation is allowed, divergence is not.** Two modules is fine *iff* every
-   `operationId` is defined once. **Action:** assert uniqueness of `operationId`
-   across both modules at build time (a tiny test that folds every annotated
-   schema and fails on a duplicate id). Decision needed: keep two modules, or
-   re-home both under one `protocol/src/catalog/` barrel.
-2. **`session.create` vs `session.createOrLoad`.** Both exist. Are these one
-   operation (collapse) or two (agent spawns a fresh child; app converges on an
-   external key)? **Recommend two**, but make the relationship explicit in
-   annotations/docs so they don't drift.
-3. **`session.spawnLegacy` / `session.spawnAllLegacy`.** The `spawn`/`spawn_all`
-   tools are annotated *Legacy*. Decision: are they deprecated (schedule removal)
-   or the real surface mis-labeled? The README now advertises `spawn`/`spawn_all`
-   as first-class — reconcile (drop the `Legacy` suffix or replace the tools).
-4. **`wait.for` dual projection.** It carries both `toolName: wait_for` and
-   `clientName: wait.for`. Confirm the client actually exposes `wait.for`, or
-   drop the `clientName` so the annotation doesn't over-promise.
+The concrete questions — **resolved in `tf-0awo.1`**:
+
+1. **Federation: keep two modules, gate uniqueness.** `agent-tools` (agent verbs)
+   and `session-facade` (app ops) map to two actor surfaces — keep both. Safety: a
+   build-time test asserts `operationId` uniqueness across both (slice `.3`).
+2. **`session.create` vs `session.createOrLoad`: two distinct operations.** Agent
+   `session_new(prompt)` (child by prompt) vs app `createOrLoad(externalKey, runtime)`
+   (converge on a key) — different inputs and actors. Keep both; document the link.
+3. **`spawn`/`spawn_all`: first-class, not legacy.** `spawn` (run-and-await) is
+   semantically distinct from `session_new` (return-handle), shipped, and
+   README/RFC-advertised. Rename `session.spawnLegacy`/`spawnAllLegacy` →
+   `session.spawn`/`session.spawnAll` (slice `.5`).
+4. **The wait surface is reshaped into a `wait.*` family** (slice `.15`). Collapse
+   `sleep` / `wait_for` / `wait_for_any` / `schedule_me` into
+   `wait_for(event, prompt?)` / `wait_until(time, prompt?)` / `wait_any([…], prompt?)`,
+   `sleep` a thin alias for `wait_until("+d")`. `prompt?` is the proactivity lever
+   (no prompt → resolve inline; with prompt → suspend durably + wake with it as a
+   new turn). The over-promised `clientName: wait.for` becomes accurate by
+   *building* the real client `wait.*` namespace (`firegrid.wait.for/until`), not by
+   dropping it. README + RFC already updated.
 
 ---
 

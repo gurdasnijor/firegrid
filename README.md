@@ -77,13 +77,20 @@ appends a durable record *before* it suspends, fans out, or acts — so a crash 
 restart resumes exactly where it left off, never replaying a side effect.
 
 ```ts
-sleep(durationMs)                // suspend durably until a duration elapses
-wait_for(trigger, { timeoutMs }) // suspend until an event matches, or time out
-spawn(agent, prompt)             // run a child agent, durably await its result
-spawn_all(tasks)                 // fan out child agents, durably await all
-schedule_me(when, prompt)        // queue a future self-prompt — proactivity
-execute(sandbox, input)          // run a tool/sandbox call, durably recorded
+wait_for(event, prompt?)    // suspend until an event matches; optional self-prompt on resume
+wait_until(time, prompt?)   // suspend until a time (absolute, or "+2d"); optional self-prompt
+sleep(duration)             // thin alias for wait_until("+duration")
+spawn(agent, prompt)        // run a child agent; durably await its result
+spawn_all(tasks)            // fan out child agents; durably await all
+execute(target, input)      // run a tool/sandbox call, durably recorded
 ```
+
+The `prompt?` on a wait is what makes it **proactive**: with no prompt the model
+blocks and the result returns inline; with a prompt the session suspends durably
+and wakes with that prompt as a *new turn*. So `wait_until("tomorrow 9am", "…")`
+is a scheduled self-nudge and `wait_for("pr.merged", "…")` is an event-triggered
+one — one family, two axes (`for` = event, `until` = time). The client-sdk
+projects them as a chainable `firegrid.wait.for(...)` / `firegrid.wait.until(...)`.
 
 These are coordination primitives, not a workflow DSL — no `graph.addNode()`, no
 router, no central planner. The model calls them in whatever order the goal
@@ -133,16 +140,18 @@ const [findings, draft] = yield* spawn_all([
 ```
 
 ### Proactive self-prompts
-> Proactivity is just `schedule_me` — an agent queues a future prompt to itself;
-> when the timer fires (and the session is still live), it wakes and acts. The
-> "coworker that pings you" is one tool call.
+> Proactivity is just a wait with a prompt — `wait_until(time, prompt)` queues a
+> future self-nudge; `wait_for(event, prompt)` wakes on the world changing. When
+> it resolves, the session wakes with that prompt as a new turn. The "coworker
+> that pings you" is one tool call.
 
 - **Time-aware:** it acts when the moment arrives, not only when prompted.
-- **Durable:** the scheduled prompt survives restarts; the timer is crash-safe.
+- **Durable:** the suspended prompt survives restarts; the timer is crash-safe.
 - **Gated:** it re-prompts only if the session is still live and allowed.
 
 ```ts
-yield* schedule_me("tomorrow 9am", "Check if the candidate replied; nudge if cold.")
+yield* wait_until("tomorrow 9am", "Check if the candidate replied; nudge if cold.")
+yield* wait_for("github.pr.merged", "Run the release checklist for the merged PR.")
 ```
 
 ### Human-in-the-loop
@@ -188,7 +197,7 @@ const [findings] = yield* spawn_all([
 ])
 const decision = yield* wait_for("approval:ship", { timeoutMs: 86_400_000 })
 if (decision.approved) yield* execute("github", { action: "create_pr", issueId: "ENG-123" })
-yield* schedule_me("in 2 days", "Confirm the PR landed; nudge review if not.")
+yield* wait_until("in 2 days", "Confirm the PR landed; nudge review if not.")
 ```
 
 You can still drive a conforming substrate from Temporal, a cron, or a queue —
@@ -217,7 +226,7 @@ agent run · ops-agent                                4h 18m  ·  16 spans
 
 ```text
 agent run · recruiter-agent                         18h 02m  ·   9 spans
-├─ schedule_me · "tomorrow 9am"       ⏸ durable timer  17h 54m   ← wakes itself
+├─ wait_until · "tomorrow 9am"        ⏸ durable timer  17h 54m   ← wakes itself
 │   └─ woke · self-prompt fires
 ├─ wait_for · candidate.replied  (timeout 4h)  timed out  4h 00m
 └─ execute · slack.dm "still interested? following up"  0.3s
@@ -233,7 +242,7 @@ agent run · release-agent                            2h 06m  ·  23 spans
 ├─ wait_for · approval:ship           ⏸ suspended      2h 01m   ← waiting on a person
 │   └─ woke · approved by @gurdas
 ├─ execute · github.create_pr #1242                     1.1s
-└─ schedule_me · "+2 days: confirm landed"            → next run
+└─ wait_until · "+2 days: confirm landed"            → next run
 ```
 
 The `⏸ suspended` spans are the point: long wall-clock waits where nothing is

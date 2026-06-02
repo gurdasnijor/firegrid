@@ -24,12 +24,19 @@ The canonical agent-facing choreography tool surface is:
 
 | Tool | Contract | Backing primitive(s) | Substrate semantics |
 | --- | --- | --- | --- |
-| `sleep(durationMs)` | Durably suspend until a duration elapses. | Session + Orchestration + Timer | Append timer intent, arm timer operator, resolve a durable completion when time is reached. |
-| `wait_for(trigger, timeoutMs?)` | Durably suspend until an event/projection matches or timeout terminalizes. | Session + Orchestration + Projection | Append wait intent, evaluate snapshot-first, subscribe after cursor, optionally arm timeout, resolve from durable match/timeout record. |
+| `wait_for(event, prompt?)` | Durably suspend until an event/projection matches (optional timeout). With no `prompt`, resolve inline; with `prompt`, wake the session with it as a new turn. | Session + Orchestration + Projection (+ Timer) | Append wait intent, evaluate snapshot-first, subscribe after cursor, optionally arm timeout, resolve from durable match/timeout record, append the prompt as input on resolve. |
+| `wait_until(time, prompt?)` | Durably suspend until an absolute or relative time. Same `prompt?` semantics — subsumes scheduled self-prompts. | Session + Orchestration + Timer | Append timer intent, arm timer operator, resolve a durable completion when time is reached, append the prompt as input on resolve (with live-promptability checks). |
+| `sleep(duration)` | Thin alias for `wait_until("+duration")` with no prompt. | Session + Orchestration + Timer | As `wait_until`, relative-only, prompt-free. |
 | `spawn(agent, prompt)` | Run a child agent and durably await completion. | Session + Harness + Orchestration | Append child-session intent, claim child work before launch side effect, project child terminal state, resolve parent wait from projection. |
 | `spawn_all(tasks)` | Fan out child agents and durably await all completions. | Session + Harness + Orchestration | Append N child intents or one fanout intent that expands durably, track each child by semantic key, resolve aggregate when all terminal keys resolve. |
-| `schedule_me(when, prompt)` | Queue a future self-prompt. | Session + Orchestration + Timer | Append scheduled self-prompt intent, arm timer, append prompt intent only when timer fires and live-promptability checks pass. |
 | `execute(sandbox, input)` | Execute against a named lazily provisioned sandbox/tool target. | Sandbox + Tools + Harness | Resolve/provision sandbox, claim externally visible tool work when multi-worker, dispatch sandbox tool call, append result or failure as durable records. |
+
+The suspension family (`wait_for`, `wait_until`, `sleep`) shares one shape:
+`wait_<axis>(target, prompt?)` where `axis` is `for` (event/projection) or
+`until` (time). The optional `prompt` is the proactivity lever — without it the
+wait resolves inline; with it the session suspends durably and wakes with the
+prompt as a new turn (a scheduled or event-triggered self-nudge). This replaces
+the earlier separate `schedule_me`.
 
 Each choreography primitive **MUST** append durable trace/session records before it suspends, fans out, or invokes externally visible work. Each **MUST** be observable by humans and by agents through the same stream-derived observation plane. The model may choose to call these tools in any order allowed by policy; the substrate provides durability, claims, projection, and recovery, not a pre-authored workflow.
 
