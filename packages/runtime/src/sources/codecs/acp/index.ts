@@ -10,7 +10,25 @@ import type {
   PermissionOption,
 } from "../../../events/index.ts"
 import type { AgentByteStream } from "../../sandbox/byte-stream.ts"
-import { AgentCodecError, AgentSession } from "../contract.ts"
+import {
+  AgentCodecError,
+  AgentSession,
+  type AgentInputKind,
+  type AgentSessionService,
+} from "../contract.ts"
+
+// ACP cannot accept a subscriber-produced `ToolResult` inbound (it is
+// observation-only; tool results are out-of-band for this codec). Excluding it
+// from the session's `K` makes `session.send(toolResult)` a COMPILE error and
+// removes the runtime hard-fail (`orDie`) relay path entirely. SDD §3.2 Fix B.
+type AcpInboundKind = Exclude<AgentInputKind, "ToolResult">
+
+const acpInboundKinds: ReadonlySet<AcpInboundKind> = new Set<AcpInboundKind>([
+  "Prompt",
+  "PermissionResponse",
+  "Cancel",
+  "Terminate",
+])
 import {
   acpStopReasonToFinishReason,
   acpUserPromptPartToContentBlock,
@@ -807,25 +825,17 @@ export const AcpSessionLive = (
           }),
         )
 
-      const sendToolResult = (): Effect.Effect<void, AgentCodecError> =>
-        Effect.fail(
-          codecError(
-            "send",
-            "ACP ToolResult input is out-of-band for this codec slice",
-          ),
-        ).pipe(
-          Effect.withSpan("firegrid.agent_event_pipeline.acp.tool_result", {
-            kind: "producer",
-          }),
-        )
-
-      const send = (event: AgentInputEvent): Effect.Effect<void, AgentCodecError> =>
+      // No `ToolResult` arm: `K` excludes it, so the param type cannot be a
+      // ToolResult and `Match.exhaustive` is total over the narrowed union.
+      // The former out-of-band `Effect.fail`→`orDie` session-kill path is gone.
+      const send = (
+        event: Extract<AgentInputEvent, { readonly _tag: AcpInboundKind }>,
+      ): Effect.Effect<void, AgentCodecError> =>
         Match.value(event).pipe(
           Match.tag("Prompt", sendPrompt),
           Match.tag("PermissionResponse", sendPermissionResponse),
           Match.tag("Cancel", sendCancel),
           Match.tag("Terminate", sendTerminate),
-          Match.tag("ToolResult", sendToolResult),
           Match.exhaustive,
         )
 
@@ -842,14 +852,21 @@ export const AcpSessionLive = (
         ),
       )
 
-      return {
+      const agentSession: AgentSessionService<AcpInboundKind> = {
         meta: {
           kind: codec,
           capabilities: AcpCapabilities,
         },
         toolUseMode: "observation_only",
+        inboundKinds: acpInboundKinds,
         send,
         outputs,
       }
+      // K-erasure into the heterogeneous `AgentSession` Tag (`K = AgentInputKind`).
+      // Sound by construction: the narrow `send`/`inboundKinds` remain the truth
+      // at runtime, and the registering adapter consults `inboundKinds` before
+      // dispatching, so the erased full-`send` type is never exercised with a
+      // kind (`ToolResult`) this codec did not declare.
+      return agentSession as AgentSessionService
     }),
   )

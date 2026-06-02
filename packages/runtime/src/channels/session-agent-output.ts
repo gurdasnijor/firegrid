@@ -1,6 +1,6 @@
 import {
-  type HostStreamPrefix,
   RuntimeOutputTable,
+  runtimeEventsForContextView,
 } from "@firegrid/protocol/launch"
 import {
   RuntimeAgentOutputObservationSchema,
@@ -13,7 +13,7 @@ import {
 } from "@firegrid/protocol/channels"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { Effect, Stream } from "effect"
-import { runtimeContextOutputTableLayer } from "../tables/output-table-layer.ts"
+import { runtimeOutputTableLayer } from "../tables/output-table-layer.ts"
 
 // tf-bffo: the durable SessionAgentOutput channel implementation lives in the
 // runtime (the privileged durable core). host-sdk only COMPOSES it — it resolves
@@ -21,13 +21,16 @@ import { runtimeContextOutputTableLayer } from "../tables/output-table-layer.ts"
 // channel is the only above-box doorway to this durable output stream.
 export interface SessionAgentOutputChannelOptions {
   readonly durableStreamsBaseUrl: string
-  readonly streamPrefix: HostStreamPrefix
+  readonly namespace: string
   readonly headers?: DurableTableHeaders
   readonly contextId: string
 }
 
-const runtimeAgentOutputRows = (table: RuntimeOutputTable["Type"]) =>
-  table.events.rows().pipe(
+const runtimeAgentOutputRows = (
+  table: RuntimeOutputTable["Type"],
+  contextId: string,
+) =>
+  runtimeEventsForContextView(table, contextId).pipe(
     Stream.filterMap(runtimeAgentOutputObservationFromRow),
   )
 
@@ -39,9 +42,10 @@ export const sessionAgentOutputChannel = (
     schema: RuntimeAgentOutputObservationSchema,
     sourceClass: "static-source",
     stream: Stream.unwrap(
-      Effect.map(RuntimeOutputTable, runtimeAgentOutputRows),
+      Effect.map(RuntimeOutputTable, output =>
+        runtimeAgentOutputRows(output, options.contextId)),
     ).pipe(
-      Stream.provideLayer(runtimeContextOutputTableLayer(options)),
+      Stream.provideLayer(runtimeOutputTableLayer(options)),
       Stream.withSpan("firegrid.host.channel.session_agent_output", {
         kind: "internal",
         attributes: {

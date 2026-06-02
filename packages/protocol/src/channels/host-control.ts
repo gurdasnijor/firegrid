@@ -8,14 +8,12 @@ import type {
 } from "../agent-tools/schema.ts"
 import {
   PublicLaunchRuntimeIntentSchema,
-  RuntimeContextSchema,
 } from "../launch/schema.ts"
 import type { RuntimeRunEventSchema } from "../launch/schema.ts"
 import type {
   PublicPromptRequestSchema,
 } from "../runtime-ingress/schema.ts"
 import {
-  RuntimeAgentOutputObservationSchema,
   SessionHandleReferenceSchema,
 } from "../session-facade/schema.ts"
 import type { SessionHandlePromptInputSchema } from "../session-facade/schema.ts"
@@ -121,74 +119,6 @@ export type SessionCloseChannelService = DurableEventChannel<
 export class SessionCloseChannel extends Context.Tag(
   "firegrid/protocol/channels/session.close",
 )<SessionCloseChannel, SessionCloseChannelService>() {}
-
-export const HostContextSnapshotChannelTarget = makeChannelTarget(
-  "host.context.snapshot",
-)
-export const HostSessionSnapshotChannelTarget = makeChannelTarget(
-  "host.session.snapshot",
-)
-
-export const HostContextSnapshotRequestSchema = Schema.Struct({
-  contextId: Schema.String.pipe(Schema.minLength(1)),
-}).annotations({
-  identifier: "firegrid.channel.hostContextSnapshot.request",
-  title: "Host context snapshot request",
-})
-export type HostContextSnapshotRequest = Schema.Schema.Type<
-  typeof HostContextSnapshotRequestSchema
->
-
-export const HostSessionSnapshotRequestSchema = Schema.Struct({
-  sessionId: Schema.String.pipe(Schema.minLength(1)),
-}).annotations({
-  identifier: "firegrid.channel.hostSessionSnapshot.request",
-  title: "Host session snapshot request",
-})
-export type HostSessionSnapshotRequest = Schema.Schema.Type<
-  typeof HostSessionSnapshotRequestSchema
->
-
-export const RuntimeContextSnapshotSchema = Schema.Struct({
-  contextId: Schema.String.pipe(Schema.minLength(1)),
-  context: Schema.optional(RuntimeContextSchema),
-  status: Schema.optional(Schema.Literal("started", "exited", "failed")),
-  runs: Schema.Array(Schema.Unknown),
-  events: Schema.Array(Schema.Unknown),
-  logs: Schema.Array(Schema.Unknown),
-  agentOutputs: Schema.Array(RuntimeAgentOutputObservationSchema),
-}).annotations({
-  identifier: "firegrid.channel.runtimeContextSnapshot",
-  title: "Runtime context snapshot",
-})
-export type RuntimeContextSnapshot = Schema.Schema.Type<
-  typeof RuntimeContextSnapshotSchema
->
-
-export type HostContextSnapshotChannelService = CallableChannel<
-  typeof HostContextSnapshotRequestSchema,
-  typeof RuntimeContextSnapshotSchema
->
-
-export type HostSessionSnapshotChannelService = CallableChannel<
-  typeof HostSessionSnapshotRequestSchema,
-  typeof RuntimeContextSnapshotSchema
->
-
-export class HostContextSnapshotChannel extends Context.Tag(
-  "firegrid/protocol/channels/host.context.snapshot",
-)<HostContextSnapshotChannel, HostContextSnapshotChannelService>() {}
-
-export class HostSessionSnapshotChannel extends Context.Tag(
-  "firegrid/protocol/channels/host.session.snapshot",
-)<HostSessionSnapshotChannel, HostSessionSnapshotChannelService>() {}
-
-export const HostContextsChannelTarget = makeChannelTarget("host.contexts")
-export type HostContextsChannelService = IngressChannel<typeof RuntimeContextSchema>
-
-export class HostContextsChannel extends Context.Tag(
-  "firegrid/protocol/channels/host.contexts",
-)<HostContextsChannel, HostContextsChannelService>() {}
 
 export const SessionLifecycleChannelTarget = makeChannelTarget(
   "session.lifecycle",

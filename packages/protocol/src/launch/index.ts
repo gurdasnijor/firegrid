@@ -83,8 +83,6 @@ export {
   HostStreamSegmentSchema,
   NamespaceRuntimeStreamNameSchema,
   RuntimeContextHostBindingSchema,
-  RuntimeContextOutputStreamNameSchema,
-  RuntimeContextWorkflowStreamNameSchema,
   durableStreamUrl,
   hostOwnedStreamUrl,
   hostStreamName,
@@ -94,10 +92,6 @@ export {
   namespaceRuntimeOutputStreamName,
   namespaceRuntimeStreamName,
   runtimeControlPlaneStreamUrl,
-  runtimeContextOutputStreamName,
-  runtimeContextOutputStreamUrl,
-  runtimeContextWorkflowStreamName,
-  runtimeContextWorkflowStreamUrl,
   runtimeOutputStreamUrl,
   streamAuthority,
   type HostId,
@@ -170,3 +164,10 @@ export {
   type RuntimeOutputTableService,
   type RuntimeRunEventRow,
 } from "./table.ts"
+export {
+  filterRuntimeRowsForContext,
+  runtimeContextsView,
+  runtimeEventsForContextView,
+  runtimeLogsForContextView,
+  runtimeRunsForContextView,
+} from "./views.ts"

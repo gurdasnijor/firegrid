@@ -2,12 +2,12 @@ import type {
   Firegrid,
 } from "@firegrid/client-sdk/firegrid"
 import type {
-  FiregridHost as RuntimeFiregridHost,
+  FiregridRuntime as RuntimeFiregridRuntime,
 } from "@firegrid/runtime/unified"
 import type { Effect, Layer } from "effect"
 
 export type FiregridHost = Layer.Layer.Success<
-  ReturnType<typeof RuntimeFiregridHost>
+  ReturnType<typeof RuntimeFiregridRuntime>
 >
 
 export interface TinyFiregridStopSignal {
