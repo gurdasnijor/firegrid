@@ -2,28 +2,24 @@
 
 ## Current handoff packet — START HERE
 
-**Root `README.md`** (refreshed on PR #529, `tf-4eye`) is now the canonical
-entry point — reflects current architecture (protocol → bindings → runtime;
-channels as agent surface; host-sdk as binding/composition; durable-tools
-gone) and points to `docs/cannon/`.
+**Root `README.md`** remains the repo entry point, and the live handoff packet
+is now:
 
-**[`sprint-to-private-beta/`](./sprint-to-private-beta/00-README.md)** — the
-active handoff packet for the next 3-lane team finishing canonical-doc
-convergence and driving Firegrid to private beta. Read its `00-README.md` for
-the read order (which now begins with the refreshed root README and
-`docs/cannon/`).
+- **CANONICAL-CURRENT:** [`2026-06-02-night-drive-handoff.md`](./2026-06-02-night-drive-handoff.md)
+  — current night-drive coordinator handoff.
+- **CANONICAL-CURRENT:** [`COORDINATOR_HANDOFF_s6_dark_factory.md`](./COORDINATOR_HANDOFF_s6_dark_factory.md)
+  — s6 dark-factory handoff; its meta-process and closing-turn lessons remain
+  load-bearing.
 
-**Companion (live on main):** `docs/cannon/README.md` — gary's canonical
-mirror/index for source-of-truth surfaces (architecture, SDDs, research, RFCs,
-vision, handoffs). Originals untouched; cannon/ is the discoverability layer.
+Companion: `docs/cannon/README.md` is the source-of-truth index for canonical
+architecture, SDDs, research, RFCs, vision, and handoffs.
 
 ## Persistent companion (still relevant)
 
-**[`COORDINATOR_HANDOFF_s6_dark_factory.md`](./COORDINATOR_HANDOFF_s6_dark_factory.md)**
-— the prior arc's handoff. Its §0 META-PROCESS RULE, §3 operational tooling,
-§4 working discipline, §8 post-mortem, and §9 closing-turn lessons are still
-load-bearing. The §10 ARC CLOSURE confirms the §6 dark-factory live-run
-landed; the older sections of the same doc are pre-closure context.
+- **CANONICAL-CURRENT:** [`2026-06-02-tooling-ci-handoff.md`](./2026-06-02-tooling-ci-handoff.md)
+  — tooling / CI state for preflight, lint/static-analysis, and task wrappers.
+- **CANONICAL-CURRENT:** [`2026-06-02-bindings-cli-handoff.md`](./2026-06-02-bindings-cli-handoff.md)
+  — current bindings / CLI handoff.
 
 ## Archive (point-in-time; historically useful, no longer the active map)
 
@@ -32,3 +28,11 @@ landed; the older sections of the same doc are pre-closure context.
   long-since landed; subsequent work is captured in the canonical doc + the
   current sprint folder.
 - **`TEAM_INDEX.md`** (2026-05-16) — companion to the above. Same era.
+- **HISTORICAL:** [`sprint-to-private-beta/`](./sprint-to-private-beta/00-README.md)
+  — older private-beta convergence packet, retained for audit context.
+- **HISTORICAL:** [`2026-05-22-OLA-session-handoff.md`](./2026-05-22-OLA-session-handoff.md)
+- **HISTORICAL:** [`2026-05-22-acp-live-validation-loop-handoff.md`](./2026-05-22-acp-live-validation-loop-handoff.md)
+- **HISTORICAL:** [`2026-06-01-agent2-dag-gateway-handoff.md`](./2026-06-01-agent2-dag-gateway-handoff.md)
+- **HISTORICAL:** [`2026-06-01-stabilize-lane-briefs.md`](./2026-06-01-stabilize-lane-briefs.md)
+- **HISTORICAL:** [`2026-06-01-stabilize-unified-handoff.md`](./2026-06-01-stabilize-unified-handoff.md)
+- **HISTORICAL:** [`one-substrate-cycle-2-synthesis.md`](./one-substrate-cycle-2-synthesis.md)

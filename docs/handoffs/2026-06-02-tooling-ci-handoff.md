@@ -6,7 +6,8 @@ Role: **tooling / dev-infra / CI** lane. Scope: preflight, CI workflow, lint/sta
 
 - **We are on `main` now** (#765 merged the unified-kernel trunk → main). Branch off `origin/main`, not `sim/unified-kernel-validation`. CI runs on `pull_request` + `push:[main]`, so **merges to main seed the turbo/eslint caches** that PR branches restore (this is what made the caching pay off).
 - **Merge note:** the in-session Coordinator persona normally owns merges; this session the **product owner directed merges directly**, so I merged everything below. Keep that ownership in mind by default.
-- **Worktree discipline:** always work in `/tmp/fg-*` worktrees off `origin/main`; never edit the primary checkout; `pnpm install` in each fresh worktree (task-enter now auto-installs); clean up worktrees after merge.
+- **Worktree discipline:** use `scripts/task-enter.sh` / `scripts/task-exit.sh`
+  worktrees under `../firegrid-worktrees/`; never edit the primary checkout.
 
 ## Shipped this session (all merged to main)
 
@@ -21,8 +22,8 @@ Role: **tooling / dev-infra / CI** lane. Scope: preflight, CI workflow, lint/sta
 
 ## CI performance state (measured)
 
-Jobs now: `lint`, `trace-seams`, `semgrep`, `typecheck`, `effect-diagnostics`, `tests`. Latest run (caches warming on main):
-- Lint ~52s · effect-diagnostics **15s** (warm turbo) · typecheck/tests ~50s · semgrep ~55s · **UKV trace seams ~65–70s ← current long pole**.
+Jobs now: `lint`, `trace-seams`, `typecheck`, `effect-diagnostics`, `tests`. Latest run (caches warming on main):
+- Lint ~52s · effect-diagnostics **15s** (warm turbo) · typecheck/tests ~50s · **UKV trace seams ~65–70s ← current long pole**.
 - The trace gate is an **uncacheable live sim** (spawns subprocesses, mtime-based run selection — same reason `tiny-firegrid#test` is `cache:false`). Further speedup there is sim-side (Agent3 / tiny-firegrid owners) or larger runners (cost), **not** a tooling-cache lever.
 
 **Tooling/CI-mechanics levers are essentially exhausted** — the bottleneck is now genuine compute (one sim), not redundant work or cold caches.
@@ -32,21 +33,18 @@ Jobs now: `lint`, `trace-seams`, `semgrep`, `typecheck`, `effect-diagnostics`, `
 - **typescript-eslint `projectService`** — surfaced parse errors on `vitest.config.ts`, no clear speedup; reverted.
 - **Turbo-cache the trace gate** — non-deterministic sim; caching could mask failures.
 - **Drop `dependsOn: ^build`** — load-bearing for cross-package turbo cache invalidation (a package's cache must bust when an upstream package's *source* changes, even though build emits nothing). The "no output files found" warning is cosmetic.
-- **Semgrep `pipx` cache / larger runners** — save runner *cost*, not wall-clock (those jobs aren't the bottleneck).
+- **Larger runners** — save runner *cost*, not wall-clock (the remaining long
+  pole is the live trace sim, not Semgrep/ast-grep; both retired in #814).
 
-## Open thread: static-analysis consolidation (the live initiative)
+## Static-analysis consolidation
 
-Product owner asked to consolidate overlapping static tooling onto 1–2 engines. **Cataloging is done** (#804 → `docs/static-analysis-catalog.md`). Decision teed up, **not yet executed**.
+Consolidation has executed. Use `docs/static-analysis-catalog.md` as the
+current reference, especially its "Consolidation outcome (executed)" section.
+Semgrep and ast-grep were retired in #814. ESLint is the keystone for
+code-pattern enforcement; jscpd, dependency-cruiser, knip, and the Effect
+diagnostics gate remain distinct.
 
-**Proposed target:** keystone **ESLint** (only type-aware engine; already hosts custom + anti-forge rules) + **jscpd** (cross-file dup, which ESLint can't do). Retire **ast-grep** then **Semgrep** by migrating rules into ESLint `local/` rules. Keep the genuinely-distinct **dependency-cruiser** (import graph), **knip** (reachability), **effect-language-service** (Effect diagnostics) — these are not overlap.
-
-**Staged plan (each its own PR; every migration must be byte-equivalent with fixtures ported — all are enforcement gates):**
-- **Phase 0** — delete the confirmed ESLint↔Semgrep duplicate rules (process.env, timers/Date.now, extends-Error, Effect.run*).
-- **Phase 1 (recommended next)** — **retire ast-grep**: it's 7/8 dead (only `hrtime-number-arithmetic` is gated via `--filter`). Relocate `hrtime` to an ESLint `local/` rule (or semgrep), delete the 7 ungated inventory rules + the ast-grep dep/config/gate. Lowest-risk real consolidation.
-- **Phase 2** — migrate Semgrep's ~35 mechanically-portable rules to ESLint `local/`; audit the 15–18 that use semgrep-only features (`patterns`/`pattern-inside`/taint) — keep a thin Semgrep residue only if some genuinely can't port; then retire Semgrep + its CI job/`pipx`.
-- **Phase 3** — fold the AST-shaped bespoke scripts (`effect-quality-metrics`, `host-sdk-runtime-import-baseline`, the cutover-check) into `local/` rules where it makes sense.
-
-**Hard constraint (Coordinator directive):** NEVER weaken the anti-forge / enforcement gates — the tiny-firegrid sim locks (ESLint `simulation-host-real-firegrid-host` + `no-restricted-syntax` forge guards), dep-cruiser airgaps (R2/R3) + host-sdk→runtime boundary, and the effect-quality/semgrep/knip ratchets. Strengthen or hold; baselines shrink, never grow without justification. Clear any change to these with the Coordinator.
+**Hard constraint (Coordinator directive):** NEVER weaken the anti-forge / enforcement gates — the tiny-firegrid sim locks (ESLint `simulation-host-real-firegrid-host` + `no-restricted-syntax` forge guards), dep-cruiser airgaps (R2/R3) + host-sdk→runtime boundary, and the effect-quality/knip ratchets. Strengthen or hold; baselines shrink, never grow without justification. Clear any change to these with the Coordinator.
 
 ## Gotchas learned this session
 
@@ -58,4 +56,4 @@ Product owner asked to consolidate overlapping static tooling onto 1–2 engines
 - Catalog: `docs/static-analysis-catalog.md`
 - Preflight runner: `tooling/src/preflight.ts` · diagnostics checker: `tooling/src/effect-diagnostics-check.ts`
 - CI: `.github/workflows/ci.yml` · setup: `.github/actions/setup/action.yml`
-- Lint config: `eslint.config.js` (26 blocks) · `.semgrep.yml` · `tooling/ast-grep/` · `.dependency-cruiser.cjs`
+- Lint config: `eslint.config.js` · `.dependency-cruiser.cjs`
