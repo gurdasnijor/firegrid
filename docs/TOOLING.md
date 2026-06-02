@@ -16,14 +16,14 @@ first), keeps going after failures, and replays each failing gate's output in on
 pass. Gates:
 
 `test` · `typecheck` · `effect:diagnostics` · `lint` · `lint:dead` · `lint:dup` ·
-`lint:deps` · `lint:effect-quality` · `trace:seams:ukv` · `check:specs` · `check:docs`
+`lint:deps` · `lint:effect-quality` · `trace:seams:ukv`
 
 `task-exit.sh` runs `pnpm preflight` and refuses to push on failure.
 
 > `pnpm verify` is a thin **alias** of `pnpm preflight` (kept for muscle memory /
 > existing references). `pnpm check` is a *different*, build-inclusive chain
-> (`check:specs + check:docs + lint + effect:diagnostics + turbo run build check`)
-> — use it when you specifically want the build in the loop.
+> (`lint + effect:diagnostics + turbo run build check`) — use it when you
+> specifically want the build in the loop.
 
 **CI is authoritative for the full suite.** CI runs the same gates split across
 parallel jobs (below), so a clean `pnpm preflight` should mean a green CI.
@@ -31,14 +31,12 @@ parallel jobs (below), so a clean `pnpm preflight` should mean a green CI.
 ## ESLint
 
 ```sh
-pnpm run lint     # eslint + runtime-public-surface + tiny-firegrid layout checks
+pnpm run lint     # eslint . --max-warnings 0 (cached)
 pnpm run format   # eslint --fix
 ```
 
 One ESLint stack covers formatting, type-aware linting, Effect guardrails, and
-package-boundary checks. Beyond `lint`'s ESLint pass, the `lint` script also runs
-two filesystem-shape checks (`scripts/runtime-public-surface-check.mjs`,
-`scripts/tiny-firegrid-layout-check.mjs`).
+package-boundary checks — `pnpm run lint` is a single `eslint .` pass.
 
 Local durable-authority guardrails (custom `local/*` rules) catch shapes that
 commonly bypass durable state — e.g. `local/no-production-js-timers`,
@@ -50,19 +48,20 @@ exceptions use a nearby escape comment with a reason:
 // durable-lint-allow-polling: subscription deadline fallback with bounded scope
 ```
 
-## Static-quality ratchets
+## Static-quality gates
 
 ```sh
-pnpm run lint:dead          # knip: zero unused exports/files/deps/binaries
-pnpm run lint:dup           # jscpd: duplicated-line count vs .jscpd.json threshold
+pnpm run lint:dead          # knip --treat-config-hints-as-errors: zero unused exports/files/deps + clean config
+pnpm run lint:dup           # jscpd packages/*/src: zero duplication (.jscpd.json threshold 0)
 pnpm run lint:deps          # dependency-cruiser boundary/cycle/direction checks
 pnpm run lint:effect-quality # ts-morph per-pattern Effect-quality count ratchet
 ```
 
-Each has a `:baseline` companion (`lint:dead:baseline`, etc.) that recomputes the
-tracked count after intentional reduction. The baseline scripts refuse to ratchet
-upward automatically; raising a threshold requires an explicit config edit and
-review. See `docs/contributing/quality-gates.md` and
+`lint:dead` and `lint:dup` are the tools' **native strict-0** enforcement — no
+baseline JSON to drift (the former `.mjs` count-wrappers + `.knip-baseline.json`
+were removed). `lint:effect-quality` remains a ts-morph count ratchet pending its
+conversion to strict-0 ESLint rules (tf-q6vf). See
+`docs/contributing/quality-gates.md` and
 `docs/contributing/effect-quality-metrics.md`.
 
 ## Build
@@ -91,20 +90,17 @@ to load. For VS Code / Cursor, set `"typescript.tsdk": "node_modules/typescript/
 
 ## Architecture dependency graphs
 
-Graphs are **review evidence, not a gate**, and are **not committed**. Render them
-locally with dependency-cruiser:
+Graphs are **review evidence, not a gate**, and are **not committed**. Render one
+locally with dependency-cruiser directly:
 
 ```sh
-pnpm run arch:deps          # workspace + collapsed package graphs (Mermaid)
-pnpm run arch:deps:detail   # uncollapsed module-level graphs
-pnpm run arch:graphs        # both of the above
-pnpm run arch:deps:client | :protocol | :runtime   # focused single-package graphs
+pnpm exec depcruise --config .dependency-cruiser.cjs packages --output-type mermaid
 ```
 
-Output (`docs/dependency-graph*.mmd`) is **git-ignored** — it is a renumber-churny
-generated artifact that conflicted across parallel lanes with no review value as a
-committed file. Instead, architectural change is surfaced automatically as an
-**advisory PR comment**: the `Arch graph advisory` workflow
+(The former `arch:deps*`/`arch:graphs` wrapper scripts + `tooling.mjs` were retired —
+they only wrapped this depcruise invocation for advisory output.) Architectural
+change is surfaced automatically as an **advisory PR comment**: the
+`Arch graph advisory` workflow
 (`.github/workflows/arch-graph-comment.yml`) runs `depcruise --affected <base.sha>`
 (changed modules since the PR base + everything that can reach them, highlighted)
 and posts a Mermaid diagram. It is **advisory only — never a merge gate**.

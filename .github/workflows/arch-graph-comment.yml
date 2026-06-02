@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Mirror scripts/tooling.mjs ARCH_EXCLUDE (tests/build/coverage out of the graph).
+  # Tests/build/coverage out of the graph.
   ARCH_EXCLUDE: '(^|/)(.*\.test\.(ts|tsx|mts)|__tests__|dist|build|coverage)(/|$)'
 
 jobs:
@@ -64,7 +64,7 @@ jobs:
               echo 'No `packages/` module-dependency graph change is affected by this PR.'
             fi
             echo
-            echo '<sub>Advisory only — not a merge gate. Render full graphs locally with `pnpm run arch:graphs` (git-ignored).</sub>'
+            echo '<sub>Advisory only — not a merge gate. Render a full graph locally with `pnpm exec depcruise --config .dependency-cruiser.cjs packages --output-type mermaid`.</sub>'
           } > /tmp/arch-comment.md
           cat /tmp/arch-comment.md >> "$GITHUB_STEP_SUMMARY"
 
