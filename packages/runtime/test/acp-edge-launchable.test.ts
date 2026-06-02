@@ -36,15 +36,12 @@ declare const input: ReadableStream<Uint8Array>
 declare const output: WritableStream<Uint8Array>
 declare const runtimeIntent: PublicLaunchRuntimeIntent
 
-// Only a fully-provided, error-free layer (R → never, E → never) is accepted —
-// i.e. one that `Layer.launch` / `Effect.provide` can consume without leaking a
-// requirement or a typed error. This is the launchability constraint.
-const requireLaunchable = <A>(
-  layer: Layer.Layer<A, never, never>,
-): Layer.Layer<A, never, never> => layer
-
 const _launchabilityGate = () => {
-  // POSITIVE: edge ← CLI composition is launchable (R → never, E → never).
+  // POSITIVE: edge ← CLI composition is launchable. `toEqualTypeOf` is a
+  // STRUCTURAL comparison (not assignability — Layer's ROut is invariant), and
+  // the layer is never consumed in a never-context position, so the
+  // effect-language-service `missingLayerContext` value-diagnostic is not
+  // triggered (that fires on Layer.build / Effect.provide / a never-R parameter).
   const composition = AcpStdioEdgeLive({
     input,
     output,
@@ -56,24 +53,24 @@ const _launchabilityGate = () => {
   expectTypeOf(composition).toEqualTypeOf<
     Layer.Layer<AcpStdioEdge, never, never>
   >()
-  // …and it satisfies the launchability constraint (must compile clean).
-  void requireLaunchable(composition)
 
-  // NEGATIVE: without the CLI composition, the edge still requires
-  // HostPlaneChannelRouter | HostContextsChannel | SessionAgentOutputChannel
-  // (R ≠ never), so it is NOT launchable and must fail the constraint.
+  // NEGATIVE (`@ts-expect-error` corpus): without the CLI composition the edge
+  // still requires HostPlaneChannelRouter | HostContextsChannel |
+  // SessionAgentOutputChannel (R ≠ never), so it is NOT the launchable shape and
+  // the structural comparison must fail.
   const underProvided = AcpStdioEdgeLive({
     input,
     output,
     runtime: () => runtimeIntent,
     permissionPolicy: "deny",
   })
-  // @ts-expect-error under-provided: the three host channels are unmet (R ≠ never), so it is not launchable
-  void requireLaunchable(underProvided)
+  expectTypeOf(underProvided).toEqualTypeOf<
+    // @ts-expect-error under-provided: the three host channels are unmet (R ≠ never), so it is not launchable
+    Layer.Layer<AcpStdioEdge, never, never>
+  >()
 }
 
-// Reference the never-called closure so noUnusedLocals stays happy; tsc still
-// evaluates its body (where the gate lives).
+// Never invoked; tsc evaluates the body (where the gate lives) regardless.
 void _launchabilityGate
 
 describe("acp stdio-edge launchability (enforced by tsc)", () => {
