@@ -73,6 +73,15 @@ import {
 } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
 import {
+  FiregridAgentToolOperations,
+  type WaitAnyToolInput,
+  type WaitAnyToolOutput,
+  type WaitForToolInput,
+  type WaitForToolOutput,
+  type WaitUntilToolInput,
+  type WaitUntilToolOutput,
+} from "@firegrid/protocol/agent-tools"
+import {
   HostContextsChannel,
   HostContextsCreateChannel,
   HostPermissionRespondChannel,
@@ -167,7 +176,7 @@ export type FiregridError =
   | FiregridChannelError
   | FiregridConfigError
 
-export type FiregridChannelMatch = Record<string, string | number | boolean>
+export type FiregridChannelMatch = Record<string, unknown>
 
 export type FiregridChannelWaitOutput =
   | { readonly matched: true; readonly event: unknown }
@@ -208,6 +217,18 @@ export interface FiregridChannelsClient {
     target: string,
     request: unknown,
   ) => Effect.Effect<unknown, FiregridChannelError>
+}
+
+export interface FiregridWaitClient {
+  readonly for: (
+    request: WaitForToolInput,
+  ) => Effect.Effect<WaitForToolOutput, LaunchInputError | FiregridChannelError>
+  readonly until: (
+    request: WaitUntilToolInput,
+  ) => Effect.Effect<WaitUntilToolOutput, LaunchInputError>
+  readonly any: (
+    request: WaitAnyToolInput,
+  ) => Effect.Effect<WaitAnyToolOutput, LaunchInputError | FiregridChannelError>
 }
 
 export interface RuntimeContextSnapshot {
@@ -333,6 +354,7 @@ export interface FiregridService {
   readonly sessions: FiregridSessionsClient
   readonly permissions: FiregridPermissionsClient
   readonly channels: FiregridChannelsClient
+  readonly wait: FiregridWaitClient
   readonly open: (contextId: string) => RuntimeContextHandle
   readonly watchContexts: (
     predicate?: (context: RuntimeContext) => boolean,
@@ -582,6 +604,59 @@ const decodeSessionAgentOutputWaitInput = (
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
+const decodeWaitForInput = (
+  request: WaitForToolInput,
+): Effect.Effect<WaitForToolInput, LaunchInputError> =>
+  Schema.decodeUnknown(FiregridAgentToolOperations.waitFor.inputSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
+const decodeWaitUntilInput = (
+  request: WaitUntilToolInput,
+): Effect.Effect<WaitUntilToolInput, LaunchInputError> =>
+  Schema.decodeUnknown(FiregridAgentToolOperations.waitUntil.inputSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
+const decodeWaitAnyInput = (
+  request: WaitAnyToolInput,
+): Effect.Effect<WaitAnyToolInput, LaunchInputError> =>
+  Schema.decodeUnknown(FiregridAgentToolOperations.waitAny.inputSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
+const relativeWaitTimePattern = /^\+(\d+)(ms|s|m|h|d|w)$/
+const relativeWaitUnitMs: Record<string, number> = {
+  ms: 1,
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+}
+
+const waitDelayMs = (
+  time: string,
+): Effect.Effect<number, LaunchInputError> =>
+  Effect.gen(function*() {
+    const relative = relativeWaitTimePattern.exec(time)
+    if (relative !== null) {
+      const amount = Number(relative[1])
+      const unit = relativeWaitUnitMs[relative[2] ?? ""]
+      if (Number.isSafeInteger(amount) && unit !== undefined) return amount * unit
+    }
+    const absolute = Date.parse(time)
+    if (Number.isNaN(absolute)) {
+      return yield* new LaunchInputError({
+        cause: new Error(
+          `invalid wait.until time "${time}"; expected ISO timestamp or relative +Nms|s|m|h|d|w`,
+        ),
+      })
+    }
+    const now = yield* Clock.currentTimeMillis
+    return Math.max(0, absolute - now)
+  })
+
 const channelError = (
   target: string,
   verb: FiregridChannelError["verb"],
@@ -729,7 +804,7 @@ const makeChannelsClient = (
     if (inputs.length === 0) {
       return Effect.fail(
         channelError(
-          "wait_for_any",
+          "wait_any",
           "wait_for",
           new Error("at least one channel is required"),
         ),
@@ -801,6 +876,61 @@ const makeChannelsClient = (
     waitFor,
     waitForAny,
     call,
+  }
+}
+
+const makeWaitClient = (
+  channels: FiregridChannelsClient,
+): FiregridWaitClient => {
+  const waitFor = (
+    request: WaitForToolInput,
+  ): Effect.Effect<WaitForToolOutput, LaunchInputError | FiregridChannelError> =>
+    Effect.gen(function*() {
+      const decoded = yield* decodeWaitForInput(request)
+      const match = decoded.match ?? decoded.event.match
+      const timeoutMs = decoded.timeoutMs ?? decoded.event.timeoutMs
+      const result = yield* channels.waitFor(decoded.event.channel, {
+        ...(match === undefined ? {} : { match }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      })
+      return result
+    })
+
+  const waitUntil = (
+    request: WaitUntilToolInput,
+  ): Effect.Effect<WaitUntilToolOutput, LaunchInputError> =>
+    Effect.gen(function*() {
+      const decoded = yield* decodeWaitUntilInput(request)
+      const delay = yield* waitDelayMs(decoded.time)
+      yield* Clock.sleep(Duration.millis(delay))
+      return { waited: true, firedAt: new Date().toISOString() } as const
+    })
+
+  const waitAny = (
+    request: WaitAnyToolInput,
+  ): Effect.Effect<WaitAnyToolOutput, LaunchInputError | FiregridChannelError> =>
+    Effect.gen(function*() {
+      const decoded = yield* decodeWaitAnyInput(request)
+      const result = yield* channels.waitForAny(
+        decoded.events.map(event => ({
+          target: event.channel,
+          ...(event.match === undefined ? {} : { match: event.match }),
+        })),
+        decoded.timeoutMs === undefined ? {} : { timeoutMs: decoded.timeoutMs },
+      )
+      return result.matched
+        ? {
+          winnerIndex: result.winnerIndex,
+          channel: result.target,
+          result: result.event,
+        }
+        : { timedOut: true }
+    })
+
+  return {
+    for: waitFor,
+    until: waitUntil,
+    any: waitAny,
   }
 }
 
@@ -1406,6 +1536,8 @@ const make = (
       Effect.flatMap(decodeSessionAttachInput(request), decoded =>
         makeSessionHandle(decoded.sessionId))
 
+    const channelsClient = makeChannelsClient(channels)
+
     return Firegrid.of({
       launch: (request) => Effect.gen(function* () {
         // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1
@@ -1484,7 +1616,8 @@ const make = (
             new AppendError({ contextId: decoded.contextId, cause })))
         }),
       },
-      channels: makeChannelsClient(channels),
+      channels: channelsClient,
+      wait: makeWaitClient(channelsClient),
       open,
       watchContexts,
     })

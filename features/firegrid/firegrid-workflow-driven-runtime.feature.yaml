@@ -55,7 +55,7 @@ components:
   PHASE_4_TEMPORAL_WORKFLOWS:
     requirements:
       1: sleep(durationMs) semantics are expressed through DurableClock.sleep inside workflow code rather than through a Firegrid-owned timer table.
-      2: schedule_me-style delayed self input is expressed as workflow state plus DurableClock.sleep followed by a runtime input append.
+      2: wait_until-style delayed self input is expressed as workflow state plus DurableClock.sleep followed by a runtime input append.
       3: Effect Schedule may be used to compute recurrence, backoff, or calendar policy, but DurableClock is the durable suspension primitive.
       4: effect/Scheduler is not used as Firegrid's durable scheduling abstraction.
 
@@ -67,7 +67,7 @@ components:
 
   PHASE_6_AGENT_TOOLS:
     requirements:
-      1: "FiregridAgentToolkit is an Effect AI Toolkit (Toolkit.make over Tool.make values) that exposes exactly the canonical agent tools sleep, wait_for, spawn, spawn_all, schedule_me, and execute. Firegrid does not maintain a separate descriptor registry parallel to the toolkit."
+      1: "FiregridAgentToolkit is an Effect AI Toolkit (Toolkit.make over Tool.make values) that exposes exactly the canonical agent tools sleep, wait_for, wait_until, wait_any, spawn, spawn_all, and execute. Firegrid does not maintain a separate descriptor registry parallel to the toolkit."
       2: "Each Tool.make value carries name, description, parameters Schema, success Schema, failure Schema, stability/capability annotations, and tool dependencies; no Tool field carries credentials, callback tokens, signing keys, provider session tokens, Durable Streams URLs, sandbox handles, host ids, or transport references."
       3: "Tool parameter and success schemas are imported from @firegrid/protocol/agent-tools and attached to each Tool.make via setParameters/setSuccess rather than duplicated; protocol is the single Effect Schema source of truth."
       4: "toolUseToEffect is the host-side lowering invoked from the toolkit handlers; it switches on ToolUse.name against the canonical protocol Effect Schemas, decodes ToolUse.input through each schema before dispatch, and routes each validated invocation to an exhaustive per-tool arm."
@@ -81,13 +81,13 @@ components:
         deprecated: true
         replaced_by: firegrid-workflow-driven-runtime.PHASE_6_AGENT_TOOLS.10-1
       10-1: "wait_for lowers through the channel/runtime observation surface owned by the active workflow state machine. It must not introduce a standalone operation workflow, request row family, or hidden table/stream observer outside that owner workflow."
-      11: "schedule_me composes DurableClock.sleep and then records a durable runtime input intent for the same context through the canonical host prompt append seam; the active host-scoped RuntimeContext engine or its startup reconciliation is the only path that turns the intent into runtime input delivery."
+      11: "wait_until with a prompt composes DurableClock.sleep and then records a durable runtime input intent for the same context through the canonical host prompt append seam; the active host-scoped RuntimeContext engine or its startup reconciliation is the only path that turns the intent into runtime input delivery."
       12:
         requirement: "spawn, spawn_all, and execute lower onto host-provided AgentToolHost seams (spawnChildContext, spawnChildContexts, executeSandboxTool); the seams keep the lowering free of runtime-host imports while still composing the same Workflow.execute and SandboxProvider primitives at the Live layer."
         deprecated: true
         replaced_by: firegrid-workflow-driven-runtime.PHASE_6_AGENT_TOOLS.12-1
       12-1: "spawn, spawn_all, and execute lower onto host-provided AgentToolHost seams without creating per-call workflow executions. Durable progress belongs to the owning workflow state machine and its workflow-owned table/output log."
-      13: "A scheduled-input identity used by schedule_me is deterministic from contextId and toolUseId so workflow replay does not duplicate the scheduled prompt."
+      13: "A scheduled-input identity used by prompt-bearing waits is deterministic from contextId and toolUseId so workflow replay does not duplicate the scheduled prompt."
       14:
         requirement: "Toolkit handlers (installed via FiregridAgentToolkit.toLayer) route each tool call through ToolCallWorkflow.execute so toolUseToEffect always runs inside a workflow instance and never bypasses DurableClock, workflow identity, or host seams. The runtime-owned MCP-facing failure is a small Effect Schema (FiregridMcpToolFailure) the handlers raise on the Effect error channel so @effect/ai/McpServer can map it to CallToolResult.isError true."
         deprecated: true
@@ -137,7 +137,7 @@ constraints:
     requirements:
       1: The first implementation phase must prove duplicate startRuntime(contextId) calls do not duplicate process start.
       2: The synchronous run phase must prove a real local-process command can be launched and observed through RuntimeOutputTable using the same runtime-context workflow path.
-      3: A temporal workflow phase must prove DurableClock wakeup survives workflow-engine reconstruction before any Firegrid-owned schedule_me facade is accepted.
+      3: A temporal workflow phase must prove DurableClock wakeup survives workflow-engine reconstruction before any Firegrid-owned prompt-bearing wait facade is accepted.
       4: "PHASE_6_AGENT_TOOLS V0 must prove FiregridAgentToolkit.tools matches the canonical six, Tool.parametersSchema decodes identically to the @firegrid/protocol schema, direct toolkit execution of sleep runs through the owning workflow state-machine seam, malformed inputs are rejected at the toolkit/schema boundary, tool-arm failures become FiregridMcpToolFailure without failing the workflow, and McpServer.registerToolkit(FiregridAgentToolkit) composes as an Effect without a custom JSON-RPC stack or wrapper toolkit. Local HTTP MCP smoke is V1 acceptance, not V0."
       5: "PHASE_7_MCP_HOST_SERVER must prove FiregridMcpServerLayer composes a loopback Node HTTP server through McpServer.layerHttp + McpServer.registerToolkit(FiregridAgentToolkit), starts and stops with the consuming Effect scope, and that an MCP-shaped JSON-RPC HTTP client can drive initialize, tools/list, sleep, malformed input, and unknown tool through Effect AI's MCP layer without operation-shaped tool-call workflows, a custom JSON-RPC stack, separate MCP process, agent-visible contextId argument, or FIREGRID_MCP_CONTEXT_ID-style env config."
       6: RuntimeContextSession cutover tests prove idempotent startOrAttach, lazy send reattach after workflow-engine reconstruction, and at-most-once external command emission across restart.

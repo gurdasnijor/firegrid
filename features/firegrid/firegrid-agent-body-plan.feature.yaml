@@ -57,10 +57,10 @@ components:
       5: wait_for returns matched channel rows as matched:true event payloads and timeout results as matched:false timedOut:true.
   SLICE_D_VERBS:
     requirements:
-      1: FiregridAgentToolkit exposes send, call, and wait_for_any as agent-facing tools.
+      1: FiregridAgentToolkit exposes send, call, and wait_any as agent-facing tools.
       2: The send tool resolves only egress-capable channel Tags and appends a payload decoded by the channel schema.
       3: The call tool resolves call channel Tags and dispatches requests decoded by the request schema, while preserving the approval channel fallback.
-      4: The wait_for_any tool resolves only ingress-capable channel Tags, races the descriptors, and returns the first winner index, channel, and result.
+      4: The wait_any tool resolves only ingress-capable channel Tags, races the descriptors, and returns the first winner index, channel, and result.
 
   SESSION_LOG:
     requirements:
@@ -84,5 +84,5 @@ constraints:
       1: Phase 2 Slice A is additive and does not change the wait_for tool input schema or tool-use lowering.
       2: Phase 2 Slice C.3 wraps DurableTable rows without redesigning DurableTable rows or subscribe primitives.
       3: Phase 2 Lane 2 changes the wait_for channel-addressed tool surface but does not publish channel inventory metadata through MCP tools/list.
-      4: Phase 2 Slice C.2 adds event channel bindings without implementing the agent-facing send, call, wait_for, or wait_for_any verbs.
-      5: "Slice D verb lowering is direction-specific: send accepts egress channel bindings, call accepts call channel bindings before approval fallback, and wait_for_any accepts ingress channel bindings."
+      4: Phase 2 Slice C.2 adds event channel bindings without implementing the agent-facing send, call, wait_for, or wait_any verbs.
+      5: "Slice D verb lowering is direction-specific: send accepts egress channel bindings, call accepts call channel bindings before approval fallback, and wait_any accepts ingress channel bindings."
