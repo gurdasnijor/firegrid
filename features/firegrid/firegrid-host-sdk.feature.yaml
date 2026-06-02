@@ -49,6 +49,7 @@ components:
       3: "Session launch writes durable intent and does not carry live process handles, provider SDK clients, raw secret values, host environment readers, or host execution policy."
       4: "The `sessions.createOrLoad` operation uses caller-owned `externalKey` to converge retries or repeated dispatches on one durable agent session; Firegrid must not replace this with a second `idempotencyKey` spelling."
       4-1: The `sessions.createOrLoad` operation materializes or reuses the RuntimeContext row for its derived session identity before returning the session handle.
+      5: The Client SDK exposes session cancel and close operations through protocol-owned schemas and host/app-owned runtime input delivery, not runtime internals or host-only handles.
 
   LAUNCH_SUBSTRATE:
     requirements:

@@ -28,6 +28,10 @@ import {
   HostSessionsStartChannel,
   HostSessionsStartChannelTarget,
   HostSessionsStartRequestSchema,
+  SessionCancelChannel,
+  SessionCancelChannelTarget,
+  SessionCloseChannel,
+  SessionCloseChannelTarget,
   SessionPromptChannel,
   SessionPromptChannelTarget,
   eventOffset,
@@ -37,23 +41,27 @@ import { Prompt } from "@effect/ai"
 import { WorkflowEngine } from "@effect/workflow"
 import { Clock, Effect, Layer, Schema } from "effect"
 import {
+  SessionCancelToolInputSchema,
+  SessionCloseToolInputSchema,
+  type SessionCancelToolInput,
+  type SessionCloseToolInput,
+} from "@firegrid/protocol/agent-tools"
+import {
   AgentInputEventSchema,
   type AgentInputEvent,
 } from "../events/contract.ts"
+import { type SessionInputPayload } from "./adapter.ts"
 import {
-  type SessionInputPayload,
-	} from "./adapter.ts"
-	import {
-	  armSession,
-	  sendSignal,
-	  SignalTable,
-	  WorkflowEngineTable,
-	} from "./signal.ts"
-	import {
-	  encodeRuntimeContextSessionPayloadJson,
-	  type RuntimeContextSessionPayload,
-	  RuntimeContextSessionWorkflow,
-	} from "./subscribers/runtime-context.ts"
+  armSession,
+  sendSignal,
+  SignalTable,
+  WorkflowEngineTable,
+} from "./signal.ts"
+import {
+  encodeRuntimeContextSessionPayloadJson,
+  type RuntimeContextSessionPayload,
+  RuntimeContextSessionWorkflow,
+} from "./subscribers/runtime-context.ts"
 
 const stableOffset = (target: string, key: string) =>
   Effect.succeed(eventOffset(`${target}:${key}`))
@@ -200,6 +208,34 @@ export const HostSessionsStartChannelLive = Layer.succeed(
 )
 
 /**
+ * Stub `SessionCancelChannel` — returns a stable offset.
+ * Override with `SessionCancelChannelSignalingLive` for production.
+ */
+export const SessionCancelChannelLive = Layer.succeed(
+  SessionCancelChannel,
+  makeDurableEventChannel({
+    target: SessionCancelChannelTarget,
+    schema: SessionCancelToolInputSchema,
+    append: (request) =>
+      stableOffset(String(SessionCancelChannelTarget), request.sessionId),
+  }),
+)
+
+/**
+ * Stub `SessionCloseChannel` — returns a stable offset.
+ * Override with `SessionCloseChannelSignalingLive` for production.
+ */
+export const SessionCloseChannelLive = Layer.succeed(
+  SessionCloseChannel,
+  makeDurableEventChannel({
+    target: SessionCloseChannelTarget,
+    schema: SessionCloseToolInputSchema,
+    append: (request) =>
+      stableOffset(String(SessionCloseChannelTarget), request.sessionId),
+  }),
+)
+
+/**
  * Stub `HostPermissionRespondChannel`. Override with the signaling
  * version for production.
  */
@@ -223,10 +259,10 @@ export const HostPermissionRespondChannelLive = Layer.succeed(
 // substrate) and actually deliver signals to the unified workflow bodies.
 
 const signalPromptToSession = (options: {
-	  readonly signals: SignalTable["Type"]
-	  readonly engineTable: WorkflowEngineTable["Type"]
-	  readonly engine: WorkflowEngine.WorkflowEngine["Type"]
-	  readonly contextId: string
+  readonly signals: SignalTable["Type"]
+  readonly engineTable: WorkflowEngineTable["Type"]
+  readonly engine: WorkflowEngine.WorkflowEngine["Type"]
+  readonly contextId: string
   readonly payload: unknown
   readonly target: string
   readonly idempotencyKey?: string
@@ -238,15 +274,15 @@ const signalPromptToSession = (options: {
       options.payload as { readonly text?: string },
       correlationId,
     )
-	    const executionId = yield* writeSessionInputSignal({
-	      signals: options.signals,
-	      engineTable: options.engineTable,
-	      contextId: options.contextId,
-	      inputKey: correlationId,
-	      input: payload,
-	    })
-	    return eventOffset(`${options.target}:${executionId}|${correlationId}`)
-	  }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, options.engine))
+    const executionId = yield* writeSessionInputSignal({
+      signals: options.signals,
+      engineTable: options.engineTable,
+      contextId: options.contextId,
+      inputKey: correlationId,
+      input: payload,
+    })
+    return eventOffset(`${options.target}:${executionId}|${correlationId}`)
+  }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, options.engine))
 
 export const emitSessionTerminalSignal = (options: {
   readonly signals: SignalTable["Type"]
@@ -279,13 +315,50 @@ export const emitSessionTerminalSignal = (options: {
     }),
   )
 
+const terminalPayloadJson = (
+  operation: "cancel" | "close",
+  reason: string | undefined,
+): string => JSON.stringify({
+  operation,
+  ...(reason === undefined ? {} : { reason }),
+})
+
+const signalSessionTerminal = (options: {
+  readonly signals: SignalTable["Type"]
+  readonly engineTable: WorkflowEngineTable["Type"]
+  readonly engine: WorkflowEngine.WorkflowEngine["Type"]
+  readonly operation: "cancel" | "close"
+  readonly request: SessionCancelToolInput | SessionCloseToolInput
+  readonly target: string
+}) =>
+  Effect.gen(function*() {
+    const executionId = yield* emitSessionTerminalSignal({
+      signals: options.signals,
+      engineTable: options.engineTable,
+      engine: options.engine,
+      contextId: options.request.sessionId,
+      idempotencyKey: `session.${options.operation}:${options.request.sessionId}`,
+      payloadJson: terminalPayloadJson(options.operation, options.request.reason),
+    })
+    return eventOffset(`${options.target}:${executionId}`)
+  }).pipe(
+    Effect.withSpan(`firegrid.unified.session.${options.operation}`, {
+      kind: "producer",
+      attributes: {
+        "firegrid.channel.target": options.target,
+        "firegrid.context.id": options.request.sessionId,
+        "firegrid.session.id": options.request.sessionId,
+      },
+    }),
+  )
+
 /** Production HostPromptChannel — signals the session workflow. */
 export const HostPromptChannelSignalingLive = Layer.effect(
   HostPromptChannel,
-	  Effect.gen(function*() {
-	    const signals = yield* SignalTable
-	    const engineTable = yield* WorkflowEngineTable
-	    const engine = yield* WorkflowEngine.WorkflowEngine
+  Effect.gen(function*() {
+    const signals = yield* SignalTable
+    const engineTable = yield* WorkflowEngineTable
+    const engine = yield* WorkflowEngine.WorkflowEngine
     return makeDurableEventChannel({
       target: HostPromptChannelTarget,
       schema: HostContextsCreateRequestSchema as never,
@@ -296,9 +369,9 @@ export const HostPromptChannelSignalingLive = Layer.effect(
           readonly idempotencyKey?: string
         }
         return signalPromptToSession({
-	          signals,
-	          engineTable,
-	          engine,
+          signals,
+          engineTable,
+          engine,
           contextId: req.contextId,
           payload: req.payload,
           target: String(HostPromptChannelTarget),
@@ -312,10 +385,10 @@ export const HostPromptChannelSignalingLive = Layer.effect(
 /** Production SessionPromptChannel — signals the session workflow. */
 export const SessionPromptChannelSignalingLive = Layer.effect(
   SessionPromptChannel,
-	  Effect.gen(function*() {
-	    const signals = yield* SignalTable
-	    const engineTable = yield* WorkflowEngineTable
-	    const engine = yield* WorkflowEngine.WorkflowEngine
+  Effect.gen(function*() {
+    const signals = yield* SignalTable
+    const engineTable = yield* WorkflowEngineTable
+    const engine = yield* WorkflowEngine.WorkflowEngine
     return SessionPromptChannel.of({
       forSession: (sessionId) =>
         makeDurableEventChannel({
@@ -327,9 +400,9 @@ export const SessionPromptChannelSignalingLive = Layer.effect(
               readonly idempotencyKey?: string
             }
             return signalPromptToSession({
-	              signals,
-	              engineTable,
-	              engine,
+              signals,
+              engineTable,
+              engine,
               contextId: sessionId,
               payload: req.payload,
               target: String(SessionPromptChannelTarget),
@@ -345,25 +418,71 @@ export const SessionPromptChannelSignalingLive = Layer.effect(
 export const HostSessionsStartChannelSignalingLive = Layer.effect(
   HostSessionsStartChannel,
   Effect.gen(function*() {
-	    const engine = yield* WorkflowEngine.WorkflowEngine
-	    const engineTable = yield* WorkflowEngineTable
-	    return makeDurableEventChannel({
-	      target: HostSessionsStartChannelTarget,
-	      schema: HostSessionsStartRequestSchema,
-	      append: (request) =>
-	        Effect.gen(function*() {
-	          const workflowPayload = sessionWorkflowPayload(request.sessionId)
-	          const executionId = yield* RuntimeContextSessionWorkflow.executionId(workflowPayload)
-	          yield* armSession({
-	            engineTable,
-	            workflow: RuntimeContextSessionWorkflow,
-	            executionId,
-	            payload: workflowPayload,
-	          }).pipe(Effect.orDie)
-	          return eventOffset(`${String(HostSessionsStartChannelTarget)}:${executionId}`)
-	        }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, engine)),
-	    })
-	  }),
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    const engineTable = yield* WorkflowEngineTable
+    return makeDurableEventChannel({
+      target: HostSessionsStartChannelTarget,
+      schema: HostSessionsStartRequestSchema,
+      append: (request) =>
+        Effect.gen(function*() {
+          const workflowPayload = sessionWorkflowPayload(request.sessionId)
+          const executionId = yield* RuntimeContextSessionWorkflow.executionId(workflowPayload)
+          yield* armSession({
+            engineTable,
+            workflow: RuntimeContextSessionWorkflow,
+            executionId,
+            payload: workflowPayload,
+          }).pipe(Effect.orDie)
+          return eventOffset(`${String(HostSessionsStartChannelTarget)}:${executionId}`)
+        }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, engine)),
+    })
+  }),
+)
+
+/** Production SessionCancelChannel — emits the shared terminal signal. */
+export const SessionCancelChannelSignalingLive = Layer.effect(
+  SessionCancelChannel,
+  Effect.gen(function*() {
+    const signals = yield* SignalTable
+    const engineTable = yield* WorkflowEngineTable
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    return makeDurableEventChannel({
+      target: SessionCancelChannelTarget,
+      schema: SessionCancelToolInputSchema,
+      append: (request) =>
+        signalSessionTerminal({
+          signals,
+          engineTable,
+          engine,
+          operation: "cancel",
+          request,
+          target: String(SessionCancelChannelTarget),
+        }),
+    })
+  }),
+)
+
+/** Production SessionCloseChannel — emits the shared terminal signal. */
+export const SessionCloseChannelSignalingLive = Layer.effect(
+  SessionCloseChannel,
+  Effect.gen(function*() {
+    const signals = yield* SignalTable
+    const engineTable = yield* WorkflowEngineTable
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    return makeDurableEventChannel({
+      target: SessionCloseChannelTarget,
+      schema: SessionCloseToolInputSchema,
+      append: (request) =>
+        signalSessionTerminal({
+          signals,
+          engineTable,
+          engine,
+          operation: "close",
+          request,
+          target: String(SessionCloseChannelTarget),
+        }),
+    })
+  }),
 )
 
 /**
@@ -427,11 +546,15 @@ export const HostPermissionRespondChannelSignalingLive = Layer.effect(
 export const UnifiedSignalingChannelBindingsLive = HostPromptChannelSignalingLive.pipe(
   Layer.provideMerge(SessionPromptChannelSignalingLive),
   Layer.provideMerge(HostSessionsStartChannelSignalingLive),
+  Layer.provideMerge(SessionCancelChannelSignalingLive),
+  Layer.provideMerge(SessionCloseChannelSignalingLive),
   Layer.provideMerge(HostPermissionRespondChannelSignalingLive),
 )
 
 export const UnifiedChannelBindingsLive = HostPromptChannelLive.pipe(
   Layer.provideMerge(SessionPromptChannelLive),
   Layer.provideMerge(HostSessionsStartChannelLive),
+  Layer.provideMerge(SessionCancelChannelLive),
+  Layer.provideMerge(SessionCloseChannelLive),
   Layer.provideMerge(HostPermissionRespondChannelLive),
 )

@@ -36,6 +36,10 @@ export {
 export {
   FiregridClientOperations,
   type PermissionRespondInput,
+  type SessionCancelToolInput,
+  type SessionCancelToolOutput,
+  type SessionCloseToolInput,
+  type SessionCloseToolOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "./operations.ts"

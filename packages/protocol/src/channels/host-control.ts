@@ -2,6 +2,10 @@ import { Context, Schema } from "effect"
 import {
   PermissionRespondInputSchema,
 } from "../agent-tools/schema.ts"
+import type {
+  SessionCancelToolInputSchema,
+  SessionCloseToolInputSchema,
+} from "../agent-tools/schema.ts"
 import {
   PublicLaunchRuntimeIntentSchema,
   RuntimeContextSchema,
@@ -99,6 +103,24 @@ export type HostSessionsStartChannelService = DurableEventChannel<
 export class HostSessionsStartChannel extends Context.Tag(
   "firegrid/protocol/channels/host.sessions.start",
 )<HostSessionsStartChannel, HostSessionsStartChannelService>() {}
+
+export const SessionCancelChannelTarget = makeChannelTarget("session.cancel")
+export type SessionCancelChannelService = DurableEventChannel<
+  typeof SessionCancelToolInputSchema
+>
+
+export class SessionCancelChannel extends Context.Tag(
+  "firegrid/protocol/channels/session.cancel",
+)<SessionCancelChannel, SessionCancelChannelService>() {}
+
+export const SessionCloseChannelTarget = makeChannelTarget("session.close")
+export type SessionCloseChannelService = DurableEventChannel<
+  typeof SessionCloseToolInputSchema
+>
+
+export class SessionCloseChannel extends Context.Tag(
+  "firegrid/protocol/channels/session.close",
+)<SessionCloseChannel, SessionCloseChannelService>() {}
 
 export const HostContextSnapshotChannelTarget = makeChannelTarget(
   "host.context.snapshot",

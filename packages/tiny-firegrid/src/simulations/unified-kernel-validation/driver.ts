@@ -85,9 +85,20 @@ const runExampleAgentScenario =
         timeoutMs: 2_000,
       }),
     )
-    const waitResult = yield* session.wait.forAgentOutput({
+    let waitResult = yield* session.wait.forAgentOutput({
       timeoutMs: 12_000,
     })
+    let remainingOutputWaits = 20
+    while (
+      waitResult.matched &&
+      waitResult.output._tag !== "TurnComplete" &&
+      remainingOutputWaits > 0
+    ) {
+      waitResult = yield* session.wait.forAgentOutput({
+        timeoutMs: 12_000,
+      })
+      remainingOutputWaits -= 1
+    }
     const snapshot = yield* launched.snapshot
     const outputTags = snapshot.agentOutputs.map((output) => output._tag)
     const toolUseCount = outputTags.filter((tag) => tag === "ToolUse").length
@@ -96,6 +107,23 @@ const runExampleAgentScenario =
     const permissionRequestCount = outputTags.filter((tag) =>
       tag === "PermissionRequest",
     ).length
+    const terminalCleanupContext = yield* firegrid.launch({
+      requestedBy: "tiny-firegrid:terminal-cleanup",
+      runtime: local.jsonl({
+        agent: "official-acp-typescript-sdk-example-terminal-cleanup",
+        argv: fixtureArgv,
+        cwd: process.cwd(),
+        agentProtocol: "acp",
+      }),
+    })
+    const terminalCleanupSession = yield* firegrid.sessions.attach({
+      sessionId: terminalCleanupContext.contextId,
+    })
+    yield* terminalCleanupSession.start()
+    const closeResult = yield* terminalCleanupSession.close({
+      reason: "unified-kernel-validation terminal cleanup proof",
+    })
+    yield* Effect.sleep("500 millis")
     const startRecorded = startOffset.offset.length > 0
     const promptRecorded = promptOffset.offset.length > 0
     const permissionWaitMatched = Exit.match(permissionWait, {
@@ -136,8 +164,8 @@ const runExampleAgentScenario =
       migratedProbe(
         "P2C",
         "probeP2C session crash recovery",
-        "public-surface-blocked",
-        "old probe recorded a terminal signal without resume and rebuilt the host generation; public SDK has no generation control",
+        closeResult.closed ? "observed" : "surfaced-gap",
+        `public session.close returned closed=${closeResult.closed} for terminal cleanup session; trace must show terminal_signal before adapter.deregister`,
       ),
       migratedProbe(
         "P3A",
@@ -196,6 +224,7 @@ const runExampleAgentScenario =
       turnCompleteCount,
       permissionRequestCount,
       permissionWaitMatched,
+      closeRecorded: closeResult.closed,
       migratedProbes,
     }
   }))
@@ -217,6 +246,7 @@ export const unifiedKernelValidationDriver = Effect.gen(function*() {
     "firegrid.ukv.snapshot_turn_complete_count": scenario.turnCompleteCount,
     "firegrid.ukv.snapshot_permission_request_count": scenario.permissionRequestCount,
     "firegrid.ukv.permission_wait_matched": scenario.permissionWaitMatched,
+    "firegrid.ukv.close_recorded": scenario.closeRecorded,
     "firegrid.ukv.factory_host": true,
     "firegrid.ukv.codec": "acp",
     "firegrid.ukv.spawn_target": "src/bin/fake-acp-agent-process.ts",
