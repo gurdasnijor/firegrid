@@ -3,25 +3,19 @@
   "workspaces": {
     ".": {
       "entry": [
-        "scripts/**/*.mjs"
+        "scripts/**/*.{ts,mjs}"
       ],
       "project": [
-        "scripts/**/*.mjs"
+        "scripts/**/*.{ts,mjs}"
       ]
     },
     "packages/cli": {
-      "entry": [
-        "src/bin/index.ts",
-        "src/bin/run.ts",
-        "src/bin/host.ts"
-      ],
       "project": [
         "src/**/*.ts"
       ]
     },
     "packages/client-sdk": {
       "entry": [
-        "src/index.ts",
         "test/**/*.test.ts"
       ],
       "project": [
@@ -31,8 +25,6 @@
     },
     "packages/protocol": {
       "entry": [
-        "src/index.ts",
-        "src/launch/index.ts",
         "test/**/*.test.ts"
       ],
       "project": [
@@ -43,7 +35,6 @@
     "packages/runtime": {
       "entry": [
         "src/bin/**/*.ts",
-        "src/index.ts",
         "test/**/*.test.ts"
       ],
       "project": [
@@ -56,7 +47,6 @@
     },
     "packages/effect-durable-operators": {
       "entry": [
-        "src/index.ts",
         "test/**/*.test.ts"
       ],
       "project": [
@@ -66,7 +56,6 @@
     },
     "packages/observability": {
       "entry": [
-        "src/index.ts",
         "test/**/*.test.ts"
       ],
       "project": [
@@ -76,30 +65,19 @@
     },
     "packages/tiny-firegrid": {
       "entry": [
-        "src/index.ts",
         "src/bin/**/*.ts",
-        "src/simulations/*/index.ts",
-        "src/simulations/*/*/index.ts",
-        "test/**/*.test.ts"
+        "src/simulations/*/index.ts"
       ],
       "project": [
-        "src/**/*.ts",
-        "test/**/*.ts"
-      ],
-      "ignoreFiles": [
-        "src/simulations/to-be-migrated/**/*.ts",
-        "src/prototypes/target-topology/**/*.ts"
+        "src/**/*.ts"
       ],
       "ignoreDependencies": [
         "@effect/ai",
-        "@effect/workflow",
-        "@firegrid/runtime",
-        "effect-durable-operators"
+        "@effect/workflow"
       ]
     },
     "packages/effect-durable-streams": {
       "entry": [
-        "src/index.ts",
         "test/**/*.test.ts",
         "test/**/*.bench.ts"
       ],
@@ -110,8 +88,6 @@
     },
     "tooling": {
       "entry": [
-        "src/preflight.ts",
-        "src/effect-diagnostics-check.ts",
         "analysis/**/*.ts"
       ],
       "project": [
@@ -120,17 +96,6 @@
       ]
     }
   },
-  "ignore": [
-    "repos/**"
-  ],
-  "ignoreDependencies": [
-    "@agentclientprotocol/sdk",
-    "@modelcontextprotocol/sdk",
-    "jscpd"
-  ],
-  "ignoreBinaries": [
-    "ruby"
-  ],
   "ignoreWorkspaces": [
     "tools/durable-streams-ui"
   ]

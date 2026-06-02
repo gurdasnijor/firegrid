@@ -66,19 +66,13 @@ jobs:
           restore-keys: |
             eslint-${{ runner.os }}-${{ hashFiles('eslint.config.js', 'tsconfig.eslint.json', 'pnpm-lock.yaml') }}-
 
-      - name: Check feature spec syntax
-        run: pnpm run check:specs
-
-      - name: Check docs hygiene
-        run: pnpm run check:docs
-
       - name: Lint
         run: pnpm run lint
 
-      - name: Check dead-code baseline
+      - name: Check dead code (knip, strict-0)
         run: pnpm run lint:dead
 
-      - name: Check duplicate-token baseline
+      - name: Check duplicate code (jscpd, strict-0)
         run: pnpm run lint:dup
 
       - name: Check dependency boundaries

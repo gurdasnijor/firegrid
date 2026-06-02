@@ -54,14 +54,12 @@ const gates = [
   { script: "test", description: "Workspace test suite", weight: 2 },
   { script: "typecheck", description: "TypeScript project references", weight: 2 },
   { script: "effect:diagnostics", description: "Effect language service diagnostics", weight: 2 },
-  { script: "lint", description: "ESLint, runtime public-surface + tiny-firegrid layout checks", weight: 1 },
-  { script: "lint:dead", description: "Knip dead-code ratchet", weight: 1 },
-  { script: "lint:dup", description: "jscpd duplicate-code ratchet", weight: 1 },
+  { script: "lint", description: "ESLint", weight: 1 },
+  { script: "lint:dead", description: "Knip dead-code gate (strict-0)", weight: 1 },
+  { script: "lint:dup", description: "jscpd duplicate-code gate (strict-0)", weight: 1 },
   { script: "lint:deps", description: "Dependency cruiser boundaries", weight: 1 },
   { script: "lint:effect-quality", description: "Effect-quality metrics ratchet", weight: 1 },
   { script: "trace:seams:ukv", description: "UKV production trace seam gate", weight: 1 },
-  { script: "check:specs", description: "Feature spec YAML syntax", weight: 1 },
-  { script: "check:docs", description: "Documentation hygiene", weight: 1 },
 ] as const
 
 // Tag each gate with its declared position so the summary can restore the

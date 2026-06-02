@@ -186,15 +186,9 @@ pnpm preflight
 
 `pnpm preflight` (`tooling/src/preflight.ts`) is the canonical gate: `test`,
 `typecheck`, `effect:diagnostics`, `lint`, `lint:dead`, `lint:dup`, `lint:deps`,
-`lint:effect-quality`, `trace:seams:ukv`, `check:specs`, `check:docs`, run in
-parallel with a full summary. `pnpm run verify` is an alias of it. CI runs the
-same gates split across parallel jobs (see `docs/TOOLING.md`).
-
-If you've only touched docs/specs:
-
-```bash
-pnpm run check:specs && pnpm run check:docs
-```
+`lint:effect-quality`, `trace:seams:ukv`, run in parallel with a full summary.
+`pnpm run verify` is an alias of it. CI runs the same gates split across parallel
+jobs (see `docs/TOOLING.md`).
 
 The Effect-quality metric ratchet (`lint:effect-quality`) refuses regressions
 in counts like `forOfInPackageSourceCount`, `processEnvOutsideBinCount`, and

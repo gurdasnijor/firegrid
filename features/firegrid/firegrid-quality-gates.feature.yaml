@@ -8,13 +8,19 @@ components:
     requirements:
       1: The workspace exposes a single preflight command that runs the same quality gates developers normally need before opening or updating a PR.
       2: The preflight command continues after individual gate failures and reports a final summary of every failing gate.
-      3: The preflight command includes documentation hygiene and feature spec syntax checks as process gates.
+      3:
+        requirement: The preflight command includes documentation hygiene and feature spec syntax checks as process gates.
+        deprecated: true
+      3-note: Deprecated (tf-dbxp). The check:docs (whitespace/conflict scan) and check:specs (ruby YAML-syntax wrapper, via scripts/tooling.mjs) process gates were consolidated away as low-value tool-wrappers — git + review cover conflict markers, and the feature-YAML wrapper added no enforcement beyond syntax over already-reviewed spec docs. preflight now gates ESLint + the static-quality (knip/jscpd/deps/effect-quality) + effect-diagnostics + test + UKV-trace gates.
 
   DOCS:
     requirements:
       1: Contributor documentation lists each quality gate, the script that runs it, what it forbids, and the canonical remediation path.
       2: Contributor documentation lists the source-pattern guard rules, their enforcing engine (ESLint local rules or the effect-quality count ratchet), purpose, canonical replacement, and excluded paths.
-      3: The workspace exposes runnable docs and feature spec checks for contributors and CI.
+      3:
+        requirement: The workspace exposes runnable docs and feature spec checks for contributors and CI.
+        deprecated: true
+      3-note: Deprecated (tf-dbxp). The runnable check:docs/check:specs scripts (scripts/tooling.mjs) were retired as low-value tool-wrappers; documentation and feature-spec hygiene is now covered by git (conflict markers) + review.
 
   TEST_LAYOUT:
     requirements:

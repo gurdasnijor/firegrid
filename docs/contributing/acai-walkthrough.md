@@ -55,13 +55,10 @@ is **docs/spec-only**: no source or test changes. The PR description lays
 out the why, the spec gates that follow, and the hard rejects encoded in
 the spec.
 
-**CI gates relevant at this stage:**
-- `pnpm run check:specs` — every `features/*/*.feature.yaml` parses as
-  valid YAML (ruby `YAML.load_file`).
-- `pnpm run check:docs` — no trailing whitespace or merge markers in
-  `README.md`, `docs/`, or `features/`.
-- The other gates run because they always do, but should be unaffected by
-  docs-only changes.
+**CI gates relevant at this stage:** the standard gates (ESLint, typecheck,
+static-quality, tests) run as always; a docs/spec-only change is typically
+unaffected by them. (The former `check:specs`/`check:docs` process gates were
+retired — tf-dbxp.)
 
 The coordinator reviews and either:
 - Accepts the spec → merges it. The ACIDs are now law.
@@ -93,11 +90,10 @@ mechanically where they can.
 - `pnpm run test`
 - `pnpm run lint` (max-warnings 0)
 - `pnpm run lint:deps` (no new dep-cruiser violations)
-- `pnpm run lint:dead` (knip baseline 0)
-- `pnpm run lint:dup` (jscpd baseline)
+- `pnpm run lint:dead` (knip, strict-0)
+- `pnpm run lint:dup` (jscpd, strict-0)
 - `pnpm run lint:effect-quality` (see
   [`docs/contributing/effect-quality-metrics.md`](./effect-quality-metrics.md))
-- `pnpm run lint:semgrep` / `lint:semgrep:test`
 
 Run them all locally as `pnpm run verify` before pushing.
 

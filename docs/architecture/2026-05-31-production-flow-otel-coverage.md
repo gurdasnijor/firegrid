@@ -132,4 +132,4 @@ Every arrow above corresponds to a parent → child span in the trace. The full 
 
 ## Seam set as living invariant
 
-The list above is canonical. If a new seam gets added to the architecture (e.g. a peer-event observer relay), it should land in `scripts/trace-seam-coverage.ts` `SEAMS` array at the same time. The script is the source of truth for "what does end-to-end coverage mean today."
+The list above is canonical. If a new seam gets added to the architecture (e.g. a peer-event observer relay), it should land in the `SEAMS` array in `packages/tiny-firegrid/src/runner/seam-coverage.ts` at the same time. That module is the source of truth for "what does end-to-end coverage mean today" — `pnpm trace:seams [runId]` reports it; `pnpm trace:seams:ukv` runs the sim then gates on it.
