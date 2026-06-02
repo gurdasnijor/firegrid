@@ -29,6 +29,10 @@ import {
 } from "@firegrid/protocol/launch"
 import {
   type PermissionRespondInput,
+  type SessionCancelToolInput,
+  type SessionCancelToolOutput,
+  type SessionCloseToolInput,
+  type SessionCloseToolOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "@firegrid/protocol/session-facade"
@@ -75,6 +79,8 @@ import {
   HostPromptChannel,
   HostSessionsCreateOrLoadChannel,
   HostSessionsStartChannel,
+  SessionCancelChannel,
+  SessionCloseChannel,
   SessionPromptChannel,
 } from "@firegrid/protocol/channels"
 import { Clock, Context, Data, Duration, Effect, Exit, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
@@ -260,6 +266,12 @@ export interface FiregridSessionHandle {
     EventOffset,
     AppendError
   >
+  readonly cancel: (
+    request?: Omit<SessionCancelToolInput, "sessionId">,
+  ) => Effect.Effect<SessionCancelToolOutput, LaunchInputError | AppendError>
+  readonly close: (
+    request?: Omit<SessionCloseToolInput, "sessionId">,
+  ) => Effect.Effect<SessionCloseToolOutput, LaunchInputError | AppendError>
   readonly snapshot: () => Effect.Effect<RuntimeContextSnapshot, PreloadError>
   readonly wait: FiregridSessionWaitClient
   readonly permissions: FiregridSessionPermissionsClient
@@ -283,6 +295,18 @@ export interface FiregridSessionsClient {
   ) => Effect.Effect<
     SessionPromptToolOutput,
     PromptInputError | AppendError
+  >
+  readonly cancel: (
+    request: SessionCancelToolInput,
+  ) => Effect.Effect<
+    SessionCancelToolOutput,
+    LaunchInputError | AppendError
+  >
+  readonly close: (
+    request: SessionCloseToolInput,
+  ) => Effect.Effect<
+    SessionCloseToolOutput,
+    LaunchInputError | AppendError
   >
 }
 
@@ -509,6 +533,20 @@ const decodeSessionHandlePromptInput = (
   request: SessionHandlePromptInput,
 ): Effect.Effect<SessionHandlePromptInput, PromptInputError> =>
   Schema.decodeUnknown(FiregridClientOperations.sessions.promptScoped.inputSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
+const decodeSessionCancelInput = (
+  request: SessionCancelToolInput,
+): Effect.Effect<SessionCancelToolInput, LaunchInputError> =>
+  Schema.decodeUnknown(FiregridClientOperations.sessions.cancel.inputSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
+const decodeSessionCloseInput = (
+  request: SessionCloseToolInput,
+): Effect.Effect<SessionCloseToolInput, LaunchInputError> =>
+  Schema.decodeUnknown(FiregridClientOperations.sessions.close.inputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
@@ -821,6 +859,8 @@ const make = (
     const hostPromptChannel = yield* HostPromptChannel
     const sessionPromptChannel = yield* SessionPromptChannel
     const hostSessionsStartChannel = yield* HostSessionsStartChannel
+    const sessionCancelChannel = yield* SessionCancelChannel
+    const sessionCloseChannel = yield* SessionCloseChannel
     const hostPermissionRespondChannel = yield* HostPermissionRespondChannel
     // tf-qu7l: read-path ingress. watchContexts and the internal
     // awaitContextMaterialized barrier consume the HostContextsChannel
@@ -1144,6 +1184,46 @@ const make = (
       )
     }
 
+    const appendSessionCancel = (
+      request: SessionCancelToolInput,
+    ): Effect.Effect<SessionCancelToolOutput, AppendError> =>
+      sessionCancelChannel.binding.append(request).pipe(
+        Effect.as({
+          cancelled: true,
+          sessionId: request.sessionId,
+        } satisfies SessionCancelToolOutput),
+        Effect.mapError(cause => new AppendError({ contextId: request.sessionId, cause })),
+        Effect.withSpan("firegrid.client.session.cancel.append", {
+          kind: "producer",
+          attributes: {
+            "firegrid.channel.target": String(sessionCancelChannel.target),
+            "firegrid.channel.direction": sessionCancelChannel.direction,
+            "firegrid.context.id": request.sessionId,
+            "firegrid.session.id": request.sessionId,
+          },
+        }),
+      )
+
+    const appendSessionClose = (
+      request: SessionCloseToolInput,
+    ): Effect.Effect<SessionCloseToolOutput, AppendError> =>
+      sessionCloseChannel.binding.append(request).pipe(
+        Effect.as({
+          closed: true,
+          sessionId: request.sessionId,
+        } satisfies SessionCloseToolOutput),
+        Effect.mapError(cause => new AppendError({ contextId: request.sessionId, cause })),
+        Effect.withSpan("firegrid.client.session.close.append", {
+          kind: "producer",
+          attributes: {
+            "firegrid.channel.target": String(sessionCloseChannel.target),
+            "firegrid.channel.direction": sessionCloseChannel.direction,
+            "firegrid.context.id": request.sessionId,
+            "firegrid.session.id": request.sessionId,
+          },
+        }),
+      )
+
     // tf-fyyk: contexts.create / sessions.start / permissions.respond and
     // prompt write helpers now all dispatch through channel Tags. Prompt
     // remains EgressChannel direction, but the append binding returns the
@@ -1248,6 +1328,30 @@ const make = (
                 Effect.mapError(cause => new AppendError({ contextId: sessionId, cause })),
               )
             })),
+          cancel: request =>
+            withClientSpan("firegrid.client.session.cancel", {
+              "firegrid.session.id": sessionId,
+              "firegrid.context.id": sessionId,
+            }, Effect.gen(function*() {
+              const decoded = yield* decodeSessionCancelInput({
+                sessionId,
+                ...(request?.reason === undefined ? {} : { reason: request.reason }),
+              })
+              yield* awaitContextMaterialized(sessionId)
+              return yield* appendSessionCancel(decoded)
+            })),
+          close: request =>
+            withClientSpan("firegrid.client.session.close", {
+              "firegrid.session.id": sessionId,
+              "firegrid.context.id": sessionId,
+            }, Effect.gen(function*() {
+              const decoded = yield* decodeSessionCloseInput({
+                sessionId,
+                ...(request?.reason === undefined ? {} : { reason: request.reason }),
+              })
+              yield* awaitContextMaterialized(sessionId)
+              return yield* appendSessionClose(decoded)
+            })),
           snapshot: () => readSnapshot(sessionId),
           wait: waitClient,
           permissions: permissionsClient,
@@ -1348,6 +1452,20 @@ const make = (
             sessionId: decoded.sessionId,
             inputId,
           }
+        })),
+        cancel: request => withClientSpan("firegrid.client.session.cancel", {
+          "firegrid.session.id": request.sessionId,
+        }, Effect.gen(function*() {
+          const decoded = yield* decodeSessionCancelInput(request)
+          yield* awaitContextMaterialized(decoded.sessionId)
+          return yield* appendSessionCancel(decoded)
+        })),
+        close: request => withClientSpan("firegrid.client.session.close", {
+          "firegrid.session.id": request.sessionId,
+        }, Effect.gen(function*() {
+          const decoded = yield* decodeSessionCloseInput(request)
+          yield* awaitContextMaterialized(decoded.sessionId)
+          return yield* appendSessionClose(decoded)
         })),
       },
       permissions: {

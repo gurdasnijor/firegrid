@@ -183,6 +183,39 @@ const getNumberAttribute = (
   return 0
 }
 
+const startNanos = (span: Span): bigint | undefined => {
+  if (span.startTime === undefined) return undefined
+  return BigInt(span.startTime[0]) * 1_000_000_000n + BigInt(span.startTime[1])
+}
+
+const spanContextId = (span: Span): string | undefined => {
+  const value = span.attributes?.["firegrid.context.id"]
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+const countTerminalBeforeDeregister = (
+  spans: ReadonlyArray<Span>,
+): number => {
+  const terminalSignals = spans.filter((span) =>
+    span.name === "firegrid.unified.session.terminal_signal")
+  const deregisters = spans.filter((span) =>
+    span.name === "firegrid.unified.adapter.deregister")
+  let count = 0
+  for (const deregister of deregisters) {
+    const contextId = spanContextId(deregister)
+    const deregisterStart = startNanos(deregister)
+    if (contextId === undefined || deregisterStart === undefined) continue
+    const ordered = terminalSignals.some((terminal) => {
+      const terminalStart = startNanos(terminal)
+      return spanContextId(terminal) === contextId &&
+        terminalStart !== undefined &&
+        terminalStart <= deregisterStart
+    })
+    if (ordered) count += 1
+  }
+  return count
+}
+
 const findLatestRun = (runsRoot: string): string => {
   const entries = readdirSync(runsRoot)
     .filter((d) => d.includes("unified-kernel-validation"))
@@ -213,6 +246,7 @@ const main = (): void => {
   const tracePath = join(runDir, "trace.jsonl")
 
   const spans = readSpans(tracePath)
+  const terminalBeforeDeregisterCount = countTerminalBeforeDeregister(spans)
 
   const productionAssertions: ReadonlyArray<ProductionAssertion> = [
     {
@@ -259,6 +293,30 @@ const main = (): void => {
       )
         ? "pass"
         : "fail",
+    },
+    {
+      id: "adapter.deregister",
+      description: "Session terminal signal drove adapter deregistration",
+      count: spans.filter((s) =>
+        s.name === "firegrid.unified.adapter.deregister",
+      ).length,
+      threshold: 1,
+      source: "host-substrate-span",
+      gating: true,
+      status: spans.some((s) =>
+        s.name === "firegrid.unified.adapter.deregister",
+      )
+        ? "pass"
+        : "fail",
+    },
+    {
+      id: "session.terminal_ordering",
+      description: "Terminal signal was recorded before adapter deregister for a session",
+      count: terminalBeforeDeregisterCount,
+      threshold: 1,
+      source: "host-substrate-span",
+      gating: true,
+      status: terminalBeforeDeregisterCount > 0 ? "pass" : "fail",
     },
     {
       id: "firegrid.ukv.snapshot_run_count",
@@ -329,7 +387,7 @@ const main = (): void => {
   }
   console.log("")
   console.log(
-    "Report-only note: snapshot_run_count + output/terminal seams verify the OUTPUT-READ-BACK / TERMINAL-RELAY path = tf-ll90.5 (recordExited writes RuntimeControlPlaneTable.runs); not built yet — add to the gate's pass-condition when .5 lands.",
+    "Report-only note: snapshot_run_count verifies the OUTPUT-READ-BACK / TERMINAL-RELAY path = tf-ll90.5 (recordExited writes RuntimeControlPlaneTable.runs); not built yet — add to the gate's pass-condition when .5 lands.",
   )
   console.log("")
   console.log(`Seams: ${passing}/${SEAMS.length} covered${skipped > 0 ? ` (${skipped} optional skipped)` : ""}`)

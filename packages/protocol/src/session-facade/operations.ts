@@ -2,10 +2,18 @@ import { EventOffsetSchema, type EventOffset } from "../channels/core.ts"
 import {
   PermissionDecisionSchema,
   PermissionRespondInputSchema,
+  SessionCancelToolInputSchema,
+  SessionCancelToolOutputSchema,
+  SessionCloseToolInputSchema,
+  SessionCloseToolOutputSchema,
   SessionPromptToolInputSchema,
   SessionPromptToolOutputSchema,
   type PermissionDecision,
   type PermissionRespondInput,
+  type SessionCancelToolInput,
+  type SessionCancelToolOutput,
+  type SessionCloseToolInput,
+  type SessionCloseToolOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "../agent-tools/schema.ts"
@@ -33,6 +41,10 @@ export {
   type FiregridRuntimeObservationSourceName,
   type PermissionDecision,
   type PermissionRespondInput,
+  type SessionCancelToolInput,
+  type SessionCancelToolOutput,
+  type SessionCloseToolInput,
+  type SessionCloseToolOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 }
@@ -54,6 +66,14 @@ export const FiregridClientOperations = {
     promptScoped: defineFiregridOperation(
       SessionHandlePromptInputSchema,
       EventOffsetSchema,
+    ),
+    cancel: defineFiregridOperation(
+      SessionCancelToolInputSchema,
+      SessionCancelToolOutputSchema,
+    ),
+    close: defineFiregridOperation(
+      SessionCloseToolInputSchema,
+      SessionCloseToolOutputSchema,
     ),
   },
   wait: {
