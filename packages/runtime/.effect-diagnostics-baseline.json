@@ -3,8 +3,8 @@
   "command": "pnpm run effect:diagnostics:baseline",
   "counts": {
     "error": 0,
-    "warning": 6,
-    "message": 14
+    "warning": 4,
+    "message": 12
   },
   "entries": [
     {
@@ -108,66 +108,30 @@
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/subscribers/runtime-context-session/codec-adapter.test.ts",
-      "line": 104,
-      "column": 31,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
+      "file": "packages/runtime/test/unified/cross-attempt-output-flush.test.ts",
+      "line": 165,
+      "column": 26,
+      "severity": "message",
+      "code": "schemaSyncInEffect",
+      "message": "`Schema.decodeSync` is used inside an Effect generator. `Schema.decode` preserves the typed Effect error channel for this operation without throwing."
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/subscribers/runtime-context-session/codec-adapter.test.ts",
-      "line": 205,
-      "column": 19,
+      "file": "packages/runtime/test/unified/firegrid-runtime-composition-compile-spike.test.ts",
+      "line": 144,
+      "column": 22,
       "severity": "message",
       "code": "effectSucceedWithVoid",
       "message": "`Effect.void` represents the same outcome as `Effect.succeed(undefined)` or `Effect.succeed(void 0)`."
     },
     {
       "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/subscribers/runtime-context-session/codec-adapter.test.ts",
-      "line": 209,
-      "column": 21,
+      "file": "packages/runtime/test/unified/firegrid-runtime-composition-compile-spike.test.ts",
+      "line": 343,
+      "column": 11,
       "severity": "warning",
-      "code": "lazyPromiseInEffectSync",
-      "message": "This `Effect.sync` thunk returns a Promise. Use `Effect.promise` or `Effect.tryPromise` to represent async work."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/subscribers/runtime-context-session/codec-adapter.test.ts",
-      "line": 304,
-      "column": 43,
-      "severity": "message",
-      "code": "preferSchemaOverJson",
-      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/subscribers/runtime-context-session/raw-adapter.test.ts",
-      "line": 129,
-      "column": 20,
-      "severity": "message",
-      "code": "preferSchemaOverJson",
-      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/subscribers/runtime-context-session/raw-adapter.test.ts",
-      "line": 169,
-      "column": 19,
-      "severity": "message",
-      "code": "effectSucceedWithVoid",
-      "message": "`Effect.void` represents the same outcome as `Effect.succeed(undefined)` or `Effect.succeed(void 0)`."
-    },
-    {
-      "project": "packages/runtime/tsconfig.json",
-      "file": "packages/runtime/test/subscribers/runtime-context-session/raw-adapter.test.ts",
-      "line": 83,
-      "column": 31,
-      "severity": "warning",
-      "code": "globalErrorInEffectFailure",
-      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
+      "code": "multipleEffectProvide",
+      "message": "This expression chains multiple `Effect.provide` calls. Providing Layers in multiple calls in a chain can break service lifecycle behavior compared with a single combined provide with merged layers."
     },
     {
       "project": "packages/runtime/tsconfig.json",
