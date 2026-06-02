@@ -1323,10 +1323,9 @@ export default tseslint.config(
   },
   {
     // Shape C cutover binary boundary: `packages/runtime/src/bin/**` is the
-    // runtime-owned process composition tier (formerly @firegrid/cli's
-    // responsibility). It sits ABOVE both runtime substrate AND client-sdk,
-    // composing both into the firegrid run/start/acp binaries. The thin
-    // @firegrid/cli launcher subprocesses into it. Override the
+    // runtime-owned process composition tier. It sits ABOVE both runtime
+    // substrate AND client-sdk, composing direct firegrid run/start/acp
+    // binaries. Override the
     // runtime-wide no-restricted-imports block so the bin entries may:
     //   - reach the public `@firegrid/client-sdk/firegrid` facade for
     //     sessions.createOrLoad (the same dispatch path public clients use);
