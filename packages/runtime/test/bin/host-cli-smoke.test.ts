@@ -32,7 +32,6 @@ describe("firegrid host CLI", () => {
   })
 
   it("firegrid-runtime-process.BINARIES.13 firegrid-runtime-process.CONFIG_SURFACE.8 starts with an embedded local-dev backend when DURABLE_STREAMS_BASE_URL is unset", async () => {
-    const stdoutChunks: Array<string> = []
     const stderrChunks: Array<string> = []
 
     child = spawn(
@@ -48,10 +47,7 @@ describe("firegrid host CLI", () => {
         stdio: ["pipe", "pipe", "pipe"],
       },
     )
-    child.stdout.setEncoding("utf8")
-    child.stdout.on("data", (chunk: string) => {
-      stdoutChunks.push(chunk)
-    })
+    child.stdout.resume()
     child.stderr.setEncoding("utf8")
     child.stderr.on("data", (chunk: string) => {
       stderrChunks.push(chunk)
@@ -67,6 +63,5 @@ describe("firegrid host CLI", () => {
     )
 
     expect(stderr).toContain("Firegrid host started")
-    expect(stdoutChunks.join("")).toBe("")
   }, 30_000)
 })

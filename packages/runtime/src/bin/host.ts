@@ -10,7 +10,7 @@
  */
 
 import { NodeRuntime } from "@effect/platform-node"
-import { Effect, Layer, Logger } from "effect"
+import { Effect, Layer } from "effect"
 import { FiregridHost } from "../unified/host.ts"
 import {
   defaultNamespace,
@@ -48,7 +48,4 @@ const program = Effect.gen(function*() {
   return yield* Layer.launch(hostLayer).pipe(Effect.zipRight(Effect.never))
 }).pipe(Effect.scoped)
 
-NodeRuntime.runMain(
-  program.pipe(Effect.provide(Logger.replace(Logger.defaultLogger, Logger.none))),
-  { disablePrettyLogger: true },
-)
+NodeRuntime.runMain(program)
