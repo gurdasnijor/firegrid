@@ -561,9 +561,9 @@ def _section_acids(path):
 
 def _contract_index(repo):
     """Deterministic set of valid contract ids: ACID tokens declared in any
-    *.feature.yaml / .semgrep.yml (literal contiguous tokens), PLUS section
-    ACIDs derived from each feature.yaml's structure (tf-fp3a). (contract.id
-    also resolves if it is an existing repo path — checked separately.)"""
+    *.feature.yaml (literal contiguous tokens), PLUS section ACIDs derived from
+    each feature.yaml's structure (tf-fp3a). (contract.id also resolves if it is
+    an existing repo path — checked separately.)"""
     ids = set()
     for dp, dirs, fs in os.walk(repo):
         if "node_modules" in dp or "/.git" in dp or "/.turbo" in dp:
@@ -577,11 +577,6 @@ def _contract_index(repo):
                 except OSError:
                     pass
                 ids.update(_section_acids(p))
-            elif fn == ".semgrep.yml":
-                try:
-                    ids.update(_ACID.findall(open(p, errors="ignore").read()))
-                except OSError:
-                    pass
     return ids
 
 
