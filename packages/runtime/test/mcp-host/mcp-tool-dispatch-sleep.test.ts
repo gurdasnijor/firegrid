@@ -15,6 +15,12 @@
 
 import { WorkflowEngine } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
+import {
+  HostPromptChannel,
+  HostPromptChannelTarget,
+  makeDurableEventChannel,
+} from "@firegrid/protocol/channels"
+import { PublicPromptRequestSchema } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Exit, Layer, Ref } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DurableStreamsWorkflowEngine } from "../../src/engine/durable-streams-workflow-engine.ts"
@@ -58,6 +64,24 @@ const runWith = <A, E>(
         ),
       ),
     ) as Effect.Effect<A, unknown, never>,
+  )
+
+const promptRecorderLayer = (
+  prompts: Ref.Ref<Array<unknown>>,
+): Layer.Layer<HostPromptChannel> =>
+  Layer.succeed(
+    HostPromptChannel,
+    makeDurableEventChannel({
+      target: HostPromptChannelTarget,
+      schema: PublicPromptRequestSchema,
+      append: (request) =>
+        Ref.update(prompts, current => [...current, request]).pipe(
+          Effect.as({
+            target: String(HostPromptChannelTarget),
+            offset: `prompt:${request.contextId}:${request.idempotencyKey ?? ""}`,
+          }),
+        ),
+    }),
   )
 
 describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
@@ -125,5 +149,53 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
     if (Exit.isFailure(exit)) {
       expect(String(exit.cause)).toContain("not yet ported")
     }
+  })
+
+  it("tf-0awo.15: wait_until without prompt resolves inline without appending a new turn", async () => {
+    const prompts = await Effect.runPromise(Ref.make<Array<unknown>>([]))
+    const result = await runWith(
+      streamUrlFor("wait-until-inline"),
+      ToolDispatchLive.pipe(Layer.provideMerge(promptRecorderLayer(prompts))),
+      Effect.gen(function*() {
+        const dispatch = yield* ToolDispatch
+        const output = yield* dispatch.call({
+          contextId: "ctx-wait-inline",
+          toolUseId: "tu-wait-inline",
+          toolName: "wait_until",
+          input: { time: "+0ms" },
+        })
+        const appended = yield* Ref.get(prompts)
+        return { output, appended }
+      }),
+    )
+    expect(result.output).toMatchObject({ waited: true })
+    expect(result.appended).toEqual([])
+  })
+
+  it("tf-0awo.15: wait_until with prompt appends a deterministic self prompt on resolve", async () => {
+    const prompts = await Effect.runPromise(Ref.make<Array<unknown>>([]))
+    const result = await runWith(
+      streamUrlFor("wait-until-prompt"),
+      ToolDispatchLive.pipe(Layer.provideMerge(promptRecorderLayer(prompts))),
+      Effect.gen(function*() {
+        const dispatch = yield* ToolDispatch
+        const output = yield* dispatch.call({
+          contextId: "ctx-wait-prompt",
+          toolUseId: "tu-wait-prompt",
+          toolName: "wait_until",
+          input: { time: "+0ms", prompt: "Check the build." },
+        })
+        const appended = yield* Ref.get(prompts)
+        return { output, appended }
+      }),
+    )
+    expect(result.output).toMatchObject({ waited: true })
+    expect(result.appended).toEqual([
+      {
+        contextId: "ctx-wait-prompt",
+        payload: "Check the build.",
+        idempotencyKey: "wait-prompt:tu-wait-prompt",
+      },
+    ])
   })
 })

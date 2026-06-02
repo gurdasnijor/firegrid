@@ -12,9 +12,9 @@ components:
 
   LOCKED_TOOL_SURFACE:
     requirements:
-      1: The primitive profile exposes exactly the agent-visible runtime-context MCP tools wait_for, wait_for_any, send, and call.
+      1: The primitive profile exposes exactly the agent-visible runtime-context MCP tools wait_for, wait_any, send, and call.
       2: Session creation, prompting, starting, and permission responses stay on public client/session methods rather than becoming extra agent-visible tools in this profile.
-      3: The primitive profile does not expose sleep, schedule_me, execute, spawn, spawn_all, session_new, session_prompt, session_cancel, or session_close.
+      3: The primitive profile does not expose sleep, wait_until, execute, spawn, spawn_all, session_new, session_prompt, session_cancel, or session_close.
       4: The profile is implemented as an allowlist over public Firegrid agent-tool bindings, not as a custom JSON-RPC router or a new substrate registry.
 
 constraints:

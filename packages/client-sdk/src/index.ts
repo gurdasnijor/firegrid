@@ -28,6 +28,7 @@ export {
   type FiregridSessionPermissionsClient,
   type FiregridSessionWaitClient,
   type FiregridSessionsClient,
+  type FiregridWaitClient,
   type PromptInputError,
   type EventOffset,
   type RuntimeContextHandle,

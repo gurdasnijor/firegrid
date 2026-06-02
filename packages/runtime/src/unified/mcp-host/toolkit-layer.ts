@@ -88,12 +88,14 @@ const makeToolkitHandlers = (
       handleTool<AgentToolSchemas.SleepToolOutput>(captured, "sleep", params),
     wait_for: (params: AgentToolSchemas.WaitForToolInput) =>
       handleTool<AgentToolSchemas.WaitForToolOutput>(captured, "wait_for", params),
+    wait_until: (params: AgentToolSchemas.WaitUntilToolInput) =>
+      handleTool<AgentToolSchemas.WaitUntilToolOutput>(captured, "wait_until", params),
     send: (params: AgentToolSchemas.SendToolInput) =>
       handleTool<AgentToolSchemas.SendToolOutput>(captured, "send", params),
     call: (params: AgentToolSchemas.CallToolInput) =>
       handleTool<AgentToolSchemas.CallToolOutput>(captured, "call", params),
-    wait_for_any: (params: AgentToolSchemas.WaitForAnyToolInput) =>
-      handleTool<AgentToolSchemas.WaitForAnyToolOutput>(captured, "wait_for_any", params),
+    wait_any: (params: AgentToolSchemas.WaitAnyToolInput) =>
+      handleTool<AgentToolSchemas.WaitAnyToolOutput>(captured, "wait_any", params),
     session_new: (params: AgentToolSchemas.SessionNewToolInput) =>
       handleTool<AgentToolSchemas.SessionNewToolOutput>(captured, "session_new", params),
     session_prompt: (params: AgentToolSchemas.SessionPromptToolInput) =>
@@ -102,8 +104,6 @@ const makeToolkitHandlers = (
       handleTool<AgentToolSchemas.SessionCancelToolOutput>(captured, "session_cancel", params),
     session_close: (params: AgentToolSchemas.SessionCloseToolInput) =>
       handleTool<AgentToolSchemas.SessionCloseToolOutput>(captured, "session_close", params),
-    schedule_me: (params: AgentToolSchemas.ScheduleMeToolInput) =>
-      handleTool<AgentToolSchemas.ScheduleMeToolOutput>(captured, "schedule_me", params),
     execute: (params: AgentToolSchemas.ExecuteToolInput) =>
       handleTool<AgentToolSchemas.ExecuteToolOutput>(captured, "execute", params),
   })
@@ -124,7 +124,7 @@ export const FiregridPrimitiveProfileToolkitLayer = FiregridPrimitiveProfileTool
     const handlers = makeToolkitHandlers(captured)
     return {
       wait_for: handlers.wait_for,
-      wait_for_any: handlers.wait_for_any,
+      wait_any: handlers.wait_any,
       send: handlers.send,
       call: handlers.call,
     }

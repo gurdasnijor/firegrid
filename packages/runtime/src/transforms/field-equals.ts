@@ -28,7 +28,7 @@ export type FieldEqualsTrigger = Schema.Schema.Type<
   typeof FieldEqualsTriggerSchema
 >
 
-const traversePath = (row: unknown, path: ReadonlyArray<string>): unknown =>
+export const traversePath = (row: unknown, path: ReadonlyArray<string>): unknown =>
   path.reduce<unknown>((cursor, segment) =>
     typeof cursor === "object" && cursor !== null
       ? (cursor as Record<string, unknown>)[segment]

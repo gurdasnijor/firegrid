@@ -33,17 +33,18 @@
  * structuredContent: <ToolError>}` without crashing the host or workflow.
  * We never construct the MCP result ourselves.
  *
- * Slice-2 scope is `sleep` only. `sleep` has a clean Shape D answer
- * (`Clock.sleep` — the permanent MCP-path answer; see
- * `docs/findings/tf-r06u-28-sleep-spike-suspension-boundary.md`). Every
- * other tool fails with a typed `ToolExecutionFailed` "not yet ported" so
- * the surface stays honest. `wait_for` / `wait_for_any` (domain-signal
- * suspend) are a separate, harder milestone (tf-12q9 / tf-c9r9).
+ * The wait family shares one lowering shape: no prompt resolves inline in
+ * the MCP response; prompt-bearing waits append the prompt to the owning
+ * runtime context after the wait resolves, using the host prompt channel's
+ * idempotency key as the replay fence.
  */
 
 import { Activity, Workflow, WorkflowEngine } from "@effect/workflow"
 import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
-import { Clock, Context, Duration, Effect, Layer, ParseResult, Ref, Schema } from "effect"
+import { HostPromptChannel } from "@firegrid/protocol/channels"
+import { Clock, Context, Duration, Effect, Layer, Option, ParseResult, Ref, Schema, Stream } from "effect"
+import { RuntimeChannelRouter } from "../../channels/router.ts"
+import { traversePath } from "../../transforms/field-equals.ts"
 import {
   ToolDispatchPayloadSchema,
   ToolDispatchResultSchema,
@@ -61,6 +62,119 @@ import {
 
 const decodeJson = <A, I>(schema: Schema.Schema<A, I>) =>
   Schema.decodeUnknown(Schema.parseJson(schema))
+
+const relativeTimePattern = /^\+(\d+)(ms|s|m|h|d|w)$/
+
+const relativeUnitMs: Record<string, number> = {
+  ms: 1,
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+}
+
+const parseWaitDelayMs = (
+  time: string,
+): Effect.Effect<number, string> =>
+  Effect.gen(function*() {
+    const relative = relativeTimePattern.exec(time)
+    if (relative !== null) {
+      const amount = Number(relative[1])
+      const unit = relativeUnitMs[relative[2] ?? ""]
+      if (Number.isSafeInteger(amount) && unit !== undefined) {
+        return amount * unit
+      }
+    }
+    const absolute = Date.parse(time)
+    if (Number.isNaN(absolute)) {
+      return yield* Effect.fail(
+        `invalid wait_until time "${time}"; expected ISO timestamp or relative +Nms|s|m|h|d|w`,
+      )
+    }
+    const now = yield* Clock.currentTimeMillis
+    return Math.max(0, absolute - now)
+  })
+
+const appendPromptOnResolve = (
+  contextId: string,
+  toolUseId: string,
+  toolName: string,
+  prompt: string | undefined,
+): Effect.Effect<void, ToolError> => {
+  if (prompt === undefined) return Effect.void
+  return Effect.serviceOption(HostPromptChannel).pipe(
+    Effect.flatMap(Option.match({
+      onNone: () =>
+        Effect.fail(
+          toolExecutionFailed(
+            toolUseId,
+            toolName,
+            "prompt-bearing waits require HostPromptChannel",
+          ),
+        ),
+      onSome: channel =>
+        channel.binding.append({
+          contextId,
+          payload: prompt,
+          idempotencyKey: `wait-prompt:${toolUseId}`,
+        }).pipe(
+          Effect.asVoid,
+          Effect.mapError(cause => toolExecutionFailed(toolUseId, toolName, cause)),
+        ),
+    })),
+  )
+}
+
+const matchesRow = (
+  row: unknown,
+  match: AgentToolSchemas.WaitForToolMatch | undefined,
+): boolean => {
+  if (match === undefined) return true
+  return Object.entries(match).every(([key, value]) =>
+    traversePath(row, key.split(".").filter(segment => segment.length > 0)) === value)
+}
+
+const waitOnChannel = (
+  toolUseId: string,
+  toolName: string,
+  channelName: string,
+  match: AgentToolSchemas.WaitForToolMatch | undefined,
+): Effect.Effect<unknown, ToolError> =>
+  Effect.serviceOption(RuntimeChannelRouter).pipe(
+    Effect.flatMap(Option.match({
+      onNone: () =>
+        Effect.fail(
+          toolExecutionFailed(
+            toolUseId,
+            toolName,
+            "wait tools require RuntimeChannelRouter",
+          ),
+        ),
+      onSome: router =>
+        router.route(channelName).pipe(
+          Effect.flatMap(route => route.stream === undefined
+            ? Effect.fail(
+              toolExecutionFailed(
+                toolUseId,
+                toolName,
+                `channel "${channelName}" is not ingress-capable`,
+              ),
+            )
+            : route.stream.pipe(
+              Stream.filter(row => matchesRow(row, match)),
+              Stream.runHead,
+              Effect.flatMap(Option.match({
+                onNone: () => Effect.never,
+                onSome: row => Effect.succeed(row),
+              })),
+              Effect.mapError(cause =>
+                toolExecutionFailed(toolUseId, toolName, cause)),
+            )),
+          Effect.mapError(cause => toolExecutionFailed(toolUseId, toolName, cause)),
+        ),
+    })),
+  )
 
 /**
  * `sleep` — suspend until a duration elapses, then return `{ slept: true }`.
@@ -80,6 +194,85 @@ const runSleep = (
     Effect.as({ slept: true } satisfies AgentToolSchemas.SleepToolOutput),
   )
 
+const runWaitUntil = (
+  contextId: string,
+  toolUseId: string,
+  input: AgentToolSchemas.WaitUntilToolInput,
+): Effect.Effect<AgentToolSchemas.WaitUntilToolOutput, ToolError> =>
+  parseWaitDelayMs(input.time).pipe(
+    Effect.mapError(cause => toolExecutionFailed(toolUseId, "wait_until", cause)),
+    Effect.flatMap(delay =>
+      Clock.sleep(Duration.millis(delay)).pipe(
+        Effect.andThen(appendPromptOnResolve(contextId, toolUseId, "wait_until", input.prompt)),
+        Effect.as({
+          waited: true,
+          firedAt: new Date().toISOString(),
+        } satisfies AgentToolSchemas.WaitUntilToolOutput),
+      ),
+    ),
+  )
+
+const runWaitFor = (
+  contextId: string,
+  toolUseId: string,
+  input: AgentToolSchemas.WaitForToolInput,
+): Effect.Effect<AgentToolSchemas.WaitForToolOutput, ToolError> => {
+  const match = input.match ?? input.event.match
+  const timeoutMs = input.timeoutMs ?? input.event.timeoutMs
+  const wait = waitOnChannel(toolUseId, "wait_for", input.event.channel, match).pipe(
+    Effect.map(event => ({ matched: true, event }) satisfies AgentToolSchemas.WaitForToolOutput),
+  )
+  const bounded = timeoutMs === undefined
+    ? wait
+    : Effect.raceFirst(
+      wait,
+      Clock.sleep(Duration.millis(timeoutMs)).pipe(
+        Effect.as({
+          matched: false,
+          timedOut: true,
+        } satisfies AgentToolSchemas.WaitForToolOutput),
+      ),
+    )
+  return bounded.pipe(
+    Effect.tap(() => appendPromptOnResolve(contextId, toolUseId, "wait_for", input.prompt)),
+  )
+}
+
+const runWaitAny = (
+  contextId: string,
+  toolUseId: string,
+  input: AgentToolSchemas.WaitAnyToolInput,
+): Effect.Effect<AgentToolSchemas.WaitAnyToolOutput, ToolError> => {
+  const waits = input.events.map((event, winnerIndex) =>
+    waitOnChannel(toolUseId, "wait_any", event.channel, event.match).pipe(
+      Effect.map(result => ({
+        winnerIndex,
+        channel: event.channel,
+        result,
+      }) satisfies AgentToolSchemas.WaitAnyToolOutput),
+    ),
+  )
+  const wait = Effect.raceAll(
+    waits as [
+      Effect.Effect<AgentToolSchemas.WaitAnyToolOutput, ToolError>,
+      ...Array<Effect.Effect<AgentToolSchemas.WaitAnyToolOutput, ToolError>>,
+    ],
+  )
+  const bounded = input.timeoutMs === undefined
+    ? wait
+    : Effect.raceFirst(
+      wait,
+      Clock.sleep(Duration.millis(input.timeoutMs)).pipe(
+        Effect.as({
+          timedOut: true,
+        } satisfies AgentToolSchemas.WaitAnyToolOutput),
+      ),
+    )
+  return bounded.pipe(
+    Effect.tap(() => appendPromptOnResolve(contextId, toolUseId, "wait_any", input.prompt)),
+  )
+}
+
 /**
  * Lower a `(toolName, inputJson)` invocation to a typed arm, decode its
  * input against the protocol schema, run it, and JSON-encode the success
@@ -89,6 +282,7 @@ const runSleep = (
  * the library encodes the MCP `isError` result.
  */
 const dispatchArm = (
+  contextId: string,
   toolName: string,
   toolUseId: string,
   inputJson: string,
@@ -103,12 +297,39 @@ const dispatchArm = (
         Effect.flatMap(runSleep),
         Effect.map((output) => JSON.stringify(output)),
       )
+    case "wait_until":
+      return decodeJson(AgentToolSchemas.WaitUntilToolInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "wait_until", cause)
+            : toolExecutionFailed(toolUseId, "wait_until", cause)),
+        Effect.flatMap(input => runWaitUntil(contextId, toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
+    case "wait_for":
+      return decodeJson(AgentToolSchemas.WaitForToolInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "wait_for", cause)
+            : toolExecutionFailed(toolUseId, "wait_for", cause)),
+        Effect.flatMap(input => runWaitFor(contextId, toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
+    case "wait_any":
+      return decodeJson(AgentToolSchemas.WaitAnyToolInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "wait_any", cause)
+            : toolExecutionFailed(toolUseId, "wait_any", cause)),
+        Effect.flatMap(input => runWaitAny(contextId, toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
     default:
       return Effect.fail(
         toolExecutionFailed(
           toolUseId,
           toolName,
-          `tool "${toolName}" is not yet ported onto the unified executor (tf-r06u.28 slice 2 scope = sleep)`,
+          `tool "${toolName}" is not yet ported onto the unified executor`,
         ),
       )
   }
@@ -143,7 +364,7 @@ export const makeFiregridAgentToolExecutor = (): Effect.Effect<FiregridAgentTool
       state: { invocationCount },
       execute: (payload) =>
         Ref.update(invocationCount, (n) => n + 1).pipe(
-          Effect.andThen(dispatchArm(payload.toolName, payload.toolUseId, payload.inputJson)),
+          Effect.andThen(dispatchArm(payload.contextId, payload.toolName, payload.toolUseId, payload.inputJson)),
         ),
     }
   })

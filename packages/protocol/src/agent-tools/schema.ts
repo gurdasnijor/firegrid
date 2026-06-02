@@ -75,6 +75,7 @@ export const SleepToolInputSchema = Schema.Struct({
   ...firegridProjection({
     operationId: "sleep",
     toolName: "sleep",
+    clientName: "sleep",
   }),
 })
 export type SleepToolInput = Schema.Schema.Type<typeof SleepToolInputSchema>
@@ -88,7 +89,7 @@ export const SleepToolOutputSchema = Schema.Struct({
 export type SleepToolOutput = Schema.Schema.Type<typeof SleepToolOutputSchema>
 
 // ---------------------------------------------------------------------------
-// wait_for
+// wait_for / wait_until
 // ---------------------------------------------------------------------------
 
 export const WaitForToolMatchSchema = Schema.Record({
@@ -101,34 +102,47 @@ export const WaitForToolMatchSchema = Schema.Record({
 })
 export type WaitForToolMatch = Schema.Schema.Type<typeof WaitForToolMatchSchema>
 
+const WaitTimeoutMsSchema = Schema.Number.pipe(
+  Schema.int(),
+  Schema.greaterThanOrEqualTo(0),
+)
+
+const WaitPromptSchema = Schema.String.pipe(Schema.minLength(1))
+
 export const WaitForToolInputSchema = Schema.Struct({
-  // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.1
-  // firegrid-agent-body-plan.WAIT_FOR_CHANNEL.2
-  channel: Schema.String.pipe(Schema.minLength(1)),
+  event: Schema.Struct({
+    channel: Schema.String.pipe(Schema.minLength(1)),
+    match: Schema.optional(WaitForToolMatchSchema),
+    timeoutMs: Schema.optional(WaitTimeoutMsSchema),
+  }),
   match: Schema.optional(WaitForToolMatchSchema),
-  timeoutMs: Schema.optional(
-    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
-  ),
+  timeoutMs: Schema.optional(WaitTimeoutMsSchema),
+  prompt: Schema.optional(WaitPromptSchema),
 }).annotations({
   identifier: "firegrid.agentTool.waitFor.input",
   title: "Wait-for tool input",
   description:
-    "Wait until a host-declared channel emits a matching row, optionally bounded by a timeout. Match values must be scalar; use dotted keys such as 'event.status' for nested row fields. To observe a child session, use channel 'session.agent_output' with match.sessionId set to the child sessionId and match.afterSequence set to the last seen sequence, or -1 from the beginning.",
+    "Wait until a host-declared event/projection emits a matching row, optionally bounded by a timeout. With prompt, append that prompt as a new turn after the wait resolves.",
   examples: [
     {
-      channel: "session.agent_output",
-      match: {
-        sessionId: "ctx_child",
-        afterSequence: -1,
+      event: {
+        channel: "session.agent_output",
+        match: {
+          sessionId: "ctx_child",
+          afterSequence: -1,
+        },
+        timeoutMs: 30_000,
       },
-      timeoutMs: 30_000,
     },
     {
-      channel: "factory.events",
+      event: {
+        channel: "factory.events",
+      },
       match: {
         eventType: "factory.run.approved",
       },
       timeoutMs: 30_000,
+      prompt: "Continue after approval.",
     },
   ],
   ...firegridProjection({
@@ -154,8 +168,43 @@ export const WaitForToolOutputSchema = Schema.Union(
 })
 export type WaitForToolOutput = Schema.Schema.Type<typeof WaitForToolOutputSchema>
 
+export const WaitUntilToolInputSchema = Schema.Struct({
+  time: Schema.String.pipe(
+    Schema.minLength(1),
+    Schema.annotations({
+      title: "Wait target time",
+      description: "Absolute ISO time or relative duration such as '+2d' or '+30m'.",
+    }),
+  ),
+  prompt: Schema.optional(WaitPromptSchema),
+}).annotations({
+  identifier: "firegrid.agentTool.waitUntil.input",
+  title: "Wait-until tool input",
+  description:
+    "Wait until an absolute or relative time. With prompt, append that prompt as a new turn after the wait resolves.",
+  examples: [
+    { time: "+2d" },
+    { time: "2026-06-03T16:00:00.000Z", prompt: "Check the build." },
+  ],
+  ...firegridProjection({
+    operationId: "wait.until",
+    toolName: "wait_until",
+    clientName: "wait.until",
+  }),
+})
+export type WaitUntilToolInput = Schema.Schema.Type<typeof WaitUntilToolInputSchema>
+
+export const WaitUntilToolOutputSchema = Schema.Struct({
+  waited: Schema.Literal(true),
+  firedAt: Schema.String,
+}).annotations({
+  identifier: "firegrid.agentTool.waitUntil.output",
+  title: "Wait-until tool output",
+})
+export type WaitUntilToolOutput = Schema.Schema.Type<typeof WaitUntilToolOutputSchema>
+
 // ---------------------------------------------------------------------------
-// send / wait_for_any
+// send / wait_any
 // ---------------------------------------------------------------------------
 
 export const ChannelToolTargetSchema = Schema.String.pipe(
@@ -199,37 +248,37 @@ export const SendToolOutputSchema = Schema.Struct({
 })
 export type SendToolOutput = Schema.Schema.Type<typeof SendToolOutputSchema>
 
-export const WaitForAnyMatchSchema = Schema.Record({
+export const WaitAnyMatchSchema = Schema.Record({
   key: Schema.String,
   value: Schema.Unknown,
 }).annotations({
-  identifier: "firegrid.agentTool.waitForAny.match",
-  title: "Wait-for-any match",
+  identifier: "firegrid.agentTool.waitAny.match",
+  title: "Wait-any match",
   description: "Field-equality predicates applied to one ingress channel row.",
 })
-export type WaitForAnyMatch = Schema.Schema.Type<typeof WaitForAnyMatchSchema>
+export type WaitAnyMatch = Schema.Schema.Type<typeof WaitAnyMatchSchema>
 
-export const WaitForAnyDescriptorSchema = Schema.Struct({
+export const WaitAnyDescriptorSchema = Schema.Struct({
   channel: ChannelToolTargetSchema,
-  match: Schema.optional(WaitForAnyMatchSchema),
+  match: Schema.optional(WaitAnyMatchSchema),
 }).annotations({
-  identifier: "firegrid.agentTool.waitForAny.descriptor",
-  title: "Wait-for-any channel descriptor",
+  identifier: "firegrid.agentTool.waitAny.descriptor",
+  title: "Wait-any channel descriptor",
 })
-export type WaitForAnyDescriptor = Schema.Schema.Type<typeof WaitForAnyDescriptorSchema>
+export type WaitAnyDescriptor = Schema.Schema.Type<typeof WaitAnyDescriptorSchema>
 
-export const WaitForAnyToolInputSchema = Schema.Struct({
-  channels: Schema.Array(WaitForAnyDescriptorSchema).pipe(Schema.minItems(1)),
-  timeoutMs: Schema.optional(
-    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
-  ),
+export const WaitAnyToolInputSchema = Schema.Struct({
+  events: Schema.Array(WaitAnyDescriptorSchema).pipe(Schema.minItems(1)),
+  timeoutMs: Schema.optional(WaitTimeoutMsSchema),
+  prompt: Schema.optional(WaitPromptSchema),
 }).annotations({
-  identifier: "firegrid.agentTool.waitForAny.input",
-  title: "Wait-for-any tool input",
-  description: "Race waits over multiple ingress channel descriptors.",
+  identifier: "firegrid.agentTool.waitAny.input",
+  title: "Wait-any tool input",
+  description:
+    "Race waits over multiple ingress channel descriptors. With prompt, append that prompt as a new turn after the race resolves.",
   examples: [
     {
-      channels: [
+      events: [
         { channel: "state.changes", match: { status: "ready" } },
         { channel: "factory.events", match: { eventType: "approved" } },
       ],
@@ -237,13 +286,14 @@ export const WaitForAnyToolInputSchema = Schema.Struct({
     },
   ],
   ...firegridProjection({
-    operationId: "channel.waitForAny",
-    toolName: "wait_for_any",
+    operationId: "wait.any",
+    toolName: "wait_any",
+    clientName: "wait.any",
   }),
 })
-export type WaitForAnyToolInput = Schema.Schema.Type<typeof WaitForAnyToolInputSchema>
+export type WaitAnyToolInput = Schema.Schema.Type<typeof WaitAnyToolInputSchema>
 
-export const WaitForAnyToolOutputSchema = Schema.Union(
+export const WaitAnyToolOutputSchema = Schema.Union(
   Schema.Struct({
     winnerIndex: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
     channel: ChannelToolTargetSchema,
@@ -253,10 +303,10 @@ export const WaitForAnyToolOutputSchema = Schema.Union(
     timedOut: Schema.Literal(true),
   }),
 ).annotations({
-  identifier: "firegrid.agentTool.waitForAny.output",
-  title: "Wait-for-any tool output",
+  identifier: "firegrid.agentTool.waitAny.output",
+  title: "Wait-any tool output",
 })
-export type WaitForAnyToolOutput = Schema.Schema.Type<typeof WaitForAnyToolOutputSchema>
+export type WaitAnyToolOutput = Schema.Schema.Type<typeof WaitAnyToolOutputSchema>
 
 // ---------------------------------------------------------------------------
 // spawn / spawn_all
@@ -546,40 +596,6 @@ export type SessionCloseToolOutput = Schema.Schema.Type<
 >
 
 // ---------------------------------------------------------------------------
-// schedule_me
-// ---------------------------------------------------------------------------
-
-export const ScheduleMeToolInputSchema = Schema.Struct({
-  when: Schema.Number.pipe(
-    Schema.int(),
-    Schema.greaterThanOrEqualTo(0),
-    Schema.annotations({
-      title: "Due timestamp",
-      description: "Wall-clock milliseconds since the Unix epoch when the scheduled prompt should fire.",
-    }),
-  ),
-  prompt: Schema.String.pipe(Schema.minLength(1)),
-}).annotations({
-  identifier: "firegrid.agentTool.scheduleMe.input",
-  title: "Schedule-me tool input",
-  description: "Schedule a future prompt to the same agent context.",
-  ...firegridProjection({
-    operationId: "schedule.me",
-    toolName: "schedule_me",
-  }),
-})
-export type ScheduleMeToolInput = Schema.Schema.Type<typeof ScheduleMeToolInputSchema>
-
-export const ScheduleMeToolOutputSchema = Schema.Struct({
-  scheduled: Schema.Literal(true),
-  scheduleId: Schema.String.pipe(Schema.minLength(1)),
-}).annotations({
-  identifier: "firegrid.agentTool.scheduleMe.output",
-  title: "Schedule-me tool output",
-})
-export type ScheduleMeToolOutput = Schema.Schema.Type<typeof ScheduleMeToolOutputSchema>
-
-// ---------------------------------------------------------------------------
 // execute
 // ---------------------------------------------------------------------------
 
@@ -812,8 +828,9 @@ export type CallToolOutput = Schema.Schema.Type<typeof CallToolOutputSchema>
 export const FiregridAgentToolOperations = {
   sleep: defineFiregridOperation(SleepToolInputSchema, SleepToolOutputSchema),
   waitFor: defineFiregridOperation(WaitForToolInputSchema, WaitForToolOutputSchema),
+  waitUntil: defineFiregridOperation(WaitUntilToolInputSchema, WaitUntilToolOutputSchema),
+  waitAny: defineFiregridOperation(WaitAnyToolInputSchema, WaitAnyToolOutputSchema),
   send: defineFiregridOperation(SendToolInputSchema, SendToolOutputSchema),
-  waitForAny: defineFiregridOperation(WaitForAnyToolInputSchema, WaitForAnyToolOutputSchema),
   spawn: defineFiregridOperation(SpawnToolInputSchema, SpawnToolOutputSchema),
   spawnAll: defineFiregridOperation(SpawnAllToolInputSchema, SpawnAllToolOutputSchema),
   sessionCreate: defineFiregridOperation(SessionNewToolInputSchema, SessionNewToolOutputSchema),
@@ -821,7 +838,6 @@ export const FiregridAgentToolOperations = {
   sessionStatus: defineFiregridOperation(SessionStatusInputSchema, SessionStatusOutputSchema),
   sessionCancel: defineFiregridOperation(SessionCancelToolInputSchema, SessionCancelToolOutputSchema),
   sessionClose: defineFiregridOperation(SessionCloseToolInputSchema, SessionCloseToolOutputSchema),
-  scheduleMe: defineFiregridOperation(ScheduleMeToolInputSchema, ScheduleMeToolOutputSchema),
   execute: defineFiregridOperation(ExecuteToolInputSchema, ExecuteToolOutputSchema),
   permissionRespond: defineFiregridOperation(PermissionRespondInputSchema, EventOffsetSchema),
   call: defineFiregridOperation(CallToolInputSchema, CallToolOutputSchema),

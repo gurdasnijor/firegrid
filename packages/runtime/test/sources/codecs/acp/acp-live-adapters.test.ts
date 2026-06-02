@@ -123,33 +123,33 @@ const driveTurn = (
   }).pipe(Effect.scoped, Effect.provide(sandboxLayer))
 }
 
-/** A real HTTP MCP server exposing one `schedule_me` tool; records invocations. */
+/** A real HTTP MCP server exposing one `wait_until` tool; records invocations. */
 const startMcpServer = async (): Promise<{
   readonly url: string
   readonly methods: Array<string>
-  readonly scheduleMeCalls: Array<unknown>
+  readonly waitUntilCalls: Array<unknown>
   readonly close: () => void
 }> => {
   const methods: Array<string> = []
-  const scheduleMeCalls: Array<unknown> = []
+  const waitUntilCalls: Array<unknown> = []
   const server = new McpServer({ name: "firegrid", version: "0.0.0" }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [{
-      name: "schedule_me",
-      description: "Schedule a future prompt to the same agent context.",
+      name: "wait_until",
+      description: "Wait until a time and optionally prompt the same agent context.",
       inputSchema: {
         type: "object",
         properties: {
-          when: { type: "integer", minimum: 0, description: "Due timestamp (epoch ms)." },
+          time: { type: "string", minLength: 1 },
           prompt: { type: "string", minLength: 1 },
         },
-        required: ["when", "prompt"],
+        required: ["time", "prompt"],
       },
     }],
   }))
   server.setRequestHandler(CallToolRequestSchema, async (req: { params: { name: string; arguments?: unknown } }) => {
-    if (req.params.name === "schedule_me") scheduleMeCalls.push(req.params.arguments)
-    return { content: [{ type: "text", text: JSON.stringify({ scheduledId: "sched-live-1", accepted: true }) }] }
+    if (req.params.name === "wait_until") waitUntilCalls.push(req.params.arguments)
+    return { content: [{ type: "text", text: JSON.stringify({ waited: true, accepted: true }) }] }
   })
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() })
   // server.connect's Transport param differs only by exactOptionalPropertyTypes
@@ -174,7 +174,7 @@ const startMcpServer = async (): Promise<{
   })
   const port: number = await new Promise((resolve) =>
     http.listen(0, "127.0.0.1", () => resolve((http.address() as { port: number }).port)))
-  return { url: `http://127.0.0.1:${port}/mcp`, methods, scheduleMeCalls, close: () => http.close() }
+  return { url: `http://127.0.0.1:${port}/mcp`, methods, waitUntilCalls, close: () => http.close() }
 }
 
 const adapters = LIVE ? resolveAdapters() : []
@@ -203,23 +203,23 @@ describe.skipIf(!LIVE)("LIVE: foreign ACP adapters through the production codec"
   // MCP-surfacing reach (the §4 newSessionMeta gate): the choreography tool,
   // surfaced through the real codec MCP path, is actually callable by the LLM.
   for (const spec of adapters) {
-    it(`${spec.name}: reaches + calls a Firegrid-surfaced schedule_me MCP tool`, async () => {
+    it(`${spec.name}: reaches + calls a Firegrid-surfaced wait_until MCP tool`, async () => {
       const mcp = await startMcpServer()
       try {
         const events = await Effect.runPromise(
           driveTurn(
             spec,
-            "You have an MCP tool named `schedule_me`. Call it exactly once, now, with arguments when=9999999999999 and prompt=\"check the build\". You MUST actually invoke the schedule_me tool. After it returns, reply DONE.",
+            "You have an MCP tool named `wait_until`. Call it exactly once, now, with arguments time=\"+1ms\" and prompt=\"check the build\". You MUST actually invoke the wait_until tool. After it returns, reply DONE.",
             { mcpUrl: mcp.url },
           ),
         )
         expect(mcp.methods, JSON.stringify(mcp.methods)).toContain("tools/list")
-        expect(mcp.scheduleMeCalls.length, "schedule_me was not invoked by the adapter LLM").toBeGreaterThan(0)
-        expect(mcp.scheduleMeCalls[0]).toMatchObject({ when: 9999999999999, prompt: "check the build" })
+        expect(mcp.waitUntilCalls.length, "wait_until was not invoked by the adapter LLM").toBeGreaterThan(0)
+        expect(mcp.waitUntilCalls[0]).toMatchObject({ time: "+1ms", prompt: "check the build" })
         // The codec observed the provider-executed tool use (name convention is
-        // dialect-specific: bare `schedule_me` vs namespaced `mcp.<server>.<tool>`).
+        // dialect-specific: bare `wait_until` vs namespaced `mcp.<server>.<tool>`).
         const toolUseNames = events.filter(e => e.tag === "ToolUse").map(e => e.toolName ?? "")
-        expect(toolUseNames.some(n => n.includes("schedule_me")), JSON.stringify(toolUseNames)).toBe(true)
+        expect(toolUseNames.some(n => n.includes("wait_until")), JSON.stringify(toolUseNames)).toBe(true)
       } finally {
         mcp.close()
       }

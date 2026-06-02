@@ -151,6 +151,18 @@ export const WaitForTool = Tool.make(schemaToolName(AgentToolSchemas.WaitForTool
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
+ * `wait_until` — wait until an absolute or relative time. With a prompt,
+ * the prompt is appended as a new turn after the timer resolves.
+ */
+export const WaitUntilTool = Tool.make(schemaToolName(AgentToolSchemas.WaitUntilToolInputSchema, "wait_until"), {
+  description: schemaDescription(AgentToolSchemas.WaitUntilToolInputSchema, "wait_until"),
+  dependencies: FiregridToolDependencies,
+})
+  .setParameters(AgentToolSchemas.WaitUntilToolInputSchema)
+  .setSuccess(AgentToolSchemas.WaitUntilToolOutputSchema)
+  .setFailure(FiregridMcpToolFailureSchema)
+
+/**
  * `send` — append a payload to an egress channel.
  * firegrid-agent-body-plan.SLICE_D_VERBS.1
  */
@@ -163,16 +175,16 @@ export const SendTool = Tool.make(schemaToolName(AgentToolSchemas.SendToolInputS
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
- * `wait_for_any` — race waits over ingress channels and return the first
+ * `wait_any` — race waits over ingress channels and return the first
  * matching row.
  * firegrid-agent-body-plan.SLICE_D_VERBS.1
  */
-export const WaitForAnyTool = Tool.make(schemaToolName(AgentToolSchemas.WaitForAnyToolInputSchema, "wait_for_any"), {
-  description: schemaDescription(AgentToolSchemas.WaitForAnyToolInputSchema, "wait_for_any"),
+export const WaitAnyTool = Tool.make(schemaToolName(AgentToolSchemas.WaitAnyToolInputSchema, "wait_any"), {
+  description: schemaDescription(AgentToolSchemas.WaitAnyToolInputSchema, "wait_any"),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(AgentToolSchemas.WaitForAnyToolInputSchema)
-  .setSuccess(AgentToolSchemas.WaitForAnyToolOutputSchema)
+  .setParameters(AgentToolSchemas.WaitAnyToolInputSchema)
+  .setSuccess(AgentToolSchemas.WaitAnyToolOutputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
@@ -250,21 +262,6 @@ export const SessionCloseTool = Tool.make(schemaToolName(AgentToolSchemas.Sessio
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
- * `schedule_me` — schedule a future prompt to the same agent context.
- * Maps onto the unified `ScheduledPromptWorkflow`
- * (`../subscribers/scheduled-webhook-peer.ts`), which owns the
- * `DurableClock.sleep` + idempotent prompt append, in
- * `FiregridAgentToolExecutor`.
- */
-export const ScheduleMeTool = Tool.make(schemaToolName(AgentToolSchemas.ScheduleMeToolInputSchema, "schedule_me"), {
-  description: schemaDescription(AgentToolSchemas.ScheduleMeToolInputSchema, "schedule_me"),
-  dependencies: FiregridToolDependencies,
-})
-  .setParameters(AgentToolSchemas.ScheduleMeToolInputSchema)
-  .setSuccess(AgentToolSchemas.ScheduleMeToolOutputSchema)
-  .setFailure(FiregridMcpToolFailureSchema)
-
-/**
  * `execute` — invoke a SandboxProvider-backed tool by sandbox-neutral
  * reference. Maps onto the unified sandbox/codec path
  * (`../codec-adapter.ts`) in `FiregridAgentToolExecutor`.
@@ -303,15 +300,15 @@ export const CallTool = Tool.make(schemaToolName(AgentToolSchemas.CallToolInputS
 export const FiregridAgentToolkit = Toolkit.make(
   SleepTool,
   WaitForTool,
+  WaitUntilTool,
+  WaitAnyTool,
   SendTool,
   SessionNewTool,
   SessionPromptTool,
   SessionCancelTool,
   SessionCloseTool,
-  ScheduleMeTool,
   ExecuteTool,
   CallTool,
-  WaitForAnyTool,
 )
 
 /**
@@ -324,7 +321,7 @@ export const FiregridAgentToolkit = Toolkit.make(
  */
 export const FiregridPrimitiveProfileToolkit = Toolkit.make(
   WaitForTool,
-  WaitForAnyTool,
+  WaitAnyTool,
   SendTool,
   CallTool,
 )

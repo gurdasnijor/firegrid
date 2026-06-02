@@ -40,7 +40,7 @@
     {
       "ruleId": "firegrid-no-unclassified-workflow-make",
       "path": "packages/runtime/src/unified/mcp-host/tool-dispatch.ts",
-      "line": 163,
+      "line": 384,
       "justification": "Reviewed MCP-entry Shape D tool-dispatch owner workflow: one execution per toolUseId, uses Workflow idempotency and Activity memoization for at-most-once tool execution, then returns the synchronous MCP tools/call result without a relay."
     }
   ]

@@ -147,18 +147,18 @@ const mcpServerLayer = (streamUrl: string, toolProfile?: "full" | "primitive") =
 const FULL_TOOLS = [
   "call",
   "execute",
-  "schedule_me",
   "send",
   "session_cancel",
   "session_close",
   "session_new",
   "session_prompt",
   "sleep",
+  "wait_any",
   "wait_for",
-  "wait_for_any",
+  "wait_until",
 ].sort()
 
-const PRIMITIVE_TOOLS = ["call", "send", "wait_for", "wait_for_any"].sort()
+const PRIMITIVE_TOOLS = ["call", "send", "wait_any", "wait_for"].sort()
 
 const runAgainstServer = <A>(
   streamUrl: string,
