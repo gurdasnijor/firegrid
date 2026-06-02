@@ -162,7 +162,7 @@ describe("tf-0awo.26 — cross-attempt output-flush boundary (validation instrum
 
           // Seed the context row the adapter resolves + spawns from. Real ACP
           // example agent as the spawn target; no env bindings (denyAll is fine).
-          const hostId = Schema.decodeSync(HostIdSchema)("crossattempt-host")
+          const hostId = yield* Schema.decode(HostIdSchema)("crossattempt-host")
           const intent: RuntimeContextIntent = {
             provider: "local-process",
             config: {

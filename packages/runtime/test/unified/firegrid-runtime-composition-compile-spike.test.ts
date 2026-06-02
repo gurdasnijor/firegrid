@@ -141,7 +141,7 @@ const stubSandboxProvider: SandboxProviderService = {
   capabilities: defaultCapabilities,
   create: (config) => Effect.succeed(runningSandbox(config)),
   getOrCreate: (config) => Effect.succeed(runningSandbox(config)),
-  find: (_labels) => Effect.succeed(undefined),
+  find: (_labels) => Effect.sync((): Sandbox | undefined => undefined),
   execute: (_sandbox, _command: SandboxCommand) => Effect.succeed(executionResult),
   executeMany: (_sandbox, commands) =>
     Effect.succeed(commands.map(() => executionResult)),
@@ -340,8 +340,12 @@ describe("tf-0awo.18 FiregridRuntime composition compile spike", () => {
             ),
           )
         }).pipe(
-          Effect.provide(durableStreamsFloor(spec)),
-          Effect.provide(FiregridRuntimeContextMcpBaseUrlLive),
+          Effect.provide(
+            Layer.mergeAll(
+              durableStreamsFloor(spec),
+              FiregridRuntimeContextMcpBaseUrlLive,
+            ),
+          ),
         ),
       ),
     )
