@@ -136,6 +136,16 @@ describe("session facade protocol schema", () => {
   })
 
   it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.1 projects normalized agent-output observations from RuntimeOutput rows", () => {
+    const raw = encodeRuntimeAgentOutputEnvelope({
+      _tag: "ToolUse",
+      part: Prompt.toolCallPart({
+        id: "tool-1",
+        name: "wait_for",
+        params: {},
+        providerExecuted: true,
+      }),
+    })
+    const decoded = decodeRuntimeAgentOutputEnvelope(raw)
     const observation = runtimeAgentOutputObservationFromRow({
       eventId: {
         contextId: "ctx_projection",
@@ -149,16 +159,14 @@ describe("session facade protocol schema", () => {
       source: "stdout",
       format: "jsonl",
       receivedAt: "2026-05-16T00:00:00.000Z",
-      raw: encodeRuntimeAgentOutputEnvelope({
-        _tag: "ToolUse",
-        part: Prompt.toolCallPart({
-          id: "tool-1",
-          name: "wait_for",
-          params: {},
-          providerExecuted: false,
-        }),
-      }),
+      raw,
     })
+
+    expect(Option.isSome(decoded)).toBe(true)
+    if (Option.isNone(decoded)) return
+    expect(decoded.value._tag).toBe("ToolUse")
+    if (decoded.value._tag !== "ToolUse") return
+    expect(decoded.value.part.providerExecuted).toBe(true)
 
     expect(Option.isSome(observation)).toBe(true)
     if (Option.isNone(observation)) return
@@ -175,6 +183,8 @@ describe("session facade protocol schema", () => {
       toolUseId: "tool-1",
       toolName: "wait_for",
     })
+    if (observation.value._tag !== "ToolUse") return
+    expect(observation.value.event.part.providerExecuted).toBe(true)
   })
 
   it("TFIND-047 exposes correlated agent-output observation narrowing from the outer tag", () => {
