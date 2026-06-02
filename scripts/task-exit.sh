@@ -53,6 +53,32 @@ if [ -n "$(git -C "$RR" status --porcelain -- ':!.beads/')" ]; then
     && echo "✓ committed remaining work on $BR"
 fi
 
+# 3b. PREFLIGHT GATE — run the full local gate set on the committed state and
+#     REFUSE to push / open a PR on failure. The DRAFT PR is the merge gate, so
+#     pushing a red branch just burns a CI round-trip and strands a failing PR;
+#     fail loud LOCALLY instead. This is the discipline made structural: lanes
+#     were skipping `pnpm preflight` by hand, so every open PR failed the same
+#     checks. `pnpm preflight` runs all gates in parallel (weighted semaphore),
+#     so it stays fast. Runs against HEAD (the just-committed work). Escape only
+#     with explicit intent (prints a loud warning):
+#         TASK_EXIT_SKIP_PREFLIGHT=1 bash scripts/task-exit.sh <bead-id>
+#     — for the rare case of knowingly pushing WIP (cannot be set by accident).
+if [ "${TASK_EXIT_SKIP_PREFLIGHT:-}" = "1" ]; then
+  echo "⚠ task-exit: TASK_EXIT_SKIP_PREFLIGHT=1 — SKIPPING pnpm preflight." >&2
+  echo "   The push/PR is NOT locally verified; CI may fail. Use sparingly." >&2
+else
+  echo "▶ task-exit: running pnpm preflight before push (override: TASK_EXIT_SKIP_PREFLIGHT=1)…"
+  if ! ( cd "$RR" && pnpm preflight ); then
+    echo "" >&2
+    echo "✋ task-exit: pnpm preflight FAILED — REFUSING to push $BR or open a PR." >&2
+    echo "   Your work is committed locally on $BR but NOT pushed (nothing stranded" >&2
+    echo "   remotely). Fix the failing gate(s) above, then re-run task-exit." >&2
+    echo "   (Override with TASK_EXIT_SKIP_PREFLIGHT=1 only when knowingly pushing WIP.)" >&2
+    exit 1
+  fi
+  echo "✓ task-exit: pnpm preflight green — proceeding to push."
+fi
+
 # 4. push the branch — FAIL LOUD. A swallowed push = stranded work, the
 #    exact failure this lifecycle exists to prevent.
 #

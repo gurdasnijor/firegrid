@@ -71,25 +71,26 @@ subgraph 1G["launch"]
 1L["runtime-start.ts"]
 1M["schema.ts"]
 1N["table.ts"]
+1O["views.ts"]
 end
-subgraph 1O["observations"]
-1P["schema.ts"]
+subgraph 1P["observations"]
+1Q["schema.ts"]
 end
-subgraph 1Q["otel"]
-1R["row-otel.ts"]
+subgraph 1R["otel"]
+1S["row-otel.ts"]
 end
-subgraph 1S["projection"]
-1T["index.ts"]
-1U["schema.ts"]
+subgraph 1T["projection"]
+1U["index.ts"]
+1V["schema.ts"]
 end
-subgraph 1V["runtime-ingress"]
-1W["index.ts"]
-1X["schema.ts"]
+subgraph 1W["runtime-ingress"]
+1X["index.ts"]
+1Y["schema.ts"]
 end
-subgraph 1Y["session-facade"]
-1Z["index.ts"]
-20["operations.ts"]
-21["schema.ts"]
+subgraph 1Z["session-facade"]
+20["index.ts"]
+21["operations.ts"]
+22["schema.ts"]
 end
 end
 end
@@ -101,13 +102,13 @@ end
 3-->18
 3-->19
 3-->1K
-3-->1T
-3-->1W
-3-->1Z
+3-->1U
+3-->1X
+3-->20
 4-->3
 4-->6
 4-->7
-6-->1Z
+6-->20
 A-->B
 A-->K
 C-->A
@@ -146,14 +147,14 @@ X-->Y
 10-->11
 11-->Y
 11-->13
-11-->1P
-11-->1U
+11-->1Q
+11-->1V
 14-->13
 15-->11
 15-->1M
-15-->21
+15-->22
 15-->13
-16-->21
+16-->22
 16-->13
 17-->13
 18-->13
@@ -177,7 +178,7 @@ X-->Y
 1D-->1M
 1D-->13
 1F-->13
-1I-->1R
+1I-->1S
 1I-->1M
 1I-->C
 1J-->1H
@@ -189,24 +190,25 @@ X-->Y
 1K-->1L
 1K-->1M
 1K-->1N
+1K-->1O
 1M-->1H
-1N-->1R
+1N-->1S
 1N-->1H
 1N-->1M
 1N-->C
-1T-->1U
-1W-->1X
-1X-->1R
-1X-->C
-1Z-->X
-1Z-->20
-1Z-->21
-20-->11
-20-->13
-20-->1P
+1U-->1V
+1X-->1Y
+1Y-->1S
+1Y-->C
+20-->X
 20-->21
-21-->X
+20-->22
 21-->11
-21-->1M
-21-->1P
-21-->1U
+21-->13
+21-->1Q
+21-->22
+22-->X
+22-->11
+22-->1M
+22-->1Q
+22-->1V

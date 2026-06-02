@@ -43,6 +43,8 @@
     "arch:deps:protocol": "node scripts/tooling.mjs arch deps protocol",
     "arch:deps:runtime": "node scripts/tooling.mjs arch deps runtime",
     "arch:deps:runtime:detail": "node scripts/tooling.mjs arch deps runtime-detail",
+    "arch:graphs": "pnpm run arch:deps && pnpm run arch:deps:detail",
+    "arch:graphs:check": "bash scripts/arch-graphs-check.sh",
     "toy:coverage": "bash scripts/tiny-config-prod-coverage.sh",
     "trace:seams": "tsx scripts/trace-seam-coverage.ts",
     "trace:seams:ukv": "pnpm --filter @firegrid/tiny-firegrid run trace:seams:ukv",
