@@ -96,10 +96,15 @@ const firegridClientLayer = (
   durableStreamsBaseUrl: string,
   namespace: string,
   hostLayer: Layer.Layer<FiregridHost, unknown>,
+  simulation: TinyFiregridSimulation<unknown>,
+  hostEnv: TinyFiregridHostEnv,
 ) => {
   const configLayer = Layer.succeed(FiregridConfig, {
     durableStreamsBaseUrl,
     namespace,
+    ...(simulation.channels === undefined
+      ? {}
+      : { channels: simulation.channels(hostEnv) }),
   })
   return FiregridLive.pipe(
     Layer.provideMerge(hostLayer),
@@ -238,10 +243,19 @@ export const runSimulation = (
           baseUrl,
         }),
       )
+      if (simulation.launchHost === true) {
+        yield* Layer.launch(hostLayer).pipe(Effect.forkScoped)
+      }
 
       const outcome = yield* Effect.raceWith(
         simulation.driver.pipe(
-          Effect.provide(firegridClientLayer(baseUrl, namespace, hostLayer)),
+          Effect.provide(firegridClientLayer(
+            baseUrl,
+            namespace,
+            hostLayer,
+            simulation,
+            hostEnv,
+          )),
           annotateSide("driver"),
         ),
         Deferred.await(stopSignal),
