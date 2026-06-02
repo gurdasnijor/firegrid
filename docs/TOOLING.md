@@ -1,297 +1,185 @@
 # Tooling
 
-This repo standardizes TypeScript hygiene on ESLint plus the Effect language service.
+This repo standardizes TypeScript hygiene on ESLint plus the Effect language
+service, gated locally by `pnpm preflight` and in CI by the workflow at
+`.github/workflows/ci.yml`.
+
+## The review gate: `pnpm preflight`
+
+```sh
+pnpm preflight
+```
+
+This is **the** canonical local ready-for-review gate (`tooling/src/preflight.ts`).
+It runs every gate in parallel over a weighted semaphore (heavy gates start
+first), keeps going after failures, and replays each failing gate's output in one
+pass. Gates:
+
+`test` · `typecheck` · `effect:diagnostics` · `lint` · `lint:dead` · `lint:dup` ·
+`lint:deps` · `lint:effect-quality` · `trace:seams:ukv` · `check:specs` · `check:docs`
+
+`task-exit.sh` runs `pnpm preflight` and refuses to push on failure.
+
+> `pnpm verify` is a thin **alias** of `pnpm preflight` (kept for muscle memory /
+> existing references). `pnpm check` is a *different*, build-inclusive chain
+> (`check:specs + check:docs + lint + effect:diagnostics + turbo run build check`)
+> — use it when you specifically want the build in the loop.
+
+**CI is authoritative for the full suite.** CI runs the same gates split across
+parallel jobs (below), so a clean `pnpm preflight` should mean a green CI.
 
 ## ESLint
 
-Run:
-
 ```sh
-pnpm run lint
+pnpm run lint     # eslint + runtime-public-surface + tiny-firegrid layout checks
+pnpm run format   # eslint --fix
 ```
 
-Autofix formatting and safe lint fixes:
+One ESLint stack covers formatting, type-aware linting, Effect guardrails, and
+package-boundary checks. Beyond `lint`'s ESLint pass, the `lint` script also runs
+two filesystem-shape checks (`scripts/runtime-public-surface-check.mjs`,
+`scripts/tiny-firegrid-layout-check.mjs`).
 
-```sh
-pnpm run format
-```
-
-The ESLint config intentionally keeps one stack for formatting, type-aware linting, Effect guardrails, and package-boundary checks. Current Effect defect-boundary debt such as `Effect.orDie` and `Layer.orDie` is reported as warnings so the lint setup can land before the behavioral refactor.
-
-The repo also carries local durable-authority guardrails. These do not prove distributed correctness; they catch shapes that commonly bypass durable state:
-
-- `local/no-production-js-timers` errors on production `setInterval`, `setTimeout`, and `setImmediate`.
-- `local/no-hidden-control-plane` errors on HTTP/control-plane imports in host/client production paths.
-- `local/no-module-durable-cache` warns on module-scope mutable durable-state caches or registries.
-- `local/no-fixed-polling` warns on fixed schedules, stream ticks, and `Effect.sleep` inside loops.
-- `local/no-host-authority-registry` warns on host-owned run/completion/claim/event-plane registry names.
-
-Reviewed production exceptions should use a nearby escape comment with a reason, for example:
+Local durable-authority guardrails (custom `local/*` rules) catch shapes that
+commonly bypass durable state — e.g. `local/no-production-js-timers`,
+`local/no-hidden-control-plane`, `local/no-module-durable-cache`,
+`local/no-fixed-polling`, `local/no-host-authority-registry`. Reviewed
+exceptions use a nearby escape comment with a reason:
 
 ```ts
 // durable-lint-allow-polling: subscription deadline fallback with bounded scope
 ```
 
-## Build
+## Static-quality ratchets
 
-Run:
+```sh
+pnpm run lint:dead          # knip: zero unused exports/files/deps/binaries
+pnpm run lint:dup           # jscpd: duplicated-line count vs .jscpd.json threshold
+pnpm run lint:deps          # dependency-cruiser boundary/cycle/direction checks
+pnpm run lint:effect-quality # ts-morph per-pattern Effect-quality count ratchet
+```
+
+Each has a `:baseline` companion (`lint:dead:baseline`, etc.) that recomputes the
+tracked count after intentional reduction. The baseline scripts refuse to ratchet
+upward automatically; raising a threshold requires an explicit config edit and
+review. See `docs/contributing/quality-gates.md` and
+`docs/contributing/effect-quality-metrics.md`.
+
+## Build
 
 ```sh
 pnpm run build
 ```
 
-Each package emits production JavaScript into its local `dist` directory from `src`, excluding tests. Declaration emit is intentionally off for the first build baseline because the current protocol/runtime schemas need explicit exported type annotations before portable declaration generation can pass.
+Each package emits production JavaScript into its local `dist` from `src`,
+excluding tests. Source uses relative `.ts` import specifiers; TypeScript's
+`rewriteRelativeImportExtensions` rewrites them to `.js` in `dist`, so source
+stays TypeScript-native while emitted ESM runs under Node. ESLint enforces and
+autofixes this convention.
 
-Source files use relative `.ts` import/export specifiers. TypeScript's `rewriteRelativeImportExtensions` rewrites those to `.js` in `dist`, so source stays TypeScript-native while emitted ESM remains runnable by Node. ESLint enforces and autofixes this convention.
-
-## Effect Devtools
-
-The repo installs `@effect/language-service` at the workspace root and enables it in each package tsconfig. Editors must use the workspace TypeScript version for the plugin to load.
-
-For VS Code and Cursor, this repo recommends the Effect Dev Tools extension and configures:
-
-```json
-{
-  "typescript.tsdk": "node_modules/typescript/lib"
-}
-```
-
-Build-time Effect diagnostics are available after patching the local TypeScript install:
+## Effect diagnostics & devtools
 
 ```sh
-pnpm run effect:patch
+pnpm run effect:diagnostics            # turbo run diagnostics (gated)
+pnpm run effect:diagnostics:baseline   # recompute the diagnostics baseline
+pnpm run effect:patch / effect:unpatch # opt-in: patch local TS for build-time diagnostics
 ```
 
-This is intentionally opt-in for now: the current codebase has existing Effect diagnostics that should be fixed in a dedicated refactor before the patch becomes part of the default install/check path. Use `pnpm run effect:unpatch` to restore the normal TypeScript compiler.
+`@effect/language-service` is installed at the workspace root and enabled in each
+package tsconfig; editors must use the workspace TypeScript version for the plugin
+to load. For VS Code / Cursor, set `"typescript.tsdk": "node_modules/typescript/lib"`.
 
-The runtime tracer dependency `@effect/experimental` is not installed yet. Add it when there is a concrete app/runtime entrypoint that should connect to the editor DevTools tracer.
+## Architecture dependency graphs
 
-## Static-quality tooling
-
-Run the complete review gate:
+Graphs are **review evidence, not a gate**, and are **not committed**. Render them
+locally with dependency-cruiser:
 
 ```sh
-pnpm verify
+pnpm run arch:deps          # workspace + collapsed package graphs (Mermaid)
+pnpm run arch:deps:detail   # uncollapsed module-level graphs
+pnpm run arch:graphs        # both of the above
+pnpm run arch:deps:client | :protocol | :runtime   # focused single-package graphs
 ```
 
-This is the canonical ready-for-review gate for agent work. CI is the authoritative full-suite runner; cmux review-request payloads should report CI status and any targeted local checks used to debug concrete failures. Local agents should use targeted
-checks to debug concrete failures unless the coordinator explicitly asks for a
-full local `pnpm verify`.
+Output (`docs/dependency-graph*.mmd`) is **git-ignored** — it is a renumber-churny
+generated artifact that conflicted across parallel lanes with no review value as a
+committed file. Instead, architectural change is surfaced automatically as an
+**advisory PR comment**: the `Arch graph advisory` workflow
+(`.github/workflows/arch-graph-comment.yml`) runs `depcruise --affected <base.sha>`
+(changed modules since the PR base + everything that can reach them, highlighted)
+and posts a Mermaid diagram. It is **advisory only — never a merge gate**.
 
-### CI workflow shape
+For the *strict* dependency-boundary gate, use `pnpm run lint:deps` (and CI).
 
-The repo's CI workflow at `.github/workflows/ci.yml` runs five gating jobs in
-parallel — `Lint`, `Typecheck`, `Effect diagnostics`, and `Tests`.
-Dependency-cruiser boundary checks run inside the `Lint` job. Dependency graph
-refreshes are local review evidence, not CI artifacts.
+## CI workflow shape
 
-Each job's setup boilerplate (checkout + pnpm setup + node setup + install)
-lives in the shared composite action at `.github/actions/setup`. Bumping the
-pnpm or Node version touches one file rather than every job.
+`.github/workflows/ci.yml` runs five gating jobs in parallel — **Lint**,
+**Typecheck**, **Effect diagnostics**, **Tests**, and **UKV trace seams**.
+Dependency-cruiser boundary checks run inside the `Lint` job. The separate
+`arch-graph-comment.yml` workflow posts the advisory dependency-graph comment and
+is **non-gating**.
 
-CI wall-clock equals the slowest single job (typically `Tests` or `Typecheck`)
-rather than the serial sum. The pnpm content-addressed store cache, keyed on
-`pnpm-lock.yaml` via `actions/setup-node@v6 with cache: pnpm`, is shared
-across jobs in the same workflow run, so the second-and-later jobs install
-from a warm cache.
+Each job's setup (checkout + pnpm + node + install) lives in the shared composite
+action `.github/actions/setup`. CI wall-clock approaches the slowest single job;
+the pnpm content-addressed store cache is shared across jobs in a run.
 
-Run duplicate-token detection:
+## CLI / runtime entrypoints
+
+The runtime ships a unified `@effect/cli` binary with subcommands:
 
 ```sh
-pnpm run lint:dup
+pnpm run firegrid -- run|acp|host|start [...]   # bin/firegrid.ts (unified)
 ```
 
-This runs jscpd over production package/app source and compares the duplicated-line count against the tracked threshold in `.jscpd.json`. Tests, fixtures, build output, coverage, and dependency directories are excluded. The current baseline is the existing production duplicate count; CI fails on any increase.
+The `firegrid:run` / `firegrid:acp` / `firegrid:host` / `firegrid:start` scripts
+are thin shortcuts to the same per-subcommand bins. `firegrid:host:env` adds
+`--env-file-if-exists=.env`.
 
-Recompute the duplication baseline:
+## Static-analysis consolidation (Semgrep + ast-grep retired)
 
-```sh
-pnpm run lint:dup:baseline
-```
+ESLint is the keystone source-pattern engine. Semgrep was retired (consolidation):
+footprint guards with no live findings became ESLint `local/sg-*` rules in
+`eslint.config.js` (a shared source-text scanner applying Semgrep's exact regexes,
+scoped per block via `files`/`ignores`, run under `pnpm run lint`); rules with live
+findings moved to the `effect-quality` ts-morph count ratchet
+(`pnpm run lint:effect-quality`). ast-grep was likewise retired — its one gated
+rule now lives as `local/hrtime-number-arithmetic`. To add a source-pattern guard:
+prefer a type-aware ESLint rule; for a pure text shape add a `local/sg-*` block; or
+— if it would have live findings — add a counter to
+`scripts/effect-artifacts/quality-metrics.mjs` and re-baseline. See
+`docs/static-analysis-catalog.md`.
 
-This is intended for remediation slices after helper extractions reduce duplication. The script refuses to raise the threshold automatically; accepting any increase requires an explicit config edit and coordinator review.
+## Effect-quality metric ratchet
 
-Run dead-code detection:
+`pnpm run lint:effect-quality` runs `scripts/effect-quality-metrics-check.mjs`,
+which counts per-pattern findings across `packages/*/src` with ts-morph
+(AST-precise, so comments/strings don't false-positive) and compares to
+`effect-quality-metrics-baseline.json`. CI fails on any increase; decreases
+recompute via `pnpm run lint:effect-quality:baseline` (never auto-raises).
 
-```sh
-pnpm run lint:dead
-```
+Strict-zero rules layered alongside: `local/no-extends-error`,
+`local/no-process-env-outside-bin`. Tracked ratchet metrics include
+`throwOutsideBinScriptCount`, `forOfInPackageSourceCount`, `anyNoContextCastCount`,
+`nodeCryptoImportCount`, `dataTaggedErrorDeclarationCount`, `newDurableStreamSiteCount`,
+`perCallLayerProvideSiteCount`, `effectOrDieSiteCount`, and the test-migration
+counters. New tagged-error classes are normal feature work — land the class and
+re-run the baseline in the same PR.
 
-This runs knip and requires the current unused-export, unused-file, unused-dependency, and unlisted-binary finding count to remain zero. Recompute the tracked report after intentional cleanup with:
+### Policy exceptions (deliberate, documented)
 
-```sh
-pnpm run lint:dead:baseline
-```
+- `Data.TaggedError` is the firegrid policy; `Schema.TaggedError` is reserved for
+  wire-envelope error decoding. The ratchet caps the count.
+- `Effect.runPromise`/`runPromiseExit` permitted in `__tests__/` (during the
+  `@effect/vitest` migration) and in bin/app entrypoints. The ratchet caps it.
+- `Effect.orDie`/`Layer.orDie`/`Effect.die` permitted only at deliberate
+  runtime-fork / bin / test-harness boundaries. The ratchet caps it.
 
-The check script refuses any nonzero baseline or current finding count. New knip findings should be fixed when they are real, or explicitly reviewed as intentional tool or fixture shapes before adding an ignore.
+This tooling exists because manual review windows are too narrow to be the only
+guardrail for architecture boundaries, durable-state helper shapes, and
+Effect-quality regressions.
 
-Run transitive dependency boundary checks:
+---
 
-```sh
-pnpm run lint:deps
-```
-
-This runs dependency-cruiser with `.dependency-cruiser.cjs`. Unlike direct import lint rules, dependency-cruiser can flag transitive boundary violations, cycles, and cross-package dependency direction across the protocol, client, runtime, and app workspaces. It also gates general dependency hygiene for unresolvable imports, undeclared npm dependencies, deprecated package usage, production imports from test files, and duplicate dependency declarations.
-
-## Architecture Reporting
-
-Architecture reports are review evidence, not the ready-for-review gate. They
-answer "what does the package dependency graph look like right now?" before a
-package-structure or boundary cleanup. They do not prove runtime behavior,
-durable transition correctness, or ESLint policy compliance. Use
-`pnpm verify`, `pnpm run lint:deps`, and GitHub CI for those gates.
-
-Spec anchors:
-
-- `firegrid-remediation-hardening.STATIC_QUALITY.3`
-- `firegrid-remediation-hardening.STATIC_QUALITY.5`
-- `firegrid-remediation-hardening.STATIC_QUALITY.8`
-- `firegrid-remediation-hardening.ARCHITECTURE_BOUNDARIES.5`
-- `firegrid-architecture-boundary.DEPENDENCY_GRAPH.1`
-- `firegrid-architecture-boundary.DEPENDENCY_GRAPH.2`
-- `firegrid-architecture-boundary.DEPENDENCY_GRAPH.6`
-- `firegrid-package-migration.COMPATIBILITY.4`
-
-Regenerate dependency-graph evidence:
-
-```sh
-pnpm run arch:deps
-```
-
-This uses dependency-cruiser to refresh a workspace-level Mermaid graph and
-focused package/app Mermaid graphs. Graph generation excludes tests and build
-outputs so the diagrams show production architecture rather than test
-reachability. Use it before reviewing package-boundary changes, runtime/client
-split changes, public export movement, or SDD updates that cite current
-architecture evidence. Commit regenerated report files only when the slice
-intentionally changes architecture evidence; otherwise use the command as a
-local inspection tool.
-
-Regenerate detailed module-level dependency-graph evidence:
-
-```sh
-pnpm run arch:deps:detail
-```
-
-This produces uncollapsed module-level graphs for import-review slices where
-the collapsed package graphs are too high-level.
-
-Outputs:
-
-- `docs/dependency-graph.mmd` — collapsed Mermaid graph for quick text review.
-- `docs/dependency-graph-client.mmd` — client package internals.
-- `docs/dependency-graph-protocol.mmd` — protocol package internals.
-- `docs/dependency-graph-runtime.mmd` — runtime package internals.
-- `docs/dependency-graph-flamecast.mmd` — Flamecast app internals.
-- `docs/dependency-graph-detail.mmd` — workspace module-level imports.
-- `docs/dependency-graph-runtime-detail.mmd` — runtime module-level imports.
-- `docs/dependency-graph-runtime-control-data-detail.mmd` — runtime control/data module-level imports.
-- `docs/dependency-graph-flamecast-detail.mmd` — Flamecast module-level imports.
-
-Focused graph targets:
-
-```sh
-pnpm run arch:deps:client
-pnpm run arch:deps:protocol
-pnpm run arch:deps:runtime
-pnpm run arch:deps:flamecast
-pnpm run arch:deps:detail
-```
-
-Use focused graphs when reviewing package-shape work; `pnpm run lint:deps`
-remains the strict CI dependency-boundary check. The graph commands show import
-reachability and direction, including the
-`firegrid-architecture-boundary.DEPENDENCY_GRAPH.6` app-vs-package boundary.
-They do not prove API-level suitability; use package exports, source guards, and
-code review for stricter public-surface interpretation.
-
-Command map:
-
-| Task | Command | Writes | Gate? |
-| --- | --- | --- | --- |
-| Ready-for-review static/test gate | `pnpm verify` | none | Yes, CI authoritative |
-| Strict dependency boundary check | `pnpm run lint:deps` | none | Yes |
-| Dependency graph evidence refresh | `pnpm run arch:deps` | `docs/dependency-graph*.mmd` | No |
-| Detailed module graph refresh | `pnpm run arch:deps:detail` | `docs/dependency-graph*-detail.mmd` | No |
-| Focused package Mermaid graph | `pnpm run arch:deps:<package>` | one focused `.mmd` file | No |
-
-Semgrep has been retired (static-analysis consolidation). ESLint is the keystone
-source-pattern engine. Its former rules moved to two homes, preserving the exact
-regexes, scopes, and intent:
-
-- Footprint guards with no live findings → ESLint `local/sg-*` rules in
-  `eslint.config.js` (a shared source-text scanner that applies Semgrep's exact
-  regexes, scoped per the original rule's `paths` via each block's `files`/
-  `ignores`). They run under `pnpm run lint`.
-- Rules with live findings → the `effect-quality` ts-morph count ratchet
-  (`pnpm run lint:effect-quality`), which grandfathers current counts and fails
-  on any increase. See `docs/contributing/quality-gates.md`.
-
-To add a new source-pattern guard, prefer a type-aware ESLint rule; for a pure
-text shape add an entry to the relevant `local/sg-*` block, or — if it would have
-live findings — add a counter to `scripts/effect-artifacts/quality-metrics.mjs`
-and re-baseline.
-
-The Effect ESLint plugin currently ships only two rules in `@effect/eslint-plugin@0.3.2`: `dprint` and `no-import-from-barrel-package`. `dprint` conflicts with this repo's existing stylistic formatter stack, so only `@effect/no-import-from-barrel-package` is enabled. If the plugin adds or changes rules during an upgrade, audit the shipped rule list before enabling anything new.
-
-ast-grep has been retired (its one gated rule was relocated; the rest were an
-informational inventory that ran in no gate). Its sole CI-blocking rule,
-`hrtime-number-arithmetic`, now lives as the type-aware ESLint rule
-`local/hrtime-number-arithmetic`, which blocks direct OpenTelemetry hrtime tuple
-math in number space; use the `packages/tiny-firegrid/src/runner/trace.ts`
-bigint helpers (`nsFromHrTime`/`startNs`/`endNs`) instead.
-
-To add a dependency-cruiser rule, add it to `.dependency-cruiser.cjs` and keep CI strict once the rule lands. Temporary warning-only triage requires an explicit remediation note and a follow-up to promote the rule.
-
-To add a knip rule or exception, prefer making the code reachable or dropping unused exports first. Use `knip.json` ignores only for intentional tool fixtures, external binaries, or dependencies invoked through scripts that knip cannot statically infer.
-
-Run the Effect-quality metric ratchet:
-
-```sh
-pnpm run lint:effect-quality
-```
-
-This runs `scripts/effect-quality-metrics-check.mjs`, which counts per-pattern Effect-quality findings across `packages/*/src` and `apps/*/src` using the same ts-morph project the artifact inventory walks (one project crawl per CI invocation, AST-precise so comments and string literals don't trigger false positives), and compares the result to `effect-quality-metrics-baseline.json`. CI fails on any metric increase. Decreases recompute via:
-
-```sh
-pnpm run lint:effect-quality:baseline
-```
-
-The baseline script refuses to ratchet upward automatically. A regression must either be fixed or — for genuinely intentional shapes — handled by relocating the code into an explicitly allowlisted path (currently `packages/*/bin/`, `scripts/`, `__tests__/`, and `*.test.ts` files where applicable).
-
-Strict-zero gates layered alongside the metric ratchet:
-
-- `local/no-extends-error` ESLint rule errors on `class … extends Error` declarations in package source. Current count is 0 after R7's `Data.TaggedError` migration.
-- `local/no-process-env-outside-bin` ESLint rule errors on `process.env[…]` (and `globalThis.process.env.X`) reads outside `bin/` and `scripts/`. Current count is 0.
-
-Tracked metrics in the ratchet baseline:
-
-- `extendsErrorCount` — `class … extends Error` declarations in package source. Strict-zero target; redundantly enforced by the ESLint rule above.
-- `processEnvOutsideBinCount` — `process.env[…]` reads outside `bin/` and `scripts/`. Strict-zero target; redundantly enforced by the ESLint rule above.
-- `throwOutsideBinScriptCount` — `throw` statements in package source outside `bin/` and `scripts/`. Ratcheted; reduce via per-site refactor to typed Effect failures.
-- `forOfInPackageSourceCount` — `for…of` and `for await` loops in package source. Ratcheted; convert to `Array.forEach` / `Effect.forEach` / `Stream` per the code-style review.
-- `anyNoContextCastCount` — `as Schema.Schema.AnyNoContext` casts. Ratcheted; centralize behind a single helper at the descriptor or schema boundary (Q3 owns).
-- `nodeCryptoImportCount` — `import … from "node:crypto"` in package source. Ratcheted; replace with an injectable IdGen service (Q4 owns).
-- `dataTaggedErrorDeclarationCount` — `class … extends Data.TaggedError(...)` declarations. Ratcheted at the current count to lock in shape (no `extends Error` regressions sneaking in alongside legitimate tagged-error additions). New tagged-error classes are part of normal feature work; the documented happy path for adding one is to land the class and then re-run `pnpm run lint:effect-quality:baseline` in the same PR with an ACID reference for the new error in the commit message. The ratchet is a structural ceiling that never auto-raises, not a feature freeze on tagged errors.
-- `newDurableStreamSiteCount` — `new DurableStream(...)` constructor sites in package source. Ratcheted; direct construction is acceptable at explicit runtime data-plane stream boundaries, but new sites elsewhere should either reuse an existing boundary or justify a baseline update in the same PR.
-- `perCallLayerProvideSiteCount` — `Effect.provide(*Live(cfg))` invocations inside per-call helpers (`withSubstrate`, etc.). Ratcheted; hoist live layer construction (Q4 owns).
-- `effectOrDieSiteCount` — `Effect.orDie`, `Layer.orDie`, `Effect.die`, `Effect.dieMessage`. Ratcheted; documented as a policy exception.
-- `effectRunPromiseInTestsCount` — `Effect.runPromise`, `runSync`, `runFork`, `runPromiseExit` calls in `__tests__/`. Ratcheted; migrate via `@effect/vitest`.
-- `vitestItImportInTestsCount` — `import { it/describe/expect } from "vitest"` in `__tests__/`. Ratcheted; migrate via `@effect/vitest`.
-
-The metric ratchet is intentionally conservative. A future Effect-detector ratchet (see "Effect-detector ratchet — deferred" below) would cover broader pattern families once the external detector is CI-stable.
-
-## Effect-detector ratchet — deferred
-
-The `claude-skill-effect-ts` detector reports ~4,023 findings across the repo (see `docs/REVIEW_EFFECT_FULL_AUDIT_2026-05-05.md`). The detector currently runs through the local `claude-skill-effect-ts` plugin cache and uses `bun`; it is not yet CI-stable. The metric ratchet above covers the highest-confidence patterns from that detector's output. When the detector becomes CI-installable, replace or augment the metric ratchet with a per-rule baseline against `firegrid-detect.json` and document the upgrade boundary here.
-
-## Policy exceptions
-
-These deviations are deliberate and documented:
-
-- `Data.TaggedError` is the firegrid policy. `Schema.TaggedError` is reserved for the moment a future descriptor needs error-decoding from a wire envelope. See `docs/REVIEW_EFFECT_ERROR_MANAGEMENT_2026-05-05.md` §1. The metric ratchet caps the count at the current baseline.
-- `Effect.runPromise` is permitted in `__tests__/` while the `@effect/vitest` migration is in flight. The metric ratchet caps the count.
-- `Effect.orDie` / `Layer.orDie` / `Effect.die` is permitted only where the code is deliberately crossing into a runtime fork point, bin entrypoint, or test harness. The metric ratchet caps the count; future tightening with a `local/orDie-needs-justification` rule is tracked in the static-enforcement proposal.
-- `Effect.runPromise` / `Effect.runPromiseExit` is permitted in app or bin entrypoints and in tests while the `@effect/vitest` migration is in flight. The metric ratchet caps the count.
-
-This tooling exists because manual review windows are too narrow to serve as the only guardrail for architecture boundaries, repeated durable-state helper shapes, and Effect-quality regressions.
+For the contributor-facing quality-gate reference see
+`docs/contributing/quality-gates.md`; for a current works/stale map of every tool
+surface see `docs/analysis/2026-06-02-tool-surface-audit.md`.

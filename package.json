@@ -47,7 +47,7 @@
     "analysis:leaf": "bash tooling/analysis/run-leaf-inventory.sh",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run check:specs && pnpm run check:docs && pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:host-sdk-imports && pnpm run test",
+    "verify": "pnpm run preflight",
     "toy:coverage:check": "bash scripts/tiny-config-prod-coverage.sh --check"
   },
   "devDependencies": {

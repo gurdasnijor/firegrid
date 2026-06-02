@@ -177,15 +177,18 @@ adapter code together, never bundled with product changes.
 
 ## Preflight Before Pushing
 
-CI runs `lint`, `lint:dead`, `lint:dup`, `lint:deps`, `lint:effect-quality`,
-`lint:host-sdk-imports`, `typecheck`, and the full test suite. The
-root `package.json` chains all of these as `pnpm run verify`. Run it before
-pushing if you've touched code; CI feedback is slow and the Effect-quality
-metric in particular is easy to miss locally:
+Run the full local gate before pushing if you've touched code — CI feedback is
+slow and the Effect-quality metric in particular is easy to miss locally:
 
 ```bash
-pnpm run verify
+pnpm preflight
 ```
+
+`pnpm preflight` (`tooling/src/preflight.ts`) is the canonical gate: `test`,
+`typecheck`, `effect:diagnostics`, `lint`, `lint:dead`, `lint:dup`, `lint:deps`,
+`lint:effect-quality`, `trace:seams:ukv`, `check:specs`, `check:docs`, run in
+parallel with a full summary. `pnpm run verify` is an alias of it. CI runs the
+same gates split across parallel jobs (see `docs/TOOLING.md`).
 
 If you've only touched docs/specs:
 
