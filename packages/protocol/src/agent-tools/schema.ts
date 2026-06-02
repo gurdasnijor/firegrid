@@ -332,7 +332,7 @@ export const SpawnToolInputSchema = Schema.Struct({
   title: "Spawn tool input",
   description: "Run a child RuntimeContextWorkflow with the given prompt and await its terminal state.",
   ...firegridProjection({
-    operationId: "session.spawnLegacy",
+    operationId: "session.spawn",
     toolName: "spawn",
   }),
 })
@@ -381,7 +381,7 @@ export const SpawnAllToolInputSchema = Schema.Struct({
   title: "Spawn-all tool input",
   description: "Fan out child workflows; await all terminal states.",
   ...firegridProjection({
-    operationId: "session.spawnAllLegacy",
+    operationId: "session.spawnAll",
     toolName: "spawn_all",
   }),
 })
