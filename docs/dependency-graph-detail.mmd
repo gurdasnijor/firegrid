@@ -319,20 +319,25 @@ subgraph 71["comp-derisk-ordering"]
 73["host.ts"]
 74["index.ts"]
 end
-subgraph 75["control-plane-cancel-close"]
+subgraph 75["comp-sim-idempotent"]
 76["driver.ts"]
 77["host.ts"]
 78["index.ts"]
 end
-subgraph 79["factory-capstone"]
+subgraph 79["control-plane-cancel-close"]
 7A["driver.ts"]
 7B["host.ts"]
 7C["index.ts"]
 end
-subgraph 7D["unified-kernel-validation"]
+subgraph 7D["factory-capstone"]
 7E["driver.ts"]
 7F["host.ts"]
 7G["index.ts"]
+end
+subgraph 7H["unified-kernel-validation"]
+7I["driver.ts"]
+7J["host.ts"]
+7K["index.ts"]
 end
 end
 6S["types.ts"]
@@ -730,25 +735,30 @@ Z-->L
 74-->6S
 74-->72
 74-->73
+76-->6
 77-->2E
 78-->6S
 78-->76
 78-->77
-7A-->6
-7B-->W
-7B-->1U
-7B-->D
-7B-->4V
-7B-->4N
-7B-->3D
-7B-->52
 7B-->2E
-7B-->16
 7C-->6S
 7C-->7A
 7C-->7B
 7E-->6
+7F-->W
+7F-->1U
+7F-->D
+7F-->4V
+7F-->4N
+7F-->3D
+7F-->52
 7F-->2E
+7F-->16
 7G-->6S
 7G-->7E
 7G-->7F
+7I-->6
+7J-->2E
+7K-->6S
+7K-->7I
+7K-->7J
