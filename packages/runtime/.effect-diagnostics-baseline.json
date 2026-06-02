@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "command": "pnpm run effect:diagnostics:baseline",
+  "counts": {
+    "error": 0,
+    "warning": 6,
+    "message": 14
+  },
+  "entries": [
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/channels/observation-streams/sources.ts",
+      "line": 13,
+      "column": 51,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/channels/observation-streams/sources.ts",
+      "line": 17,
+      "column": 56,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/channels/observation-streams/sources.ts",
+      "line": 32,
+      "column": 50,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/channels/verified-webhook/source-live.ts",
+      "line": 161,
+      "column": 18,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/channels/verified-webhook/source-live.ts",
+      "line": 237,
+      "column": 9,
+      "severity": "message",
+      "code": "runEffectInsideEffect",
+      "message": "`Effect.runFork` is called inside an Effect with a separate runtime invocation. In this context, run child Effects with the surrounding runtime, which can be accessed through `Effect.runtime` and `Runtime.runFork`."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
+      "line": 651,
+      "column": 54,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
+      "line": 710,
+      "column": 54,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/sources/codecs/acp/index.ts",
+      "line": 767,
+      "column": 9,
+      "severity": "message",
+      "code": "unnecessaryEffectGen",
+      "message": "This Effect.gen contains a single return statement."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/src/sources/codecs/stdio-jsonl/index.ts",
+      "line": 224,
+      "column": 21,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/sources/codecs/stdio-jsonl/index.test.ts",
+      "line": 74,
+      "column": 25,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/sources/sandbox/local-process.test.ts",
+      "line": 131,
+      "column": 30,
+      "severity": "warning",
+      "code": "globalErrorInEffectFailure",
+      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/subscribers/runtime-context-session/codec-adapter.test.ts",
+      "line": 104,
+      "column": 31,
+      "severity": "warning",
+      "code": "globalErrorInEffectFailure",
+      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/subscribers/runtime-context-session/codec-adapter.test.ts",
+      "line": 205,
+      "column": 19,
+      "severity": "message",
+      "code": "effectSucceedWithVoid",
+      "message": "`Effect.void` represents the same outcome as `Effect.succeed(undefined)` or `Effect.succeed(void 0)`."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/subscribers/runtime-context-session/codec-adapter.test.ts",
+      "line": 209,
+      "column": 21,
+      "severity": "warning",
+      "code": "lazyPromiseInEffectSync",
+      "message": "This `Effect.sync` thunk returns a Promise. Use `Effect.promise` or `Effect.tryPromise` to represent async work."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/subscribers/runtime-context-session/codec-adapter.test.ts",
+      "line": 304,
+      "column": 43,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/subscribers/runtime-context-session/raw-adapter.test.ts",
+      "line": 129,
+      "column": 20,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/subscribers/runtime-context-session/raw-adapter.test.ts",
+      "line": 169,
+      "column": 19,
+      "severity": "message",
+      "code": "effectSucceedWithVoid",
+      "message": "`Effect.void` represents the same outcome as `Effect.succeed(undefined)` or `Effect.succeed(void 0)`."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/subscribers/runtime-context-session/raw-adapter.test.ts",
+      "line": 83,
+      "column": 31,
+      "severity": "warning",
+      "code": "globalErrorInEffectFailure",
+      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/workflow-engine/DurableStreamsWorkflowEngine.test.ts",
+      "line": 119,
+      "column": 35,
+      "severity": "warning",
+      "code": "globalErrorInEffectFailure",
+      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
+    },
+    {
+      "project": "packages/runtime/tsconfig.json",
+      "file": "packages/runtime/test/workflow-engine/DurableStreamsWorkflowEngine.test.ts",
+      "line": 96,
+      "column": 35,
+      "severity": "warning",
+      "code": "globalErrorInEffectFailure",
+      "message": "Global 'Error' loses type safety as untagged errors merge together in the Effect failure channel. Consider using a tagged error and optionally wrapping the original in a 'cause' property."
+    }
+  ]
+}

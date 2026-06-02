@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "command": "pnpm run effect:diagnostics:baseline",
+  "counts": {
+    "error": 0,
+    "warning": 0,
+    "message": 0
+  },
+  "entries": []
+}

@@ -1,0 +1,344 @@
+{
+  "version": 1,
+  "command": "pnpm run effect:diagnostics:baseline",
+  "counts": {
+    "error": 0,
+    "warning": 3,
+    "message": 34
+  },
+  "entries": [
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/internal/sse.ts",
+      "line": 110,
+      "column": 22,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/internal/sse.ts",
+      "line": 27,
+      "column": 16,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/internal/sse.ts",
+      "line": 45,
+      "column": 31,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Http.ts",
+      "line": 399,
+      "column": 39,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Http.ts",
+      "line": 401,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Http.ts",
+      "line": 474,
+      "column": 39,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Http.ts",
+      "line": 491,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Http.ts",
+      "line": 524,
+      "column": 37,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Http.ts",
+      "line": 571,
+      "column": 41,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Http.ts",
+      "line": 573,
+      "column": 16,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Http.ts",
+      "line": 63,
+      "column": 35,
+      "severity": "message",
+      "code": "effectSucceedWithVoid",
+      "message": "`Effect.void` represents the same outcome as `Effect.succeed(undefined)` or `Effect.succeed(void 0)`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Producer.ts",
+      "line": 109,
+      "column": 18,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Producer.ts",
+      "line": 115,
+      "column": 20,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Producer.ts",
+      "line": 120,
+      "column": 18,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Producer.ts",
+      "line": 128,
+      "column": 43,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Producer.ts",
+      "line": 130,
+      "column": 18,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Producer.ts",
+      "line": 134,
+      "column": 16,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Producer.ts",
+      "line": 70,
+      "column": 18,
+      "severity": "message",
+      "code": "preferSchemaOverJson",
+      "message": "This code uses `JSON.parse` or `JSON.stringify`. Effect Schema provides Effect-aware APIs for JSON parsing and stringifying."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/protocol/Producer.ts",
+      "line": 91,
+      "column": 20,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 102,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 110,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 146,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 148,
+      "column": 12,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 171,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 173,
+      "column": 12,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 185,
+      "column": 36,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 186,
+      "column": 12,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 69,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/src/Writer.ts",
+      "line": 96,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/test/conformance/classified-producer-append.test.ts",
+      "line": 100,
+      "column": 11,
+      "severity": "warning",
+      "code": "multipleEffectProvide",
+      "message": "This expression chains multiple `Effect.provide` calls. Providing Layers in multiple calls in a chain can break service lifecycle behavior compared with a single combined provide with merged layers."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/test/conformance/live.test.ts",
+      "line": 460,
+      "column": 18,
+      "severity": "message",
+      "code": "effectSucceedWithVoid",
+      "message": "`Effect.void` represents the same outcome as `Effect.succeed(undefined)` or `Effect.succeed(void 0)`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/test/conformance/live.test.ts",
+      "line": 566,
+      "column": 30,
+      "severity": "message",
+      "code": "unnecessaryPipeChain",
+      "message": "This expression contains chained `pipe` calls that can be simplified to a single `pipe` call."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/test/conformance/live.test.ts",
+      "line": 605,
+      "column": 30,
+      "severity": "message",
+      "code": "unnecessaryPipeChain",
+      "message": "This expression contains chained `pipe` calls that can be simplified to a single `pipe` call."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/test/conformance/retry-classification.test.ts",
+      "line": 297,
+      "column": 22,
+      "severity": "message",
+      "code": "effectSucceedWithVoid",
+      "message": "`Effect.void` represents the same outcome as `Effect.succeed(undefined)` or `Effect.succeed(void 0)`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/test/conformance/retry-classification.test.ts",
+      "line": 29,
+      "column": 9,
+      "severity": "warning",
+      "code": "multipleEffectProvide",
+      "message": "This expression chains multiple `Effect.provide` calls. Providing Layers in multiple calls in a chain can break service lifecycle behavior compared with a single combined provide with merged layers."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/test/conformance/retry-classification.test.ts",
+      "line": 353,
+      "column": 20,
+      "severity": "message",
+      "code": "effectSucceedWithVoid",
+      "message": "`Effect.void` represents the same outcome as `Effect.succeed(undefined)` or `Effect.succeed(void 0)`."
+    },
+    {
+      "project": "packages/effect-durable-streams/tsconfig.json",
+      "file": "packages/effect-durable-streams/test/conformance/sse-edge-cases.test.ts",
+      "line": 28,
+      "column": 9,
+      "severity": "warning",
+      "code": "multipleEffectProvide",
+      "message": "This expression chains multiple `Effect.provide` calls. Providing Layers in multiple calls in a chain can break service lifecycle behavior compared with a single combined provide with merged layers."
+    }
+  ]
+}
