@@ -152,9 +152,11 @@ gateway) stay open because their children are real.
 
 ## 4. Suggested next actions
 1. **`tf-r06u.36` / `tf-ll90.5`** — terminal-completion relay (P0, process leak).
-   Build a methodology sim that drives a turn to `TurnComplete`/`Terminated` and
-   asserts `deregister` fires + the process is reaped; then wire the
-   observer→terminal-signal→deregister leg.
+   Build a methodology sim that drives a session to process exit (`Terminated`)
+   and asserts `deregister` fires + the process is reaped; then wire the
+   observer→terminal-signal→deregister leg. **Trigger on `Terminated` + explicit
+   cancel/close ONLY — NOT `TurnComplete`** (per-turn; would break multi-turn —
+   verified by 3 reviews, see §6). The two beads are the same leg → dedupe to one.
 2. Take the PO's calls on `tf-0awo.17`/`.33`/`tf-r06u.48` + the sim cap.
 3. `tf-r06u.8` (FK authority) + `tf-r06u.9` (`spawn` lowering) → then the full
    factory loop runs without the 80-output cap masking the tail.
@@ -238,3 +240,54 @@ how a coordinator goes wrong. Its lessons governed this drive and were repeatedl
 - **Don't fan out a big autonomous build against an unvalidated decomposition** —
   gate the keystone on a spike first (the §12 cutover was gated on the modularity
   compile-spike before any lane built it).
+
+---
+
+## 6. RuntimeContext keyed-subscriber reconcile — proposal + 3 reviews + the validation chain (added 2026-06-02)
+
+**What this is.** The shipped `RuntimeContext` body parks for the entity lifetime
+(`Workflow.suspend`); canon (`runtime-design-constraints.md`, C2/C5) bans exactly
+that. A proposal frames the PO decision; it does **not** decide it.
+
+**Artifacts (read in this order):**
+- **Proposal (v4):** `docs/proposals/PROPOSAL_RUNTIME_CONTEXT_KEYED_SUBSCRIBER_RECONCILE_2026-06-02.md` — **PR #844** (open, not merged). 5 diagrams, source-cited.
+- **Reviews (all *amend*, all source-verified by the coordinator):** `docs/reviews/2026-06-02-runtime-context-reconcile-proposal-review.md` (#842, Agent0) · `docs/reviews/2026-06-02-runtime-context-reconcile-review-opus.md` (`tf-1axl`, Opus) · a third "D pressure-test" review (pasted in-session; its findings are folded into v4 §7).
+
+**Where it landed (the decision the PO owns):**
+- **§0.1 P0:** the parked body is a canon-forbidden shape (C2/C5) that shipped past
+  the dispatchable-canon **SDD Gate** (`runtime-design-constraints.md:558`) with no
+  Constraint Check / bridge exception. Blessing it = a real reversal. **PO call.**
+- **The live choice is A vs B/C:** mechanism is **settled** (explicit arm =
+  write + `engine.resume`, proven by `tf-e5rf`); **shape is open** — per-event
+  run-to-completion (A) vs entity-lifetime parked body (B/C).
+- **Option "D" (per-turn return-and-re-drive) is NOT on the table yet** — review 3
+  source-falsified its mechanism: a *returned* execution (`finalResult` set) cannot
+  be re-armed (`signal.ts:150`); `engine.resume`/`tf-e5rf` cover *suspend→resume*
+  only. (v3 over-elevated D; v4 retracts it. Calibration note: that was an
+  amplification of a tentative Opus idea — the same assume-from-mechanism trap, one
+  level up.)
+- **Do-now, shape-neutral:** the P0 leak fix (§ below).
+
+**The validation chain (the tiny-firegrid preflight):**
+- `tf-tvg1` (IN_PROGRESS, P1) is the synthesis bead → A/B/C verdict + rewrite chain
+  + deletion map. Its four child proofs **`tf-4fy3` / `tf-u8w2` / `tf-28b8` /
+  `tf-1r0o` are CLOSED** — but they predate the reviews, the synthesis verdict is
+  still unwritten, and the groom flagged "no done-evidence" on the closures.
+- **GAP the reviews exposed → new bead `tf-c71h`** (P1, blocks `tf-tvg1`):
+  *return-and-re-drive* is unproven and the four closed proofs don't cover it. It
+  is the load-bearing proof for whether **A is even feasible**. Run it
+  (methodology-clean) **before** trusting any A/B/C synthesis.
+- Downstream cutover (gated on `tf-tvg1`): `tf-vrz6` (BLOCKED), `tf-w6qj` (OPEN),
+  `tf-jpcg` (BLOCKED).
+
+**The P0 leak (`tf-r06u.36` / `tf-ll90.5`, both P0 OPEN — SAME leg, dedupe):**
+trigger on **`Terminated` + explicit cancel/close ONLY** → `emitSessionTerminalSignal`
+(`channel-bindings.ts:287`) → body's existing `deregister` (`runtime-context.ts:153`).
+**EXCLUDE `TurnComplete`** (per-turn; cross-turn registry → would kill the process
+after turn 1). Plumbing diff: widen `observers.ts` `CapturedServices` to include
+`WorkflowEngineTable` + extract services from `captured` (snippet in proposal §2.2).
+Both beads carry this scope-correction comment.
+
+**Open loose ends:** PR #844 + the two review PRs (#842, `tf-1axl`) are **unmerged**
+(PO/coordinator call); `tf-1axl`'s review is delivered + folded but **not closed**
+(held until its PR lands — confirm `origin/main` HEAD moved first).
