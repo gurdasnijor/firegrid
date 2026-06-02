@@ -120,6 +120,7 @@
     "tooling": {
       "entry": [
         "src/preflight.ts",
+        "src/effect-diagnostics-check.ts",
         "analysis/**/*.ts"
       ],
       "project": [

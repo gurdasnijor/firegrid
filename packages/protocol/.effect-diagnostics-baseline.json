@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "command": "pnpm run effect:diagnostics:baseline",
+  "counts": {
+    "error": 0,
+    "warning": 0,
+    "message": 18
+  },
+  "entries": [
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/agent-tools/schema.ts",
+      "line": 291,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/agent-tools/schema.ts",
+      "line": 292,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/agent-tools/schema.ts",
+      "line": 299,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/agent-tools/schema.ts",
+      "line": 670,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/agent-tools/schema.ts",
+      "line": 674,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/agent-tools/schema.ts",
+      "line": 678,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/launch/host-context-authority.ts",
+      "line": 140,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/launch/host-context-authority.ts",
+      "line": 207,
+      "column": 14,
+      "severity": "message",
+      "code": "unnecessaryFailYieldableError",
+      "message": "This `yield* Effect.fail(...)` passes a yieldable error value. `yield*` represents that value directly without wrapping it in `Effect.fail`."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 255,
+      "column": 45,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 281,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 287,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 293,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 299,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 305,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 311,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 317,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 323,
+      "column": 3,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    },
+    {
+      "project": "packages/protocol/tsconfig.json",
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "line": 342,
+      "column": 58,
+      "severity": "message",
+      "code": "schemaStructWithTag",
+      "message": "This `Schema.Struct` includes a `_tag` field. `Schema.TaggedStruct` is the tagged-struct form for this pattern and makes the tag optional in the constructor."
+    }
+  ]
+}

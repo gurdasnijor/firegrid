@@ -16,6 +16,7 @@
     }
   },
   "scripts": {
+    "diagnostics": "node ../../tooling/src/effect-diagnostics-check.ts",
     "build": "tsc",
     "check": "pnpm run typecheck",
     "simulate": "tsx src/index.ts",

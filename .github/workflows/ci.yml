@@ -156,6 +156,17 @@ jobs:
       - name: Setup pnpm + Node + install
         uses: ./.github/actions/setup
 
+      # effect:diagnostics is now a per-package turbo task — persist the cache so
+      # the (seconds-per-package) language-service run is skipped for unchanged
+      # packages. Shared restore prefix with the other turbo jobs, unique save key.
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-diagnostics-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
       - name: Effect diagnostics
         run: pnpm effect:diagnostics
 

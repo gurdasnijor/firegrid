@@ -138,6 +138,7 @@
     "access": "public"
   },
   "scripts": {
+    "diagnostics": "node ../../tooling/src/effect-diagnostics-check.ts",
     "build": "tsc",
     "check": "pnpm run typecheck && pnpm run test",
     "typecheck": "tsc --noEmit",
