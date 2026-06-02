@@ -23,6 +23,8 @@ import {
 } from "@firegrid/protocol/channels"
 import {
   CurrentHostSession,
+  type HostSessionRow,
+  type RuntimeContext,
   RuntimeContextSchema,
   RuntimeOutputTable,
   RuntimeControlPlaneTable,
@@ -108,6 +110,32 @@ export const hostSessionLifecycleStream = (
     Stream.filter(row => row.contextId === sessionId),
   )
 
+const insertHostBoundRuntimeContext = (options: {
+  readonly control: RuntimeControlPlaneTable["Type"]
+  readonly hostSession: HostSessionRow
+  readonly contextId: string
+  readonly createdBy?: string
+  readonly runtime: Omit<RuntimeContext["runtime"], "journal">
+}) =>
+  Effect.gen(function*() {
+    const nowMs = yield* Clock.currentTimeMillis
+    yield* options.control.contexts.insertOrGet({
+      contextId: options.contextId,
+      createdAt: new Date(nowMs).toISOString(),
+      ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
+      runtime: {
+        provider: options.runtime.provider,
+        config: options.runtime.config,
+        journal: [],
+      },
+      host: {
+        hostId: options.hostSession.hostId,
+        streamPrefix: options.hostSession.streamPrefix,
+        boundAtMs: nowMs,
+      },
+    }).pipe(Effect.orDie, Effect.asVoid)
+  })
+
 export const HostContextsCreateChannelLive = Layer.effect(
   HostContextsCreateChannel,
   Effect.gen(function*() {
@@ -119,22 +147,13 @@ export const HostContextsCreateChannelLive = Layer.effect(
       responseSchema: HostContextsCreateResponseSchema,
       call: (request) =>
         Effect.gen(function*() {
-          const nowMs = yield* Clock.currentTimeMillis
-          yield* control.contexts.insertOrGet({
+          yield* insertHostBoundRuntimeContext({
+            control,
+            hostSession,
             contextId: request.contextId,
-            createdAt: new Date(nowMs).toISOString(),
             ...(request.createdBy === undefined ? {} : { createdBy: request.createdBy }),
-            runtime: {
-              provider: request.runtime.provider,
-              config: request.runtime.config,
-              journal: [],
-            },
-            host: {
-              hostId: hostSession.hostId,
-              streamPrefix: hostSession.streamPrefix,
-              boundAtMs: nowMs,
-            },
-          }).pipe(Effect.orDie, Effect.asVoid)
+            runtime: request.runtime,
+          })
           return {
             sessionId: request.contextId,
             contextId: request.contextId,
@@ -144,19 +163,31 @@ export const HostContextsCreateChannelLive = Layer.effect(
   }),
 )
 
-export const HostSessionsCreateOrLoadChannelLive = Layer.succeed(
+export const HostSessionsCreateOrLoadChannelLive = Layer.effect(
   HostSessionsCreateOrLoadChannel,
-  makeCallableChannel({
-    target: HostSessionsCreateOrLoadChannelTarget,
-    requestSchema: HostSessionsCreateOrLoadRequestSchema,
-    responseSchema: HostSessionsCreateOrLoadResponseSchema,
-    call: (request) => {
-      const id = `session:${request.externalKey.source}:${request.externalKey.id}`
-      return Effect.succeed({
-        sessionId: id,
-        contextId: id,
-      } as typeof HostSessionsCreateOrLoadResponseSchema.Type)
-    },
+  Effect.gen(function*() {
+    const control = yield* RuntimeControlPlaneTable
+    const hostSession = yield* CurrentHostSession
+    return makeCallableChannel({
+      target: HostSessionsCreateOrLoadChannelTarget,
+      requestSchema: HostSessionsCreateOrLoadRequestSchema,
+      responseSchema: HostSessionsCreateOrLoadResponseSchema,
+      call: (request) =>
+        Effect.gen(function*() {
+          const id = `session:${request.externalKey.source}:${request.externalKey.id}`
+          yield* insertHostBoundRuntimeContext({
+            control,
+            hostSession,
+            contextId: id,
+            ...(request.createdBy === undefined ? {} : { createdBy: request.createdBy }),
+            runtime: request.runtime,
+          })
+          return {
+            sessionId: id,
+            contextId: id,
+          } as typeof HostSessionsCreateOrLoadResponseSchema.Type
+        }),
+    })
   }),
 )
 

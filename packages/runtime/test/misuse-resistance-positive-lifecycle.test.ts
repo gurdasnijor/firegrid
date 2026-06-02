@@ -44,6 +44,7 @@ import {
   Firegrid,
   FiregridConfig,
   FiregridLive,
+  local,
   type FiregridError,
   type FiregridService,
   type RuntimeContextSnapshot,
@@ -130,6 +131,7 @@ void _compositionProof
 const makeHostClientEnv = (
   baseUrl: string,
   namespace: string,
+  options: { readonly contextReflectionTimeoutMs?: number } = {},
 ): Layer.Layer<Firegrid, unknown, never> => {
   // The recorder exposes the adapter service via `.service` (airgapped —
   // records spawn/send/deregister in-memory, spawns no subprocess).
@@ -145,6 +147,9 @@ const makeHostClientEnv = (
   const configLayer = Layer.succeed(FiregridConfig, {
     durableStreamsBaseUrl: baseUrl,
     namespace,
+    ...(options.contextReflectionTimeoutMs === undefined
+      ? {}
+      : { contextReflectionTimeoutMs: options.contextReflectionTimeoutMs }),
   })
   return FiregridLive.pipe(
     Layer.provide(hostLayer),
@@ -184,5 +189,37 @@ describe("misuse-resistance — positive lifecycle proof", () => {
     )
     expect(trace.firegridMaterialized).toBe(true)
     expect(trace.hasChannels).toBe(true)
+  })
+
+  it("firegrid-host-sdk.RUNTIME_SESSION_SURFACE.4-1 materializes the createOrLoad RuntimeContext before returning", async () => {
+    const env = makeHostClientEnv(baseUrl, "misuse-positive-create-or-load", {
+      contextReflectionTimeoutMs: 100,
+    })
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const firegrid = yield* Firegrid
+          const handle = yield* firegrid.sessions.createOrLoad({
+            externalKey: {
+              source: "tf-ll90.9.4",
+              id: "materializes-context",
+            },
+            runtime: local.jsonl({
+              agent: "recorder",
+              argv: [process.execPath, "-e", ""],
+            }),
+            createdBy: "tf-ll90.9.4",
+          })
+          const snapshot = yield* handle.snapshot()
+          return { handle, snapshot }
+        }).pipe(Effect.provide(env)),
+      ),
+    )
+
+    expect(result.handle.sessionId).toBe("session:tf-ll90.9.4:materializes-context")
+    expect(result.snapshot.context?.contextId).toBe(result.handle.contextId)
+    expect(result.snapshot.context?.createdBy).toBe("tf-ll90.9.4")
+    expect(result.snapshot.context?.runtime.provider).toBe("local-process")
+    expect(result.snapshot.context?.host.hostId).toBe("misuse-positive-create-or-load-host")
   })
 })
