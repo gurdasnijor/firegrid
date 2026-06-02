@@ -29,6 +29,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DurableStreamsWorkflowEngine } from "../../src/engine/durable-streams-workflow-engine.ts"
 import { ContextResolverTag } from "../../src/unified/codec-adapter.ts"
 import { FiregridMcpServerLayer } from "../../src/unified/mcp-host/mcp-host.ts"
+import { FiregridRuntimeContextMcpBaseUrlLive } from "../../src/unified/mcp-host/runtime-context-mcp-base-url.ts"
 import { ToolDispatchLive } from "../../src/unified/mcp-host/tool-dispatch.ts"
 
 let server: DurableStreamTestServer | undefined
@@ -140,6 +141,7 @@ const mcpServerLayer = (streamUrl: string, toolProfile?: "full" | "primitive") =
         Layer.provide(DurableStreamsWorkflowEngine.layer({ streamUrl })),
       ),
     ),
+    Layer.provide(FiregridRuntimeContextMcpBaseUrlLive),
   )
 
 const FULL_TOOLS = [

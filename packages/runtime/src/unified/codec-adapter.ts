@@ -37,6 +37,8 @@
 
 import { IdGenerator } from "@effect/ai"
 import {
+  firegridRuntimeContextMcpDeclaration,
+  firegridRuntimeContextMcpName,
   type RuntimeContext,
   isMcpServerHeaderRef,
   type McpServerDeclaration,
@@ -79,6 +81,11 @@ import {
   type CodecOutputJournal,
   ContextResolverTag,
 } from "../tables/codec-adapter-tags.ts"
+import {
+  FiregridRuntimeContextMcpBaseUrl,
+  type FiregridRuntimeContextMcpBaseUrlService,
+  runtimeContextMcpUrlForContext,
+} from "./mcp-host/runtime-context-mcp-base-url.ts"
 
 export {
   CodecOutputJournalTag,
@@ -218,6 +225,50 @@ const mcpServersForAcp = (
   }, { servers: [], droppedRefCount: 0 })
 }
 
+const effectiveMcpServerDeclarations = (
+  context: RuntimeContext,
+  runtimeContextMcpBaseUrl: FiregridRuntimeContextMcpBaseUrlService,
+): Effect.Effect<ReadonlyArray<McpServerDeclaration> | undefined, AdapterError> =>
+  Effect.gen(function*() {
+    const declared = context.runtime.config.mcpServers
+    if (context.runtime.config.runtimeContextMcp?.enabled !== true) {
+      return declared
+    }
+    const base = yield* runtimeContextMcpBaseUrl.get
+    if (Option.isNone(base)) {
+      return yield* adapterError(
+        "startOrAttach",
+        context.contextId,
+        "runtime intent requires runtimeContextMcp but this host has no Firegrid MCP listener bound",
+      )
+    }
+    const injected = firegridRuntimeContextMcpDeclaration(
+      runtimeContextMcpUrlForContext(base.value, context.contextId),
+    )
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.context.id": context.contextId,
+      "firegrid.runtime_context_mcp.enabled": true,
+      "firegrid.mcp.bound_address": base.value.address,
+      "firegrid.mcp.base_path": String(base.value.basePath),
+      "firegrid.mcp.injected_name": injected.name,
+      "firegrid.mcp.injected_url": injected.server.url,
+    })
+    return [
+      injected,
+      ...(declared ?? []).filter(
+        (existing) => existing.name !== firegridRuntimeContextMcpName,
+      ),
+    ]
+  }).pipe(
+    Effect.withSpan("firegrid.unified.adapter.resolve_effective_mcp_servers", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime_context_mcp.enabled": context.runtime.config.runtimeContextMcp?.enabled === true,
+      },
+    }),
+  )
+
 // ── The adapter Live ───────────────────────────────────────────────────────
 
 const adapterError = (
@@ -241,6 +292,7 @@ const buildSessionForContext = (
   sandboxProvider: SandboxProvider["Type"],
   idGenerator: IdGenerator.IdGenerator["Type"],
   envResolverPolicy: RuntimeEnvResolverPolicy["Type"],
+  runtimeContextMcpBaseUrl: FiregridRuntimeContextMcpBaseUrlService,
 ): Effect.Effect<RegistryEntry, AdapterError> =>
   Effect.gen(function*() {
     const contextId = context.contextId
@@ -261,6 +313,20 @@ const buildSessionForContext = (
           ),
         ),
       )
+
+    // Resolve the marker before opening the process byte pipe. A marked
+    // context on a host with no bound MCP listener is a start failure, not a
+    // spawn with missing tools.
+    const effectiveMcpServers = yield* effectiveMcpServerDeclarations(
+      context,
+      runtimeContextMcpBaseUrl,
+    )
+    const { servers: acpMcpServers, droppedRefCount } = mcpServersForAcp(effectiveMcpServers)
+    if (droppedRefCount > 0) {
+      yield* Effect.annotateCurrentSpan({
+        "firegrid.unified.adapter.mcp.headers_dropped_ref_count": droppedRefCount,
+      })
+    }
 
     const sandbox: Sandbox = yield* sandboxProvider.create({
       ...(cwd === undefined ? {} : { workingDir: cwd }),
@@ -285,14 +351,6 @@ const buildSessionForContext = (
     // claude-agent-sdk loads them at session start. Drop ref-typed
     // headers; they require separate secret resolution (see
     // `mcpServersForAcp` doc). Stdio-jsonl codec has no MCP slot.
-    const { servers: acpMcpServers, droppedRefCount } = mcpServersForAcp(
-      context.runtime.config.mcpServers,
-    )
-    if (droppedRefCount > 0) {
-      yield* Effect.annotateCurrentSpan({
-        "firegrid.unified.adapter.mcp.headers_dropped_ref_count": droppedRefCount,
-      })
-    }
     const acpOptions: AcpSessionOptions = {
       ...(cwd === undefined ? {} : { cwd }),
       ...(acpMcpServers.length === 0 ? {} : { mcpServers: acpMcpServers }),
@@ -334,6 +392,7 @@ export const ProductionCodecAdapterLive = Layer.scoped(
     const idGenerator = yield* IdGenerator.IdGenerator
     const resolver = yield* ContextResolverTag
     const envResolverPolicy = yield* RuntimeEnvResolverPolicy
+    const runtimeContextMcpBaseUrl = yield* FiregridRuntimeContextMcpBaseUrl
 
     const registry = yield* Ref.make<Map<string, RegistryEntry>>(new Map())
 
@@ -356,7 +415,14 @@ export const ProductionCodecAdapterLive = Layer.scoped(
           return yield* adapterError("startOrAttach", contextId, "context not found")
         }
         const entry = yield* buildSessionForContext(
-          hostScope, ctx.value, attempt, journal, sandboxProvider, idGenerator, envResolverPolicy,
+          hostScope,
+          ctx.value,
+          attempt,
+          journal,
+          sandboxProvider,
+          idGenerator,
+          envResolverPolicy,
+          runtimeContextMcpBaseUrl,
         )
         yield* Ref.update(registry, (m) => {
           const next = new Map(m)

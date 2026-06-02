@@ -31,9 +31,7 @@
  * the round-trip actually broke.
  *
  * STILL DEFERRED (tracked tf-rgdt; not exercised here):
- *  - the OAuth-discovery 404 probe routes;
- *  - host base-URL late-binding (`FiregridRuntimeContextMcpBaseUrl`) — the
- *    unified `codec-adapter` has no reader yet.
+ *  - the OAuth-discovery 404 probe routes.
  */
 
 import { IdGenerator, McpServer } from "@effect/ai"
@@ -58,6 +56,10 @@ import {
   FiregridAgentToolkitLayer,
   FiregridPrimitiveProfileToolkitLayer,
 } from "./toolkit-layer.ts"
+import {
+  publishRuntimeContextMcpBase,
+  runtimeContextMcpPath,
+} from "./runtime-context-mcp-base-url.ts"
 
 const runtimeContextMcpRouterMaxParamLength = 4096
 
@@ -114,20 +116,6 @@ export interface FiregridMcpServerLayerOptions {
    */
   readonly path: HttpRouter.PathInput
   readonly toolProfile?: "full" | "primitive"
-}
-
-export const ensurePathInput = (path: string): HttpRouter.PathInput => {
-  if (path === "*") return path
-  if (path.startsWith("/")) return path as HttpRouter.PathInput
-  return `/${path}`
-}
-
-export const runtimeContextMcpPath = (
-  path: HttpRouter.PathInput,
-): HttpRouter.PathInput => {
-  if (path === "*") return "/runtime-context/:contextId"
-  const normalized = ensurePathInput(String(path)).replace(/\/+$/, "")
-  return `${normalized}/runtime-context/:contextId` as HttpRouter.PathInput
 }
 
 /**
@@ -210,7 +198,10 @@ export const FiregridMcpServerLayer = (
     Layer.provide(FiregridMcpRouteContextLayer),
     Layer.provide(Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator)),
   )
-  return HttpRouter.Default.serve().pipe(
+  return Layer.mergeAll(
+    HttpRouter.Default.serve(),
+    Layer.scopedDiscard(publishRuntimeContextMcpBase(options.path)),
+  ).pipe(
     // tf-x3sv: registration completes before the router serves.
     Layer.provide(registerToolkitLayer),
     // Inline-replicate `McpServer.layerHttp` so we keep `McpServer.layer +
