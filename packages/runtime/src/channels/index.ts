@@ -20,5 +20,6 @@ export {
   sessionLogChannelFromCollection,
 } from "./session-log.ts"
 export * from "./router.ts"
+export * from "./host-plane-router.ts"
 export type { ChannelMetadata } from "./router/live.ts"
 export * from "./host-control.ts"
