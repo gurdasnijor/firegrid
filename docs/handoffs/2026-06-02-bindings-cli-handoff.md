@@ -85,7 +85,9 @@ The suspension surface was unified (merged `#805`, `tf-0awo.15`):
 - **(B)** real local daemon: **stable** server (fixed/known port) + **stable** namespace (`firegrid-local`) so a separate client can connect.
 Re-steer Agent1 to the chosen shape; the current `#813` is neither.
 
-**In flight:** Agent1 → `#813` fix (awaiting A/B direction). Agent2 → `.6` (client read-leak: a protocol-owned `FiregridRuntimeReadSource` with an observation-shaped surface; plan-back already confirmed — review its *interface* first) → then `.3` (operationId uniqueness test).
+**In flight:** Agent1 → `#813` fix (awaiting A/B direction). Agent2 → `.6` (client read-leak) → then `.3`.
+
+**★ `.6` CORRECTED APPROACH (do NOT build a new read-source):** the first plan (a new `FiregridRuntimeReadSource`) was a THIRD snapshot/contexts reader — `makeHostControlSnapshot`/`HostContextSnapshotChannel` and the client's `watchContexts`-over-`HostContextsChannel` already exist. `.6` = **consolidate**: the client's `readSnapshot` *calls* the existing `HostContextSnapshotChannel` (whose Live = `makeHostControlSnapshot`); provide that Live in the client's standalone composition (fold in the client's `tf-ivl6` output-table cache + reconcile event/log ordering); delete the client's inline table reads + the `FiregridRuntimeTables`/`firegridRuntimeTableTags` exports. **This SUPERSEDES `tf-ll90.8.5`** (the "delete unused snapshot channels" bead) — keep `HostContextSnapshotChannel`, the client is now its consumer. There is ONE snapshot authority now. (Lesson: before building a reader/capability, check for an existing channel that already does it — this duplication recurred 3×.)
 
 **Remaining:** `.6`, `.3`, `.10`/`.11` (`run`/`start` polish), `.13` (CLI flags via `@effect/cli` — converts #808's interim hand-rolled argv parser; the SDD calls for this), `.14` (live tf-r1gz Zed trace proof), `.17` (per the A/B call).
 
