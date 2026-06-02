@@ -1,264 +1,288 @@
 # Firegrid
 
-Firegrid is durable coordination infrastructure for AI agents.
+**Durable substrate for choreography-first AI agents.**
 
-Agents use it to wait for events, record progress, call tools, ask for approval,
-and survive long-running work without a central workflow graph.
+Firegrid lets the *model* own the control flow. Instead of authoring a workflow
+— step A, then B, route to C — you hand agents a few durable tools and let them
+decide sequence, branching, parallelism, and recovery at runtime. Firegrid makes
+every one of those decisions durable, replayable, and observable.
 
-Most agent frameworks ask you to define the flow up front: step A, then step B,
-then route to step C. Firegrid gives agents a shared durable workspace instead.
-Your agents decide what to do next; Firegrid keeps the shared state and history
-alive across crashes, restarts, and long waits.
+Hand-authoring an agent's control flow is the agent-era Bitter Lesson mistake: a
+DAG, a `step.run` chain, or a YAML workflow freezes assumptions about ordering,
+timeouts, and parallelism that the model is better placed to make at runtime.
+Firegrid gives the model durable primitives instead, and turns the dynamic
+schedule it chooses into a replayable stream.
 
 **Status:** private beta. Local and internal use are active; public APIs may
 still change.
 
 ---
 
-## The Short Version
+## The short version
 
-Firegrid gives agents a place to leave and find work.
+Real agent work does not happen in one clean function call. A useful agent waits
+for a webhook, pauses for a human approval, restarts after a host dies, inspects
+what a previous attempt already did, and picks up after CI, GitHub, or Slack
+change state.
 
-Agents can:
-
-- wait for something to happen;
-- write down what happened;
-- call a tool and get a typed result;
-- ask a human for approval;
-- start or prompt another session;
-- resume after a process crash or a long wait.
-
-The important bit is durability. If an agent waits for a webhook, a CI result,
-a user approval, or another session's output, that wait should not depend on one
-process staying alive.
+Firegrid makes those waits, spawns, calls, and approvals **durable**. If an agent
+is waiting on something, that wait does not depend on one process staying alive.
 
 ---
 
-## Quickstart
+## The model
 
-From a source checkout:
+Firegrid is not the manager of your agents. It is the durable layer they
+coordinate through.
 
-```bash
-pnpm install
+```text
+                       outside signals
+         webhooks   ·   human approvals   ·   tool results
+                               │
+                               │   ingress: write durable events
+                               ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │                    Firegrid durable core                   │
+   │             events · claims · outputs · traces             │
+   └──────────────────────────────────────────────────────────┘
+            │                                          ▲
+            ▼   wake a session waiting on an event     │   publish a result —
+                                                        │   itself a new event
+                                                        │   others can wait on
+   ┌──────────────────────────────────────────────────────────┐
+   │                       agent sessions                       │
+   │              each one:  wait  →  act  →  publish            │
+   │                 (sessions never call each other)           │
+   └──────────────────────────────────────────────────────────┘
 ```
 
-Run a local smoke test:
+Two directions of flow, one shared core:
 
-```bash
-pnpm firegrid -- run -- node -e 'console.log("hello from firegrid")'
-```
+- **Ingress (down):** webhooks, approvals, and tool results land as durable
+  events in the core.
+- **Read (down):** a session wakes when an event it is waiting on appears.
+- **Write (up):** a session publishes a result — which is just another durable
+  event the next session can wait on.
 
-Run Codex through the ACP bridge:
-
-```bash
-pnpm firegrid -- run \
-  --agent codex-acp \
-  --agent-protocol acp \
-  --secret-env OPENAI_API_KEY \
-  --prompt "Use the Firegrid sleep tool once, then summarize what happened." \
-  -- npx -y @zed-industries/codex-acp@0.14.0
-```
-
-Run Claude through the ACP bridge:
-
-```bash
-pnpm firegrid -- run \
-  --agent claude-acp \
-  --agent-protocol acp \
-  --secret-env ANTHROPIC_API_KEY \
-  --prompt "Use the Firegrid sleep tool once, then summarize what happened." \
-  -- npx -y @agentclientprotocol/claude-agent-acp@0.36.1
-```
-
-`--secret-env NAME` authorizes the launched agent process to receive that host
-environment variable. The `--` separates Firegrid options from the agent command
-and its arguments.
-
-To keep a local Firegrid host and MCP route alive for another client:
-
-```bash
-pnpm firegrid -- start --mcp-port 3333
-```
-
-The CLI prints a `firegrid.start.ready` JSON record with the generated MCP URL.
+Notice what is *not* here: no session points at another session. They coordinate
+only through the core, so the plan emerges from what they publish instead of
+being wired up in advance.
 
 ---
 
-## Why
+## The agent surface
 
-Real agent work does not happen in one clean function call.
-
-A useful agent may need to:
-
-- wait for a webhook;
-- pause for human approval;
-- restart after a host dies;
-- inspect what a previous attempt already did;
-- start or prompt another agent session;
-- continue after CI, GitHub, Linear, or Slack changes state.
-
-Firegrid stores those events and decisions in a durable shared workspace. Agents
-can observe the workspace and act when the state they care about appears.
-
----
-
-## The Model
-
-Firegrid is not the manager of your agents. It is the durable coordination layer
-they use.
-
-```mermaid
-flowchart TB
-  subgraph World["outside signals"]
-    Webhook[webhooks]
-    Human[human decisions]
-    Tool[tool results]
-  end
-
-  subgraph Firegrid["Firegrid durable streams + state"]
-    Events[(events)]
-    Claims[(claims)]
-    Outputs[(outputs)]
-    Traces[(traces)]
-  end
-
-  subgraph Agents["agent sessions"]
-    Planner[planner]
-    Researcher[researcher]
-    Builder[builder]
-    Reviewer[reviewer]
-  end
-
-  Webhook -->|send| Events
-  Human -->|approve| Events
-  Tool -->|return| Outputs
-
-  Events -->|wake waits| Planner
-  Events -->|wake waits| Researcher
-  Claims -->|claim work| Builder
-  Outputs -->|review work| Reviewer
-
-  Planner -->|write plan| Events
-  Researcher -->|write findings| Outputs
-  Builder -->|write patch| Outputs
-  Reviewer -->|write feedback| Events
-
-  Agents -->|spans| Traces
-  Traces -->|history agents can inspect| Agents
-```
-
-The participants do not need to know about each other directly. They coordinate
-through shared state.
-
-That does not mean Firegrid gives you magic agent-to-agent chat. It means agents
-can communicate through durable events and tool results when you expose the
-right channels.
-
----
-
-## Choreography, Not A Central Graph
-
-In an orchestration framework, the application usually owns the plan: call the
-researcher, route to the coder, wait for review, then move to the next step.
-
-Firegrid keeps that logic out of the center by default. Agents can publish
-facts, wait for facts, claim work, call tools, and react to approvals through
-shared durable state. The plan can emerge from the participants instead of
-being frozen into one central graph.
-
-You can still build orchestration on top. Firegrid is lower level: events,
-waits, calls, sessions, and recovery.
-
----
-
-## Agent Surface
-
-The agent-facing surface is intentionally small.
+The model drives everything through a small set of durable tools. Each one
+appends a durable record *before* it suspends, fans out, or acts — so a crash or
+restart resumes exactly where it left off, never replaying a side effect.
 
 ```ts
-wait_for(channel, { match, timeoutMs }) // wait for a matching event
-send(channel, payload)                  // record an event
-call(channel, request)                  // request a typed result
-sleep(duration)                         // pause durably
-session_new(prompt)                     // start another agent session
-session_prompt(session, prompt)         // send work to a session
+sleep(durationMs)                // suspend durably until a duration elapses
+wait_for(trigger, { timeoutMs }) // suspend until an event matches, or time out
+spawn(agent, prompt)             // run a child agent, durably await its result
+spawn_all(tasks)                 // fan out child agents, durably await all
+schedule_me(when, prompt)        // queue a future self-prompt — proactivity
+execute(sandbox, input)          // run a tool/sandbox call, durably recorded
 ```
 
-These are coordination primitives, not a workflow DSL. There is no
-`graph.addNode()`, router function, or required central planner.
+These are coordination primitives, not a workflow DSL — no `graph.addNode()`, no
+router, no central planner. The model calls them in whatever order the goal
+needs; Firegrid supplies the durability, claims, projection, and recovery. (Not
+every tool is wired end to end yet — the simulations below show what runs today.)
 
 ---
 
-## Low-Level Primitive Example
+## Everything else is a combinator
 
-You do not have to model your whole system this way. This is the raw channel
-surface for cases where you want maximum control, or when you are building a
-small adapter on top of Firegrid.
+Approval gates, middleware, dashboards, the ACP adapter — none of it is new
+machinery. Each is one primitive plus one combinator over the durable log:
 
-One participant can leave a durable fact:
+| Feature | = primitive + combinator |
+| --- | --- |
+| Approval gate | **suspend** a tool call + append a permission event; wake on resolution |
+| Audit trace | **append** each effect and result to the session log |
+| Budget / policy block | **filter** the effect; reject when it exceeds policy |
+| Context injection | **mapEffect** to rewrite the prompt before it runs |
+| Parallel tool calls | **fanout** the calls, merge the results |
+| Child / peer dispatch | **substitute** the effect + durable wake events |
+| Prompt-state view | **fold** (materialize) the session event log |
 
-```ts
-yield* send("plan.ready", {
-  issueId: "ENG-123",
-  summary: "Update the OAuth callback flow",
-})
-```
-
-Another participant can react when that fact appears:
-
-```ts
-const plan = yield* wait_for("plan.ready", {
-  match: { issueId: "ENG-123" },
-})
-
-const approval = yield* call("human.approval", {
-  issueId: plan.issueId,
-  summary: plan.summary,
-})
-
-if (approval.approved) {
-  yield* call("github.create_pr", {
-    issueId: plan.issueId,
-    title: "Fix OAuth callback flow",
-  })
-}
-```
-
-This is intentionally just the lower level building block. The point is not to
-turn your app into hand-written routing code. The point is that when agents,
-tools, webhooks, and humans do coordinate, the waits, events, calls, approvals,
-and results are durable.
+If a feature cannot be written as a primitive plus a combinator, that is a design
+smell — it is a product object *above* the substrate, not a new piece of the core.
 
 ---
 
-## How It Compares
+## Patterns
+
+Each is one durable tool doing real work — the high-value behaviors fall out of
+the surface, not a framework.
+
+### Delegate and fan out
+> Delegation is just `spawn` — the foreground agent runs child agents for heavy
+> work and durably awaits them; `spawn_all` fans them out in parallel.
+
+- **Right model for the job:** hand coding to a coder, research to a researcher.
+- **Durable:** child work is claimed before launch and awaited from its record.
+- **Parallel:** `spawn_all` resolves once every child reaches a terminal state.
+
+```ts
+const [findings, draft] = yield* spawn_all([
+  { agent: "researcher", prompt: "Find recent OAuth issues touching ENG-123." },
+  { agent: "writer",     prompt: "Draft release notes for the fix." },
+])
+```
+
+### Proactive self-prompts
+> Proactivity is just `schedule_me` — an agent queues a future prompt to itself;
+> when the timer fires (and the session is still live), it wakes and acts. The
+> "coworker that pings you" is one tool call.
+
+- **Time-aware:** it acts when the moment arrives, not only when prompted.
+- **Durable:** the scheduled prompt survives restarts; the timer is crash-safe.
+- **Gated:** it re-prompts only if the session is still live and allowed.
+
+```ts
+yield* schedule_me("tomorrow 9am", "Check if the candidate replied; nudge if cold.")
+```
+
+### Human-in-the-loop
+> An approval is just a durable wait — the agent suspends, costs nothing while
+> waiting, and resumes the moment you decide.
+
+- **No idle process:** the wait does not pin a running process.
+- **Survives restarts:** resumes when the approval arrives, even after a redeploy.
+- **On the edge, not in the loop:** the human handles only the consequential call.
+
+```ts
+const decision = yield* wait_for("approval:send-reply", { timeoutMs: 86_400_000 })
+if (decision.approved) yield* execute("email", { to: customer, body })
+```
+
+`wait_for` also wakes on external events — a webhook, a CI result, a Slack
+message — once the matching ingress source is connected.
+
+### Interrupt and regenerate
+> Steering is just a durable cancel — a new instruction interrupts in-flight work,
+> cleanup runs, the session continues fresh, with no races or lost state.
+
+- **First-class signal:** cancel propagates through the session's work.
+- **Clean teardown:** the agent releases its process before restarting.
+- **Ordered:** the terminal signal is recorded before cleanup runs.
+
+```ts
+yield* session_cancel(s, { reason: "user changed direction" })
+yield* session_prompt(s, "Drop that — handle the staging incident first.")
+```
+
+---
+
+## It composes
+
+The model chooses the order at runtime; every step is durable. A foreground agent
+might fan out work, gate on a human, act, then schedule its own follow-up — no
+authored graph, just tool calls:
+
+```ts
+const [findings] = yield* spawn_all([
+  { agent: "researcher", prompt: "Investigate the api-p99 regression." },
+])
+const decision = yield* wait_for("approval:ship", { timeoutMs: 86_400_000 })
+if (decision.approved) yield* execute("github", { action: "create_pr", issueId: "ENG-123" })
+yield* schedule_me("in 2 days", "Confirm the PR landed; nudge review if not.")
+```
+
+You can still drive a conforming substrate from Temporal, a cron, or a queue —
+but Firegrid never *requires* a workflow engine for an agent to make progress.
+
+---
+
+## What a run looks like
+
+Every wait, spawn, and timer is durable, so the trace *is* the schedule the model
+chose — including the hours it spent suspended with no process alive.
+
+**Waiting on an external event:**
+
+```text
+agent run · ops-agent                                4h 18m  ·  16 spans
+├─ llm · plan next step                                 3.2s
+├─ wait_for · github.pr.merged        ⏸ suspended      4h 11m   ← no process running
+│   └─ woke · repo=app  pr=1242
+├─ spawn · reviewer                                    38.4s
+│   └─ llm · review the diff                           31.0s
+└─ execute · slack.post "reviewed ✓"                    0.4s
+```
+
+**Scheduling itself, then following up:**
+
+```text
+agent run · recruiter-agent                         18h 02m  ·   9 spans
+├─ schedule_me · "tomorrow 9am"       ⏸ durable timer  17h 54m   ← wakes itself
+│   └─ woke · self-prompt fires
+├─ wait_for · candidate.replied  (timeout 4h)  timed out  4h 00m
+└─ execute · slack.dm "still interested? following up"  0.3s
+```
+
+**Fan out, gate on a human, schedule the next check:**
+
+```text
+agent run · release-agent                            2h 06m  ·  23 spans
+├─ spawn_all                                           44.1s
+│   ├─ researcher                                      44.1s
+│   └─ writer                                          22.7s
+├─ wait_for · approval:ship           ⏸ suspended      2h 01m   ← waiting on a person
+│   └─ woke · approved by @gurdas
+├─ execute · github.create_pr #1242                     1.1s
+└─ schedule_me · "+2 days: confirm landed"            → next run
+```
+
+The `⏸ suspended` spans are the point: long wall-clock waits where nothing is
+running, stitched into one trace across restarts.
+
+---
+
+## How it compares
 
 | If you want... | Look at... |
 | --- | --- |
 | A graph of LLM steps authored up front | LangGraph, CrewAI, AutoGen-style orchestration |
 | Durable workflows for service code | Temporal, Restate, Inngest |
-| A durable coordination layer agents can use through tools/channels | Firegrid |
+| A durable coordination layer agents use through tools and channels | **Firegrid** |
 
-Firegrid is closer to durable workflow infrastructure than to an agent SDK, but
-the surface is designed for agents: wait, send, call, sleep, and session tools.
-
----
-
-## What Firegrid Provides
-
-- **Durable waits:** an agent can wait without keeping a process alive.
-- **Durable events:** facts, outputs, approvals, and tool results survive
-  restarts.
-- **Typed channels:** integrations expose typed inputs and outputs instead of
-  loose strings.
-- **Session identity:** long-running agent sessions can be resumed and observed.
-- **Tool and approval paths:** tools, humans, and services can participate in the
-  same shared workspace.
-- **Traceable execution:** runs produce observable traces and durable history.
+Firegrid is closer to durable workflow infrastructure than to an agent SDK — but
+the surface is built for agents to call: wait, spawn, schedule, execute, and
+sleep, with the model choosing the order.
 
 ---
 
-## Current Repo Layout
+## Run it
+
+```bash
+pnpm install
+```
+
+See a full run end to end — a real agent spawned through the real codec and
+sandbox, with a captured trace — via the local simulations (no credentials
+needed for the default scenario):
+
+```bash
+pnpm --filter @firegrid/tiny-firegrid simulate:list
+pnpm --filter @firegrid/tiny-firegrid simulate:run unified-kernel-validation
+pnpm --filter @firegrid/tiny-firegrid simulate:show   # inspect the captured trace
+```
+
+Run a host that binds to a durable-streams backend and stays alive for clients:
+
+```bash
+DURABLE_STREAMS_BASE_URL=... FIREGRID_RUNTIME_NAMESPACE=... pnpm firegrid:host
+```
+
+The simulations in `packages/tiny-firegrid` are the best way to inspect real
+traces while the public client API is still settling.
+
+---
+
+## Repo layout
 
 | Package | Purpose |
 | --- | --- |
@@ -269,8 +293,8 @@ the surface is designed for agents: wait, send, call, sleep, and session tools.
 | `@firegrid/cli` | Local CLI entry points |
 | `@firegrid/tiny-firegrid` | Local simulations and trace artifacts |
 
-Most users should start with the client/session surface. Most contributors
-should read the architecture docs before changing package boundaries.
+Most users start with the client/session surface. Contributors should read the
+architecture docs before changing package boundaries.
 
 ---
 
@@ -280,7 +304,7 @@ This repository uses pnpm workspaces.
 
 ```bash
 pnpm install
-pnpm preflight
+pnpm preflight      # full gate set: lint, typecheck, test, trace gates
 ```
 
 Useful local scripts:
@@ -290,9 +314,6 @@ pnpm typecheck
 pnpm test
 pnpm lint
 ```
-
-Simulation examples live in `packages/tiny-firegrid`. They are the best way to
-inspect real traces while the public API is still settling.
 
 ---
 
