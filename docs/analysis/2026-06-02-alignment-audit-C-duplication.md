@@ -56,6 +56,30 @@ But there is **no rule encoding §12's new structure**: `grep` for `durablestrea
 
 ---
 
+## C5 — §7 plane-confusion: client `firegrid.wait.{for,until,any}` mirrors the AGENT durable-choreography family non-durably; `wait.until` synthesizes a host-owned `firedAt`
+
+**EVIDENCE (verified, `packages/client-sdk/src/firegrid.ts`).** The top-level client service exposes `wait: FiregridWaitClient` (`FiregridService` ~:363; iface `FiregridWaitClient` ~:229-239), implemented by `makeWaitClient` — `waitFor` (:847), `waitUntil` (:858-866), `waitAny` (:868). All three decode the **agent-tool** schemas `FiregridAgentToolOperations.{waitFor,waitUntil,waitAny}` (:569 / :576 / :583), i.e. the client surface mirrors the AGENT durable-choreography primitives.
+- **`wait.until` is non-durable and fabricates a host-owned outcome:** `decodeWaitUntilInput` → `waitDelayMs` → `Clock.sleep(...)` → `return { waited: true, firedAt: new Date().toISOString() }` (:864-865). The sleep is a local client timer (not durable across client restart), and `firedAt` — a host/substrate timing fact in the durable `wait_until` semantics — is **synthesized from local `new Date()`**.
+- `wait.for` / `wait.any` delegate to `channels.waitFor` / `waitForAny` (live stream reads): real observations, but still a **non-durable** client-side mirror of the agent's durable `wait_for`.
+
+**CLASSIFICATION:** boundary-violation (plane confusion §7) + client-predicts/synthesizes-host-fact (`firedAt`).
+**DISPOSITION:** off-path — §7: the durable choreography family (`wait_*`) is the AGENT face, host-side via the channel router/MCP; the client face should dispatch writes and observe projections, not pose as the durable scheduler nor mint a host timing fact.
+**SUGGESTED BEAD / tracked-by:** tracked-by the bead the coordinator filed for the `wait.until` violation; extend it to *"the whole client `wait.*` family is a non-durable mirror of the agent durable-choreography plane — remove it from the client surface or rename/retype so it cannot return a host-fact shape (`firedAt`) nor read as durable."* — **P1**.
+
+---
+
+## C6 — Sibling sweep: client methods expressing/synthesizing host-owned facts from local state
+
+Searched `client-sdk/src/firegrid.ts` for `new Date(` / `Date.now` / `randomUUID` / fabricated offsets/ids / host-id derivation.
+
+- **`firedAt: new Date().toISOString()`** (`:865`, `wait.until`) — synthesizes a host-owned timing fact locally. **CLASSIFICATION:** boundary-violation. **DISPOSITION:** off-path (folded into C5).
+- **`sessionContextIdForExternalKey(decoded.externalKey)`** (`:1416`) — the client re-derives the host-owned participant id (`session:${source}:${id}`) to label the `createOrLoad` **AppendError** on failure. The happy path correctly uses the host-returned `response.contextId` (`:1410`); only the error path embeds the host's id-derivation formula. **CLASSIFICATION:** boundary-violation (lesser, error-path) — client expresses a host-owned fact. **DISPOSITION:** off-path. **SUGGESTED BEAD:** *"createOrLoad failure should not client-derive the contextId; carry the externalKey (or an opaque ref) on the error, not the host's derived id."* — **P3**.
+- **`makeContextId` = `ctx_${crypto.randomUUID()}`** (`:398`, launch) and **`inputId` = `input_${crypto.randomUUID()}`** (`:1472`, prompt) — **CALIBRATION (gap that collapses):** these are client-**originated** correlation ids the client mints and *sends* to the host (which then authoritatively inserts/echoes them), not *predictions* of a host-computed outcome. **CLASSIFICATION:** aligned — NOT flagged. Recorded to distinguish "client mints its own correlation id" (fine) from "client fabricates a host-owned outcome" (`firedAt`, the real violation). Confirm only that the host treats these as client-supplied (it does — `inputId` is used as the idempotency key; the launch `contextId` is passed into `HostContextsCreateChannel.call`).
+
+**Net:** one decision-grade violation (`firedAt`/`wait.until`, C5), one lesser error-path violation (`sessionContextIdForExternalKey`), and two false-positives that collapse on inspection (client-originated ids).
+
+---
+
 ## Coverage & limits (calibrated)
 
 - **Depth-first on the confirmed lead** (C1/C2 webhook duplication) with full caller/writer verification; **C3/C4** are breadth observations verified against source but not exhaustive.
@@ -70,3 +94,6 @@ But there is **no rule encoding §12's new structure**: `grep` for `durablestrea
 | C2 | Confirm + drop registered-but-unreached scheduled-prompt/peer/webhook observer arms | dead/untracked | off-path | P2 |
 | C3 | verified-webhook-ingest is consumer-composed canonical (record; do not flag as dead) | aligned | supports | — |
 | C4 | Add §12-floor enforcement (no per-context output stream builder; client reads via read-views) | gap | prevention | P2 |
+| C5 | Client `wait.*` family is a non-durable mirror of the agent durable-choreography plane; `wait.until` synthesizes host-owned `firedAt` | boundary-violation | off-path | P1 (tracked-by coordinator bead) |
+| C6 | `createOrLoad` error path client-derives the host contextId (`sessionContextIdForExternalKey`) | boundary-violation | off-path | P3 |
+| C6n | Client-minted `ctx_`/`input_` ids are client-originated, NOT predicted host facts (calibration; not flagged) | aligned | supports | — |
