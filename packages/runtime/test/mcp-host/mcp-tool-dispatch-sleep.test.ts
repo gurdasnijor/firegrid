@@ -9,7 +9,9 @@
 //      (`Workflow.idempotencyKey: toolUseId` memoization — the Shape D C3
 //      mechanism; no separate result table), and the second call returns the
 //      memoized result.
-//   C. honest surface: a tool not yet ported fails on the typed `ToolError`
+//   C. channel tools lower onto RuntimeChannelRouter rather than falling
+//      through to the unported default.
+//   D. honest surface: a tool not yet ported fails on the typed `ToolError`
 //      channel (which `@effect/ai`'s McpServer lowers to `isError:true`),
 //      not a thrown defect.
 
@@ -18,11 +20,14 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   HostPromptChannel,
   HostPromptChannelTarget,
+  makeCallableChannel,
   makeDurableEventChannel,
+  makeEgressChannel,
 } from "@firegrid/protocol/channels"
 import { PublicPromptRequestSchema } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Exit, Layer, Ref } from "effect"
+import { Effect, Exit, Layer, Ref, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { RuntimeChannelRouter, makeRuntimeChannelRouter, runtimeRouteFromChannel } from "../../src/channels/index.ts"
 import { DurableStreamsWorkflowEngine } from "../../src/engine/durable-streams-workflow-engine.ts"
 import {
   buildMcpToolDispatchLayer,
@@ -84,6 +89,33 @@ const promptRecorderLayer = (
     }),
   )
 
+const channelRouterLayer = (options: {
+  readonly sent: Ref.Ref<Array<unknown>>
+  readonly calls: Ref.Ref<Array<unknown>>
+}): Layer.Layer<RuntimeChannelRouter> =>
+  Layer.succeed(
+    RuntimeChannelRouter,
+    makeRuntimeChannelRouter([
+      runtimeRouteFromChannel(makeEgressChannel({
+        target: "test.egress",
+        schema: Schema.Unknown,
+        append: payload =>
+          Ref.update(options.sent, current => [...current, payload]).pipe(
+            Effect.asVoid,
+          ),
+      })),
+      runtimeRouteFromChannel(makeCallableChannel({
+        target: "test.call",
+        requestSchema: Schema.Unknown,
+        responseSchema: Schema.Unknown,
+        call: request =>
+          Ref.update(options.calls, current => [...current, request]).pipe(
+            Effect.as({ ok: true, request }),
+          ),
+      })),
+    ]),
+  )
+
 describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
   it("A. sleep returns the typed output { slept: true } through ToolDispatch.call", async () => {
     const result = await runWith(
@@ -131,7 +163,58 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
     expect(JSON.parse(observed.first.resultJson)).toEqual({ slept: true })
   })
 
-  it("C. a not-yet-ported tool fails on the typed ToolError channel", async () => {
+  it("C. agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.1 agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.4 send dispatches through RuntimeChannelRouter", async () => {
+    const sent = await Effect.runPromise(Ref.make<Array<unknown>>([]))
+    const calls = await Effect.runPromise(Ref.make<Array<unknown>>([]))
+    const result = await runWith(
+      streamUrlFor("send"),
+      ToolDispatchLive.pipe(Layer.provideMerge(channelRouterLayer({ sent, calls }))),
+      Effect.gen(function*() {
+        const dispatch = yield* ToolDispatch
+        const output = yield* dispatch.call({
+          contextId: "ctx-send",
+          toolUseId: "tu-send-1",
+          toolName: "send",
+          input: { channel: "test.egress", payload: { eventType: "ready" } },
+        })
+        const sentPayloads = yield* Ref.get(sent)
+        const callPayloads = yield* Ref.get(calls)
+        return { output, sentPayloads, callPayloads }
+      }),
+    )
+    expect(result.output).toEqual({ sent: true, channel: "test.egress" })
+    expect(result.sentPayloads).toEqual([{ eventType: "ready" }])
+    expect(result.callPayloads).toEqual([])
+  })
+
+  it("C. agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.1 agentic-patterns-primitive-profile.LOCKED_TOOL_SURFACE.4 call dispatches through RuntimeChannelRouter", async () => {
+    const sent = await Effect.runPromise(Ref.make<Array<unknown>>([]))
+    const calls = await Effect.runPromise(Ref.make<Array<unknown>>([]))
+    const result = await runWith(
+      streamUrlFor("call"),
+      ToolDispatchLive.pipe(Layer.provideMerge(channelRouterLayer({ sent, calls }))),
+      Effect.gen(function*() {
+        const dispatch = yield* ToolDispatch
+        const output = yield* dispatch.call({
+          contextId: "ctx-call",
+          toolUseId: "tu-call-1",
+          toolName: "call",
+          input: { channel: "test.call", request: { command: "approve" } },
+        })
+        const sentPayloads = yield* Ref.get(sent)
+        const callPayloads = yield* Ref.get(calls)
+        return { output, sentPayloads, callPayloads }
+      }),
+    )
+    expect(result.output).toEqual({
+      ok: true,
+      request: { command: "approve" },
+    })
+    expect(result.callPayloads).toEqual([{ command: "approve" }])
+    expect(result.sentPayloads).toEqual([])
+  })
+
+  it("D. execute remains PO-owned and fails on the typed ToolError channel", async () => {
     const exit = await runWith(
       streamUrlFor("unported"),
       ToolDispatchLive,
@@ -139,9 +222,9 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
         const dispatch = yield* ToolDispatch
         return yield* dispatch.call({
           contextId: "ctx-unported",
-          toolUseId: "tu-send-1",
-          toolName: "send",
-          input: { channel: "egress.x", payload: {} },
+          toolUseId: "tu-execute-1",
+          toolName: "execute",
+          input: { input: {} },
         })
       }).pipe(Effect.exit),
     )
