@@ -1,3 +1,5 @@
+> **HISTORICAL (pre-#765).** References paths deleted in #765 (packages/substrate, packages/host-sdk/src/host, and legacy packages/runtime/src/{subscribers,durable-tools,workflow-engine,agent-event-pipeline,agent-tools,runtime-host,composition}); kept for provenance. Current architecture: docs/cannon/.
+
 # SDD: TFIND-031 DurableWait substrate ownership (architectural fork)
 
 Status: draft — FRAMING-GATED. Autonomous work STOPPED here per dispatch

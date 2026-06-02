@@ -1,3 +1,5 @@
+> **HISTORICAL (pre-#765).** References paths deleted in #765 (packages/substrate, packages/host-sdk/src/host, and legacy packages/runtime/src/{subscribers,durable-tools,workflow-engine,agent-event-pipeline,agent-tools,runtime-host,composition}); kept for provenance. Current architecture: docs/cannon/.
+
 # SDD: Firegrid Client/Host Control-Plane Boundary
 
 Status: draft — framing for coordinator signoff, NO production code yet

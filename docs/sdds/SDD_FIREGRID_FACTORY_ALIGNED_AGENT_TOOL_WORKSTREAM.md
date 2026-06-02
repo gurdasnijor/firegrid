@@ -1,3 +1,5 @@
+> **HISTORICAL (pre-#765).** References paths deleted in #765 (packages/substrate, packages/host-sdk/src/host, and legacy packages/runtime/src/{subscribers,durable-tools,workflow-engine,agent-event-pipeline,agent-tools,runtime-host,composition}); kept for provenance. Current architecture: docs/cannon/.
+
 # SDD: Factory-Aligned Agent Tool Workstream
 
 Status: Draft for dispatch
