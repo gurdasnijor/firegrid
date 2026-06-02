@@ -18,6 +18,10 @@ workflow, update the SDD, add the justification here, and re-baseline with
 > specific path+line. It preserves the load-bearing "no net-new `Workflow.make`"
 > guarantee; the per-site justifications are recorded here instead.
 
+## Admitted workbench workflows (tiny-firegrid sims, not shipped production)
+
+- `packages/tiny-firegrid/src/simulations/per-event-runtime-context/host.ts:137` — tf-c71h WORKBENCH owner workflow `workbench.per-event-runtime-context`. SDD-justified by `docs/analysis/2026-06-02-runtime-shape-blast-radius-and-prior-art.md` §4 and the RuntimeContext reconcile proposal §0.1: it is the design bench for the proposed production per-event RuntimeContext tier — one fresh execution per session input over a durable consume cursor (the `PermissionRoundtripWorkflow` shape generalized to many inputs per key), MINUS the parked while/suspend loop. Lives only in the sim's host composition; the trace is the deliverable (`docs/findings/tf-c71h-per-event-runtime-context-workbench.md`). NOTE for owners: the `workflowMakeSiteCount` ratchet scopes to `packages/**/src`, which includes tiny-firegrid sims, so this is the first sim-authored `Workflow.make`. Whether sim/workbench workflows should count against the production C2 admission ledger (vs. an excluded sim scope) is a tooling question raised here, not decided — admitted conservatively so the gate stays intact.
+
 ## Grandfathered owner workflows (7, baseline `workflowMakeSiteCount: 7`)
 
 - `packages/runtime/src/unified/subscribers/runtime-context.ts:66` — Owned durable runtime-context session workflow: one execution per context attempt, parks on Workflow.suspend while waiting for session input signals, owns adapter lifecycle start/send/deregister.
