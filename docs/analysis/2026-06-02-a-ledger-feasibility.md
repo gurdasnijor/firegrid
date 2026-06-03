@@ -1,4 +1,4 @@
-# A-ledger feasibility read
+# A-ledger feasibility and ownership read
 
 Date: 2026-06-02
 
@@ -7,79 +7,124 @@ Task: tf-di8a
 Scope: read-only feasibility/design note for the option-A named costs in the
 runtime org/body-shape SDD. No runtime code was changed.
 
+This note uses the ownership lens requested by the PO: the question is not
+"what cost does A pay that B avoids?" The question is "where does this concern
+belong, and which primitive should own it?" A self-inflicted modeling bug should
+not be laundered into a design-space property.
+
 Verdict summary:
 
-- Atomic `startOrAttach`: **BUILDABLE-WITH-SUBTLETY**. The owned seam is small,
-  but the reservation must cover the asynchronous spawn; a plain `Ref.modify`
-  that only reserves synchronously is not sufficient unless paired with a latch
-  or per-key mutex held across the spawn.
-- Append-ordered / single-writer consume cursor: **BUILDABLE-WITH-SUBTLETY**.
-  The durable-stream protocol exposes the right append-order and producer-fence
-  primitives, but the current table `upsert` path is not producer-fenced and
-  `insertOrGet` does not return the original winner offset on duplicate. The
-  design should store/return the append position explicitly or use a lower-level
-  input stream cursor.
-- Non-clock DurableDeferred crash recovery: **BUILDABLE-WITH-SUBTLETY**. The
-  deferred table and resume hook are present, but recovery must be
-  registration-aware; an engine-start sweep before workflows register can no-op.
+- Per-`contextId` process lifecycle: **owned by a keyed lifecycle owner using
+  `Workflow.idempotencyKey(contextId)`; dissolves**. The current
+  `codec-adapter.ts` TOCTOU is an in-memory gateway bug with zero durable-streams
+  involvement. A registry mutex is a symptom patch. The right hammer is an
+  explicit keyed singleton lifecycle execution that owns spawn/deregister by
+  construction.
+- Consume cursor: **owned by the input ledger / per-key consumer using append
+  offset or producer sequence; dissolves**. The blind read-count/write cursor is
+  a modeling choice, not a substrate limit. Durable streams already expose
+  append order and producer fencing; the design must use those instead of a
+  counter.
+- Non-clock deferred recovery: **owned by workflow-engine recovery using the
+  existing deferred table and registration-aware resume; dissolves**. The
+  clock-only sweep is an incomplete recovery owner, not a DurableDeferred
+  limitation.
 
-## 1. Atomic `startOrAttach`
+## 1. Per-`contextId` process lifecycle
 
-Status: **BUILDABLE-WITH-SUBTLETY**.
+Status: **owned-by-keyed-lifecycle-owner-using-Workflow.idempotencyKey(contextId)
+(dissolves)**.
 
 Source-verified facts:
 
-- `ProductionCodecAdapterLive` allocates one in-memory registry as
+- `ProductionCodecAdapterLive` allocates a host-local in-memory registry as
   `Ref.make<Map<string, RegistryEntry>>(new Map())` in
   `packages/runtime/src/unified/codec-adapter.ts:406`.
-- `startOrAttach` currently reads the registry at
+- `startOrAttach` currently performs `Ref.get` at
   `packages/runtime/src/unified/codec-adapter.ts:413-415`, returns an existing
-  entry at `:416`, then resolves the context and builds the session at
-  `:418-435`.
-- The registry slot is not written until after the asynchronous
-  `buildSessionForContext` completes, at
-  `packages/runtime/src/unified/codec-adapter.ts:436-440`.
-- Sends depend on the registry entry existing:
-  `packages/runtime/src/unified/codec-adapter.ts:458-460`.
-- Deregistration closes the entry scope and removes the registry key at
-  `packages/runtime/src/unified/codec-adapter.ts:518-529`.
+  registry entry at `:416`, resolves context at `:418-424`, performs the async
+  spawn/session build at `:426-435`, then writes the registry at `:436-440`.
+  That is a check-then-act race over a plain in-memory `Ref<Map>`.
+- There is no durable-streams dependency in that path. The async build uses the
+  context resolver, sandbox provider, codec layer, output journal, id generator,
+  env policy, and MCP endpoint service at
+  `packages/runtime/src/unified/codec-adapter.ts:287-384`.
+- The parked session body explicitly relied on one workflow execution per
+  `(contextId, attempt)`: `RuntimeContextSessionWorkflow.idempotencyKey` is
+  `${p.contextId}:${p.attempt}` at
+  `packages/runtime/src/unified/subscribers/runtime-context.ts:67-72`.
+- That same file states the old shape's intent: one execution per
+  `(contextId, attempt)` kills the production TOCTOU at
+  `packages/runtime/src/unified/subscribers/runtime-context.ts:23-25`.
+- The parked body used one activity to call `adapter.startOrAttach` at
+  `packages/runtime/src/unified/subscribers/runtime-context.ts:99-107`, then
+  per-input `adapter.send` activities at `:137-143`, and terminal
+  `adapter.deregister` at `:148-154`.
+- Upstream `Workflow.make` derives `executionId` from
+  `workflow.name + idempotencyKey(payload)` at
+  `repos/effect/packages/workflow/src/Workflow.ts:281`, and `execute` passes that
+  stable execution id to the engine at `:301-312`.
+- Firegrid's engine uses that execution id to find/create the execution row and
+  resume it at `packages/runtime/src/engine/internal/engine-runtime.ts:270-301`;
+  `resume` avoids starting another running fiber for the same execution id at
+  `packages/runtime/src/engine/internal/engine-runtime.ts:188-190`.
 
-Feasibility read:
+Ownership read:
 
-The race is in an owned Firegrid seam and is cheap to close, but it is not
-solved by wrapping the existing body in a bare `Ref.modify`. `Ref.modify` can
-reserve a slot atomically, but `buildSessionForContext` is an asynchronous
-Effect that can fail, and the protection must cover the whole spawn/build
-window. Otherwise, competing callers can still observe "no usable entry" while
-the first caller is between reservation and success.
+The current race is not an option-A tax. It is a skipped decomposition step.
+The parked body conflated two lifetimes:
 
-Minimal diff sketch:
+- per-event input handling, which is genuinely per-event and belongs in option A;
+- per-`contextId` process lifecycle, which is a keyed singleton: at most one live
+  process/session per `contextId`.
 
-1. Add an `inFlight` registry beside `registry`, keyed by `contextId`, whose
-   value is a `Deferred<RegistryEntry, AdapterError>` or equivalent latch.
-2. On `startOrAttach(contextId)`, first check the completed `registry`.
-3. If absent, use `Ref.modify(inFlight, ...)` to atomically decide whether this
-   caller is the starter or a waiter:
-   - starter inserts a fresh latch and performs `resolveContext` +
-     `buildSessionForContext` outside the `Ref.modify` callback;
-   - waiter awaits the existing latch and returns the completed entry.
-4. Starter success path writes `registry.set(contextId, entry)` and completes
-   the latch with the entry.
-5. Starter failure path completes the latch with the `AdapterError` and removes
-   the `inFlight` key so a later call can retry.
-6. Ensure cleanup removes `inFlight` even if the starter is interrupted.
+Moving input handling to per-event work correctly removes the parked body as the
+owner of event processing. It should not also remove the owner of process
+lifecycle. The lifecycle needs its own explicit keyed singleton owner, using the
+same `Workflow.idempotencyKey` primitive that made the parked body safe by
+construction.
 
-Open subtlety:
+Right-hammer design sketch:
 
-`deregister` currently assumes a completed registry entry. A robust patch should
-define what happens if terminal cleanup races an in-flight start. The least
-surprising behavior is either to await/fail the in-flight latch before close, or
-to mark the in-flight start cancelled and remove both maps in the same cleanup
-path.
+1. Introduce a small lifecycle workflow, for example
+   `RuntimeContextProcessLifecycleWorkflow`, with payload `{ contextId }` and
+   `idempotencyKey: ({ contextId }) => contextId`.
+2. The lifecycle workflow owns spawn and cleanup. It resolves the context and
+   calls the adapter/gateway's lower-level "open process/session" operation once
+   for that key, then waits until a terminal/close signal before calling
+   deregister/close.
+3. Per-event handlers do not call `startOrAttach` directly as a registry
+   get-or-create. They ensure the lifecycle workflow is armed/executing for the
+   `contextId`, then deliver event input to the session/lifecycle owner or to an
+   input ledger the owner consumes.
+4. `codec-adapter.ts` stops being the concurrency authority. It remains the
+   gateway that knows how to open a sandbox, build an ACP/raw `AgentSession`,
+   gate codec input kinds, drain outputs, and close resources. The architecture
+   read of what `codec-adapter.ts` should be is separate; this note only names
+   the lifecycle ownership correction.
+5. If a short-term patch is required before the lifecycle workflow lands, an
+   in-flight latch or per-key mutex in the registry can contain the race. That is
+   a tactical containment patch, not the design answer.
+
+Why this is the right hammer:
+
+The keyed execution primitive is already the system's durable "one owner for this
+key" mechanism. Recreating that with a hand-rolled in-memory mutex inside
+`codec-adapter.ts` makes host-local process state pretend to be runtime
+coordination. A keyed lifecycle execution puts ownership back in the runtime
+model and makes "once per context id" true by construction.
+
+Open question:
+
+The exact lifecycle surface still needs a design spike: whether per-event
+handlers signal the lifecycle workflow directly, append to an input ledger it
+consumes, or use a tiny service facade around both. That is an interface question,
+not a durable-streams blocker.
 
 ## 2. Append-ordered / single-writer consume cursor
 
-Status: **BUILDABLE-WITH-SUBTLETY**.
+Status: **owned-by-input-ledger/per-key-consumer-using-append-offset-or-producer-seq
+(dissolves)**.
 
 Source-verified facts:
 
@@ -119,48 +164,38 @@ Source-verified facts:
   the comment says callers needing original order must capture it at first
   write at `:815-822`.
 
-Feasibility read:
+Ownership read:
 
-The infrastructure can support an append-ordered cursor, but the design should
-not pretend the existing blind row update is already race-free. The safe model
-is to make the cursor a position in an append-ordered log, or to ensure a single
-writer per `contextId` advances the cursor. That uses the stream offset or
-producer sequence as the order source instead of allocating `nextSeq` from a
-read-modify-write count.
+This is also self-inflicted modeling, not a genuine substrate limit. A blind
+"count existing rows, write next cursor" counter makes ordering a read-modify-
+write race. The owner should be the input ledger plus the single per-key
+consumer/lifecycle owner, and the primitive should be append order: stream offset
+or producer sequence.
 
-Minimal diff sketches:
+Design sketch:
 
-Option 2A, input-log cursor:
+1. Per-event input writes append an input fact with an idempotent key and capture
+   the returned append offset or producer sequence.
+2. The per-`contextId` owner consumes input facts in append order. Its cursor is
+   `{ contextId, lastConsumedOffset }` or equivalent, advanced by the owner after
+   processing.
+3. If the implementation uses DurableTable rows, extend the row/API so the
+   original append offset is stored or returned on duplicate. Current
+   `insertOrGet` is close, but duplicate reads do not expose the winner offset.
+4. Do not use normal DurableTable `upsert` as a compare-and-swap substitute; it
+   is a plain append path, and DurableTable explicitly says `insertOrGet` is not
+   a locking primitive.
 
-1. Write per-event inputs to a durable stream/table action that returns the
-   append `offset`.
-2. Persist the consume cursor as `{ contextId, lastConsumedOffset }`.
-3. The per-context session/body is the only writer that advances
-   `lastConsumedOffset`, after processing all input events up to that offset.
-4. Replays scan from `lastConsumedOffset` forward and filter by `contextId` if
-   the stream is global.
+Open question:
 
-Option 2B, table-backed idempotent input rows:
-
-1. Add a row field for the append position, or add a DurableTable API that can
-   return the original winner offset on duplicate.
-2. Use the primary-key producer fence for idempotent per-input rows.
-3. Order consumption by captured append position, not by a dense counter
-   computed from existing rows.
-4. Keep cursor advancement single-writer-per-`contextId`; do not use normal
-   `upsert` as a compare-and-swap substitute.
-
-Open subtlety:
-
-`insertOrGet` is close but not sufficient by itself for a reusable consume
-cursor because the duplicate path does not expose the original append offset.
-If the A-ledger design needs deterministic order for duplicate/replayed input
-facts, it must either store that offset at first write or consume from the
-lower-level stream append path where the offset is already returned.
+Choose the concrete ledger surface: lower-level durable stream input log, or a
+table API that captures and preserves the first append offset. Either is
+buildable; the wrong owner is the blind counter.
 
 ## 3. Non-clock DurableDeferred crash recovery
 
-Status: **BUILDABLE-WITH-SUBTLETY**.
+Status: **owned-by-workflow-engine-recovery-using-deferred-table-plus-registration-aware-resume
+(dissolves)**.
 
 Source-verified facts:
 
@@ -186,38 +221,44 @@ Source-verified facts:
   pending session signals:
   `packages/runtime/src/unified/host.ts:276-319`.
 
-Feasibility read:
+Ownership read:
 
-The missing recovery is in an owned seam: deferred rows are durable, completion
-already resumes the execution, and `resume` is idempotent enough to call from a
-sweep. The important sequencing constraint is workflow registration. A sweep at
-engine construction time can observe completed deferred rows, call `resume`,
-and then no-op because the workflow catalog is still empty.
+The substrate already persists non-clock deferred completions. The missing piece
+is recovery ownership: engine startup currently owns only clock wakeup recovery,
+so a crash after a non-clock deferred row is written but before the post-write
+`resume` completes can leave a resumable execution asleep. That is a clock-only
+recovery sweep bug, not a DurableDeferred limit.
 
-Minimal diff sketch:
+Design sketch:
 
 1. Add `recoverPendingDeferredsForWorkflow(workflowName)` or a generalized
-   `recoverPendingWakeups`.
-2. Query `table.deferreds`, group or filter rows by `workflowName`, and dedupe
-   by `executionId`.
-3. For each execution id, skip rows whose execution is absent or final; calling
-   `resume(executionId)` handles suspended/running checks.
-4. Invoke the deferred sweep after `register` stores the workflow, or mirror
-   the unified host pattern by waiting for a workflow-registered signal before
-   recovery.
-5. Keep `recoverPendingClockWakeups` for clock rows; the deferred sweep catches
-   the crash window where a non-clock deferred row was written but its
-   post-write resume did not complete.
+   recovery pass over both clock wakeups and deferred completions.
+2. Query `table.deferreds`, group or filter rows by `workflowName`, and dedupe by
+   `executionId`.
+3. For each execution id, skip rows whose execution is absent or final; call
+   `resume(executionId)` for the rest.
+4. Run the deferred sweep after workflow registration, or mirror the unified
+   host pattern that waits for workflow registration before recovering pending
+   signals. A construction-time sweep can no-op because `resume` returns when
+   the workflow is not registered.
 
-Open subtlety:
+Open question:
 
-The sweep should be registration-aware and probably once-per-workflow per engine
-instance. Running it only at `makeWorkflowEngine` startup would overstate the
-fix because `resume` can no-op before the workflow is registered.
+Whether to implement this as a generic engine recovery hook or a
+per-workflow/register-time sweep. The owner should be workflow-engine recovery,
+not caller code and not clock-specific recovery.
 
-## Bottom line for option A
+## Bottom line
 
-All three A-ledger costs appear cheaply closeable in Firegrid-owned seams, but
-none should be described as already solved. The strongest decision-grade caveat
-is item 1: atomic `startOrAttach` needs a latch or per-key mutex that spans the
-asynchronous spawn/build, not just a synchronous `Ref.modify` reservation.
+All three items are buildable because they are Firegrid ownership/modeling gaps,
+not hard substrate limitations:
+
+- process lifecycle belongs to a keyed singleton lifecycle execution;
+- input ordering belongs to the append-ordered ledger and its per-key consumer;
+- deferred wakeup recovery belongs to workflow-engine recovery over all deferred
+  completion rows, not just clock rows.
+
+The important correction is item 1: do not frame the `startOrAttach` TOCTOU as
+an intrinsic option-A cost. Option A separates per-event input handling from
+per-context process lifecycle; the lifecycle simply needs its own explicit keyed
+owner instead of inheriting ownership accidentally from the parked body.
