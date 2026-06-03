@@ -27,19 +27,18 @@
 
 import { makeIngressChannel, type IngressChannel } from "@firegrid/protocol/channels"
 import type { ChannelTarget } from "@firegrid/protocol/channels"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "@effect/platform"
+import { NodeHttpServer } from "@effect/platform-node"
 import { Effect, Layer, Schema, Stream } from "effect"
-// durable-lint-allow-control-plane: per-source HTTP listener factory; mirrors composition/mcp-host.ts pattern
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import type { AddressInfo } from "node:net"
+// durable-lint-allow-control-plane: @effect/platform-node NodeHttpServer.layer listener
+// factory (the documented `createServer` argument) — same pattern as mcp-host.ts.
+import { createServer } from "node:http"
 import {
   ingestVerifiedWebhook,
   type VerifiedWebhookIngestConfig,
-  type VerifiedWebhookIngestError,
   VerifiedWebhookFactTable,
   type VerifiedWebhookFactTableService,
 } from "../../verified-webhook-ingest/index.ts"
-
-const encoder = new TextEncoder()
 
 interface VerifiedWebhookRouteAddress {
   readonly host: string
@@ -129,67 +128,46 @@ interface VerifiedWebhookSourceBinding<Fact> {
   readonly routeUrl: Effect.Effect<VerifiedWebhookRouteBound>
 }
 
-const readRawBody = (
-  request: IncomingMessage,
-): Effect.Effect<Uint8Array, Error> =>
-  Effect.async<Uint8Array, Error>((resume) => {
-    const chunks: Array<Uint8Array> = []
-    request.on("data", (chunk: string | Uint8Array) => {
-      chunks.push(typeof chunk === "string" ? encoder.encode(chunk) : chunk)
-    })
-    request.on("end", () => {
-      const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
-      const body = new Uint8Array(size)
-      let offset = 0
-      chunks.forEach((chunk) => {
-        body.set(chunk, offset)
-        offset += chunk.byteLength
-      })
-      resume(Effect.succeed(body))
-    })
-    request.on("error", (error) => resume(Effect.fail(error)))
-  })
-
-const sendJson = (
-  response: ServerResponse,
-  statusCode: number,
-  payload: unknown,
-): Effect.Effect<void> =>
-  Effect.sync(() => {
-    response.statusCode = statusCode
-    response.setHeader("content-type", "application/json")
-    response.end(JSON.stringify(payload))
-  })
-
-const sendNotFound = (response: ServerResponse): Effect.Effect<void> =>
-  sendJson(response, 404, { error: "not found" })
-
-const handleRequest = (
-  request: IncomingMessage,
-  response: ServerResponse,
+// The per-source webhook handler as an `@effect/platform` HttpApp: read the
+// raw request bytes (HMAC verification needs the exact bytes), hand them to the
+// existing `ingestVerifiedWebhook` adapter, and map outcomes to JSON responses
+// (202 verified / 400 rejected / 404 wrong route / 500 defect). Mirrors the
+// previous raw-`node:http` handler's status semantics.
+const webhookApp = (
   config: MakeVerifiedWebhookSourceConfig<unknown>,
-): Effect.Effect<void, never, VerifiedWebhookFactTable> =>
+): Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  never,
+  HttpServerRequest.HttpServerRequest | VerifiedWebhookFactTable
+> =>
   Effect.gen(function*() {
+    const request = yield* HttpServerRequest.HttpServerRequest
     if (
       request.method !== "POST" ||
-      request.url?.split("?")[0] !== config.route.path
+      request.url.split("?")[0] !== config.route.path
     ) {
-      return yield* sendNotFound(response)
+      return HttpServerResponse.unsafeJson({ error: "not found" }, { status: 404 })
     }
-    const rawBody = yield* readRawBody(request)
+    const rawBody = new Uint8Array(yield* request.arrayBuffer)
     const result = yield* ingestVerifiedWebhook({
       source: config.source,
       headers: request.headers,
       rawBody,
       config: config.ingest,
     })
-    return yield* sendJson(response, 202, result)
+    return HttpServerResponse.unsafeJson(result, { status: 202 })
   }).pipe(
-    Effect.catchAll((error: Error | VerifiedWebhookIngestError) =>
-      sendJson(response, 400, {
-        error: error.message,
-        ...("op" in error ? { op: error.op } : {}),
-      })),
+    Effect.catchAll((error: { readonly message: string; readonly op?: string }) =>
+      Effect.succeed(
+        HttpServerResponse.unsafeJson({
+          error: error.message,
+          ...("op" in error ? { op: error.op } : {}),
+        }, { status: 400 }),
+      )),
+    Effect.catchAllCause((cause) =>
+      Effect.succeed(
+        HttpServerResponse.unsafeJson({ error: String(cause) }, { status: 500 }),
+      )),
     Effect.withSpan("firegrid.webhook.route", {
       kind: "server",
       attributes: {
@@ -229,57 +207,49 @@ export const makeVerifiedWebhookSource = <Fact>(
       stream: project(table),
     })
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Layer.scopedDiscard widens R to `any` through Effect.async + acquireRelease inference; the gen body only consumes VerifiedWebhookFactTable
+  // Scoped Layer: mount the per-source HttpApp on its own loopback
+  // `NodeHttpServer` (the server's lifetime is the Layer scope — the platform
+  // layer closes the listener on release), then resolve the kernel-chosen bound
+  // address back into `routeUrl`.
   const routeLayer: Layer.Layer<never, never, VerifiedWebhookFactTable> = Layer.scopedDiscard(
     Effect.gen(function*() {
       const table = yield* VerifiedWebhookFactTable
-      const server = createServer((request, response) => {
-        Effect.runFork(
-          handleRequest(
-            request,
-            response,
-            config as MakeVerifiedWebhookSourceConfig<unknown>,
-          ).pipe(
-            Effect.provideService(VerifiedWebhookFactTable, table),
-            Effect.catchAllCause((cause) =>
-              sendJson(response, 500, { error: String(cause) })),
-          ),
-        )
-      })
-      yield* Effect.acquireRelease(
-        Effect.async<VerifiedWebhookRouteBound, Error>((resume) => {
-          server.once("error", (error) => resume(Effect.fail(error)))
-          server.listen(config.route.port, config.route.host, () => {
-            const address = server.address() as AddressInfo
-            const bound: VerifiedWebhookRouteBound = {
-              host: config.route.host,
-              port: address.port,
-              path: config.route.path,
-              url: `http://${config.route.host}:${address.port}${config.route.path}`,
-            }
-            resolveBound(bound)
-            resume(Effect.succeed(bound))
-          })
-        }).pipe(
-          Effect.tap((bound) =>
-            Effect.annotateCurrentSpan({
-              "firegrid.webhook.source": config.source,
-              "firegrid.webhook.url": bound.url,
-            })),
-          Effect.orDie,
+      yield* HttpServer.serveEffect(
+        webhookApp(config as MakeVerifiedWebhookSourceConfig<unknown>).pipe(
+          Effect.provideService(VerifiedWebhookFactTable, table),
         ),
-        () =>
-          Effect.async<void>((resume) => {
-            server.closeAllConnections?.()
-            server.close(() => resume(Effect.void))
-          }),
       )
+      yield* HttpServer.addressWith((address) =>
+        Effect.sync(() => {
+          const port = address._tag === "TcpAddress" ? address.port : config.route.port
+          const bound: VerifiedWebhookRouteBound = {
+            host: config.route.host,
+            port,
+            path: config.route.path,
+            url: `http://${config.route.host}:${port}${config.route.path}`,
+          }
+          resolveBound(bound)
+        }))
     }).pipe(
+      Effect.tap(() =>
+        Effect.annotateCurrentSpan({
+          "firegrid.webhook.source": config.source,
+        })),
       Effect.withSpan("firegrid.webhook.route.acquire", {
         kind: "server",
         attributes: { "firegrid.webhook.source": config.source },
       }),
     ),
+  ).pipe(
+    Layer.provide(
+      NodeHttpServer.layer(createServer, {
+        port: config.route.port,
+        host: config.route.host,
+      }),
+    ),
+    // A bind failure (port in use, etc.) is an unrecoverable host defect, as in
+    // the previous raw-`node:http` implementation (`Effect.orDie` on listen).
+    Layer.orDie,
   )
 
   return {

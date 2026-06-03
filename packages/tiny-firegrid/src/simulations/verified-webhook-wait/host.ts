@@ -3,7 +3,8 @@ import {
   type ChannelRegistration,
 } from "@firegrid/protocol/channels"
 import { durableStreamUrl } from "@firegrid/protocol/launch"
-import { FetchHttpClient } from "@effect/platform"
+import { FetchHttpClient, HttpServer, HttpServerRequest, HttpServerResponse } from "@effect/platform"
+import { NodeHttpServer } from "@effect/platform-node"
 import {
   LinearWebhookFactSchema,
 } from "@firegrid/protocol/verified-webhook"
@@ -19,9 +20,10 @@ import {
 } from "@firegrid/runtime/unified"
 import { DurableTable } from "effect-durable-operators"
 import { DurableStream } from "effect-durable-streams"
-import { Effect, Layer, Option, Runtime, Schema, Stream } from "effect"
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import type { AddressInfo } from "node:net"
+import { Effect, Layer, Option, Schema, Stream } from "effect"
+// durable-lint-allow-control-plane: @effect/platform-node NodeHttpServer.layer listener
+// factory (the documented `createServer` argument) — same pattern as mcp-host.ts.
+import { createServer } from "node:http"
 import type {
   FiregridHost,
   TinyFiregridHostEnv,
@@ -33,7 +35,6 @@ const verifiedWebhookWaitRouteChannel = "tiny.verifiedWebhookWait.route"
 const verifiedWebhookWaitRouteReadyEvent = "webhook.route.ready"
 
 const routePath = "/webhooks/linear"
-const encoder = new TextEncoder()
 
 const RouteReadyRowSchema = Schema.Struct({
   routeId: Schema.String.pipe(DurableTable.primaryKey),
@@ -83,79 +84,54 @@ const routeReadyFact = (
   boundAt: env.runId,
 })
 
-const readRawBody = (
-  request: IncomingMessage,
-): Effect.Effect<Uint8Array, Error> =>
-  Effect.async<Uint8Array, Error>((resume) => {
-    const chunks: Array<Uint8Array> = []
-    request.on("data", (chunk: string | Uint8Array) => {
-      chunks.push(typeof chunk === "string" ? encoder.encode(chunk) : chunk)
-    })
-    request.on("end", () => {
-      const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
-      const body = new Uint8Array(size)
-      let offset = 0
-      chunks.forEach((chunk) => {
-        body.set(chunk, offset)
-        offset += chunk.byteLength
-      })
-      resume(Effect.succeed(body))
-    })
-    request.on("error", error => resume(Effect.fail(error)))
+const handleLinearWebhook: Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  never,
+  HttpServerRequest.HttpServerRequest | VerifiedWebhookFactTable
+> = Effect.gen(function*() {
+  const request = yield* HttpServerRequest.HttpServerRequest
+  if (request.method !== "POST" || request.url.split("?")[0] !== routePath) {
+    return HttpServerResponse.unsafeJson({ error: "not found" }, { status: 404 })
+  }
+  const rawBody = new Uint8Array(yield* request.arrayBuffer)
+  const result = yield* ingestVerifiedWebhook({
+    source: verifiedWebhookWaitSource,
+    headers: request.headers,
+    rawBody,
+    receivedAt: "2026-06-02T00:00:00.000Z",
+    config: {
+      secret: verifiedWebhookWaitSecret,
+      signatureHeaderName: "x-linear-signature",
+      selectedHeaderNames: ["linear-delivery"],
+    },
   })
-
-const sendJson = (
-  response: ServerResponse,
-  statusCode: number,
-  payload: unknown,
-): Effect.Effect<void> =>
-  Effect.sync(() => {
-    response.statusCode = statusCode
-    response.setHeader("content-type", "application/json")
-    response.end(JSON.stringify(payload))
+  yield* Effect.annotateCurrentSpan({
+    "firegrid.webhook.fact_key": result.fact.factKey.join(":"),
+    "firegrid.webhook.event_type": result.fact.eventType,
+    "firegrid.webhook.external_event_key": result.fact.externalEventKey,
+    "firegrid.webhook.ingest_result": result._tag,
   })
-
-const handleLinearWebhook = (
-  request: IncomingMessage,
-  response: ServerResponse,
-): Effect.Effect<void, never, VerifiedWebhookFactTable> =>
-  Effect.gen(function*() {
-    if (request.method !== "POST" || request.url?.split("?")[0] !== routePath) {
-      return yield* sendJson(response, 404, { error: "not found" })
-    }
-    const rawBody = yield* readRawBody(request)
-    const result = yield* ingestVerifiedWebhook({
-      source: verifiedWebhookWaitSource,
-      headers: request.headers,
-      rawBody,
-      receivedAt: "2026-06-02T00:00:00.000Z",
-      config: {
-        secret: verifiedWebhookWaitSecret,
-        signatureHeaderName: "x-linear-signature",
-        selectedHeaderNames: ["linear-delivery"],
-      },
-    })
-    yield* Effect.annotateCurrentSpan({
-      "firegrid.webhook.fact_key": result.fact.factKey.join(":"),
-      "firegrid.webhook.event_type": result.fact.eventType,
-      "firegrid.webhook.external_event_key": result.fact.externalEventKey,
-      "firegrid.webhook.ingest_result": result._tag,
-    })
-    return yield* sendJson(response, 202, result)
-  }).pipe(
-    Effect.catchAll((error) =>
-      sendJson(response, 400, {
+  return HttpServerResponse.unsafeJson(result, { status: 202 })
+}).pipe(
+  Effect.catchAll((error: { readonly message: string; readonly op?: string }) =>
+    Effect.succeed(
+      HttpServerResponse.unsafeJson({
         error: error.message,
         ...("op" in error ? { op: error.op } : {}),
-      })),
-    Effect.withSpan("tiny_firegrid.verified_webhook_wait.route", {
-      kind: "server",
-      attributes: {
-        "firegrid.webhook.source": verifiedWebhookWaitSource,
-        "firegrid.webhook.path": routePath,
-      },
-    }),
-  )
+      }, { status: 400 }),
+    )),
+  Effect.catchAllCause((cause) =>
+    Effect.succeed(
+      HttpServerResponse.unsafeJson({ error: String(cause) }, { status: 500 }),
+    )),
+  Effect.withSpan("tiny_firegrid.verified_webhook_wait.route", {
+    kind: "server",
+    attributes: {
+      "firegrid.webhook.source": verifiedWebhookWaitSource,
+      "firegrid.webhook.path": routePath,
+    },
+  }),
+)
 
 const verifiedWebhookFactTableLayer = (
   env: TinyFiregridHostEnv,
@@ -193,45 +169,29 @@ const routeLayer = (
   const http = Layer.scopedDiscard(
     Effect.gen(function*() {
       const table = yield* VerifiedWebhookFactTable
-      const runtime = yield* Effect.runtime<VerifiedWebhookFactTable>()
-      const runRoute = Runtime.runPromise(runtime)
-      const server = createServer((request, response) => {
-        void runRoute(
-          handleLinearWebhook(request, response).pipe(
-            Effect.provideService(VerifiedWebhookFactTable, table),
-            Effect.catchAllCause(cause =>
-              sendJson(response, 500, { error: String(cause) })),
-          ),
-        )
-      })
-      yield* Effect.acquireRelease(
-        Effect.async<string, Error>((resume) => {
-          server.once("error", error => resume(Effect.fail(error)))
-          server.listen(0, "127.0.0.1", () => {
-            const address = server.address() as AddressInfo
-            const url = `http://127.0.0.1:${address.port}${routePath}`
-            resolveRoute(url)
-            resume(Effect.succeed(url))
-          })
-        }).pipe(
-          Effect.tap(url =>
-            Effect.annotateCurrentSpan({
-              "firegrid.webhook.source": verifiedWebhookWaitSource,
-              "firegrid.webhook.url": url,
-            })),
-          Effect.orDie,
-        ),
-        () =>
-          Effect.async<void>((resume) => {
-            server.closeAllConnections?.()
-            server.close(() => resume(Effect.void))
-          }),
+      yield* HttpServer.serveEffect(
+        handleLinearWebhook.pipe(Effect.provideService(VerifiedWebhookFactTable, table)),
       )
+      yield* HttpServer.addressWith((address) =>
+        Effect.sync(() => {
+          const port = address._tag === "TcpAddress" ? address.port : 0
+          const url = `http://127.0.0.1:${port}${routePath}`
+          resolveRoute(url)
+        }))
     }).pipe(
+      Effect.tap(() =>
+        Effect.annotateCurrentSpan({
+          "firegrid.webhook.source": verifiedWebhookWaitSource,
+        })),
       Effect.withSpan("tiny_firegrid.verified_webhook_wait.route.acquire", {
         kind: "server",
       }),
     ),
+  ).pipe(
+    Layer.provide(NodeHttpServer.layer(createServer, { port: 0, host: "127.0.0.1" })),
+    // A bind failure is an unrecoverable host defect (as in the previous
+    // raw-`node:http` implementation's `Effect.orDie` on listen).
+    Layer.orDie,
   )
 
   const publishRoute = Layer.scopedDiscard(
