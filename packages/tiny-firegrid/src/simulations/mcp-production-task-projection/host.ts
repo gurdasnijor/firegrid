@@ -111,6 +111,3 @@ export const mcpProductionTaskProjectionHost = (
     Layer.provideMerge(runtime),
   )
 }
-
-export const mcpProductionTaskProjectionGatewayContextId = gatewayContextId
-export const mcpProductionTaskProjectionStreamId = streamId
