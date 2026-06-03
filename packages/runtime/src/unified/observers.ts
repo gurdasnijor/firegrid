@@ -41,6 +41,7 @@ import {
   PermissionRoundtripWorkflow,
   ToolDispatchWorkflow,
 } from "./subscribers/permission-and-tool.ts"
+import { RuntimeContextSessionWorkflow } from "./subscribers/runtime-context.ts"
 import { type UnifiedTable } from "./tables.ts"
 import { type RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 
@@ -78,6 +79,37 @@ const triggerForObservation = (
           toolName: observation.event.part.name,
           inputJson: JSON.stringify(observation.event.part.params),
         }).pipe(
+          Effect.provide(captured),
+          Effect.orDie,
+        ),
+      )
+
+    case "Terminated":
+      // tf-r06u.36 — NATURAL process exit. The codec emits `Terminated` after
+      // the agent process exits; without this case it hit `default` and nothing
+      // ran `deregister`, so the per-context process registry entry + scope
+      // leaked. Deliver a terminal input to the per-event RuntimeContext handler
+      // — the SAME path explicit cancel/close use post-#863 — so the handler
+      // runs `adapter.deregister` (Scope.close → byte pipe + output-drain + the
+      // already-exited process reaped) and returns. Idempotent: the workflow
+      // `idempotencyKey` is `session.terminated:${contextId}` and `deregister`
+      // no-ops once the registry entry is gone, so a cancel-then-natural-exit
+      // (or a re-observed `Terminated`) reaps at most once.
+      //
+      // ONLY `Terminated` (+ the already-wired explicit cancel/close) is
+      // terminal. `TurnComplete` is deliberately NOT here: it fires every turn,
+      // so deregistering on it would kill multi-turn sessions after turn 1
+      // (confirmed by 3 prior reviews — honor it).
+      return Effect.fork(
+        RuntimeContextSessionWorkflow.execute({
+          contextId: observation.contextId,
+          attempt: observation.activityAttempt,
+          inputKey: `session.terminated:${observation.contextId}`,
+          input: {
+            kind: "terminal",
+            payloadJson: JSON.stringify({ operation: "terminated" }),
+          },
+        }, { discard: true }).pipe(
           Effect.provide(captured),
           Effect.orDie,
         ),
