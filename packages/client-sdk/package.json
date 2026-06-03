@@ -13,6 +13,10 @@
       "types": "./src/firegrid.ts",
       "default": "./src/firegrid.ts"
     },
+    "./mcp": {
+      "types": "./src/mcp.ts",
+      "default": "./src/mcp.ts"
+    },
     "./operations": {
       "types": "./src/operations.ts",
       "default": "./src/operations.ts"
@@ -37,6 +41,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@effect/rpc": "0.75.1",
     "@firegrid/protocol": "workspace:*",
     "effect": "^3.21.2"
   },
