@@ -11,7 +11,7 @@
  *
  *  1. COMPILE-GATED (the load-bearing part, enforced by `pnpm typecheck`):
  *     - `fullLifecycleThroughClientSdk` drives every lifecycle step
- *       (createOrLoad → start → prompt → wait → permission respond → snapshot)
+ *       (createOrLoad → start → prompt → permission respond)
  *       using ONLY `@firegrid/client-sdk` verbs + public input types. Its sole
  *       requirement is the `Firegrid` Tag — i.e. it imports/touches NO
  *       substrate. If a step needed a substrate handle, the `Effect<…, …,
@@ -47,8 +47,6 @@ import {
   local,
   type FiregridError,
   type FiregridService,
-  type RuntimeContextSnapshot,
-  type SessionAgentOutputWaitInput,
   type SessionCreateOrLoadInput,
   type SessionHandlePromptInput,
   type SessionPermissionRespondInput,
@@ -64,14 +62,12 @@ import { makeRecorderAdapter } from "./helpers/recorder-adapter.ts"
 interface LifecycleInputs {
   readonly createOrLoad: SessionCreateOrLoadInput
   readonly prompt: SessionHandlePromptInput
-  readonly wait: SessionAgentOutputWaitInput
   readonly respond: SessionPermissionRespondInput
 }
 
 interface LifecycleTrace {
   readonly steps: ReadonlyArray<string>
   readonly contextId: string
-  readonly snapshot: RuntimeContextSnapshot
 }
 
 /**
@@ -87,13 +83,10 @@ const fullLifecycleThroughClientSdk = (
     const handle = yield* firegrid.sessions.createOrLoad(inputs.createOrLoad)
     yield* handle.start()
     yield* handle.prompt(inputs.prompt)
-    yield* handle.wait.forAgentOutput(inputs.wait)
     yield* handle.permissions.respond(inputs.respond)
-    const snapshot = yield* handle.snapshot()
     return {
-      steps: ["createOrLoad", "start", "prompt", "wait.forAgentOutput", "permissions.respond", "snapshot"],
+      steps: ["createOrLoad", "start", "prompt", "permissions.respond"],
       contextId: handle.contextId,
-      snapshot,
     }
   })
 
@@ -125,13 +118,12 @@ const _compositionProof = (
 void _compositionProof
 
 // The host-composition environment (the "host(env)") for a baseUrl/namespace.
-// `FiregridLive` needs `RuntimeControlPlaneTable` + the protocol channel Tags +
-// `FiregridConfig`; `FiregridHost` provides the first two (shared table), the
-// config layer provides the third. The resulting Layer is asserted total below.
+// `FiregridLive` needs the protocol channel Tags + `FiregridConfig`;
+// `FiregridHost` provides the channel bindings and the config layer provides
+// the latter. The resulting Layer is asserted total below.
 const makeHostClientEnv = (
   baseUrl: string,
   namespace: string,
-  options: { readonly contextReflectionTimeoutMs?: number } = {},
 ): Layer.Layer<Firegrid, unknown, never> => {
   // The recorder exposes the adapter service via `.service` (airgapped —
   // records spawn/send/deregister in-memory, spawns no subprocess).
@@ -147,9 +139,6 @@ const makeHostClientEnv = (
   const configLayer = Layer.succeed(FiregridConfig, {
     durableStreamsBaseUrl: baseUrl,
     namespace,
-    ...(options.contextReflectionTimeoutMs === undefined
-      ? {}
-      : { contextReflectionTimeoutMs: options.contextReflectionTimeoutMs }),
   })
   return FiregridLive.pipe(
     Layer.provide(hostLayer),
@@ -191,10 +180,8 @@ describe("misuse-resistance — positive lifecycle proof", () => {
     expect(trace.hasChannels).toBe(true)
   })
 
-  it("firegrid-host-sdk.RUNTIME_SESSION_SURFACE.4-1 materializes the createOrLoad RuntimeContext before returning", async () => {
-    const env = makeHostClientEnv(baseUrl, "misuse-positive-create-or-load", {
-      contextReflectionTimeoutMs: 100,
-    })
+  it("firegrid-host-sdk.RUNTIME_SESSION_SURFACE.4-1 returns the createOrLoad session handle without table reads", async () => {
+    const env = makeHostClientEnv(baseUrl, "misuse-positive-create-or-load")
     const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
@@ -210,16 +197,12 @@ describe("misuse-resistance — positive lifecycle proof", () => {
             }),
             createdBy: "tf-ll90.9.4",
           })
-          const snapshot = yield* handle.snapshot()
-          return { handle, snapshot }
+          return { handle }
         }).pipe(Effect.provide(env)),
       ),
     )
 
     expect(result.handle.sessionId).toBe("session:tf-ll90.9.4:materializes-context")
-    expect(result.snapshot.context?.contextId).toBe(result.handle.contextId)
-    expect(result.snapshot.context?.createdBy).toBe("tf-ll90.9.4")
-    expect(result.snapshot.context?.runtime.provider).toBe("local-process")
-    expect(result.snapshot.context?.host.hostId).toBe("misuse-positive-create-or-load-host")
+    expect(result.handle.contextId).toBe(result.handle.sessionId)
   })
 })
