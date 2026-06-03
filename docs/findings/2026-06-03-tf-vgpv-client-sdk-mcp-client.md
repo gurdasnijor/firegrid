@@ -35,7 +35,7 @@ the remaining observation methods.
 ## Trace proof
 
 Trace:
-`packages/tiny-firegrid/.simulate/runs/2026-06-03T11-47-10-123Z__mcp-client-sdk-gateway/trace.jsonl`
+`packages/tiny-firegrid/.simulate/runs/2026-06-03T12-04-08-283Z__mcp-client-sdk-gateway/trace.jsonl`
 
 The sim imports the new client-sdk MCP export and uses it for the lifecycle
 under proof (`packages/tiny-firegrid/src/simulations/mcp-client-sdk-gateway/driver.ts:6`,
@@ -47,13 +47,14 @@ MCP host layer from Phase 1, not a sim-local MCP host
 Load-bearing trace lines:
 
 - Real child spawn through production MCP `session_new`: trace lines 102-103.
+- Real ACP permission request emitted by the spawned agent: trace line 363.
 - Client-sdk MCP `tasks/update` accepted the permission response: trace line
-  342.
-- Existing Firegrid permission relay ran after the update: trace lines 389-390.
-- Client-sdk MCP `tasks/result` returned the terminal result: trace line 440.
+  328.
+- Existing Firegrid permission relay ran after the update: trace lines 375-376.
+- Client-sdk MCP `tasks/result` returned the terminal result: trace line 429.
 - Driver recorded `task_statuses=...input_required...completed`,
   `sent_task_update=true`, `result_had_marker=true`, and
-  `permission_roundtrip_completed=true`: trace line 441.
+  `permission_roundtrip_completed=true`: trace line 430.
 
 ## Deletion Implication
 
