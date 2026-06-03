@@ -39,7 +39,12 @@ import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
 import { RpcSerialization, RpcServer } from "@effect/rpc"
 import { HostPermissionRespondChannel } from "@firegrid/protocol/channels"
-import { ContextNotFound, RuntimeOutputTable, type RuntimeContext } from "@firegrid/protocol/launch"
+import {
+  ContextNotFound,
+  RuntimeControlPlaneTable,
+  RuntimeOutputTable,
+  type RuntimeContext,
+} from "@firegrid/protocol/launch"
 import { Config, Effect, Layer, Logger, Option } from "effect"
 // The MCP HTTP server lifetime is Effect-owned via McpServer.layerHttp +
 // NodeHttpServer.layer, bound only to loopback; `createServer` is the
@@ -64,7 +69,7 @@ import {
 } from "./runtime-context-mcp-base-url.ts"
 import {
   layerProtocolDurableStreamsWithSessionPromptTasks,
-  makeRuntimeOutputTaskProjectionRuntime,
+  makeRuntimeTaskAndObservationProjectionRuntime,
 } from "./task-projection.ts"
 
 const runtimeContextMcpRouterMaxParamLength = 4096
@@ -263,10 +268,13 @@ const makeFiregridMcpDurableStreamsServerLayer = (
   )
   return Layer.unwrapEffect(
     Effect.gen(function*() {
+      // eslint-disable-next-line local/sg-runtime-no-table-service-yield-outside-providers -- host composition wires MCP observation resources to protocol-owned control-plane rows.
+      const control = yield* RuntimeControlPlaneTable
       // eslint-disable-next-line local/sg-runtime-no-table-service-yield-outside-providers -- host composition wires the projection runtime to protocol-owned RuntimeOutput rows.
       const output = yield* RuntimeOutputTable
       const permissionRespond = yield* HostPermissionRespondChannel
-      const projectionRuntime = makeRuntimeOutputTaskProjectionRuntime(
+      const projectionRuntime = makeRuntimeTaskAndObservationProjectionRuntime(
+        control,
         output,
         permissionRespond,
       )
