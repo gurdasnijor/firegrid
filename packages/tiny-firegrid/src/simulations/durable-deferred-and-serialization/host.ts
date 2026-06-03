@@ -180,11 +180,6 @@ const serializationBody = (
       onSome: (row) => row.consumed,
     })
     const cursorAfter = cursorAtEntry + 1
-    yield* cursor.rows.upsert({
-      contextId: payload.contextId,
-      consumed: cursorAfter,
-      updatedAt: now(),
-    }).pipe(Effect.orDie)
 
     yield* Effect.annotateCurrentSpan({
       "firegrid.context.id": payload.contextId,
@@ -194,7 +189,13 @@ const serializationBody = (
       "firegrid.workbench.h2.cursor_after": cursorAfter,
     })
 
-    // Real spawn / no-op reattach (Activity-memoized).
+    // Real spawn / no-op reattach (Activity-memoized). Done BETWEEN the cursor
+    // read and the cursor advance so the read→advance critical section spans the
+    // ~270ms spawn — forcing concurrent same-contextId bodies to OVERLAP on the
+    // cursor (the v2-isolated run advanced before the spawn, which kept the
+    // critical section sub-millisecond and let the single-threaded scheduler
+    // stagger the accesses; that masked whether the blind read-modify-write
+    // races, per the tf-o8zu/coordinator review).
     yield* Activity.make({
       name: `workbench.serialization.start_or_attach/${payload.contextId}`,
       success: Schema.Void,
@@ -220,6 +221,17 @@ const serializationBody = (
         ).pipe(Effect.orDie),
       })
     }
+
+    // Advance the cursor LAST — a blind read-modify-write (upsert = last-write-
+    // wins, not compare-and-swap). With the read now separated from this write by
+    // the spawn, concurrent bodies' [read..advance] windows overlap, so if the
+    // cursor does not serialize, this loses updates (repeated cursor_at_entry,
+    // final consumed < N).
+    yield* cursor.rows.upsert({
+      contextId: payload.contextId,
+      consumed: cursorAfter,
+      updatedAt: now(),
+    }).pipe(Effect.orDie)
 
     return {
       contextId: payload.contextId,
