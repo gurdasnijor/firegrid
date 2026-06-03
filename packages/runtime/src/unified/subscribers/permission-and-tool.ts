@@ -22,11 +22,11 @@
 import { Prompt } from "@effect/ai"
 import {
   Activity,
+  DurableDeferred,
   Workflow,
   type WorkflowEngine,
 } from "@effect/workflow"
 import { Clock, Effect, Ref, Schema } from "effect"
-import { awaitSignal, sendSignal, SignalTable } from "../signal.ts"
 import { UnifiedTable, permissionKey } from "../tables.ts"
 import {
   RuntimeContextSessionWorkflow,
@@ -42,32 +42,30 @@ const encodeAgentInputEventJson = Schema.encodeSync(
   Schema.parseJson(AgentInputEventSchema),
 )
 
+// ── Shared: session relay ───────────────────────────────────────────────────
+//
+// tf-k00i: each sibling workflow's result is itself a session input. The relay
+// EXECUTES a fresh per-event RuntimeContext handler with the result carried in
+// the payload (Effect-native `Workflow.execute({discard})`), replacing the old
+// `sendSignal` to the parked body. Activity-memoized so it relays exactly once.
+
 const relaySessionInput = (options: {
   readonly activityName: string
-  readonly signals: SignalTable["Type"]
-  readonly sessionExecutionId: string
-  readonly signalName: string
+  readonly contextId: string
+  readonly attempt: number
+  readonly inputKey: string
   readonly payload: SessionInputPayload
 }) =>
   Activity.make({
     name: options.activityName,
     success: Schema.Void,
-    execute: sendSignal({
-      signals: options.signals,
-      workflow: RuntimeContextSessionWorkflow,
-      executionId: options.sessionExecutionId,
-      name: options.signalName,
-      write: () => Effect.void,
-      value: options.payload,
-      serializeValue: (value) => JSON.stringify(value),
-    }).pipe(Effect.orDie, Effect.asVoid),
+    execute: RuntimeContextSessionWorkflow.execute({
+      contextId: options.contextId,
+      attempt: options.attempt,
+      inputKey: options.inputKey,
+      input: options.payload,
+    }, { discard: true }).pipe(Effect.asVoid),
   })
-
-// ── Shared: session relay payload ───────────────────────────────────────────
-//
-// Both sibling workflows target a specific (contextId, attempt) session
-// execution, carried inline in each workflow payload so the body can compute
-// the session executionId and relay its result via `recordSignal`.
 
 // ── PermissionRoundtripWorkflow ─────────────────────────────────────────────
 
@@ -97,16 +95,27 @@ export const PermissionRoundtripWorkflow = Workflow.make({
 
 export const PERMISSION_DECISION_SIGNAL = "permission-decision"
 
-/** Payload shape the responder delivers via sendSignal. */
+/** Payload shape the responder delivers via the DurableDeferred. */
 export const PermissionDecisionPayloadSchema = Schema.Struct({
   decision: PermissionDecisionSchema,
 })
 export type PermissionDecisionPayload = Schema.Schema.Type<typeof PermissionDecisionPayloadSchema>
 
+/**
+ * The await-once durable completion the body parks on. tf-k00i: replaces the
+ * bespoke `signal.ts` `awaitSignal`/`sendSignal` with `@effect/workflow`'s
+ * `DurableDeferred`, which already rides `DurableStreamsWorkflowEngine`
+ * (`deferredResult`/`deferredDone`). The responder
+ * (`HostPermissionRespondChannel`) resolves it with the per-execution token.
+ */
+export const permissionDecisionDeferred = DurableDeferred.make(
+  PERMISSION_DECISION_SIGNAL,
+  { success: PermissionDecisionPayloadSchema },
+)
+
 const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
   Effect.gen(function*() {
     const table = yield* UnifiedTable
-    const signals = yield* SignalTable
     const key = permissionKey(payload.contextId, payload.permissionRequestId)
 
     // Activity-memoized: record the open-request row so the host UI
@@ -130,18 +139,11 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
       ),
     })
 
-    // Park until the responder sends the decision signal.
-    const decisionPayload = yield* awaitSignal<PermissionDecisionPayload>({
-      name: PERMISSION_DECISION_SIGNAL,
-    })
+    // Park until the responder resolves the decision DurableDeferred.
+    const decisionPayload = yield* DurableDeferred.await(permissionDecisionDeferred)
 
-    // Feedback signal: deliver the decision back to the originating
-    // session workflow as a `permission-response` input. Activity-memoized;
-    // runs exactly once even across replay. Per SDD §E.
-    const sessionExecutionId = yield* RuntimeContextSessionWorkflow.executionId({
-      contextId: payload.contextId,
-      attempt: payload.attempt,
-    })
+    // Feedback: deliver the decision back to the session as a
+    // `permission-response` input by executing a fresh per-event handler.
     // Auto-relay shape per SDD §E: payload is a Schema-encoded
     // AgentInputEvent (PermissionResponse variant). Maps the channel
     // decision strings ("allow"/"deny"/"cancelled") onto the typed
@@ -163,9 +165,9 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
     }
     yield* relaySessionInput({
       activityName: `unified.permission.relay/${key}`,
-      signals,
-      sessionExecutionId,
-      signalName: `permission-response:${payload.permissionRequestId}`,
+      contextId: payload.contextId,
+      attempt: payload.attempt,
+      inputKey: `permission-response:${payload.permissionRequestId}`,
       payload: relayPayload,
     })
 
@@ -176,7 +178,7 @@ const permissionRoundtripBody = (payload: PermissionRoundtripPayload) =>
   }) as Effect.Effect<
     Schema.Schema.Type<typeof PermissionRoundtripResultSchema>,
     never,
-    SignalTable | UnifiedTable | WorkflowEngine.WorkflowEngine
+    UnifiedTable | WorkflowEngine.WorkflowEngine
   >
 
 export const buildPermissionRoundtripLayer = () =>
@@ -245,20 +247,15 @@ export const makeToolExecutor = (
 const toolDispatchBody = (executor: ToolExecutor) =>
   (payload: ToolDispatchPayload) =>
     Effect.gen(function*() {
-      const signals = yield* SignalTable
       const resultJson = yield* Activity.make({
         name: `unified.tool.execute/${payload.toolUseId}`,
         success: Schema.String,
         execute: executor.execute(payload),
       })
 
-      // Feedback signal: deliver tool result back to the originating
-      // session workflow as a `tool-result` input. Activity-memoized;
+      // Feedback: deliver tool result back to the session as a `tool-result`
+      // input by executing a fresh per-event handler. Activity-memoized;
       // runs exactly once. Per SDD §D.
-      const sessionExecutionId = yield* RuntimeContextSessionWorkflow.executionId({
-        contextId: payload.contextId,
-        attempt: payload.attempt,
-      })
       // Auto-relay shape per SDD §D: payload is a Schema-encoded
       // AgentInputEvent (ToolResult variant) so the production codec
       // adapter can decode it back to a typed value and forward to
@@ -282,9 +279,9 @@ const toolDispatchBody = (executor: ToolExecutor) =>
       }
       yield* relaySessionInput({
         activityName: `unified.tool.relay/${payload.toolUseId}`,
-        signals,
-        sessionExecutionId,
-        signalName: `tool-result:${payload.toolUseId}`,
+        contextId: payload.contextId,
+        attempt: payload.attempt,
+        inputKey: `tool-result:${payload.toolUseId}`,
         payload: relayPayload,
       })
 
@@ -292,7 +289,7 @@ const toolDispatchBody = (executor: ToolExecutor) =>
     }) as Effect.Effect<
       Schema.Schema.Type<typeof ToolDispatchResultSchema>,
       never,
-      SignalTable | WorkflowEngine.WorkflowEngine
+      WorkflowEngine.WorkflowEngine
     >
 
 export const buildToolDispatchLayer = (executor: ToolExecutor) =>

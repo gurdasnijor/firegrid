@@ -40,7 +40,7 @@ import type { FiregridService } from "@firegrid/client-sdk"
 import type * as ClientSdk from "@firegrid/client-sdk"
 // A real substrate handle from the host-composition barrel, used to prove it
 // CANNOT be fed to a client verb (F5). FiregridHost is the public host factory.
-import { FiregridHost, SignalTable } from "../src/unified/host.ts"
+import { FiregridHost, UnifiedTable } from "../src/unified/host.ts"
 
 // ── F1/F2 — host composition: a missing building block must not compile ──────
 
@@ -73,8 +73,8 @@ const _clientFootguns = (firegrid: FiregridService) => {
   /* eslint-enable @typescript-eslint/no-unsafe-call */
 
   // F5 — a substrate handle cannot be passed to a typed client verb.
-  // @ts-expect-error a substrate `SignalTable` Tag is not a valid SessionCreateOrLoadInput
-  const _noSubstrateHandle = firegrid.sessions.createOrLoad(SignalTable)
+  // @ts-expect-error a substrate `UnifiedTable` Tag is not a valid SessionCreateOrLoadInput
+  const _noSubstrateHandle = firegrid.sessions.createOrLoad(UnifiedTable)
 
   // F6 — a wrong-typed request to a typed verb does not compile.
   // @ts-expect-error `prompt` expects a PublicPromptRequest, not a number

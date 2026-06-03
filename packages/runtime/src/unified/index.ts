@@ -26,7 +26,6 @@
  * serve as the runnable proof-generation + alignment harness.
  */
 
-export * from "./signal.ts"
 export * from "./tables.ts"
 export * from "./adapter.ts"
 export * from "./subscribers/runtime-context.ts"

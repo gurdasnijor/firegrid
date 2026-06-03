@@ -20,17 +20,11 @@
 import {
   Activity,
   DurableClock,
+  DurableDeferred,
   Workflow,
   type WorkflowEngine,
 } from "@effect/workflow"
 import { Clock, Data, Duration, Effect, Option, Schema } from "effect"
-import {
-  awaitSignal,
-  sendSignal,
-  type SignalTable,
-  type SignalTableService,
-  type ResumableWorkflow,
-} from "../signal.ts"
 import {
   peerEventKey,
   scheduleKey,
@@ -171,6 +165,21 @@ export interface VerifyAndIngestResult {
 export const WEBHOOK_FACT_SIGNAL = "webhook-fact"
 export const PEER_EVENT_SIGNAL = "peer-event"
 
+/**
+ * await-once durable completions the observer workflows park on. tf-k00i:
+ * `@effect/workflow` `DurableDeferred` replaces the bespoke `signal.ts`
+ * await/send (it already rides `DurableStreamsWorkflowEngine`). The value is
+ * unused (the observer re-reads its owned row), so success is `Void`.
+ */
+export const webhookFactDeferred = DurableDeferred.make(WEBHOOK_FACT_SIGNAL)
+export const peerEventDeferred = DurableDeferred.make(PEER_EVENT_SIGNAL)
+
+/** Target for resolving an observer's await-once deferred. */
+export interface ObserverSignalTarget {
+  readonly workflow: Workflow.Any
+  readonly executionId: string
+}
+
 const lookupExisting = <A>(
   get: Effect.Effect<Option.Option<A>, unknown>,
 ) =>
@@ -180,26 +189,17 @@ const lookupExisting = <A>(
   )
 
 const signalFact = (options: {
-  readonly signalOptions:
-    | {
-      readonly signals: SignalTableService
-      readonly workflow: ResumableWorkflow
-      readonly executionId: string
-    }
-    | undefined
-  readonly signalName: string
-  readonly value: unknown
+  readonly deferred: DurableDeferred.DurableDeferred<typeof Schema.Void>
+  readonly signalOptions: ObserverSignalTarget | undefined
 }) =>
   options.signalOptions === undefined
     ? Effect.void
-    : sendSignal({
-      signals: options.signalOptions.signals,
-      workflow: options.signalOptions.workflow,
-      executionId: options.signalOptions.executionId,
-      name: options.signalName,
-      write: () => Effect.void,
-      value: options.value,
-      serializeValue: (value) => JSON.stringify(value),
+    : DurableDeferred.succeed(options.deferred, {
+      token: DurableDeferred.tokenFromExecutionId(options.deferred, {
+        workflow: options.signalOptions.workflow,
+        executionId: options.signalOptions.executionId,
+      }),
+      value: void 0,
     }).pipe(Effect.orDie)
 
 /**
@@ -210,11 +210,7 @@ const signalFact = (options: {
 export const verifyAndIngestWebhook = (options: {
   readonly unified: UnifiedTableService
   readonly verify: VerifyWebhookOptions
-  readonly signalOptions?: {
-    readonly signals: SignalTableService
-    readonly workflow: ResumableWorkflow
-    readonly executionId: string
-  }
+  readonly signalOptions?: ObserverSignalTarget
 }): Effect.Effect<VerifyAndIngestResult, VerifiedWebhookError, WorkflowEngine.WorkflowEngine> =>
   Effect.gen(function*() {
     const expected = yield* hmacSha256Hex(
@@ -243,9 +239,8 @@ export const verifyAndIngestWebhook = (options: {
       receivedAt: new Date(receivedAtMs).toISOString(),
     }).pipe(Effect.orDie)
     yield* signalFact({
+      deferred: webhookFactDeferred,
       signalOptions: options.signalOptions,
-      signalName: WEBHOOK_FACT_SIGNAL,
-      value: { factKey, source: options.verify.source, deliveryId: options.verify.deliveryId },
     })
     return { _tag: "Inserted" as const, factKey }
   })
@@ -258,11 +253,7 @@ export const emitPeerEvent = (options: {
   readonly eventId: string
   readonly emitterContextId: string
   readonly payloadJson: string
-  readonly signalOptions?: {
-    readonly signals: SignalTableService
-    readonly workflow: ResumableWorkflow
-    readonly executionId: string
-  }
+  readonly signalOptions?: ObserverSignalTarget
 }): Effect.Effect<
   { readonly _tag: "Inserted" | "Duplicate"; readonly factKey: string },
   unknown,
@@ -284,9 +275,8 @@ export const emitPeerEvent = (options: {
       emittedAt: new Date(emittedAtMs).toISOString(),
     }).pipe(Effect.orDie)
     yield* signalFact({
+      deferred: peerEventDeferred,
       signalOptions: options.signalOptions,
-      signalName: PEER_EVENT_SIGNAL,
-      value: { factKey, name: options.name, eventId: options.eventId },
     })
     return { _tag: "Inserted" as const, factKey }
   })
@@ -323,7 +313,7 @@ export const WebhookFactObserverWorkflow = Workflow.make({
 const webhookFactObserverBody = (payload: WebhookFactObserverPayload) =>
   Effect.gen(function*() {
     const table = yield* UnifiedTable
-    yield* awaitSignal<{ readonly factKey: string }>({ name: WEBHOOK_FACT_SIGNAL })
+    yield* DurableDeferred.await(webhookFactDeferred)
     const key = webhookFactKey(payload.source, payload.deliveryId)
     // Contract: the ingest path writes the fact row BEFORE sending the
     // signal, so by the time we wake, the row exists.
@@ -345,7 +335,7 @@ const webhookFactObserverBody = (payload: WebhookFactObserverPayload) =>
   }) as Effect.Effect<
     Schema.Schema.Type<typeof WebhookFactObserverResultSchema>,
     never,
-    SignalTable | UnifiedTable
+    UnifiedTable | WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
   >
 
 export const buildWebhookFactObserverLayer = () =>
@@ -379,7 +369,7 @@ export const PeerEventObserverWorkflow = Workflow.make({
 const peerEventObserverBody = (payload: PeerEventObserverPayload) =>
   Effect.gen(function*() {
     const table = yield* UnifiedTable
-    yield* awaitSignal<{ readonly factKey: string }>({ name: PEER_EVENT_SIGNAL })
+    yield* DurableDeferred.await(peerEventDeferred)
     const key = peerEventKey(payload.name, payload.eventId)
     const row = yield* table.peerEvents.get(key).pipe(
       Effect.flatMap(Option.match({
@@ -399,7 +389,7 @@ const peerEventObserverBody = (payload: PeerEventObserverPayload) =>
   }) as Effect.Effect<
     Schema.Schema.Type<typeof PeerEventObserverResultSchema>,
     never,
-    SignalTable | UnifiedTable
+    UnifiedTable | WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
   >
 
 export const buildPeerEventObserverLayer = () =>
