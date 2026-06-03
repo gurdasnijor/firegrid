@@ -354,6 +354,53 @@ const makeBannedImportPathRule = () => ({
 })
 const bannedImportPathRule = makeBannedImportPathRule()
 
+// tf-0ska: AST upgrade for `sg-*` identifier-surface bans (previously source-text
+// regex via sourceRegexBanRule). Tests each `pattern` against the NAME of every
+// `Identifier` node — which the TS parser also emits for type references and
+// qualified-name parts — so a banned symbol is caught wherever it's used in code,
+// but never when it merely appears in a comment or string literal (those aren't
+// Identifier nodes). Same options shape + distinct-id-per-scope registration.
+const makeBannedIdentifierRule = () => ({
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Disallow identifiers whose name matches a banned-surface pattern (AST, code references only).",
+    },
+    schema: [
+      {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            pattern: { type: "string" },
+            flags: { type: "string" },
+            message: { type: "string" },
+          },
+          required: ["pattern", "message"],
+          additionalProperties: false,
+        },
+      },
+    ],
+    messages: { banned: "{{message}}" },
+  },
+  create(context) {
+    const entries = (context.options[0] ?? []).map((e) => ({
+      re: new RegExp(e.pattern, e.flags ?? ""),
+      message: e.message,
+    }))
+    return {
+      Identifier(node) {
+        for (const { re, message } of entries) {
+          if (re.test(node.name)) {
+            context.report({ node, messageId: "banned", data: { message } })
+          }
+        }
+      },
+    }
+  },
+})
+const bannedIdentifierRule = makeBannedIdentifierRule()
+
 const hrtimeTupleProperties = new Set(["startTime", "endTime", "duration"])
 const isHrtimeTupleIndexZero = (node) =>
   node?.type === "MemberExpression" &&
@@ -1118,7 +1165,7 @@ const local = {
     "sg-runtime-no-second-durable-capability-provider": sourceRegexBanRule,
     "sg-runtime-no-source-collection-handle-in-static-subscriber-contract": sourceRegexBanRule,
     "sg-runtime-no-table-service-yield-outside-providers": sourceRegexBanRule,
-    "sg-runtime-no-authority-registry-surface": sourceRegexBanRule,
+    "sg-runtime-no-authority-registry-surface": bannedIdentifierRule,
     "sg-runtime-host-no-direct-source-collection-registration": sourceRegexBanRule,
     "sg-runtime-no-host-internal-imports-outside-host": bannedImportPathRule,
     "sg-runtime-no-runtime-errors-imports-outside-runtime": bannedImportPathRule,
@@ -2439,7 +2486,12 @@ export default tseslint.config(
       ],
       "local/sg-runtime-no-authority-registry-surface": [
         "error",
-        [{ pattern: '(?:packages/runtime/src/authorities/registry\\.ts|["\'][^"\']*registry(?:\\.ts)?["\']|\\b[A-Za-z0-9_]*Authority[A-Za-z0-9_]*Registry[A-Za-z0-9_]*\\b)', message: "AuthorityRegistry production surface; keep registry metadata review/test-only." }],
+        // AST identifier match (tf-0ska): bans any `*Authority*Registry*` symbol in
+        // production code. The retired source-regex also matched any string literal
+        // containing "registry" and the bare word in comments — pure FP risk (the
+        // scope has 28 incidental "registry" mentions) with no real coverage, so
+        // those two alternatives are dropped.
+        [{ pattern: 'Authority[A-Za-z0-9_]*Registry', message: "AuthorityRegistry production surface; keep registry metadata review/test-only." }],
       ],
       "local/sg-runtime-no-old-singleton-authority-tag-keys": [
         "error",
