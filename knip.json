@@ -88,6 +88,10 @@
       ]
     }
   },
+  "ignore": [
+    "repos/**",
+    "docs/**"
+  ],
   "ignoreWorkspaces": [
     "tools/durable-streams-ui"
   ]
