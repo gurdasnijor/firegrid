@@ -16,8 +16,6 @@
  *     pending request.
  *   - `schedules` — UI-renderable commitments. Firing is determined by
  *     engine DurableClock recovery and the workflow's finalResult.
- *   - `webhookFacts` — external HMAC-verified payload, multi-observer
- *     readable.
  *   - `peerEvents` — external peer-emitted payload, multi-observer
  *     readable.
  *
@@ -45,15 +43,6 @@ export const ScheduledRowSchema = Schema.Struct({
   payloadJson: Schema.String,
 })
 
-export const WebhookFactRowSchema = Schema.Struct({
-  factKey: Schema.String.pipe(DurableTable.primaryKey),
-  source: Schema.String,
-  deliveryId: Schema.String,
-  eventType: Schema.String,
-  payloadJson: Schema.String,
-  receivedAt: Schema.String,
-})
-
 export const PeerEventRowSchema = Schema.Struct({
   eventKey: Schema.String.pipe(DurableTable.primaryKey),
   name: Schema.String,
@@ -66,7 +55,6 @@ export const PeerEventRowSchema = Schema.Struct({
 export class UnifiedTable extends DurableTable("firegrid.unified.tables", {
   permissions: PermissionRequestRowSchema,
   schedules: ScheduledRowSchema,
-  webhookFacts: WebhookFactRowSchema,
   peerEvents: PeerEventRowSchema,
 }) {}
 
@@ -80,7 +68,5 @@ export const scheduleKey = (
   contextId: string,
   scheduleId: string,
 ): string => `${contextId}/${scheduleId}`
-export const webhookFactKey = (source: string, deliveryId: string): string =>
-  `${source}/${deliveryId}`
 export const peerEventKey = (name: string, eventId: string): string =>
   `${name}/${eventId}`

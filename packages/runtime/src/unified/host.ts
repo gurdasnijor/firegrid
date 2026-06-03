@@ -86,7 +86,6 @@ import {
 import {
   buildPeerEventObserverLayer,
   buildScheduledPromptLayer,
-  buildWebhookFactObserverLayer,
 } from "./subscribers/scheduled-webhook-peer.ts"
 import { JournalObserverLive } from "./observers.ts"
 import { HostControlChannelBindingsLive } from "../channels/host-control.ts"
@@ -297,7 +296,6 @@ export const FiregridRuntime = (
         buildPermissionRoundtripLayer(),
         buildToolDispatchLayer(toolExecutor),
         buildScheduledPromptLayer(),
-        buildWebhookFactObserverLayer(),
         buildPeerEventObserverLayer(),
       )
       // `UnifiedSignalingChannelBindingsLive` is composed via `provideMerge`
