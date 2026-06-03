@@ -251,6 +251,59 @@ export const makeWorkflowEngine = (
         annotateWorkflowExecutionSpans(executionId),
       )
 
+    // tf-8f6y — KIND-AWARE non-clock `DurableDeferred` restart-recovery. The
+    // sibling of `recoverPendingClockWakeups`: where the clock sweep re-arms
+    // pending clock waits, this sweeps the engine's own `deferreds` table (the
+    // persisted `DurableDeferred` results, written by `deferredDone`) and
+    // re-drives EXACTLY the executions whose deferred-wait lost its resume to a
+    // restart — a body that parked on a `DurableDeferred`, whose result row was
+    // written, but which was never resumed because the in-process `resume` was
+    // lost.
+    //
+    // It deliberately re-arms ONLY executions that (a) still exist, (b) are
+    // suspended, (c) have not completed, and (d) are NOT interrupted — it does
+    // NOT touch interrupts or non-deferred suspensions. This is the typed,
+    // precise discrimination the canon requires; the blanket "resume all
+    // suspended" sweep was falsified unsafe (it cannot distinguish deferred
+    // waits from interrupts and corrupts terminality/idempotency).
+    //
+    // Hooked at `register` (below) rather than at construction-time startup
+    // recovery (`recoverPendingClockWakeups`) because `resume` requires the
+    // owning workflow to be registered, and the construction recovery runs
+    // before any workflow layer has registered. Re-arming at registration is
+    // the engine-owned point where the workflow is first available.
+    const recoverPendingDeferreds = (workflowName: string) =>
+      Effect.gen(function* () {
+        const deferredRows = yield* orDieTable(table.deferreds.query((coll) =>
+          coll.toArray.filter(row => row.workflowName === workflowName),
+        ))
+        const seen = new Set<string>()
+        let index = 0
+        while (index < deferredRows.length) {
+          const row = deferredRows[index]!
+          index += 1
+          if (seen.has(row.executionId)) continue
+          seen.add(row.executionId)
+          const exec = yield* getExecutionRow(row.executionId)
+          if (
+            exec === undefined ||
+            exec.finalResult !== undefined ||
+            exec.interrupted ||
+            !exec.suspended
+          ) continue
+          // The body re-drives and `DurableDeferred.await` re-reads the
+          // persisted result via `deferredResult`, then continues to completion.
+          yield* resume(row.executionId)
+        }
+      }).pipe(
+        Effect.withSpan("firegrid.workflow_engine.recover_pending_deferreds", {
+          kind: "internal",
+          attributes: {
+            "firegrid.workflow.name": workflowName,
+          },
+        }),
+      )
+
     const engine = WorkflowEngine.makeUnsafe({
       register: (workflow, execute) =>
         Effect.gen(function*() {
@@ -259,6 +312,10 @@ export const makeWorkflowEngine = (
             execute,
             scope: yield* Effect.scope,
           })
+          // Re-arm this workflow's deferred-waits whose resume was lost to a
+          // restart (see `recoverPendingDeferreds`). `resume` forks each body,
+          // so this does not block registration on body completion.
+          yield* recoverPendingDeferreds(workflow.name)
         }).pipe(
           Effect.withSpan("firegrid.workflow_engine.workflow.register", {
             kind: "internal",
