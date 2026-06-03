@@ -102,6 +102,47 @@ stay editor-advisory. There is no baseline (the per-package
 that false-positive or flag legitimate raw-IO boundaries / deliberate test fixtures
 carry documented inline `// @effect-diagnostics <rule>:off` directives.
 
+### The `local/*` Effect guards are NOT redundant with the language service
+
+The language service ships effect-native diagnostics that *look* like duplicates
+of our `local/*` ESLint rules — `nodeBuiltinImport` (vs `no-raw-node-io` /
+`no-node-process-import` / `no-node-crypto-import`), `processEnv` (vs
+`no-process-env-outside-bin`), `globalDate` (vs `no-date-now` / `no-new-date-iso`),
+`globalTimers` (vs `no-production-js-timers`), `extendsNativeError` (vs
+`no-extends-error`). **They are off by default in this version and do not
+enforce anything** — verified (tf-w4os) with a probe file containing every such
+violation: `effect-language-service diagnostics` reported `0 errors, 0 warnings
+and 0 messages`. Of the shipped rules, **31 default to `off` and 18 to
+`suggestion`** (editor-advisory, never gating); only 26 are `warning`/`error`.
+
+So the `local/*` rules are the **sole active enforcement** of those invariants,
+and they carry scope precision the plugin config cannot express (product-`src`
+only; `bin`/`test`/`scripts` exempt; `// durable-lint-allow-*` escape hatches).
+**Do not retire them as "covered by the language service."** Consolidating onto
+the LSP would require enabling each rule's severity per-tsconfig *and* losing the
+scoping — net more config, not less.
+
+### Applying the Effect codemods (refactors / quickfixes / codegens)
+
+`overview` / `layerinfo` / `quickfixes` only *read*. The transforms apply two ways:
+
+- **Editor refactors** (the bulk — *Layer Magic* auto-composition, async→`Effect.gen`/`Effect.fn`,
+  `Effect.Service`→`Context.Tag`, *remove unnecessary `Effect.gen`*, pipe-style
+  toggles, *Structural Type → Schema*). Invoke on the relevant node via the editor
+  code-action menu (VS Code / Cursor: `Cmd+.`), with the editor on the **workspace**
+  TypeScript (`"typescript.tsdk": "node_modules/typescript/lib"`). These are
+  independent of diagnostic severity, so they work even though the matching
+  diagnostics are off.
+- **`quickfixes` (CLI — preview only)** — `pnpm effect:quickfixes` (or
+  `--file <f>`) lists fixable diagnostics + their diffs; narrow with
+  `--code <rule>` / `--fix <name>`. It *displays*; apply the diff in-editor. Most
+  fixable diagnostics are off by default, so bump a rule's severity first if you
+  want it to surface here.
+- **`codegen` (CLI — writes files)** — directive-driven. Put `// @effect-codegens
+  accessors` (or `annotate` / `typeToSchema`) above an export, then
+  `npx effect-language-service codegen --project packages/<pkg>/tsconfig.json`
+  fills it in (`--force` to regenerate, `--verbose` to log changes).
+
 ## Architecture dependency graphs
 
 Graphs are **review evidence, not a gate**, and are **not committed**. Render one
