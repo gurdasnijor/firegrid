@@ -2,6 +2,7 @@ import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import {
   ContextResolverTag,
   defaultProductionAdapterLayer,
+  DurableStreamsLive,
   ensurePathInput,
   FiregridRuntime,
   FiregridMcpServerLayer,
@@ -33,13 +34,19 @@ export const codexAcpHost = (
 ): Layer.Layer<FiregridHost, unknown> => {
   const host = FiregridRuntime(
     {
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
     },
     defaultProductionAdapterLayer(RuntimeEnvResolverPolicy.withPolicy({
       authorizedBindings: [["OPENAI_API_KEY", "OPENAI_API_KEY"]],
       lookupEnv: (name) => env.processEnv[name],
     })),
+  ).pipe(
+    Layer.provide(
+      DurableStreamsLive.configuredWith({
+        baseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
+      }),
+    ),
   )
   const mcp = FiregridMcpServerLayer({
     host: mcpHost,

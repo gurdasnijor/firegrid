@@ -13,6 +13,7 @@ import { AgentInputEventSchema, type AgentInputEvent } from "@firegrid/runtime/e
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import {
   defaultProductionAdapterLayer,
+  DurableStreamsLive,
   FiregridRuntime,
   RuntimeContextSessionWorkflow,
   type SessionInputPayload,
@@ -202,7 +203,6 @@ export const opRegistryPromptKeystoneHost = (
 ): Layer.Layer<FiregridHost, unknown> => {
   const runtime = FiregridRuntime(
     {
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
     },
     defaultProductionAdapterLayer(
@@ -211,6 +211,13 @@ export const opRegistryPromptKeystoneHost = (
           ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
         ],
         lookupEnv: name => env.processEnv[name],
+      }),
+    ),
+  ).pipe(
+    Layer.provide(
+      DurableStreamsLive.configuredWith({
+        baseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
       }),
     ),
   )

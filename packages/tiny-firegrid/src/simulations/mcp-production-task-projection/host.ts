@@ -18,11 +18,12 @@ import { AcpContextRows } from "@firegrid/runtime/sources/codecs/acp/stdio-edge"
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import {
   ContextResolverTag,
+  defaultProductionAdapterLayer,
+  DurableStreamsLive,
+  ensurePathInput,
   FiregridMcpServerLayer,
   FiregridRuntime,
   ToolDispatchLive,
-  defaultProductionAdapterLayer,
-  ensurePathInput,
 } from "@firegrid/runtime/unified"
 import { Effect, Layer, Stream } from "effect"
 import type {
@@ -81,7 +82,6 @@ export const makeMcpProductionTaskProjectionHost = (
   (env: TinyFiregridHostEnv): Layer.Layer<FiregridHost, unknown> => {
     const runtime = FiregridRuntime(
       {
-        durableStreamsBaseUrl: env.durableStreamsBaseUrl,
         namespace: env.namespace,
       },
       defaultProductionAdapterLayer(
@@ -90,6 +90,13 @@ export const makeMcpProductionTaskProjectionHost = (
             ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
           ],
           lookupEnv: name => env.processEnv[name],
+        }),
+      ),
+    ).pipe(
+      Layer.provide(
+        DurableStreamsLive.configuredWith({
+          baseUrl: env.durableStreamsBaseUrl,
+          namespace: env.namespace,
         }),
       ),
     )

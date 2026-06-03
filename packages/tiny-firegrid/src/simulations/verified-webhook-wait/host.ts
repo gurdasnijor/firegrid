@@ -16,6 +16,7 @@ import {
 } from "@firegrid/runtime/verified-webhook-ingest"
 import {
   defaultProductionAdapterLayer,
+  DurableStreamsLive,
   FiregridRuntime,
 } from "@firegrid/runtime/unified"
 import { DurableTable } from "effect-durable-operators"
@@ -258,10 +259,16 @@ export const verifiedWebhookWaitHost = (
 ): Layer.Layer<FiregridHost, unknown> => {
   const host = FiregridRuntime(
     {
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
     },
     defaultProductionAdapterLayer(),
+  ).pipe(
+    Layer.provide(
+      DurableStreamsLive.configuredWith({
+        baseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
+      }),
+    ),
   )
   const factTable = verifiedWebhookFactTableLayer(env)
   const routeTable = routeReadyTableLayer(env)

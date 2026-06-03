@@ -3,6 +3,7 @@ import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import {
   ContextResolverTag,
   defaultProductionAdapterLayer,
+  DurableStreamsLive,
   ensurePathInput,
   FiregridMcpServerLayer,
   FiregridRuntime,
@@ -38,13 +39,19 @@ export const host = (
 ): Layer.Layer<FiregridHost, unknown> => {
   const runtime = FiregridRuntime(
     {
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
     },
     defaultProductionAdapterLayer(
       RuntimeEnvResolverPolicy.withPolicy({
         authorizedBindings: [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
         lookupEnv: (name) => env.processEnv[name],
+      }),
+    ),
+  ).pipe(
+    Layer.provide(
+      DurableStreamsLive.configuredWith({
+        baseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
       }),
     ),
   )
