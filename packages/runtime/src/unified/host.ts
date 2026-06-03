@@ -41,11 +41,11 @@ import { NodeContext } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
-  durableStreamUrl,
+  DurableStreams,
+  DurableStreamsLive,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  runtimeControlPlaneStreamUrl,
-  runtimeOutputStreamUrl,
+  StreamName,
 } from "@firegrid/protocol/launch"
 import { DurableStreamsWorkflowEngine } from "../engine/durable-streams-workflow-engine.ts"
 import {
@@ -91,12 +91,8 @@ import { JournalObserverLive } from "./observers.ts"
 import { HostControlChannelBindingsLive } from "../channels/host-control.ts"
 
 export interface FiregridRuntimeSpec {
-  /** Durable-streams base URL (e.g. `http://durable-streams:4437`). */
-  readonly durableStreamsBaseUrl: string
   /** Namespace prefix for all this host's durable streams. */
   readonly namespace: string
-  /** Optional auth headers for durable-streams writes/reads. */
-  readonly headers?: DurableTableHeaders
   /**
    * Optional explicit host id (single dot-free segment). Default:
    * derived from the namespace (`${namespace}-host` with `.` → `_`).
@@ -124,7 +120,21 @@ export interface FiregridRuntimeSpec {
   readonly envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>
 }
 
-export type FiregridHostOptionsBase = FiregridRuntimeSpec
+/**
+ * Back-compat `FiregridHost` options — still thread the durable-streams base
+ * URL the way pre-§12 callers expect. `FiregridHost` provides the
+ * `DurableStreams` backend Live itself (from these fields) so its composed
+ * Layer stays `R = never`, while the §12 `FiregridRuntime` constructor takes
+ * the base URL out of the spec and leaves `DurableStreams` as a hole the caller
+ * closes. (`misuse-resistance-footguns` F1 pins `durableStreamsBaseUrl` as
+ * required here.)
+ */
+export interface FiregridHostOptionsBase extends FiregridRuntimeSpec {
+  /** Durable-streams base URL (e.g. `http://durable-streams:4437`). */
+  readonly durableStreamsBaseUrl: string
+  /** Optional auth headers for durable-streams writes/reads. */
+  readonly headers?: DurableTableHeaders
+}
 
 export interface FiregridHostOptionsWithAdapter extends FiregridHostOptionsBase {
   /**
@@ -197,61 +207,29 @@ export const defaultProductionAdapterLayer = (
   return Layer.provide(ProductionCodecAdapterLive, support)
 }
 
-const jsonStreamOptions = (
-  url: string,
-  headers: DurableTableHeaders | undefined,
-) => ({
-  url,
-  contentType: "application/json",
-  ...(headers === undefined ? {} : { headers }),
-})
-
-const tableLayer = (options: FiregridRuntimeSpec) =>
-  Layer.mergeAll(
-    RuntimeControlPlaneTable.layer({
-      streamOptions: jsonStreamOptions(
-        runtimeControlPlaneStreamUrl({
-          baseUrl: options.durableStreamsBaseUrl,
-          namespace: options.namespace,
-        }),
-        options.headers,
-      ),
-    }),
-    RuntimeOutputTable.layer({
-      streamOptions: jsonStreamOptions(
-        runtimeOutputStreamUrl({
-          baseUrl: options.durableStreamsBaseUrl,
-          namespace: options.namespace,
-        }),
-        options.headers,
-      ),
-    }),
-    UnifiedTable.layer({
-      streamOptions: {
-        url: durableStreamUrl(
-          options.durableStreamsBaseUrl,
-          `${options.namespace}.firegrid.unified`,
-        ),
-        contentType: "application/json",
-        ...(options.headers === undefined ? {} : { headers: options.headers }),
-      },
-    }),
-  )
-
-const engineLayer = (options: FiregridRuntimeSpec) =>
-  DurableStreamsWorkflowEngine.layer({
-    streamUrl: durableStreamUrl(
-      options.durableStreamsBaseUrl,
-      `${options.namespace}.firegrid.engine`,
-    ),
-  })
-
-const runtimeProvideFloor = (spec: FiregridRuntimeSpec) =>
-  Layer.mergeAll(
-    tableLayer(spec),
-    engineLayer(spec),
-    FiregridRuntimeContextMcpBaseUrlLive,
-  )
+/**
+ * §12 Seam 1 — the substrate floor CONSUMES the `DurableStreams` Tag (a leaf
+ * hole) rather than building stream URLs from a `spec.durableStreamsBaseUrl`.
+ * The table/engine `streamOptions` are sourced from
+ * `DurableStreams.streamOptions(name)` over the closed `StreamName` set (no
+ * `contextId` — a per-context output stream is unconstructible). McpEndpoint
+ * (`FiregridRuntimeContextMcpBaseUrlLive`) stays a MEMBER of the merged floor —
+ * the tf-cxwu.1 verdict's load-bearing rule: it is introduced and satisfied by
+ * the same floor value, so the "introduced after its satisfier" provide-order
+ * hazard never arises. The floor's R-channel is `DurableStreams`.
+ */
+const runtimeProvideFloor = Layer.unwrapEffect(
+  Effect.gen(function*() {
+    const ds = yield* DurableStreams
+    return Layer.mergeAll(
+      RuntimeControlPlaneTable.layer({ streamOptions: ds.streamOptions(StreamName.ControlPlane) }),
+      RuntimeOutputTable.layer({ streamOptions: ds.streamOptions(StreamName.Output) }),
+      UnifiedTable.layer({ streamOptions: ds.streamOptions(StreamName.Unified) }),
+      DurableStreamsWorkflowEngine.layer({ streamUrl: ds.streamOptions(StreamName.Engine).url }),
+      FiregridRuntimeContextMcpBaseUrlLive,
+    )
+  }),
+)
 
 // tf-k00i: the parked-body signal-recovery sweep is GONE — there is no bespoke
 // `SignalTable` mailbox to recover, and the per-event handler creates its
@@ -265,8 +243,8 @@ const runtimeProvideFloor = (spec: FiregridRuntimeSpec) =>
 // is left as a scoped engine follow-up rather than gold-plated here.
 
 /** The Tag set / error channel a runtime floor provides. */
-type RuntimeProvideFloorOut = Layer.Layer.Success<ReturnType<typeof runtimeProvideFloor>>
-type RuntimeProvideFloorErr = Layer.Layer.Error<ReturnType<typeof runtimeProvideFloor>>
+type RuntimeProvideFloorOut = Layer.Layer.Success<typeof runtimeProvideFloor>
+type RuntimeProvideFloorErr = Layer.Layer.Error<typeof runtimeProvideFloor>
 
 /**
  * The spec the floor-injectable constructor needs — strictly LESS than
@@ -337,27 +315,32 @@ const composeFiregridRuntimeWithFloor = <FloorR>(
 }
 
 /**
- * The production composition factory. Returns a single Layer that
- * satisfies the substrate + channel + workflow Tags a Firegrid host
- * needs. The R-channel is `never` — composition is self-contained
- * (the floor is built from `spec.durableStreamsBaseUrl`).
+ * The §12 production composition factory. Returns a single Layer whose
+ * R-channel is **`DurableStreams`** — the floor is the backend hole (Seam 1),
+ * closed by a backend Live at the call site:
  *
+ *     FiregridRuntime(spec, adapter).pipe(
+ *       Layer.provide(DurableStreamsLive.configured),  // or .configuredWith(cfg) / a sim Live
+ *     )
+ *
+ * The base URL is no longer a constructor input — it lives in the backend Live.
  * Override any individual Tag via `.pipe(Layer.provide(MyLive))`.
- *
- * The §12 modularity target — floor as the `DurableStreams` hole, closed by a
- * backend Live at the call site — is composed via
- * `composeFiregridRuntimeWithFloor`; see the tf-cxwu.1 modularity compile-spike.
  */
 export const FiregridRuntime = (
   spec: FiregridRuntimeSpec,
   adapter: FiregridRuntimeAdapterLayer,
-) => composeFiregridRuntimeWithFloor(spec, adapter, runtimeProvideFloor(spec))
+) => composeFiregridRuntimeWithFloor(spec, adapter, runtimeProvideFloor)
 
 export { composeFiregridRuntimeWithFloor }
 
 /**
  * Backward-compatible wrapper for existing call sites. New code should prefer
  * `FiregridRuntime(spec, adapter)` so the adapter/floor boundary is explicit.
+ *
+ * Unlike `FiregridRuntime` (whose R-channel is `DurableStreams`), this shim
+ * still takes `durableStreamsBaseUrl` in its options and closes the backend
+ * hole itself via `DurableStreamsLive.configuredWith`, so its composed Layer
+ * stays `R = never` for pre-§12 callers.
  */
 export const FiregridHost = (options: FiregridHostOptions) =>
   FiregridRuntime(
@@ -365,14 +348,27 @@ export const FiregridHost = (options: FiregridHostOptions) =>
     hasAdapter(options)
       ? options.adapter
       : defaultProductionAdapterLayer(options.envPolicy),
+  ).pipe(
+    Layer.provide(
+      DurableStreamsLive.configuredWith({
+        baseUrl: options.durableStreamsBaseUrl,
+        namespace: options.namespace,
+        ...(options.headers === undefined ? {} : { headers: options.headers }),
+      }),
+    ),
   )
 
 // Re-export primitive layers for users wanting full control or
-// overriding individual substrate pieces.
+// overriding individual substrate pieces. `DurableStreams` + its Lives are
+// re-exported so callers close the §12 backend hole from the same barrel they
+// import `FiregridRuntime` from.
 export {
+  DurableStreams,
+  DurableStreamsLive,
   DurableStreamsWorkflowEngine,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  StreamName,
   UnifiedTable,
 }
 export type { ToolExecutor }

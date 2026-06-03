@@ -5,6 +5,7 @@ import {
   SessionAgentOutputChannelTarget,
 } from "@firegrid/protocol/channels"
 import {
+  DurableStreamsLive,
   type LaunchAuthorizedBinding,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
@@ -145,9 +146,16 @@ export const FiregridCliCompositionLive = (
     Effect.gen(function*() {
       const durableStreamsBaseUrl = yield* embeddedOrConfiguredDurableStreamsBaseUrl
       const namespace = options.namespace ?? nonEmptyEnv("FIREGRID_RUNTIME_NAMESPACE") ?? defaultNamespace()
+      // §12 Seam 1: FiregridRuntime's floor is the DurableStreams hole; the bin
+      // closes it with the resolved base URL (already accounts for the CLI's
+      // embedded-or-configured durable-streams resolution above).
       const host = FiregridRuntime(
-        { durableStreamsBaseUrl, namespace },
+        { namespace },
         defaultProductionAdapterLayer(envPolicyLayer(options.authorizedBindings)),
+      ).pipe(
+        Layer.provide(
+          DurableStreamsLive.configuredWith({ baseUrl: durableStreamsBaseUrl, namespace }),
+        ),
       )
       const mcp = FiregridMcpServerLayer({
         host: "127.0.0.1",

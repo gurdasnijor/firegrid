@@ -30,13 +30,14 @@ import { AcpContextRows } from "@firegrid/runtime/sources/codecs/acp/stdio-edge"
 import { HostPlaneSessionControlRouterLive } from "@firegrid/runtime/channels"
 import {
   ContextResolverTag,
+  defaultProductionAdapterLayer,
+  DurableStreamsLive,
   FiregridAgentToolContext,
   FiregridAgentToolkit,
   FiregridAgentToolkitLayer,
   FiregridRuntime,
   RuntimeContextSessionWorkflow,
   ToolDispatchLive,
-  defaultProductionAdapterLayer,
   type SessionInputPayload,
 } from "@firegrid/runtime/unified"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
@@ -325,7 +326,6 @@ export const mcpTaskProjectionGatewayHost = (
 ): Layer.Layer<FiregridHost, unknown> => {
   const runtime = FiregridRuntime(
     {
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
     },
     defaultProductionAdapterLayer(
@@ -334,6 +334,13 @@ export const mcpTaskProjectionGatewayHost = (
           ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
         ],
         lookupEnv: name => env.processEnv[name],
+      }),
+    ),
+  ).pipe(
+    Layer.provide(
+      DurableStreamsLive.configuredWith({
+        baseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
       }),
     ),
   )

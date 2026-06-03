@@ -16,11 +16,12 @@
 
 import {
   defaultProductionAdapterLayer,
+  DurableStreamsLive,
   FiregridRuntime,
 } from "@firegrid/runtime/unified"
 import { sessionAgentOutputChannel } from "@firegrid/runtime/channels"
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
-import type { Layer } from "effect"
+import { Layer } from "effect"
 import type { ChannelRegistration } from "@firegrid/protocol/channels"
 import type {
   FiregridHost,
@@ -34,7 +35,6 @@ export const shapeCTerminalOrderingHost = (
 ): Layer.Layer<FiregridHost, unknown> =>
 	  FiregridRuntime(
     {
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
     },
     defaultProductionAdapterLayer(
@@ -45,7 +45,14 @@ export const shapeCTerminalOrderingHost = (
         lookupEnv: name => env.processEnv[name],
       }),
     ),
-	  )
+	  ).pipe(
+    Layer.provide(
+      DurableStreamsLive.configuredWith({
+        baseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
+      }),
+    ),
+  )
 
 export const shapeCTerminalOrderingChannels = (
   env: TinyFiregridHostEnv,

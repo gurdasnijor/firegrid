@@ -1,5 +1,6 @@
 import {
   defaultProductionAdapterLayer,
+  DurableStreamsLive,
   FiregridRuntime,
   RuntimeOutputTable,
 } from "@firegrid/runtime/unified"
@@ -57,10 +58,16 @@ export const host = (
     Layer.provideMerge(
       FiregridRuntime(
         {
-          durableStreamsBaseUrl: env.durableStreamsBaseUrl,
           namespace: env.namespace,
         },
         defaultProductionAdapterLayer(),
+      ).pipe(
+        Layer.provide(
+          DurableStreamsLive.configuredWith({
+            baseUrl: env.durableStreamsBaseUrl,
+            namespace: env.namespace,
+          }),
+        ),
       ),
     ),
   )

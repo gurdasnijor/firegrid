@@ -19,7 +19,11 @@
 
 import { Config, type ConfigError, Context, Effect, Layer } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
-import { durableStreamUrl } from "./authority.ts"
+import {
+  durableStreamUrl,
+  namespaceRuntimeOutputStreamName,
+  namespaceRuntimeStreamName,
+} from "./authority.ts"
 
 /**
  * The closed set of logical, host-owned durable stream names. There is no
@@ -57,15 +61,33 @@ export class DurableStreams extends Context.Tag("firegrid/DurableStreams")<
   DurableStreamsService
 >() {}
 
+/**
+ * Map a logical `StreamName` → the physical durable-stream name. The
+ * control-plane and output streams MUST resolve to the canonical names the
+ * client-sdk reads from (`runtime` / `runtimeOutput`, via
+ * `namespaceRuntimeStreamName` / `namespaceRuntimeOutputStreamName`), or the
+ * host floor and the client would point at divergent streams. unified/engine
+ * match the names the pre-§12 `tableLayer` / `engineLayer` built inline; signals
+ * is reserved (not yet a distinct host stream — signals ride the unified table).
+ */
+const physicalStreamName = (namespace: string, name: StreamName): string =>
+  ({
+    [StreamName.ControlPlane]: namespaceRuntimeStreamName(namespace),
+    [StreamName.Output]: namespaceRuntimeOutputStreamName(namespace),
+    [StreamName.Signals]: `${namespace}.firegrid.signals`,
+    [StreamName.Unified]: `${namespace}.firegrid.unified`,
+    [StreamName.Engine]: `${namespace}.firegrid.engine`,
+  })[name]
+
 const streamOptionsFor = (
   cfg: { readonly baseUrl: string; readonly namespace: string; readonly headers?: DurableTableHeaders },
 ) =>
   (name: StreamName): StreamOptions => ({
     // delegate to the canonical encoder — do NOT inline URL arithmetic.
     // `durableStreamUrl` handles generic vs Electric service-scoped roots and
-    // /v1/stream/ encoding; inlining `${baseUrl}/${ns}.firegrid.${name}`
-    // regresses configured Electric Cloud URLs (Seam 1 caveat).
-    url: durableStreamUrl(cfg.baseUrl, `${cfg.namespace}.firegrid.${name}`),
+    // /v1/stream/ encoding. The logical→physical name map (`physicalStreamName`)
+    // keeps the host floor on the SAME streams the client-sdk reads.
+    url: durableStreamUrl(cfg.baseUrl, physicalStreamName(cfg.namespace, name)),
     contentType: "application/json",
     ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
   })

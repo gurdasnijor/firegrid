@@ -1,13 +1,20 @@
-import { defaultProductionAdapterLayer, FiregridRuntime } from "@firegrid/runtime/unified"
-import type { TinyFiregridHostEnv } from "../../types.ts"
+import { defaultProductionAdapterLayer, DurableStreamsLive, FiregridRuntime } from "@firegrid/runtime/unified"
+import { Layer } from "effect"
+import type { FiregridHost, TinyFiregridHostEnv } from "../../types.ts"
 
 export const host = (
   env: TinyFiregridHostEnv,
-): ReturnType<typeof FiregridRuntime> =>
+): Layer.Layer<FiregridHost, unknown> =>
   FiregridRuntime(
     {
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
     },
     defaultProductionAdapterLayer(),
+  ).pipe(
+    Layer.provide(
+      DurableStreamsLive.configuredWith({
+        baseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
+      }),
+    ),
   )
