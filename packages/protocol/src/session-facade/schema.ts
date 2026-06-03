@@ -1,5 +1,5 @@
 import type { RuntimeEventRow } from "../launch/index.ts"
-import { Either, Option, Schema } from "effect"
+import { Either, Option, ParseResult, Schema } from "effect"
 import {
   PermissionDecisionSchema,
 } from "../agent-tools/schema.ts"
@@ -261,7 +261,7 @@ const RuntimeAgentOutputObservationBaseFields = {
   contextId: RuntimeContextIdSchema,
   activityAttempt: Schema.Number.pipe(
     Schema.int(),
-    Schema.greaterThanOrEqualTo(1),
+    Schema.greaterThanOrEqualTo(0),
   ),
   sequence: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
 } as const
@@ -369,6 +369,16 @@ const runtimeAgentOutputContextIds = (
   })
 }
 
+const RuntimeAgentOutputObservationProjectionRowSchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  sequence: Schema.Number,
+  raw: Schema.String,
+})
+export type RuntimeAgentOutputObservationProjectionRow = Schema.Schema.Type<
+  typeof RuntimeAgentOutputObservationProjectionRowSchema
+>
+
 export const encodeRuntimeAgentOutputEnvelope = (
   event: AgentOutputEvent,
 ): string =>
@@ -452,17 +462,9 @@ export const tryDecodeRuntimeAgentOutputEnvelope = (
   return buildAgentUnknownEvent(permissive.value.event)
 }
 
-export const runtimeAgentOutputObservationFromRow = (
-  row: RuntimeEventRow,
-): Option.Option<RuntimeAgentOutputObservation> =>
-  // tf-8s7d: use the forgiving two-pass decoder so a future `_tag`
-  // variant decodes to `AgentUnknownEvent` rather than silently
-  // dropping the row at the strict-decode boundary. The observation
-  // layer still only surfaces KNOWN variants in its typed return
-  // (`RuntimeAgentOutputObservation`); the Unknown branch returns
-  // `Option.none()` here so existing consumers' exhaustive `_tag`
-  // matches stay total. A future revision can promote `AgentUnknownEvent`
-  // into the observation surface if a consumer needs to audit unknowns.
+const runtimeAgentOutputObservationValueFromRow = (
+  row: RuntimeAgentOutputObservationProjectionRow,
+): Option.Option<unknown> =>
   Option.flatMap(tryDecodeRuntimeAgentOutputEnvelope(row.raw), (event) => {
     if (event._tag === "AgentOutputUnknown") return Option.none()
     const contextIds = runtimeAgentOutputContextIds(row.contextId)
@@ -510,6 +512,43 @@ export const runtimeAgentOutputObservationFromRow = (
         return Option.some({ ...base, _tag: "Terminated", event })
     }
   })
+
+export const RuntimeAgentOutputObservationFromRowSchema = Schema.transformOrFail(
+  RuntimeAgentOutputObservationProjectionRowSchema,
+  Schema.typeSchema(RuntimeAgentOutputObservationSchema),
+  {
+    strict: false,
+    decode: (row, _options, ast) =>
+      Option.match(runtimeAgentOutputObservationValueFromRow(row), {
+        onNone: () =>
+          ParseResult.fail(
+            new ParseResult.Type(
+              ast,
+              row,
+              "RuntimeOutput row does not project to a known RuntimeAgentOutputObservation",
+            ),
+          ),
+        onSome: ParseResult.succeed,
+      }),
+    encode: (_encoded, _options, _ast, observation) =>
+      ParseResult.succeed({
+        contextId: observation.contextId,
+        activityAttempt: observation.activityAttempt,
+        sequence: observation.sequence,
+        raw: encodeRuntimeAgentOutputEnvelope(observation.event),
+      }),
+  },
+).annotations({
+  identifier: "firegrid.operation.session.agentOutputObservationFromRow",
+  title: "Runtime output row to agent-output observation projection",
+  description:
+    "Read-side schema projection from RuntimeOutput event rows to normalized agent-output observations.",
+})
+
+export const runtimeAgentOutputObservationFromRow = (
+  row: RuntimeEventRow,
+): Option.Option<RuntimeAgentOutputObservation> =>
+  Schema.decodeUnknownOption(RuntimeAgentOutputObservationFromRowSchema)(row)
 
 export const runtimePermissionRequestObservationFromAgentOutput = (
   observation: RuntimeAgentOutputObservation,
