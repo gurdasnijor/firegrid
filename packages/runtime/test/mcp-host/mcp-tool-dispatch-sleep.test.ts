@@ -21,6 +21,11 @@ import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
   HostPromptChannel,
   HostPromptChannelTarget,
+  HostPermissionRespondChannelTarget,
+  HostSessionsCreateOrLoadChannel,
+  HostSessionsCreateOrLoadChannelTarget,
+  HostSessionsCreateOrLoadRequestSchema,
+  HostSessionsCreateOrLoadResponseSchema,
   makeCallableChannel,
   makeDurableEventChannel,
   makeEgressChannel,
@@ -40,6 +45,7 @@ import { Effect, Exit, Layer, Option, Ref, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   HostControlChannelBindingsLive,
+  HostPlaneChannelRouter,
   HostPlaneSessionControlRouterLive,
   RuntimeChannelRouter,
   makeRuntimeChannelRouter,
@@ -109,6 +115,27 @@ const contextResolverFromControlPlaneTable = Layer.effect(
 
 const sessionNewHostPlaneLayer = HostPlaneSessionControlRouterLive.pipe(
   Layer.provideMerge(HostControlChannelBindingsLive),
+  Layer.provideMerge(UnifiedChannelBindingsLive),
+)
+
+const hostSessionsCreateOrLoadStubLayer = Layer.succeed(
+  HostSessionsCreateOrLoadChannel,
+  makeCallableChannel({
+    target: HostSessionsCreateOrLoadChannelTarget,
+    requestSchema: HostSessionsCreateOrLoadRequestSchema,
+    responseSchema: HostSessionsCreateOrLoadResponseSchema,
+    call: request =>
+      Effect.succeed(
+        Schema.decodeSync(HostSessionsCreateOrLoadResponseSchema)({
+          sessionId: `session:${request.externalKey.source}:${request.externalKey.id}`,
+          contextId: `session:${request.externalKey.source}:${request.externalKey.id}`,
+        }),
+      ),
+  }),
+)
+
+const hostPlanePermissionRouterLayer = HostPlaneSessionControlRouterLive.pipe(
+  Layer.provideMerge(hostSessionsCreateOrLoadStubLayer),
   Layer.provideMerge(UnifiedChannelBindingsLive),
 )
 
@@ -270,6 +297,29 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
     })
     expect(result.callPayloads).toEqual([{ command: "approve" }])
     expect(result.sentPayloads).toEqual([])
+  })
+
+  it("tf-nors: dedicated permission.respond dispatches through HostPlaneChannelRouter", async () => {
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const router = yield* HostPlaneChannelRouter
+          return yield* router.dispatch({
+            target: String(HostPermissionRespondChannelTarget),
+            verb: "call",
+            payload: {
+              contextId: "ctx-permission-respond",
+              permissionRequestId: "permission-1",
+              decision: { _tag: "Allow", optionId: "allow_once" },
+            },
+          })
+        }).pipe(Effect.provide(hostPlanePermissionRouterLayer)),
+      ),
+    )
+
+    expect(result).toEqual({
+      offset: "host.permissions.respond:ctx-permission-respond:permission-1",
+    })
   })
 
   it("D. execute remains PO-owned and fails on the typed ToolError channel", async () => {
