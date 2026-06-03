@@ -313,6 +313,9 @@ const makeStateDefinition = (
           type: collection.durableType,
           primaryKey: collection.primaryKey,
           schema: Schema.standardSchemaV1(
+            // Schema variance: the per-collection storeSchema's encoded + context type
+            // params are erased to satisfy the StandardSchemaV1 adapter's signature.
+            // eslint-disable-next-line local/no-launder-cast -- Schema<object, unknown, never> erasure
             collection.storeSchema as unknown as Schema.Schema<object, unknown, never>,
           ),
         },
@@ -1124,6 +1127,9 @@ const defineDurableTable = <const Schemas extends TableSchemas<Schemas>>(
     }
   }
 
+  // class-tag-from-factory: the dynamically-assembled Context.Tag class cannot be
+  // statically typed as the generic `DurableTableTagClass<Schemas>`.
+  // eslint-disable-next-line local/no-launder-cast -- dynamic Tag class → generic class
   return DurableTableTag as unknown as DurableTableTagClass<Schemas>
 }
 
