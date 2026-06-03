@@ -54,16 +54,16 @@ Source-verified facts:
 - The official MCP `2025-11-25` Tasks spec says Tasks are experimental durable state machines for polling and deferred result retrieval: https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks#tasks
 - Servers/clients must declare task capabilities, and `tools/call` has tool-level `execution.taskSupport` negotiation: https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks#capabilities
 - Task-augmented `tools/call` returns a task handle immediately; the actual tool result comes later through `tasks/result`: https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks#creating-tasks
-- `notifications/tasks/status` is optional; the TS client we own can use it as a fast path, but correctness should poll `tasks/get` and/or wait on `tasks/result`: https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks#task-notifications
+- `notifications/tasks/status` is optional in the cross-client MCP contract, but Firegrid owns the TS client. That means the Firegrid TS client can be notification-first for live UX while still using task state/result as the durable reconnect/recovery source: https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks#task-notifications
 - `input_required` is the permission/human-input fit: the receiver moves the task to `input_required`, includes `io.modelcontextprotocol/related-task` on needed input messages, and returns to `working` after input arrives: https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks#input-required-status
 - Current vendored/current `@effect/ai` MCP schema does not expose `tasks/get`, `tasks/result`, `notifications/tasks/status`, `CreateTaskResult`, or `execution.taskSupport` (source-verified by `rg "tasks/get|tasks/result|notifications/tasks/status|taskSupport|CreateTaskResult" repos/effect/packages/ai/ai/src packages/runtime/src packages/protocol/src`). The only `input_required` hit in product code is Firegrid's own session status literal (`packages/protocol/src/agent-tools/schema.ts:449`).
 
 That changes the thesis shape:
 
-- Do not make streaming output or permission correctness depend on MCP notifications.
+- Do not frame polling as the preferred Firegrid client path. Because Firegrid owns the TS client, make it notification-first for live status/output, with task state/result as the durable recovery source when the client starts late, reconnects, or misses a notification.
 - Model long-running Firegrid tool calls as MCP task-augmented `tools/call` once the schema/runtime stack supports `2025-11-25` Tasks.
 - Back task state/result with Firegrid's existing durable workflow/output tables below the MCP ingress.
-- Use notifications only as optional acceleration for the TS client; the source of truth is `tasks/get` / `tasks/result`.
+- Use `tasks/get` / `tasks/result` as the durable task state/result source, not as a reason to discard live notifications in the Firegrid TS client.
 - Permission should become task `input_required` plus related-task input/elicitation, not a bespoke synchronous `approval.operator` runtime-channel call.
 
 ## Answer To The Spike Question
@@ -82,8 +82,12 @@ Boundary named:
 - Current MCP implementation boundary: `@effect/ai` is on the older MCP schema and lacks `2025-11-25` Tasks.
 - Firegrid MCP tool boundary: generic `call` dispatches only through `RuntimeChannelRouter`; permission response lives in `HostPlaneChannelRouter`, despite the protocol schema text saying `approval.*` has a fallback.
 
+## Relation To `codex-acp-tool-calls`
+
+This result is not a contradiction of `packages/tiny-firegrid/src/simulations/codex-acp-tool-calls`. That sim drives the session lifecycle from the client SDK (`sessions.createOrLoad`, `session.prompt`, `session.start`, `session.wait.forAgentOutput`) and asks the spawned Codex ACP agent to call exactly one MCP `sleep` tool. In other words, it proves the **agent-side MCP tool-call path** works while client/control-plane lifecycle and output waiting remain on the client SDK. This spike moved more of the client/control path onto MCP (`session_new`, MCP `wait_for`, MCP `session_prompt`, MCP `call`) and surfaced the divergence: the tool surface has a working agent tool path, but it does not yet have the same client/control semantics as the client SDK, especially around output streaming and permission response.
+
 ## Next Spike
 
 1. Add or vendor MCP Tasks schema support (`tasks/get`, `tasks/result`, `tasks/list`, `tasks/cancel`, `notifications/tasks/status`, `CreateTaskResult`, `execution.taskSupport`) in the MCP layer.
-2. Re-run this sim with task-augmented `tools/call` for `session_new` / `session_prompt` and a TS client loop that polls `tasks/get` / `tasks/result` while treating notifications as optional.
+2. Re-run this sim with task-augmented `tools/call` for `session_new` / `session_prompt` and a Firegrid TS client loop that is notification-first for live output/status, with `tasks/get` / `tasks/result` used for durable recovery and final result retrieval.
 3. Replace the direct append transport with a producer-id implementation once the message flow is settled, then prove producer-sequenced request and response streams in trace.
