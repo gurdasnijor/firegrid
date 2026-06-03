@@ -10,6 +10,7 @@ import type {
 import { Offset as MkOffset } from "../DurableStream.ts"
 import type { ReadError } from "../errors.ts"
 import { arrayDecoder } from "../internal/schema.ts"
+import { sseStream } from "../internal/sse.ts"
 import * as Http from "./Http.ts"
 import * as C from "./constants.ts"
 
@@ -114,15 +115,8 @@ const sseLoop = (
   endpoint: Endpoint,
   startOffset: Offset,
   callHeaders?: HeadersRecord,
-): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> => {
-  // Defer to internal/sse.ts where the eventsource-parser bridge lives.
-  const loadSseModule = Effect.promise(() => import("../internal/sse.ts"))
-  return Stream.unwrap(
-    loadSseModule.pipe(
-      Effect.map(({ sseStream }) => sseStream(endpoint, startOffset, callHeaders)),
-    ),
-  )
-}
+): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
+  sseStream(endpoint, startOffset, callHeaders)
 
 // ============================================================================
 // Public read entry point

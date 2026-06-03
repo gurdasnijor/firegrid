@@ -231,20 +231,6 @@
       ]
     },
     {
-      "file": "packages/runtime/src/channels/session-agent-output.ts",
-      "name": "sessionAgentOutputChannel",
-      "line": 37,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 1,
-      "klass": "TEST-ONLY",
-      "testRefs": [
-        "packages/runtime/test/channels/session-agent-output-route.integration.test.ts"
-      ]
-    },
-    {
       "file": "packages/runtime/src/channels/session-log.ts",
       "name": "sessionLogChannelFromCollection",
       "line": 37,
@@ -410,20 +396,6 @@
       "klass": "TEST-ONLY",
       "testRefs": [
         "packages/runtime/test/sources/sandbox/secrets.test.ts"
-      ]
-    },
-    {
-      "file": "packages/runtime/src/unified/channel-bindings.ts",
-      "name": "UnifiedChannelBindingsLive",
-      "line": 461,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 1,
-      "klass": "TEST-ONLY",
-      "testRefs": [
-        "packages/runtime/test/mcp-host/mcp-tool-dispatch-sleep.test.ts"
       ]
     },
     {
@@ -855,6 +827,35 @@
     },
     {
       "file": "packages/protocol/src/session-facade/schema.ts",
+      "name": "SessionAgentOutputWaitOutputSchema",
+      "line": 311,
+      "kind": "const",
+      "pkg": "protocol",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 2,
+      "klass": "TEST-EXPOSED-INTERNAL",
+      "testRefs": [
+        "packages/protocol/test/projection/operation-id-uniqueness.test.ts",
+        "packages/protocol/test/session-facade/schema.test.ts"
+      ]
+    },
+    {
+      "file": "packages/protocol/src/session-facade/schema.ts",
+      "name": "SessionPermissionRequestWaitOutputSchema",
+      "line": 333,
+      "kind": "const",
+      "pkg": "protocol",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 1,
+      "klass": "TEST-EXPOSED-INTERNAL",
+      "testRefs": [
+        "packages/protocol/test/projection/operation-id-uniqueness.test.ts"
+      ]
+    },
+    {
+      "file": "packages/protocol/src/session-facade/schema.ts",
       "name": "decodeRuntimeAgentOutputEnvelope",
       "line": 399,
       "kind": "const",
@@ -1071,7 +1072,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "PreloadError",
-      "line": 143,
+      "line": 124,
       "kind": "class",
       "pkg": "client-sdk",
       "isValue": true,
@@ -1083,7 +1084,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "AppendError",
-      "line": 147,
+      "line": 128,
       "kind": "class",
       "pkg": "client-sdk",
       "isValue": true,
@@ -1095,7 +1096,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "LaunchInputError",
-      "line": 152,
+      "line": 133,
       "kind": "class",
       "pkg": "client-sdk",
       "isValue": true,
@@ -1107,7 +1108,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridConfigError",
-      "line": 156,
+      "line": 137,
       "kind": "class",
       "pkg": "client-sdk",
       "isValue": true,
@@ -1119,7 +1120,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridChannelError",
-      "line": 163,
+      "line": 144,
       "kind": "class",
       "pkg": "client-sdk",
       "isValue": true,
@@ -1129,73 +1130,13 @@
       "testRefs": []
     },
     {
-      "file": "packages/client-sdk/src/firegrid.ts",
-      "name": "runtimeControlPlaneStreamUrl",
-      "line": 377,
-      "kind": "export-specifier",
+      "file": "packages/client-sdk/src/mcp.ts",
+      "name": "FiregridMcpClientError",
+      "line": 135,
+      "kind": "class",
       "pkg": "client-sdk",
       "isValue": true,
       "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/client-sdk/src/firegrid.ts",
-      "name": "FiregridRuntimeTables",
-      "line": 379,
-      "kind": "const",
-      "pkg": "client-sdk",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/client-sdk/src/firegrid.ts",
-      "name": "firegridRuntimeTableTags",
-      "line": 384,
-      "kind": "const",
-      "pkg": "client-sdk",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/client-sdk/src/firegrid.ts",
-      "name": "FiregridControlPlaneTableLive",
-      "line": 1561,
-      "kind": "const",
-      "pkg": "client-sdk",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/client-sdk/src/firegrid.ts",
-      "name": "FiregridOutputTableLive",
-      "line": 1578,
-      "kind": "const",
-      "pkg": "client-sdk",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/client-sdk/src/firegrid.ts",
-      "name": "FiregridStandaloneLive",
-      "line": 1614,
-      "kind": "const",
-      "pkg": "client-sdk",
-      "isValue": true,
-      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1216,18 +1157,6 @@
       "file": "packages/effect-durable-streams/src/Bound.ts",
       "name": "define",
       "line": 11,
-      "kind": "const",
-      "pkg": "effect-durable-streams",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/effect-durable-streams/src/internal/sse.ts",
-      "name": "sseStream",
-      "line": 155,
       "kind": "const",
       "pkg": "effect-durable-streams",
       "isValue": true,
@@ -2437,54 +2366,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/protocol/src/session-facade/operations.ts",
-      "name": "FiregridRuntimeObservationSourceNames",
-      "line": 37,
-      "kind": "export-specifier",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/session-facade/operations.ts",
-      "name": "PermissionDecisionSchema",
-      "line": 38,
-      "kind": "export-specifier",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/session-facade/operations.ts",
-      "name": "EventOffset",
-      "line": 39,
-      "kind": "export-specifier",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/session-facade/operations.ts",
-      "name": "FiregridRuntimeObservationSourceName",
-      "line": 40,
-      "kind": "export-specifier",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/protocol/src/session-facade/schema.ts",
       "name": "RuntimeAgentOutputEventPayloadSchema",
       "line": 211,
@@ -3170,68 +3051,8 @@
     },
     {
       "file": "packages/runtime/src/unified/channel-bindings.ts",
-      "name": "HostPromptChannelLive",
-      "line": 125,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/unified/channel-bindings.ts",
-      "name": "SessionPromptChannelLive",
-      "line": 145,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/unified/channel-bindings.ts",
       "name": "HostSessionsStartChannelLive",
-      "line": 168,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/unified/channel-bindings.ts",
-      "name": "SessionCancelChannelLive",
-      "line": 182,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/unified/channel-bindings.ts",
-      "name": "SessionCloseChannelLive",
-      "line": 196,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/unified/channel-bindings.ts",
-      "name": "HostPermissionRespondChannelLive",
-      "line": 210,
+      "line": 127,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3243,7 +3064,7 @@
     {
       "file": "packages/runtime/src/unified/channel-bindings.ts",
       "name": "emitSessionTerminalSignal",
-      "line": 252,
+      "line": 165,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3255,7 +3076,7 @@
     {
       "file": "packages/runtime/src/unified/channel-bindings.ts",
       "name": "HostPromptChannelSignalingLive",
-      "line": 307,
+      "line": 220,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3267,7 +3088,7 @@
     {
       "file": "packages/runtime/src/unified/channel-bindings.ts",
       "name": "SessionPromptChannelSignalingLive",
-      "line": 333,
+      "line": 246,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3279,7 +3100,7 @@
     {
       "file": "packages/runtime/src/unified/channel-bindings.ts",
       "name": "SessionCancelChannelSignalingLive",
-      "line": 361,
+      "line": 274,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3291,7 +3112,7 @@
     {
       "file": "packages/runtime/src/unified/channel-bindings.ts",
       "name": "SessionCloseChannelSignalingLive",
-      "line": 380,
+      "line": 293,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3303,7 +3124,7 @@
     {
       "file": "packages/runtime/src/unified/channel-bindings.ts",
       "name": "HostPermissionRespondChannelSignalingLive",
-      "line": 407,
+      "line": 320,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3411,7 +3232,19 @@
     {
       "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
       "name": "FiregridMcpServerListenerConfig",
-      "line": 104,
+      "line": 109,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/task-projection.ts",
+      "name": "makeRuntimeOutputTaskProjectionRuntime",
+      "line": 820,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3484,18 +3317,6 @@
       "file": "packages/runtime/src/unified/subscribers/permission-and-tool.ts",
       "name": "PermissionDecisionPayloadSchema",
       "line": 99,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/unified/subscribers/permission-and-tool.ts",
-      "name": "permissionDecisionDeferred",
-      "line": 111,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3857,7 +3678,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "ClientOptions",
-      "line": 115,
+      "line": 110,
       "kind": "interface",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3869,7 +3690,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "PromptInputError",
-      "line": 172,
+      "line": 153,
       "kind": "type",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3881,7 +3702,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridChannelMatch",
-      "line": 187,
+      "line": 168,
       "kind": "type",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3893,7 +3714,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridChannelWaitOutput",
-      "line": 189,
+      "line": 170,
       "kind": "type",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3905,7 +3726,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridChannelWaitAnyInput",
-      "line": 193,
+      "line": 174,
       "kind": "type",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3917,7 +3738,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridChannelWaitAnyOutput",
-      "line": 198,
+      "line": 179,
       "kind": "type",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3929,7 +3750,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridChannelsClient",
-      "line": 207,
+      "line": 188,
       "kind": "interface",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3941,7 +3762,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridWaitClient",
-      "line": 230,
+      "line": 211,
       "kind": "interface",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3953,7 +3774,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "RuntimeContextHandle",
-      "line": 252,
+      "line": 223,
       "kind": "interface",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3965,7 +3786,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridSessionWaitClient",
-      "line": 257,
+      "line": 227,
       "kind": "interface",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3977,7 +3798,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridSessionPermissionsClient",
-      "line": 272,
+      "line": 242,
       "kind": "interface",
       "pkg": "client-sdk",
       "isValue": false,
@@ -3989,7 +3810,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridSessionsClient",
-      "line": 309,
+      "line": 275,
       "kind": "interface",
       "pkg": "client-sdk",
       "isValue": false,
@@ -4001,7 +3822,103 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridPermissionsClient",
-      "line": 343,
+      "line": 309,
+      "kind": "interface",
+      "pkg": "client-sdk",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/client-sdk/src/mcp.ts",
+      "name": "FiregridMcpClientOptions",
+      "line": 23,
+      "kind": "interface",
+      "pkg": "client-sdk",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/client-sdk/src/mcp.ts",
+      "name": "FiregridMcpTaskReader",
+      "line": 38,
+      "kind": "interface",
+      "pkg": "client-sdk",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/client-sdk/src/mcp.ts",
+      "name": "FiregridMcpPermissionResponder",
+      "line": 47,
+      "kind": "interface",
+      "pkg": "client-sdk",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/client-sdk/src/mcp.ts",
+      "name": "FiregridMcpRuntimeContextSnapshot",
+      "line": 54,
+      "kind": "interface",
+      "pkg": "client-sdk",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/client-sdk/src/mcp.ts",
+      "name": "FiregridMcpObservationClient",
+      "line": 64,
+      "kind": "interface",
+      "pkg": "client-sdk",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/client-sdk/src/mcp.ts",
+      "name": "FiregridMcpSessionWaitClient",
+      "line": 83,
+      "kind": "interface",
+      "pkg": "client-sdk",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/client-sdk/src/mcp.ts",
+      "name": "FiregridMcpSessionHandle",
+      "line": 92,
+      "kind": "interface",
+      "pkg": "client-sdk",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/client-sdk/src/mcp.ts",
+      "name": "FiregridMcpClient",
+      "line": 106,
       "kind": "interface",
       "pkg": "client-sdk",
       "isValue": false,
@@ -5247,6 +5164,18 @@
       "testRefs": []
     },
     {
+      "file": "packages/protocol/src/observations/schema.ts",
+      "name": "FiregridRuntimeObservationSourceName",
+      "line": 10,
+      "kind": "type",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
       "file": "packages/protocol/src/otel/row-otel.ts",
       "name": "RowOtelContext",
       "line": 47,
@@ -6029,7 +5958,7 @@
     {
       "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
       "name": "FiregridMcpServerListenerConfig",
-      "line": 111,
+      "line": 116,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
@@ -6041,7 +5970,7 @@
     {
       "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
       "name": "FiregridMcpHttpServerLayerOptions",
-      "line": 115,
+      "line": 120,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
@@ -6053,7 +5982,7 @@
     {
       "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
       "name": "FiregridMcpDurableStreamsServerLayerOptions",
-      "line": 128,
+      "line": 133,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
@@ -6065,7 +5994,7 @@
     {
       "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
       "name": "FiregridMcpServerLayerOptions",
-      "line": 142,
+      "line": 147,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
@@ -6483,20 +6412,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/client-sdk/src/firegrid.ts",
-      "name": "RuntimeContextSnapshot",
-      "line": 242,
-      "kind": "interface",
-      "pkg": "client-sdk",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 1,
-      "klass": "TEST-EXPOSED-INTERNAL",
-      "testRefs": [
-        "packages/runtime/test/misuse-resistance-positive-lifecycle.test.ts"
-      ]
-    },
-    {
       "file": "packages/protocol/src/channels/core.ts",
       "name": "RouteCompletionReceipt",
       "line": 44,
@@ -6541,7 +6456,7 @@
     {
       "file": "packages/client-sdk/src/firegrid.ts",
       "name": "FiregridError",
-      "line": 174,
+      "line": 155,
       "kind": "type",
       "pkg": "client-sdk",
       "isValue": false,
@@ -6553,6 +6468,6 @@
       ]
     }
   ],
-  "prodFiles": 231,
+  "prodFiles": 228,
   "testFiles": 63
 }

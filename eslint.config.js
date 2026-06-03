@@ -558,6 +558,29 @@ const local = {
         }
       },
     },
+    "no-literal-dynamic-import": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow dynamic import() with a literal specifier; import modules known at author time statically.",
+        },
+        schema: [],
+        messages: {
+          noLiteralDynamicImport:
+            "Do not use dynamic import() with a literal specifier — import the module statically. Dynamic literal imports defeat the dead-code import-graph gate (tf-uc8u); they silently shielded permissionDecisionDeferred and sseStream as false-positive DEAD flags. Computed import(expr) for genuine runtime module loading (e.g. plugin loaders) is allowed.",
+        },
+      },
+      create(context) {
+        return {
+          ImportExpression(node) {
+            if (node.source.type === "Literal") {
+              context.report({ node, messageId: "noLiteralDynamicImport" })
+            }
+          },
+        }
+      },
+    },
     "no-fixed-polling": {
       meta: {
         type: "problem",
@@ -1346,6 +1369,23 @@ export default tseslint.config(
           ],
         },
       ],
+    },
+  },
+  {
+    // Ban dynamic `import("literal")` in production source. A module known at
+    // author time must be imported statically: literal dynamic imports defeat
+    // the import-graph analysis the dead-code gate (tf-uc8u / tf-ztwu) relies
+    // on — they silently shielded `permissionDecisionDeferred` and `sseStream`
+    // as false-positive DEAD flags. Computed specifiers (`import(expr)`, e.g.
+    // the tiny-firegrid plugin loader) are NOT matched and remain legal; their
+    // target is runtime data with no resolvable internal export anyway.
+    // Uses a distinct `local/*` rule id (not no-restricted-syntax) so it never
+    // clobbers the shared effectDebtGuardrails block. Scope deliberately
+    // includes effect-durable-streams — Read.ts was one of the two sites.
+    files: ["packages/*/src/**/*.ts", "apps/*/src/**/*.ts", "src/**/*.ts"],
+    plugins: { local },
+    rules: {
+      "local/no-literal-dynamic-import": "error",
     },
   },
   {
