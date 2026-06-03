@@ -1,3 +1,7 @@
+// Raw HTTP transport boundary: JSON.parse/stringify operate on the wire body
+// (unknown response payloads / already-encoded request bodies); typed Schema
+// decode happens at the layers above.
+// @effect-diagnostics effect/preferSchemaOverJson:off
 import {
   HttpClient,
   HttpClientRequest,
@@ -60,6 +64,9 @@ const resolveHeaders = (endpoint: Endpoint): Effect.Effect<Record<string, string
 const resolveParam = (
   value: ParamValue,
 ): Effect.Effect<string | undefined, never, never> => {
+  // `undefined` is the legitimate `string | undefined` success value here, not a
+  // void — effectSucceedWithVoid false-positives on nullable returns.
+  // @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
   if (value === undefined) return Effect.succeed(undefined)
   return resolveString(value)
 }
@@ -396,11 +403,9 @@ const headInner = (
       callHeaders,
     )
     const missing = missingStreamError(res.status, url)
-    if (missing !== undefined) return yield* Effect.fail(missing)
+    if (missing !== undefined) return yield* missing
     if (res.status < 200 || res.status >= 300) {
-      return yield* Effect.fail(
-        new TransportError({ cause: new Error(`HEAD ${url}: status ${res.status}`) }),
-      )
+      return yield* new TransportError({ cause: new Error(`HEAD ${url}: status ${res.status}`) })
     }
     const offset = (headerValue(res, STREAM_NEXT_OFFSET) ?? "") as Offset
     const result: HeadResult = {
@@ -471,7 +476,7 @@ const getJsonInner = (
 
     const res = yield* executeGet(endpoint, params, opts.callHeaders, extra)
     const missing = missingStreamError(res.status, url)
-    if (missing !== undefined) return yield* Effect.fail(missing)
+    if (missing !== undefined) return yield* missing
     if (res.status === 304) {
       // Server says "nothing changed since the etag you sent". Surface as
       // an empty result with notModified=true — caller decides whether to
@@ -488,9 +493,7 @@ const getJsonInner = (
       }
     }
     if (res.status !== 200 && res.status !== 204) {
-      return yield* Effect.fail(
-        new TransportError({ cause: new Error(`GET ${url}: status ${res.status}`) }),
-      )
+      return yield* new TransportError({ cause: new Error(`GET ${url}: status ${res.status}`) })
     }
 
     const nextOffset = (headerValue(res, STREAM_NEXT_OFFSET) ?? opts.offset) as Offset
@@ -568,13 +571,11 @@ export const getStream = (
         extra,
       )
       const missing = missingStreamError(res.status, url)
-      if (missing !== undefined) return yield* Effect.fail(missing)
+      if (missing !== undefined) return yield* missing
       if (res.status !== 200) {
-        return yield* Effect.fail(
-          new TransportError({
+        return yield* new TransportError({
             cause: new Error(`GET stream ${url}: status ${res.status}`),
-          }),
-        )
+          })
       }
       return res
     }),

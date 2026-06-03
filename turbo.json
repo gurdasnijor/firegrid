@@ -13,7 +13,7 @@
     },
     "diagnostics": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "tsconfig.json", ".effect-diagnostics-baseline.json"],
+      "inputs": ["src/**", "tsconfig.json"],
       "outputs": []
     },
     "test": {

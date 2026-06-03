@@ -31,7 +31,7 @@ as low-value tool-wrappers and that ACID deprecated; see tf-dbxp.)
 | Duplicate code | `lint:dup` | Any jscpd-detected duplication | Extract a shared helper or keep the implementation single-source | Native strict-0: `jscpd packages/*/src` (.jscpd.json threshold 0). |
 | Dependency boundaries | `lint:deps` | Forbidden package/app dependency edges | Move code to the owning package or depend on a public subpath | Uses `.dependency-cruiser.cjs`. |
 | Effect quality | `lint` (`local/*` rules) | Effect/runtime anti-patterns (replay-unsafe time/RNG, detached promises, type laundering, `Workflow.make` admission) | Use Effect services, scoped layers, typed errors, and approved adapters | Strict-0 AST ESLint rules; the ts-morph count ratchet was deleted (tf-q6vf). |
-| Effect diagnostics | `effect:diagnostics` | Effect language-service diagnostics | Fix Effect-specific type/service issues | CI runs this separately from TS typecheck. |
+| Effect diagnostics | `effect:diagnostics` | Any effect-language-service diagnostic in production `src/**` | Fix the site, or add a documented inline `// @effect-diagnostics <rule>:off` | Strict-0, no baseline (tf-ov4w); tests not gated. CI runs this separately from TS typecheck. |
 | Tests | `test` | Runtime behavior regressions | Add/fix tests near the owning feature | Runs workspace package tests through Turbo. |
 
 ## Source-pattern guard rules (formerly Semgrep)
@@ -84,11 +84,15 @@ preserved:
 `lint:dead` (knip) and `lint:dup` (jscpd) are **native strict-0** — no baseline
 JSON. `.jscpd.json` holds the config (`threshold: 0`); there is no knip baseline.
 
-There are **no baseline-JSON gates left** in the repo. The last one,
-`effect-quality-metrics-baseline.json`, was deleted (tf-q6vf); its enforcement is
-now strict-0 `local/*` ESLint rules. The grandfathered `Workflow.make` owners are
-recorded in `docs/workflow-make-admission-ledger.md` and gated per-site by
-`local/no-unclassified-workflow-make`.
+There are **no baseline-JSON gates left** in the repo. `effect-quality-metrics-baseline.json`
+was deleted (tf-q6vf) — its enforcement is now strict-0 `local/*` ESLint rules; the
+grandfathered `Workflow.make` owners are recorded in
+`docs/workflow-make-admission-ledger.md` and gated per-site by
+`local/no-unclassified-workflow-make`. The per-package
+`.effect-diagnostics-baseline.json` files were deleted (tf-ov4w) — `effect:diagnostics`
+is now strict-0 over production `src/**`, with genuine findings fixed and the few
+false-positive / raw-IO-boundary rules carrying documented inline
+`// @effect-diagnostics <rule>:off` directives.
 
 Only update that baseline when the current code improved the metric or when a
 rule PR intentionally introduces a staged baseline. Do not add baseline entries

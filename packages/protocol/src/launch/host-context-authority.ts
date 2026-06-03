@@ -137,7 +137,7 @@ export const makeLocalRuntimeContextForHostSession = (
 ) =>
   Effect.gen(function* () {
     if (session.status !== "running") {
-      return yield* Effect.fail(new CurrentHostStopped({ hostId: session.hostId }))
+      return yield* new CurrentHostStopped({ hostId: session.hostId })
     }
     return makeRuntimeContext({
       contextId: options.contextId,
@@ -204,13 +204,11 @@ export const requireLocalContext = (
     const session = yield* currentHostSession
     const context = yield* findRuntimeContext(contextId)
     if (context.host.hostId !== session.hostId) {
-      return yield* Effect.fail(
-        new ContextNotLocal({
+      return yield* new ContextNotLocal({
           contextId,
           hostId: context.host.hostId,
           currentHostId: session.hostId,
-        }),
-      )
+        })
     }
     return context
   })

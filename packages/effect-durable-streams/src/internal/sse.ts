@@ -1,3 +1,6 @@
+// Raw SSE transport boundary: JSON.parse operates on wire frames (unknown
+// payloads); typed Schema decode happens at the layers above.
+// @effect-diagnostics effect/preferSchemaOverJson:off
 import { type HttpClient } from "@effect/platform"
 import { Chunk, Effect, Ref, Stream } from "effect"
 import { createParser } from "eventsource-parser"
@@ -107,7 +110,7 @@ const sseConnection = (
             if (parseError !== null) {
               const e = parseError
               parseError = null
-              return yield* Effect.fail(new TransportError({ cause: e }))
+              return yield* new TransportError({ cause: e })
             }
             const out: Array<unknown> = []
             let eventIndex = 0

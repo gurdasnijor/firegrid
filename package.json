@@ -8,7 +8,6 @@
     "build": "turbo run build",
     "check": "pnpm run lint && pnpm run effect:diagnostics && turbo run build check",
     "effect:diagnostics": "turbo run diagnostics",
-    "effect:diagnostics:baseline": "turbo run diagnostics --force -- --update-baseline",
     "effect:patch": "effect-language-service patch",
     "effect:unpatch": "effect-language-service unpatch",
     "firegrid": "tsx packages/runtime/src/bin/firegrid.ts",

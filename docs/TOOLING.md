@@ -79,14 +79,21 @@ autofixes this convention.
 ## Effect diagnostics & devtools
 
 ```sh
-pnpm run effect:diagnostics            # turbo run diagnostics (gated)
-pnpm run effect:diagnostics:baseline   # recompute the diagnostics baseline
+pnpm run effect:diagnostics            # turbo run diagnostics (strict-0, production src)
 pnpm run effect:patch / effect:unpatch # opt-in: patch local TS for build-time diagnostics
 ```
 
 `@effect/language-service` is installed at the workspace root and enabled in each
 package tsconfig; editors must use the workspace TypeScript version for the plugin
 to load. For VS Code / Cursor, set `"typescript.tsdk": "node_modules/typescript/lib"`.
+
+The `diagnostics` turbo task (`tooling/src/effect-diagnostics-check.ts`) is
+**strict-0 over production `src/**`** — there is no baseline. The per-package
+`.effect-diagnostics-baseline.json` files were deleted (tf-ov4w): genuine
+diagnostics are fixed at the site, and the few rules that false-positive or flag
+legitimate raw-IO boundaries carry documented inline `// @effect-diagnostics
+<rule>:off` directives. Test files are not gated (they legitimately use `new
+Error` / try-catch / multi-`Effect.provide`), mirroring the ESLint test exemption.
 
 ## Architecture dependency graphs
 
