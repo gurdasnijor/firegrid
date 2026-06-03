@@ -163,3 +163,10 @@ export {
   runtimeLogsForContextView,
   runtimeRunsForContextView,
 } from "./views.ts"
+export {
+  DurableStreams,
+  DurableStreamsLive,
+  StreamName,
+  type DurableStreamsService,
+  type StreamOptions,
+} from "./durable-streams.ts"

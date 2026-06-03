@@ -264,23 +264,44 @@ const runtimeProvideFloor = (spec: FiregridRuntimeSpec) =>
 // the in-process real-path sims do not exercise host-restart recovery, so this
 // is left as a scoped engine follow-up rather than gold-plated here.
 
+/** The Tag set / error channel a runtime floor provides. */
+type RuntimeProvideFloorOut = Layer.Layer.Success<ReturnType<typeof runtimeProvideFloor>>
+type RuntimeProvideFloorErr = Layer.Layer.Error<ReturnType<typeof runtimeProvideFloor>>
+
 /**
- * The production composition factory. Returns a single Layer that
- * satisfies the substrate + channel + workflow Tags a Firegrid host
- * needs. The R-channel is `never` — composition is self-contained.
- *
- * Override any individual Tag via `.pipe(Layer.provide(MyLive))`.
+ * The spec the floor-injectable constructor needs — strictly LESS than
+ * `FiregridRuntimeSpec`. Once the floor is a `DurableStreams` hole (Seam 1),
+ * `durableStreamsBaseUrl`/`headers` move out of the spec and into the backend
+ * Live; the constructor body reads only the host-identity residue.
  */
-export const FiregridRuntime = (
-  spec: FiregridRuntimeSpec,
+export interface FiregridRuntimeFloorSpec {
+  readonly namespace: string
+  readonly hostId?: string
+}
+
+/**
+ * The composition body, parameterized over the substrate **floor** — the only
+ * thing that differs between the production self-contained host (floor built
+ * from `spec`, `R = never`) and the §12 modularity target (floor is the
+ * `DurableStreams` *hole*, `R = DurableStreams` until a backend Live is
+ * provided). The floor is referenced in exactly two spots — under the adapter
+ * (`Layer.provide`) and under the workflows (`Layer.provideMerge`) — so this is
+ * the seam the modularity spike (tf-cxwu.1 / §10 step 0) exercises for
+ * provide-order requirement closure: a single floor value satisfies *both*
+ * the interior adapter and the upper layers, and its `R` propagates outward
+ * once (deduped by Tag identity).
+ */
+const composeFiregridRuntimeWithFloor = <FloorR>(
+  spec: FiregridRuntimeFloorSpec,
   adapter: FiregridRuntimeAdapterLayer,
+  floor: Layer.Layer<RuntimeProvideFloorOut, RuntimeProvideFloorErr, FloorR>,
 ) => {
   const toolExecutorEffect = makeToolExecutor((p) =>
     JSON.stringify({ tool: p.toolName, input: JSON.parse(p.inputJson) as unknown }),
   )
 
   const adapterLayer = adapter.pipe(
-    Layer.provide(runtimeProvideFloor(spec)),
+    Layer.provide(floor),
     Layer.orDie,
   )
   const hostSessionLayer = buildCurrentHostSessionLayer({
@@ -308,12 +329,31 @@ export const FiregridRuntime = (
       ).pipe(Layer.provideMerge(UnifiedSignalingChannelBindingsLive))
       return workflowLayers.pipe(
         Layer.provideMerge(channelsAndObserver),
-        Layer.provideMerge(runtimeProvideFloor(spec)),
+        Layer.provideMerge(floor),
         Layer.provideMerge(hostSessionLayer),
       )
     }),
   )
 }
+
+/**
+ * The production composition factory. Returns a single Layer that
+ * satisfies the substrate + channel + workflow Tags a Firegrid host
+ * needs. The R-channel is `never` — composition is self-contained
+ * (the floor is built from `spec.durableStreamsBaseUrl`).
+ *
+ * Override any individual Tag via `.pipe(Layer.provide(MyLive))`.
+ *
+ * The §12 modularity target — floor as the `DurableStreams` hole, closed by a
+ * backend Live at the call site — is composed via
+ * `composeFiregridRuntimeWithFloor`; see the tf-cxwu.1 modularity compile-spike.
+ */
+export const FiregridRuntime = (
+  spec: FiregridRuntimeSpec,
+  adapter: FiregridRuntimeAdapterLayer,
+) => composeFiregridRuntimeWithFloor(spec, adapter, runtimeProvideFloor(spec))
+
+export { composeFiregridRuntimeWithFloor }
 
 /**
  * Backward-compatible wrapper for existing call sites. New code should prefer
