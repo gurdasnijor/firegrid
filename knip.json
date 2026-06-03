@@ -62,10 +62,6 @@
       ],
       "project": [
         "src/**/*.ts"
-      ],
-      "ignoreDependencies": [
-        "@effect/ai",
-        "@effect/workflow"
       ]
     },
     "packages/effect-durable-streams": {
