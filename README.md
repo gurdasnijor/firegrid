@@ -299,7 +299,6 @@ traces while the public client API is still settling.
 | `@firegrid/runtime` | Durable runtime internals and workflow engine integration |
 | `@firegrid/host-sdk` | Host composition and channel bindings |
 | `@firegrid/client-sdk` | App/client surface over Firegrid sessions and channels |
-| `@firegrid/cli` | Local CLI entry points |
 | `@firegrid/tiny-firegrid` | Local simulations and trace artifacts |
 
 Most users start with the client/session surface. Contributors should read the
