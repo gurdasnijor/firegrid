@@ -35,11 +35,11 @@ import * as AgentToolsSchema from "../packages/protocol/src/agent-tools/schema.t
 import * as SessionFacadeSchema from "../packages/protocol/src/session-facade/schema.ts"
 import * as ChannelsBarrel from "../packages/protocol/src/channels/index.ts"
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const rel = (abs: string) => path.relative(ROOT, abs)
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+export const rel = (abs: string) => path.relative(ROOT, abs)
 
 // ── Option read (structural — avoid a root-level `effect` import) ────────────
-const optionValue = <A>(o: unknown): A | null => {
+export const optionValue = <A>(o: unknown): A | null => {
   const opt = o as { _tag?: string; value?: A }
   return opt && opt._tag === "Some" ? (opt.value as A) : null
 }
@@ -56,13 +56,13 @@ interface ProjectionMeta {
  * `.ast` reachable via property access (it is not enumerated by the `in`
  * operator). Accept any object/function exposing a truthy `.ast`.
  */
-const isSchemaLike = (value: unknown): boolean =>
+export const isSchemaLike = (value: unknown): boolean =>
   (typeof value === "object" || typeof value === "function") &&
   value !== null &&
   Boolean((value as { ast?: unknown }).ast)
 
 // ── TS AST helpers ──────────────────────────────────────────────────────────
-const sourceFileOf = (absPath: string): ts.SourceFile =>
+export const sourceFileOf = (absPath: string): ts.SourceFile =>
   ts.createSourceFile(
     absPath,
     fs.readFileSync(absPath, "utf8"),
@@ -70,14 +70,14 @@ const sourceFileOf = (absPath: string): ts.SourceFile =>
     /*setParentNodes*/ true,
   )
 
-const lineOf = (sf: ts.SourceFile, node: ts.Node): number =>
+export const lineOf = (sf: ts.SourceFile, node: ts.Node): number =>
   sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1
 
-const isExported = (node: ts.VariableStatement): boolean =>
+export const isExported = (node: ts.VariableStatement): boolean =>
   (node.modifiers ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
 
 /** Map every `export const NAME = ...` → its 1-based declaration line. */
-const exportConstLines = (sf: ts.SourceFile): Map<string, number> => {
+export const exportConstLines = (sf: ts.SourceFile): Map<string, number> => {
   const out = new Map<string, number>()
   sf.forEachChild((node) => {
     if (ts.isVariableStatement(node) && isExported(node)) {
@@ -89,12 +89,12 @@ const exportConstLines = (sf: ts.SourceFile): Map<string, number> => {
   return out
 }
 
-const walk = (node: ts.Node, visit: (n: ts.Node) => void): void => {
+export const walk = (node: ts.Node, visit: (n: ts.Node) => void): void => {
   visit(node)
   node.forEachChild((c) => walk(c, visit))
 }
 
-const stringLiteralValue = (n: ts.Node | undefined): string | undefined =>
+export const stringLiteralValue = (n: ts.Node | undefined): string | undefined =>
   n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : undefined
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -296,7 +296,7 @@ const propText = (
   return null
 }
 
-const collectRuntimeFiles = (dir: string): Array<string> => {
+export const collectRuntimeFiles = (dir: string): Array<string> => {
   const out: Array<string> = []
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name)
@@ -553,7 +553,7 @@ const renderMarkdown = (data: ReturnType<typeof build>): string => {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-const build = () => {
+export const build = () => {
   const { rows: agentTools, reflectionMisses } = inventoryAgentTools()
   const sessionFacade = inventorySessionFacade()
   const agentOutputEvents = inventoryAgentOutputEvents()
@@ -628,4 +628,6 @@ const main = () => {
   console.log("operation inventory written:", JSON.stringify(data.stats, null, 2))
 }
 
-main()
+const isEntry = process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (isEntry) main()
