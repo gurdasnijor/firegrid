@@ -1,42 +1,38 @@
 /**
- * Canonical RuntimeContext subscriber — as a workflow body.
+ * Canonical RuntimeContext subscriber — a PER-EVENT handler.
  *
- * The most load-bearing Shape C subscriber today collapses into a
- * single `Workflow.make` body parked on `Workflow.suspend`, woken by
- * the signal primitive on every input arrival.
+ * tf-k00i: retired the parked `while(!reachedTerminal){ readSignalsFor →
+ * Workflow.suspend }` body and the bespoke `signal.ts` mailbox. The
+ * RuntimeContext session is now an actor/virtual-object handler in the canon
+ * shape (C1/C2/C4/C5): ONE fresh execution per session input, keyed
+ * `(contextId, inputKey)` via `Workflow.idempotencyKey`, carrying the input in
+ * its payload, forwarding to the adapter via an `Activity`, and RETURNING.
  *
  * The body:
- *   1. Spawns once via `Activity.make` calling `adapter.startOrAttach`.
- *      Activity-memoized; the engine activity record IS the durable
- *      spawn evidence — no parallel `runs` row needed.
- *   2. Reads its own signals in `recordedAt` order to derive the
- *      input log. Each signal payload is decoded as a
- *      `SessionInputPayload` envelope (Schema-decoded at consume per
- *      SDD §C). On miss → `Workflow.suspend`. On hit → `Activity.make`
- *      forwarding the envelope to `adapter.send`. The adapter is the
- *      thing that knows the codec; the body is pure pass-through.
- *   3. On `kind === "terminal"`: one final `Activity.make` calling
- *      `adapter.deregister` (releases the host-level process registry
- *      entry), then returns. The engine records the return in
- *      `executions.finalResult` — no parallel `runs.exited` row needed.
+ *   1. `Activity.make` calling `adapter.startOrAttach` — gets-or-creates the
+ *      live agent process. The adapter owns a per-`contextId` singleton
+ *      (atomic get-or-create), so the N per-event executions for one session
+ *      do NOT each spawn a process.
+ *   2. `terminal` input → `Activity.make` calling `adapter.deregister` (release
+ *      the process registry entry), then return.
+ *   3. any other input → `Activity.make` forwarding the `SessionInputPayload`
+ *      envelope to `adapter.send`, then return.
  *
- * One execution per `(contextId, attempt)` via `idempotencyKey` —
- * kills the production TOCTOU that spawned two `claude-agent-acp`
- * processes for one logical session.
+ * At-most-once delivery: `Workflow.idempotencyKey` ⇒ one execution per
+ * `(contextId, inputKey)`; `Activity.make` ⇒ one `adapter.send` per execution.
+ * The input is delivered in the workflow payload by the channel binding /
+ * sibling relay (no shared-mutable consume cursor — see
+ * docs/findings/tf-ogoj-durable-deferred-and-serialization.md: a blind-RMW
+ * cursor races; per-input executions over a payload-carried input do not).
  *
- * The body consumes `RuntimeContextSessionAdapter` via Context.Tag,
- * NOT via closure (per SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING §A).
- * Workflow Layer is static; users provide the adapter Live separately
- * (production: codec-wrapping Live; tests: test-local adapter layers).
+ * The body consumes `RuntimeContextSessionAdapter` via Context.Tag.
  */
 
 import {
   Activity,
   Workflow,
-  WorkflowEngine,
 } from "@effect/workflow"
-import { Context, Effect, Layer, type ParseResult, Schema } from "effect"
-import { readSignalsFor, SignalTable } from "../signal.ts"
+import { Effect, Schema } from "effect"
 import {
   RuntimeContextSessionAdapter,
   SessionInputPayloadSchema,
@@ -52,14 +48,18 @@ export { SessionInputPayloadSchema, type SessionInputPayload }
 export const RuntimeContextSessionPayloadSchema = Schema.Struct({
   contextId: Schema.String,
   attempt: Schema.Number,
+  /** Stable per-input key — the idempotency unit (one execution per input). */
+  inputKey: Schema.String,
+  /** The session input, carried in the payload (no mailbox). */
+  input: SessionInputPayloadSchema,
 })
 export type RuntimeContextSessionPayload =
   Schema.Schema.Type<typeof RuntimeContextSessionPayloadSchema>
 
 export const RuntimeContextSessionResultSchema = Schema.Struct({
   contextId: Schema.String,
-  attempt: Schema.Number,
-  inputsConsumed: Schema.Number,
+  inputKey: Schema.String,
+  kind: SessionInputPayloadSchema.fields.kind,
   reachedTerminal: Schema.Boolean,
 })
 
@@ -68,96 +68,54 @@ export const RuntimeContextSessionWorkflow = Workflow.make({
   name: "unified.runtime-context-session",
   payload: RuntimeContextSessionPayloadSchema,
   success: RuntimeContextSessionResultSchema,
-  idempotencyKey: (p) => `${p.contextId}:${p.attempt}`,
+  idempotencyKey: (p) => `${p.contextId}:${p.inputKey}`,
 })
 
-export const encodeRuntimeContextSessionPayloadJson = (
-  payload: RuntimeContextSessionPayload,
-): string => JSON.stringify(payload)
-
-export const decodeRuntimeContextSessionPayloadJson = Schema.decode(
-  Schema.parseJson(RuntimeContextSessionPayloadSchema),
-)
-
-const decodeSessionInputPayloadJson = Schema.decode(
-  Schema.parseJson(SessionInputPayloadSchema),
-)
-
-const sessionKey = (contextId: string, attempt: number): string =>
-  `${contextId}:${attempt}`
-
-const body = (
-  payload: RuntimeContextSessionPayload,
-  executionId: string,
-) =>
+const body = (payload: RuntimeContextSessionPayload) =>
   Effect.gen(function*() {
-    const instance = yield* WorkflowEngine.WorkflowInstance
-    const signals = yield* SignalTable
     const adapter = yield* RuntimeContextSessionAdapter
-    const key = sessionKey(payload.contextId, payload.attempt)
 
-    // Spawn once per attempt. Activity-memoized; the engine activity
-    // record IS the durable spawn evidence.
+    // Get-or-create the live process. Activity-memoized per execution; the
+    // adapter dedupes the spawn per contextId (keyed singleton).
     yield* Activity.make({
-      name: `unified.session.spawn/${key}`,
+      name: `unified.session.spawn/${payload.contextId}`,
       success: Schema.Void,
       execute: adapter.startOrAttach(payload.contextId, payload.attempt).pipe(
         Effect.orDie,
       ),
     })
 
-    // Iterate own signals. Each signal payload is decoded to a typed
-    // `SessionInputPayload` envelope at consume; the body forwards
-    // the envelope unchanged to the adapter.
-    let consumed = 0
-    let reachedTerminal = false
-    while (!reachedTerminal) {
-      const rows = yield* readSignalsFor(signals, executionId).pipe(Effect.orDie)
-      if (consumed >= rows.length) {
-        yield* Effect.annotateCurrentSpan({
-          "firegrid.unified.body.decision": "suspend",
-          "firegrid.unified.cursor": consumed,
-        })
-        return yield* Workflow.suspend(instance)
-      }
-      while (consumed < rows.length && !reachedTerminal) {
-        const row = rows[consumed]!
-        const cursor = consumed
-        const input: SessionInputPayload = yield* decodeSessionInputPayloadJson(row.payloadJson).pipe(
-          Effect.mapError((e: ParseResult.ParseError) =>
-            new Error(`malformed session input at cursor ${cursor}: ${e.message}`),
-          ),
-          Effect.orDie,
-        )
-        if (input.kind === "terminal") {
-          reachedTerminal = true
-          consumed += 1
-          break
-        }
-        yield* Activity.make({
-          name: `unified.session.send/${key}/${cursor}`,
-          success: Schema.Void,
-          execute: adapter.send(payload.contextId, payload.attempt, input).pipe(
-            Effect.orDie,
-          ),
-        })
-        consumed += 1
+    if (payload.input.kind === "terminal") {
+      // Terminal cleanup: release the adapter's host-level process registry
+      // entry. Activity-memoized; runs exactly once for this terminal input.
+      yield* Activity.make({
+        name: `unified.session.deregister/${payload.contextId}`,
+        success: Schema.Void,
+        execute: adapter.deregister(payload.contextId).pipe(Effect.orDie),
+      })
+      return {
+        contextId: payload.contextId,
+        inputKey: payload.inputKey,
+        kind: payload.input.kind,
+        reachedTerminal: true,
       }
     }
 
-    // Terminal cleanup: release the adapter's host-level process registry
-    // entry. Activity-memoized; runs exactly once at attempt completion.
+    // Forward the input envelope to the adapter. Activity-memoized; runs
+    // exactly once even across replay.
     yield* Activity.make({
-      name: `unified.session.deregister/${payload.contextId}`,
+      name: `unified.session.send/${payload.contextId}/${payload.inputKey}`,
       success: Schema.Void,
-      execute: adapter.deregister(payload.contextId).pipe(Effect.orDie),
+      execute: adapter.send(payload.contextId, payload.attempt, payload.input).pipe(
+        Effect.orDie,
+      ),
     })
 
     return {
       contextId: payload.contextId,
-      attempt: payload.attempt,
-      inputsConsumed: consumed,
-      reachedTerminal,
+      inputKey: payload.inputKey,
+      kind: payload.input.kind,
+      reachedTerminal: false,
     }
   }).pipe(
     Effect.withSpan("firegrid.unified.session.body", {
@@ -165,24 +123,12 @@ const body = (
       attributes: {
         "firegrid.context.id": payload.contextId,
         "firegrid.unified.attempt": payload.attempt,
+        "firegrid.input.idempotency_key": payload.inputKey,
+        "firegrid.unified.input.kind": payload.input.kind,
       },
     }),
     Effect.orDie,
   )
 
-export interface RuntimeContextSessionWorkflowRegistration {
-  readonly workflowName: typeof RuntimeContextSessionWorkflow.name
-}
-
-export class RuntimeContextSessionWorkflowRegistered extends Context.Tag(
-  "firegrid/unified/RuntimeContextSessionWorkflowRegistered",
-)<RuntimeContextSessionWorkflowRegistered, RuntimeContextSessionWorkflowRegistration>() {}
-
-export const RuntimeContextSessionWorkflowLayer = Layer.effect(
-  RuntimeContextSessionWorkflowRegistered,
-  Effect.gen(function*() {
-    const engine = yield* WorkflowEngine.WorkflowEngine
-    yield* engine.register(RuntimeContextSessionWorkflow, body)
-    return { workflowName: RuntimeContextSessionWorkflow.name }
-  }),
-)
+export const RuntimeContextSessionWorkflowLayer =
+  RuntimeContextSessionWorkflow.toLayer(body)

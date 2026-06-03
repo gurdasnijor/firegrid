@@ -70,21 +70,12 @@ import type {
   ContextResolverTag,
 } from "../tables/codec-adapter-tags.ts"
 import { buildCurrentHostSessionLayer } from "./host-identity.ts"
-import {
-  armSession,
-  recoverPendingSignals,
-  SignalTable,
-  WorkflowEngineTable,
-} from "./signal.ts"
 import { UnifiedTable } from "./tables.ts"
 import {
   UnifiedSignalingChannelBindingsLive,
 } from "./channel-bindings.ts"
 import {
-  decodeRuntimeContextSessionPayloadJson,
-  RuntimeContextSessionWorkflow,
   RuntimeContextSessionWorkflowLayer,
-  RuntimeContextSessionWorkflowRegistered,
 } from "./subscribers/runtime-context.ts"
 import {
   buildPermissionRoundtripLayer,
@@ -236,16 +227,6 @@ const tableLayer = (options: FiregridRuntimeSpec) =>
         options.headers,
       ),
     }),
-    SignalTable.layer({
-      streamOptions: {
-        url: durableStreamUrl(
-          options.durableStreamsBaseUrl,
-          `${options.namespace}.firegrid.signals`,
-        ),
-        contentType: "application/json",
-        ...(options.headers === undefined ? {} : { headers: options.headers }),
-      },
-    }),
     UnifiedTable.layer({
       streamOptions: {
         url: durableStreamUrl(
@@ -273,50 +254,16 @@ const runtimeProvideFloor = (spec: FiregridRuntimeSpec) =>
     FiregridRuntimeContextMcpBaseUrlLive,
   )
 
-const RuntimeContextSessionSignalRecoveryLive = Layer.scopedDiscard(
-  Effect.gen(function*() {
-    yield* RuntimeContextSessionWorkflowRegistered
-    const signals = yield* SignalTable
-    const engineTable = yield* WorkflowEngineTable
-    const result = yield* recoverPendingSignals({
-      signals,
-      engineTable,
-      catalog: {
-        get: (name) =>
-          name === RuntimeContextSessionWorkflow.name
-            ? {
-              name: RuntimeContextSessionWorkflow.name,
-              resume: RuntimeContextSessionWorkflow.resume,
-              armFromSignal: (row, table) =>
-                Effect.gen(function*() {
-                  if (row.workflowPayloadJson === undefined) {
-                    yield* RuntimeContextSessionWorkflow.resume(row.executionId)
-                    return
-                  }
-                  const payload = yield* decodeRuntimeContextSessionPayloadJson(row.workflowPayloadJson)
-                  yield* armSession({
-                    engineTable: table,
-                    workflow: RuntimeContextSessionWorkflow,
-                    executionId: row.executionId,
-                    payload,
-                  })
-                }),
-            }
-            : undefined,
-      },
-    })
-    yield* Effect.logInfo("firegrid unified signal recovery complete").pipe(
-      Effect.annotateLogs({
-        replayed: result.replayed,
-        skipped: result.skipped,
-      }),
-    )
-  }).pipe(
-    Effect.withSpan("firegrid.unified.host.recover_pending_signals", {
-      kind: "internal",
-    }),
-  ),
-)
+// tf-k00i: the parked-body signal-recovery sweep is GONE — there is no bespoke
+// `SignalTable` mailbox to recover, and the per-event handler creates its
+// execution per input via `execute({discard})` (no input-before-start arm to
+// replay). The await-once sibling relays (permission/tool/webhook/peer) now use
+// `@effect/workflow` `DurableDeferred`, whose result rows the engine persists
+// (`deferredResult`/`deferredDone`). TODO(tf-k00i follow-up): the engine's
+// startup recovery (`recoverPendingClockWakeups`, engine-runtime.ts:149) does
+// not yet KIND-AWARE-recover non-clock deferred-waits across a host restart;
+// the in-process real-path sims do not exercise host-restart recovery, so this
+// is left as a scoped engine follow-up rather than gold-plated here.
 
 /**
  * The production composition factory. Returns a single Layer that
@@ -353,18 +300,16 @@ export const FiregridRuntime = (
         buildWebhookFactObserverLayer(),
         buildPeerEventObserverLayer(),
       )
+      // `UnifiedSignalingChannelBindingsLive` is composed via `provideMerge`
+      // (not as a parallel `Layer.mergeAll` sibling) so the els does not flag a
+      // parallel cross-dependency on the input-delivery channel Tags; all Tags
+      // remain provided outward.
       const channelsAndObserver = Layer.mergeAll(
         HostControlChannelBindingsLive,
-        UnifiedSignalingChannelBindingsLive,
         JournalObserverLive,
-      )
-      const workflowLayersWithRecovery = RuntimeContextSessionSignalRecoveryLive.pipe(
-        Layer.provideMerge(workflowLayers),
-      )
-      return Layer.mergeAll(
-        workflowLayersWithRecovery,
-        channelsAndObserver,
-      ).pipe(
+      ).pipe(Layer.provideMerge(UnifiedSignalingChannelBindingsLive))
+      return workflowLayers.pipe(
+        Layer.provideMerge(channelsAndObserver),
         Layer.provideMerge(runtimeProvideFloor(spec)),
         Layer.provideMerge(hostSessionLayer),
       )
@@ -390,7 +335,6 @@ export {
   DurableStreamsWorkflowEngine,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  SignalTable,
   UnifiedTable,
 }
 export type { ToolExecutor }

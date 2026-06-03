@@ -10,7 +10,7 @@ interface RecorderAdapterState {
   readonly deregistrations: ReadonlyArray<string>
 }
 
-export interface RecorderAdapter {
+interface RecorderAdapter {
   readonly service: RuntimeContextSessionAdapterService
   readonly snapshot: Effect.Effect<RecorderAdapterState>
 }

@@ -38,7 +38,6 @@ import {
   FiregridRuntimeContextMcpBaseUrlLive,
   ProductionCodecAdapterLive,
   RuntimeContextSessionAdapter,
-  SignalTable,
   UnifiedTable,
   type FiregridRuntimeContextMcpBaseUrl,
   type RuntimeContextSessionAdapterService,
@@ -72,14 +71,6 @@ const durableStreamsFloor = (
           baseUrl: spec.durableStreamsBaseUrl,
           namespace: spec.namespace,
         }),
-      ),
-    }),
-    SignalTable.layer({
-      streamOptions: jsonStreamOptions(
-        durableStreamUrl(
-          spec.durableStreamsBaseUrl,
-          `${spec.namespace}.firegrid.signals`,
-        ),
       ),
     }),
     UnifiedTable.layer({

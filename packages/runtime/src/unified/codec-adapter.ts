@@ -404,12 +404,22 @@ export const ProductionCodecAdapterLive: Layer.Layer<
     const runtimeContextMcpBaseUrl = yield* FiregridRuntimeContextMcpBaseUrl
 
     const registry = yield* Ref.make<Map<string, RegistryEntry>>(new Map())
+    // tf-k00i: the RuntimeContext lifecycle is a per-`contextId` SINGLETON, but
+    // under the per-event handler shape N concurrent executions for one session
+    // each call `startOrAttach`. The original `Ref.get`→check→spawn→`Ref.update`
+    // is a TOCTOU (the c71h/tf-ogoj sim observed N concurrent calls spawn N
+    // `claude-agent` processes for one logical session). Serialize the
+    // get-or-create with a mutex so exactly one process is spawned per context;
+    // once registered, every later call sees `existing` and returns immediately.
+    // (A coarse global mutex; a per-`contextId` reservation is a future refinement
+    // if cross-context spawn concurrency ever matters.)
+    const spawnMutex = yield* Effect.makeSemaphore(1)
 
     const startOrAttach = (
       contextId: string,
       attempt: number,
     ): Effect.Effect<void, AdapterError> =>
-      Effect.gen(function*() {
+      spawnMutex.withPermits(1)(Effect.gen(function*() {
         const existing = yield* Ref.get(registry).pipe(
           Effect.map((m) => m.get(contextId)),
         )
@@ -438,7 +448,7 @@ export const ProductionCodecAdapterLive: Layer.Layer<
           next.set(contextId, entry)
           return next
         })
-      }).pipe(
+      })).pipe(
         Effect.withSpan("firegrid.unified.adapter.start_or_attach", {
           kind: "internal",
           attributes: {

@@ -41,13 +41,11 @@ import {
   PermissionRoundtripWorkflow,
   ToolDispatchWorkflow,
 } from "./subscribers/permission-and-tool.ts"
-import { type SignalTable } from "./signal.ts"
 import { type UnifiedTable } from "./tables.ts"
 import { type RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 
 type CapturedServices =
   | WorkflowEngine.WorkflowEngine
-  | SignalTable
   | UnifiedTable
 
 const triggerForObservation = (
