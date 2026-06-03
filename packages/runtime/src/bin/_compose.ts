@@ -17,6 +17,7 @@ import {
   runtimeAgentOutputObservationFromRow,
 } from "@firegrid/protocol/session-facade"
 import { Data, Effect, Layer, Logger, Stream } from "effect"
+import * as DevTools from "@effect/experimental/DevTools"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import path from "node:path"
 import {
@@ -106,6 +107,15 @@ const otelLayer = (
   return Layer.empty
 }
 
+// Dev-only: stream this process's Effect spans to the VS Code "Effect Dev Tools"
+// Tracer panel (ws://localhost:34437, the panel's default). Off unless
+// FIREGRID_EFFECT_DEVTOOLS is set. `DevTools.layer()` is a `Layer<never>` that
+// installs the Effect Tracer (Node 22+ provides the global WebSocket it needs);
+// it does not add a context requirement. Use it INSTEAD of an active OTel
+// exporter — both own the single Tracer slot — and only with the panel listening.
+const devToolsLayer = (): Layer.Layer<never> =>
+  nonEmptyEnv("FIREGRID_EFFECT_DEVTOOLS") !== undefined ? DevTools.layer() : Layer.empty
+
 const envPolicyLayer = (
   authorizedBindings: ReadonlyArray<LaunchAuthorizedBinding> | undefined,
 ) =>
@@ -179,6 +189,7 @@ export const FiregridCliCompositionLive = (
         Layer.provideMerge(host),
       )
       return services.pipe(
+        Layer.provideMerge(devToolsLayer()),
         Layer.provideMerge(otelLayer(options)),
         Layer.provide(Logger.remove(Logger.defaultLogger)),
         // The composition's only errors are infra-acquisition defects, surfaced
