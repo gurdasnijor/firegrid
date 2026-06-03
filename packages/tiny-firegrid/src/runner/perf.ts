@@ -13,7 +13,7 @@ import {
   type SpanRecord,
 } from "./trace.ts"
 
-export interface PerfOptions {
+interface PerfOptions {
   readonly top: number
   readonly idleThresholdMs: number
   readonly findingDraft: boolean
@@ -41,7 +41,7 @@ interface IdleGap {
   readonly durationNs: bigint
 }
 
-export interface PerfReport {
+interface PerfReport {
   readonly runId: string
   readonly tracePath: string
   readonly spanCount: number
@@ -207,7 +207,7 @@ const idleGaps = (
   return gaps
 }
 
-export const analyzePerf = (
+const analyzePerf = (
   spans: ReadonlyArray<SpanRecord>,
   options: Pick<PerfOptions, "top" | "idleThresholdMs" | "findingThresholdMs">,
   runId: string,
@@ -307,7 +307,7 @@ interface PerfOutput {
   readonly stderr: string | undefined
 }
 
-export const formatPerfOutput = (
+const formatPerfOutput = (
   report: PerfReport,
   options: Pick<PerfOptions, "findingDraft" | "findingThresholdMs">,
 ): PerfOutput => ({

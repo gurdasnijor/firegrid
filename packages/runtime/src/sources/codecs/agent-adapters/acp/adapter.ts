@@ -30,7 +30,7 @@ import {
 const MODULE = "AcpAgentAdapter"
 
 // firegrid-effect-ai-native-agents.ACP_ADAPTER.1
-export const AcpAdapterCapabilities = {
+const AcpAdapterCapabilities = {
   streamingText: true,
   tools: false,
   multiTurn: true,
@@ -156,7 +156,7 @@ const aggregateStreamPartsForGenerateText = (
   return out
 }
 
-export interface AcpAgentAdapterOptions {
+interface AcpAgentAdapterOptions {
   /**
    * Duplex byte stream wired to the ACP-speaking process or remote
    * transport. The adapter does not own resource provisioning;

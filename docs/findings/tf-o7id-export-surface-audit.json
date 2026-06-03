@@ -1,0 +1,501 @@
+{
+  "tool": "scripts/package-exports-audit.ts",
+  "bead": "tf-o7id",
+  "note": "Machine-generated. UNUSED = 0 external importers.",
+  "summary": [
+    {
+      "pkg": "@firegrid/protocol",
+      "total": 13,
+      "used": 12,
+      "unused": 1
+    },
+    {
+      "pkg": "@firegrid/runtime",
+      "total": 8,
+      "used": 7,
+      "unused": 1
+    },
+    {
+      "pkg": "@firegrid/observability",
+      "total": 2,
+      "used": 1,
+      "unused": 1
+    },
+    {
+      "pkg": "@firegrid/host-sdk",
+      "total": 1,
+      "used": 0,
+      "unused": 1
+    },
+    {
+      "pkg": "@firegrid/tiny-firegrid",
+      "total": 1,
+      "used": 0,
+      "unused": 1
+    },
+    {
+      "pkg": "@firegrid/client-sdk",
+      "total": 3,
+      "used": 3,
+      "unused": 0
+    },
+    {
+      "pkg": "effect-durable-operators",
+      "total": 1,
+      "used": 1,
+      "unused": 0
+    },
+    {
+      "pkg": "effect-durable-streams",
+      "total": 1,
+      "used": 1,
+      "unused": 0
+    }
+  ],
+  "subpaths": [
+    {
+      "pkg": "@firegrid/client-sdk",
+      "subpath": ".",
+      "specifier": "@firegrid/client-sdk",
+      "target": "packages/client-sdk/src/index.ts",
+      "importers": [
+        "packages/runtime/test/misuse-resistance-footguns.test.ts",
+        "packages/runtime/test/misuse-resistance-positive-lifecycle.test.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/client-sdk",
+      "subpath": "./firegrid",
+      "specifier": "@firegrid/client-sdk/firegrid",
+      "target": "packages/client-sdk/src/firegrid.ts",
+      "importers": [
+        "packages/tiny-firegrid/src/runner/runtime.ts",
+        "packages/tiny-firegrid/src/simulations/channel-completion-contracts/driver.ts",
+        "packages/tiny-firegrid/src/simulations/child-output-existing-channel-router/driver.ts",
+        "packages/tiny-firegrid/src/simulations/codex-acp-tool-calls/driver.ts",
+        "packages/tiny-firegrid/src/simulations/comp-derisk-ordering/driver.ts",
+        "packages/tiny-firegrid/src/simulations/comp-sim-idempotent/driver.ts",
+        "packages/tiny-firegrid/src/simulations/control-plane-cancel-close/driver.ts",
+        "packages/tiny-firegrid/src/simulations/cross-agent-delegation/driver.ts",
+        "packages/tiny-firegrid/src/simulations/factory-capstone/driver.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-client-sdk-gateway/driver.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-client-sdk-observations/driver.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/driver.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/driver.ts",
+        "packages/tiny-firegrid/src/simulations/natural-exit-terminal/driver.ts",
+        "packages/tiny-firegrid/src/simulations/op-registry-prompt-keystone/driver.ts",
+        "packages/tiny-firegrid/src/simulations/shape-c-terminal-ordering/driver.ts",
+        "packages/tiny-firegrid/src/simulations/unified-kernel-validation/driver.ts",
+        "packages/tiny-firegrid/src/simulations/verified-webhook-wait/driver.ts",
+        "packages/tiny-firegrid/src/types.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/client-sdk",
+      "subpath": "./mcp",
+      "specifier": "@firegrid/client-sdk/mcp",
+      "target": "packages/client-sdk/src/mcp.ts",
+      "importers": [
+        "packages/tiny-firegrid/src/simulations/mcp-client-sdk-gateway/driver.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-client-sdk-observations/driver.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/host-sdk",
+      "subpath": ".",
+      "specifier": "@firegrid/host-sdk",
+      "target": "packages/host-sdk/src/index.ts",
+      "importers": []
+    },
+    {
+      "pkg": "@firegrid/observability",
+      "subpath": ".",
+      "specifier": "@firegrid/observability",
+      "target": "packages/observability/src/index.ts",
+      "importers": []
+    },
+    {
+      "pkg": "@firegrid/observability",
+      "subpath": "./node",
+      "specifier": "@firegrid/observability/node",
+      "target": "packages/observability/src/node.ts",
+      "importers": [
+        "packages/runtime/src/bin/_compose.ts",
+        "packages/tiny-firegrid/src/runner/heartbeat.ts",
+        "packages/tiny-firegrid/src/runner/telemetry.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": ".",
+      "specifier": "@firegrid/protocol",
+      "target": "packages/protocol/src/index.ts",
+      "importers": []
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./acp",
+      "specifier": "@firegrid/protocol/acp",
+      "target": "packages/protocol/src/acp/index.ts",
+      "importers": [
+        "packages/runtime/src/sources/codecs/acp/index.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./agent-output",
+      "specifier": "@firegrid/protocol/agent-output",
+      "target": "packages/protocol/src/agent-output/index.ts",
+      "importers": [
+        "packages/runtime/src/events/contract.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./agent-tools",
+      "specifier": "@firegrid/protocol/agent-tools",
+      "target": "packages/protocol/src/agent-tools/index.ts",
+      "importers": [
+        "packages/client-sdk/src/firegrid.ts",
+        "packages/client-sdk/src/index.ts",
+        "packages/client-sdk/src/mcp.ts",
+        "packages/client-sdk/src/permission-auto-approve.ts",
+        "packages/client-sdk/test/firegrid.projection.test.ts",
+        "packages/runtime/src/unified/channel-bindings.ts",
+        "packages/runtime/src/unified/mcp-host/task-projection.ts",
+        "packages/runtime/src/unified/mcp-host/tool-dispatch.ts",
+        "packages/runtime/src/unified/mcp-host/toolkit-layer.ts",
+        "packages/runtime/src/unified/mcp-host/toolkit.ts",
+        "packages/runtime/test/mcp-host/mcp-tool-dispatch-sleep.test.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./channels",
+      "specifier": "@firegrid/protocol/channels",
+      "target": "packages/protocol/src/channels/index.ts",
+      "importers": [
+        "packages/client-sdk/src/firegrid.ts",
+        "packages/runtime/src/bin/_compose.ts",
+        "packages/runtime/src/bin/run.ts",
+        "packages/runtime/src/channels/host-control.ts",
+        "packages/runtime/src/channels/host-plane-router.ts",
+        "packages/runtime/src/channels/router.ts",
+        "packages/runtime/src/channels/router/live.ts",
+        "packages/runtime/src/channels/session-agent-output-route.ts",
+        "packages/runtime/src/channels/session-agent-output.ts",
+        "packages/runtime/src/channels/session-log.ts",
+        "packages/runtime/src/channels/session-self/live.ts",
+        "packages/runtime/src/channels/verified-webhook/source-live.ts",
+        "packages/runtime/src/sources/codecs/acp/stdio-edge.ts",
+        "packages/runtime/src/unified/channel-bindings.ts",
+        "packages/runtime/src/unified/mcp-host/mcp-host.ts",
+        "packages/runtime/src/unified/mcp-host/task-projection.ts",
+        "packages/runtime/src/unified/mcp-host/tool-dispatch.ts",
+        "packages/runtime/test/channels/session-agent-output-route.integration.test.ts",
+        "packages/runtime/test/channels/session-agent-output-route.test.ts",
+        "packages/runtime/test/channels/session-log.test.ts",
+        "packages/runtime/test/channels/session-self-runtime-router.test.ts",
+        "packages/runtime/test/mcp-host/mcp-tool-dispatch-sleep.test.ts",
+        "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
+        "packages/tiny-firegrid/src/simulations/op-registry-prompt-keystone/host.ts",
+        "packages/tiny-firegrid/src/simulations/shape-c-terminal-ordering/host.ts",
+        "packages/tiny-firegrid/src/simulations/verified-webhook-wait/host.ts",
+        "packages/tiny-firegrid/src/types.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./channels/router",
+      "specifier": "@firegrid/protocol/channels/router",
+      "target": "packages/protocol/src/channels/router.ts",
+      "importers": [
+        "packages/client-sdk/src/firegrid.ts",
+        "packages/runtime/src/channels/router.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./launch",
+      "specifier": "@firegrid/protocol/launch",
+      "target": "packages/protocol/src/launch/index.ts",
+      "importers": [
+        "packages/client-sdk/src/firegrid.ts",
+        "packages/client-sdk/src/mcp.ts",
+        "packages/runtime/src/bin/_agent-cli.ts",
+        "packages/runtime/src/bin/_compose.ts",
+        "packages/runtime/src/channels/host-control.ts",
+        "packages/runtime/src/channels/session-agent-output.ts",
+        "packages/runtime/src/channels/session-self/live.ts",
+        "packages/runtime/src/sources/codecs/acp/stdio-edge.ts",
+        "packages/runtime/src/sources/codecs/agent-adapters/AgentAdapter.ts",
+        "packages/runtime/src/sources/sandbox/secrets.ts",
+        "packages/runtime/src/tables/codec-adapter-providers.ts",
+        "packages/runtime/src/tables/codec-adapter-tags.ts",
+        "packages/runtime/src/tables/output-table-layer.ts",
+        "packages/runtime/src/tables/runtime-output.ts",
+        "packages/runtime/src/unified/codec-adapter.ts",
+        "packages/runtime/src/unified/host-identity.ts",
+        "packages/runtime/src/unified/host.ts",
+        "packages/runtime/src/unified/mcp-host/mcp-host.ts",
+        "packages/runtime/src/unified/mcp-host/task-projection.ts",
+        "packages/runtime/src/unified/mcp-host/tool-dispatch.ts",
+        "packages/runtime/src/unified/mcp-host/toolkit.ts",
+        "packages/runtime/test/acp-edge-launchable.test.ts",
+        "packages/runtime/test/channels/session-agent-output-route.integration.test.ts",
+        "packages/runtime/test/channels/session-self-runtime-router.test.ts",
+        "packages/runtime/test/channels/verified-webhook/source-live.test.ts",
+        "packages/runtime/test/mcp-host/mcp-host-http-acceptance.test.ts",
+        "packages/runtime/test/mcp-host/mcp-tool-dispatch-sleep.test.ts",
+        "packages/runtime/test/mcp-host/runtime-context-mcp-marker.test.ts",
+        "packages/runtime/test/sources/codecs/agent-adapters/index.test.ts",
+        "packages/runtime/test/unified/cross-attempt-output-flush.test.ts",
+        "packages/runtime/test/unified/firegrid-runtime-composition-compile-spike.test.ts",
+        "packages/runtime/test/unified/tf-cxwu-1-modularity-compile-spike.test.ts",
+        "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
+        "packages/tiny-firegrid/src/simulations/verified-webhook-wait/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./observations",
+      "specifier": "@firegrid/protocol/observations",
+      "target": "packages/protocol/src/observations/index.ts",
+      "importers": [
+        "packages/runtime/test/channels/session-agent-output-route.test.ts",
+        "packages/runtime/test/channels/session-self-runtime-router.test.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./otel",
+      "specifier": "@firegrid/protocol/otel",
+      "target": "packages/protocol/src/otel/index.ts",
+      "importers": [
+        "packages/runtime/src/engine/internal/engine-runtime.ts",
+        "packages/runtime/src/engine/internal/table.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./projection",
+      "specifier": "@firegrid/protocol/projection",
+      "target": "packages/protocol/src/projection/index.ts",
+      "importers": [
+        "packages/client-sdk/src/firegrid.ts",
+        "packages/client-sdk/test/firegrid.projection.test.ts",
+        "packages/runtime/src/unified/mcp-host/toolkit.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
+        "packages/tiny-firegrid/src/simulations/op-registry-prompt-keystone/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./runtime-ingress",
+      "specifier": "@firegrid/protocol/runtime-ingress",
+      "target": "packages/protocol/src/runtime-ingress/index.ts",
+      "importers": [
+        "packages/client-sdk/src/firegrid.ts",
+        "packages/client-sdk/src/index.ts",
+        "packages/runtime/src/sources/codecs/acp/stdio-edge.ts",
+        "packages/runtime/test/mcp-host/mcp-tool-dispatch-sleep.test.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./session-facade",
+      "specifier": "@firegrid/protocol/session-facade",
+      "target": "packages/protocol/src/session-facade/index.ts",
+      "importers": [
+        "packages/client-sdk/src/firegrid.ts",
+        "packages/client-sdk/src/index.ts",
+        "packages/client-sdk/src/mcp.ts",
+        "packages/client-sdk/src/permission-auto-approve.ts",
+        "packages/client-sdk/test/firegrid.projection.test.ts",
+        "packages/runtime/src/bin/_compose.ts",
+        "packages/runtime/src/bin/run.ts",
+        "packages/runtime/src/channels/host-plane-router.ts",
+        "packages/runtime/src/channels/session-agent-output-route.ts",
+        "packages/runtime/src/channels/session-agent-output.ts",
+        "packages/runtime/src/events/output.ts",
+        "packages/runtime/src/sources/codecs/acp/stdio-edge.ts",
+        "packages/runtime/src/unified/codec-adapter.ts",
+        "packages/runtime/src/unified/mcp-host/task-projection.ts",
+        "packages/runtime/src/unified/observers.ts",
+        "packages/runtime/test/channels/session-agent-output-route.test.ts",
+        "packages/runtime/test/channels/session-self-runtime-router.test.ts",
+        "packages/runtime/test/mcp-host/mcp-tool-dispatch-sleep.test.ts",
+        "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/protocol.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/protocol",
+      "subpath": "./verified-webhook",
+      "specifier": "@firegrid/protocol/verified-webhook",
+      "target": "packages/protocol/src/verified-webhook/index.ts",
+      "importers": [
+        "packages/runtime/src/verified-webhook-ingest/adapter.ts",
+        "packages/runtime/src/verified-webhook-ingest/keys.ts",
+        "packages/runtime/src/verified-webhook-ingest/table.ts",
+        "packages/runtime/test/verified-webhook-ingest/adapter.test.ts",
+        "packages/tiny-firegrid/src/simulations/verified-webhook-wait/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/runtime",
+      "subpath": ".",
+      "specifier": "@firegrid/runtime",
+      "target": "packages/runtime/src/index.ts",
+      "importers": []
+    },
+    {
+      "pkg": "@firegrid/runtime",
+      "subpath": "./channels",
+      "specifier": "@firegrid/runtime/channels",
+      "target": "packages/runtime/src/channels/index.ts",
+      "importers": [
+        "packages/tiny-firegrid/src/simulations/cross-agent-delegation/host.ts",
+        "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
+        "packages/tiny-firegrid/src/simulations/shape-c-terminal-ordering/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/runtime",
+      "subpath": "./events",
+      "specifier": "@firegrid/runtime/events",
+      "target": "packages/runtime/src/events/index.ts",
+      "importers": [
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
+        "packages/tiny-firegrid/src/simulations/op-registry-prompt-keystone/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/runtime",
+      "subpath": "./sources/codecs/acp/stdio-edge",
+      "specifier": "@firegrid/runtime/sources/codecs/acp/stdio-edge",
+      "target": "packages/runtime/src/sources/codecs/acp/stdio-edge.ts",
+      "importers": [
+        "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/runtime",
+      "subpath": "./sources/sandbox",
+      "specifier": "@firegrid/runtime/sources/sandbox",
+      "target": "packages/runtime/src/sources/sandbox/index.ts",
+      "importers": [
+        "packages/tiny-firegrid/src/simulations/codex-acp-tool-calls/host.ts",
+        "packages/tiny-firegrid/src/simulations/cross-agent-delegation/host.ts",
+        "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
+        "packages/tiny-firegrid/src/simulations/op-registry-prompt-keystone/host.ts",
+        "packages/tiny-firegrid/src/simulations/shape-c-terminal-ordering/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/runtime",
+      "subpath": "./streams",
+      "specifier": "@firegrid/runtime/streams",
+      "target": "packages/runtime/src/channels/observation-streams/index.ts",
+      "importers": [
+        "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/runtime",
+      "subpath": "./unified",
+      "specifier": "@firegrid/runtime/unified",
+      "target": "packages/runtime/src/unified/index.ts",
+      "importers": [
+        "packages/host-sdk/src/index.ts",
+        "packages/tiny-firegrid/src/simulations/channel-completion-contracts/host.ts",
+        "packages/tiny-firegrid/src/simulations/child-output-existing-channel-router/host.ts",
+        "packages/tiny-firegrid/src/simulations/codex-acp-tool-calls/host.ts",
+        "packages/tiny-firegrid/src/simulations/comp-derisk-ordering/host.ts",
+        "packages/tiny-firegrid/src/simulations/comp-sim-idempotent/host.ts",
+        "packages/tiny-firegrid/src/simulations/control-plane-cancel-close/host.ts",
+        "packages/tiny-firegrid/src/simulations/cross-agent-delegation/host.ts",
+        "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
+        "packages/tiny-firegrid/src/simulations/natural-exit-terminal/host.ts",
+        "packages/tiny-firegrid/src/simulations/op-registry-prompt-keystone/host.ts",
+        "packages/tiny-firegrid/src/simulations/shape-c-terminal-ordering/host.ts",
+        "packages/tiny-firegrid/src/simulations/unified-kernel-validation/host.ts",
+        "packages/tiny-firegrid/src/simulations/verified-webhook-wait/host.ts",
+        "packages/tiny-firegrid/src/types.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/runtime",
+      "subpath": "./verified-webhook-ingest",
+      "specifier": "@firegrid/runtime/verified-webhook-ingest",
+      "target": "packages/runtime/src/verified-webhook-ingest/index.ts",
+      "importers": [
+        "packages/tiny-firegrid/src/simulations/verified-webhook-wait/host.ts"
+      ]
+    },
+    {
+      "pkg": "@firegrid/tiny-firegrid",
+      "subpath": ".",
+      "specifier": "@firegrid/tiny-firegrid",
+      "target": "packages/tiny-firegrid/src/types.ts",
+      "importers": []
+    },
+    {
+      "pkg": "effect-durable-operators",
+      "subpath": ".",
+      "specifier": "effect-durable-operators",
+      "target": "packages/effect-durable-operators/src/index.ts",
+      "importers": [
+        "packages/protocol/src/channels/session-log.ts",
+        "packages/protocol/src/index.ts",
+        "packages/protocol/src/launch/control-request.ts",
+        "packages/protocol/src/launch/durable-streams.ts",
+        "packages/protocol/src/launch/host-context-authority.ts",
+        "packages/protocol/src/launch/table.ts",
+        "packages/protocol/src/runtime-ingress/schema.ts",
+        "packages/runtime/src/channels/observation-streams/runtime-observation-streams.ts",
+        "packages/runtime/src/channels/session-agent-output.ts",
+        "packages/runtime/src/channels/session-log.ts",
+        "packages/runtime/src/engine/durable-streams-workflow-engine.ts",
+        "packages/runtime/src/engine/internal/engine-runtime.ts",
+        "packages/runtime/src/engine/internal/table.ts",
+        "packages/runtime/src/sources/sandbox/supervisor-commands.ts",
+        "packages/runtime/src/tables/output-table-layer.ts",
+        "packages/runtime/src/tables/runtime-output.ts",
+        "packages/runtime/src/unified/host.ts",
+        "packages/runtime/src/unified/tables.ts",
+        "packages/runtime/src/verified-webhook-ingest/table.ts",
+        "packages/runtime/test/channels/session-log.test.ts",
+        "packages/runtime/test/workflow-engine/DurableStreamsWorkflowEngine.test.ts",
+        "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
+        "packages/tiny-firegrid/src/simulations/verified-webhook-wait/host.ts"
+      ]
+    },
+    {
+      "pkg": "effect-durable-streams",
+      "subpath": ".",
+      "specifier": "effect-durable-streams",
+      "target": "packages/effect-durable-streams/src/index.ts",
+      "importers": [
+        "packages/effect-durable-operators/src/DurableTable.ts",
+        "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/wire.ts",
+        "packages/tiny-firegrid/src/simulations/verified-webhook-wait/host.ts"
+      ]
+    }
+  ]
+}

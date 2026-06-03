@@ -97,7 +97,7 @@ const summary = (spans: ReadonlyArray<SpanRecord>): string => {
     .join("  ")
 }
 
-export const formatShowOutput = (
+const formatShowOutput = (
   path: Path.Path,
   runDir: string,
   spans: ReadonlyArray<SpanRecord>,

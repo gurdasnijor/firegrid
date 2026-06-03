@@ -4,7 +4,6 @@
 
 import {
   useLiveQuery as useTanStackLiveQuery,
-  useLiveSuspenseQuery as useTanStackLiveSuspenseQuery,
 } from "@tanstack/react-db"
 import {
   Context,
@@ -24,7 +23,6 @@ import {
 
 export {
   useTanStackLiveQuery as useDurableLiveQuery,
-  useTanStackLiveSuspenseQuery as useDurableLiveSuspenseQuery,
 }
 
 declare const AnyDurableTableTagBrand: unique symbol
@@ -34,7 +32,7 @@ declare const AnyDurableTableTagBrand: unique symbol
  * `useDurableTable` re-narrows each lookup at the call site. This named
  * aggregate keeps that type erasure local to the React provider boundary.
  */
-export type AnyDurableTableTag =
+type AnyDurableTableTag =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- provider stores heterogeneous table tags and re-narrows per lookup
   & Context.Tag<any, any>
   & { readonly [AnyDurableTableTagBrand]?: never }
@@ -52,7 +50,7 @@ type DurableTableReactState =
     readonly error: unknown
   }
 
-export type DurableTableProviderStatus =
+type DurableTableProviderStatus =
   | {
     readonly status: "loading"
     readonly error?: undefined
@@ -77,7 +75,7 @@ const failReactHook = (error: unknown): never => {
   throw error
 }
 
-export interface DurableTableProviderProps<E> {
+interface DurableTableProviderProps<E> {
   readonly children?: ReactNode
   readonly fallback?: ReactNode
   // The provider stores services under tag keys and `useDurableTable`

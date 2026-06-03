@@ -16,7 +16,7 @@ const workerIdForOptions = (
 ): string =>
   options.workerId ?? `worker:${options.streamUrl}`
 
-export const make = (
+const make = (
   options: WorkflowEngineDurableStateOptions,
 ): Effect.Effect<
   WorkflowEngine.WorkflowEngine["Type"],

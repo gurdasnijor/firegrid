@@ -21,10 +21,6 @@
       "types": "./src/session-facade/index.ts",
       "default": "./src/session-facade/index.ts"
     },
-    "./operations": {
-      "types": "./src/operations/index.ts",
-      "default": "./src/operations/index.ts"
-    },
     "./projection": {
       "types": "./src/projection/index.ts",
       "default": "./src/projection/index.ts"
@@ -36,10 +32,6 @@
     "./agent-tools": {
       "types": "./src/agent-tools/index.ts",
       "default": "./src/agent-tools/index.ts"
-    },
-    "./channels/session-permission": {
-      "types": "./src/channels/session-permission.ts",
-      "default": "./src/channels/session-permission.ts"
     },
     "./agent-output": {
       "types": "./src/agent-output/index.ts",
@@ -53,10 +45,6 @@
       "types": "./src/channels/router.ts",
       "default": "./src/channels/router.ts"
     },
-    "./channels/human": {
-      "types": "./src/channels/human/index.ts",
-      "default": "./src/channels/human/index.ts"
-    },
     "./observations": {
       "types": "./src/observations/index.ts",
       "default": "./src/observations/index.ts"
@@ -68,10 +56,6 @@
     "./acp": {
       "types": "./src/acp/index.ts",
       "default": "./src/acp/index.ts"
-    },
-    "./mcp": {
-      "types": "./src/mcp/index.ts",
-      "default": "./src/mcp/index.ts"
     }
   },
   "files": [
