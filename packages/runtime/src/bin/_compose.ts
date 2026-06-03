@@ -123,7 +123,7 @@ const GlobalSessionAgentOutputChannelLive = Layer.effect(
           target: SessionAgentOutputChannelTarget,
           schema: RuntimeAgentOutputObservationSchema,
           sourceClass: "static-source",
-          stream: runtimeEventsForContextView(output, contextId).pipe(
+          stream: runtimeEventsForContextView(output.events.rows(), contextId).pipe(
             Stream.filterMap(runtimeAgentOutputObservationFromRow),
           ),
         }),
@@ -134,7 +134,7 @@ const GlobalSessionAgentOutputChannelLive = Layer.effect(
 const GlobalAcpContextRowsLive = Layer.effect(
   AcpContextRows,
   RuntimeControlPlaneTable.pipe(
-    Effect.map(control => runtimeContextsView(control)),
+    Effect.map(control => runtimeContextsView(control.contexts.rows())),
   ),
 )
 

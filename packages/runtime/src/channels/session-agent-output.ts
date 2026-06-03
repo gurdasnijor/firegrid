@@ -30,7 +30,7 @@ const runtimeAgentOutputRows = (
   table: RuntimeOutputTable["Type"],
   contextId: string,
 ) =>
-  runtimeEventsForContextView(table, contextId).pipe(
+  runtimeEventsForContextView(table.events.rows(), contextId).pipe(
     Stream.filterMap(runtimeAgentOutputObservationFromRow),
   )
 

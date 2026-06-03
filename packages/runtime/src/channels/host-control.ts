@@ -31,7 +31,7 @@ export const hostSessionLifecycleStream = (
   control: RuntimeControlPlaneTable["Type"],
   sessionId: string,
 ) =>
-  runtimeRunsForContextView(control, sessionId)
+  runtimeRunsForContextView(control.runs.rows(), sessionId)
 
 const insertHostBoundRuntimeContext = (options: {
   readonly control: RuntimeControlPlaneTable["Type"]

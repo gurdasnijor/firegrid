@@ -20,7 +20,9 @@ import {
   runtimeControlPlaneStreamUrl,
   runtimeContextsView,
   runtimeEventsForContextView,
+  runtimeLogsForContextView,
   runtimeOutputStreamUrl,
+  runtimeRunsForContextView,
   type PublicLaunchRequest,
   type PublicLaunchRuntimeIntent,
   type RuntimeContext,
@@ -951,7 +953,17 @@ const make = (
     const sessionCancelChannel = yield* SessionCancelChannel
     const sessionCloseChannel = yield* SessionCloseChannel
     const hostPermissionRespondChannel = yield* HostPermissionRespondChannel
-    const contextRows = runtimeContextsView(control)
+    const contextRows = runtimeContextsView(control.contexts.rows())
+    const collectReadRows = <A>(
+      rows: Stream.Stream<A, unknown>,
+    ): Effect.Effect<ReadonlyArray<A>, PreloadError> =>
+      rows.pipe(
+        Stream.runCollect,
+        Effect.map(chunk => Array.from(chunk)),
+        Effect.mapError(cause => new PreloadError({ cause })),
+      )
+    const currentContextRows = (): Stream.Stream<RuntimeContext, unknown> =>
+      runtimeContextsView(Stream.fromIterable(control.contexts.collection.toArray))
 
     /**
      * Resolve a context row from the namespace-scoped control plane.
@@ -962,7 +974,9 @@ const make = (
     const resolveContext = (
       contextId: string,
     ): Effect.Effect<RuntimeContext | undefined, PreloadError> =>
-      control.contexts.get(contextId).pipe(
+      currentContextRows().pipe(
+        Stream.filter(context => context.contextId === contextId),
+        Stream.runHead,
         Effect.map(Option.getOrUndefined),
         Effect.mapError(cause => new PreloadError({ cause })),
       )
@@ -976,10 +990,12 @@ const make = (
         // provably-absent id errors bounded rather than hanging.
         yield* awaitContextMaterializedForRead(contextId)
         const context = yield* resolveContext(contextId)
-        const runs = yield* control.runs.query((coll) =>
-          coll.toArray.filter(row => row.contextId === contextId)).pipe(
-            Effect.mapError(cause => new PreloadError({ cause })),
-          )
+        const runs = yield* collectReadRows(
+          runtimeRunsForContextView(
+            Stream.fromIterable(control.runs.collection.toArray),
+            contextId,
+          ),
+        )
 
         if (context === undefined) {
           return snapshotFromJournal(contextId, {
@@ -989,14 +1005,18 @@ const make = (
           })
         }
 
-        const events = yield* output.events.query((coll) =>
-          coll.toArray.filter(row => row.contextId === contextId)).pipe(
-            Effect.mapError(cause => new PreloadError({ cause })),
-          )
-        const logs = yield* output.logs.query((coll) =>
-          coll.toArray.filter(row => row.contextId === contextId)).pipe(
-            Effect.mapError(cause => new PreloadError({ cause })),
-          )
+        const events = yield* collectReadRows(
+          runtimeEventsForContextView(
+            Stream.fromIterable(output.events.collection.toArray),
+            contextId,
+          ),
+        )
+        const logs = yield* collectReadRows(
+          runtimeLogsForContextView(
+            Stream.fromIterable(output.logs.collection.toArray),
+            contextId,
+          ),
+        )
 
         return snapshotFromJournal(contextId, {
           context,
@@ -1040,7 +1060,7 @@ const make = (
             cause: new Error(`runtime context ${contextId} not found`),
           })
         }
-        const run = runtimeEventsForContextView(output, contextId).pipe(
+        const run = runtimeEventsForContextView(output.events.rows(), contextId).pipe(
           Stream.filterMap(runtimeAgentOutputObservationFromRow),
           Stream.filter(observation =>
             (input.afterSequence === undefined ||
@@ -1143,10 +1163,10 @@ const make = (
           Duration.millis(config.contextReflectionTimeoutMs),
         ).pipe(Effect.mapError(cause => new AppendError({ contextId, cause })))
         if (Option.isSome(ready)) return
-        const existing = yield* control.contexts.get(contextId).pipe(
-          Effect.mapError(cause => new AppendError({ contextId, cause })),
+        const existing = yield* resolveContext(contextId).pipe(
+          Effect.mapError(error => new AppendError({ contextId, cause: error.cause })),
         )
-        if (Option.isNone(existing)) {
+        if (existing === undefined) {
           return yield* new AppendError({
             contextId,
             cause: new ContextNotFound({ contextId }),
