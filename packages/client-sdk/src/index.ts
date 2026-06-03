@@ -35,6 +35,14 @@ export {
   type RuntimeContextSnapshot,
 } from "./firegrid.ts"
 export {
+  FiregridMcpClientError,
+  makeFiregridMcpClient,
+  type FiregridMcpClient,
+  type FiregridMcpClientOptions,
+  type FiregridMcpSessionHandle,
+  type FiregridMcpTask,
+} from "./mcp.ts"
+export {
   FiregridClientOperations,
   type PermissionRespondInput,
   type SessionCancelToolInput,
