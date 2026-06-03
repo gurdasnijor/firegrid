@@ -10,13 +10,18 @@ service, gated locally by `pnpm preflight` and in CI by the workflow at
 pnpm preflight
 ```
 
-This is **the** canonical local ready-for-review gate (`tooling/src/preflight.ts`).
-It runs every gate in parallel over a weighted semaphore (heavy gates start
-first), keeps going after failures, and replays each failing gate's output in one
-pass. Gates:
+This is **the** canonical local ready-for-review gate. It is a single
+`turbo run … --continue --output-logs=errors-only` over every gate (tf-c3wb) —
+turbo owns the DAG, concurrency, keep-going, and per-gate caching; on failure it
+replays only the failing gates' logs. Gates:
 
-`test` · `typecheck` · `effect:diagnostics` · `lint` · `lint:dead` · `lint:dup` ·
+`test` · `typecheck` · `diagnostics` · `lint` · `lint:dead` · `lint:dup` ·
 `lint:deps` · `trace:seams:ukv`
+
+The slow gates (`test` / `typecheck` / `diagnostics`) are per-package turbo-cached,
+so unchanged re-runs skip them. `lint` / `lint:dead` scan the whole repo and the
+`trace` gate is a live sim, so all three are `cache: false` (never a stale
+false-green); `lint:dup` / `lint:deps` cache against declared inputs.
 
 `task-exit.sh` runs `pnpm preflight` and refuses to push on failure.
 
