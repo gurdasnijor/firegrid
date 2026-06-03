@@ -17,7 +17,7 @@
  *   - `SignalTable` — unified signal primitive backing store
  *   - `UnifiedTable` — UI-renderable row families (permissions etc.)
  *   - All `HostPromptChannel`/`SessionPromptChannel`/etc Tags via
- *     `UnifiedChannelBindingsLive` (overridable)
+ *     `UnifiedSignalingChannelBindingsLive` (overridable)
  *   - `WorkflowEngine` + the six workflow Lives
  *   - `JournalObserverLive` — daemon translating journal rows into
  *     sibling workflow executions

@@ -34,21 +34,20 @@ export {
   type FiregridMcpTask,
 } from "./mcp.ts"
 export {
-  FiregridClientOperations,
-  type PermissionRespondInput,
-  type SessionCancelToolInput,
-  type SessionCancelToolOutput,
-  type SessionCloseToolInput,
-  type SessionCloseToolOutput,
-  type SessionPromptToolInput,
-  type SessionPromptToolOutput,
-} from "./operations.ts"
-export {
   autoApproveSessionPermissions,
   type PermissionAutoApproveOptions,
   type PermissionAutoApprovePolicy,
   type PermissionAutoApproveSession,
 } from "./permission-auto-approve.ts"
+export type {
+  PermissionRespondInput,
+  SessionCancelToolInput,
+  SessionCancelToolOutput,
+  SessionCloseToolInput,
+  SessionCloseToolOutput,
+  SessionPromptToolInput,
+  SessionPromptToolOutput,
+} from "@firegrid/protocol/agent-tools"
 export type {
   PublicPromptRequest,
 } from "@firegrid/protocol/runtime-ingress"

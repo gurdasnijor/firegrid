@@ -39,7 +39,6 @@ builders.
 import {
   Firegrid,
   FiregridConfig,
-  FiregridClientOperations,
   FiregridLive,
   local,
 } from "@firegrid/client-sdk"
@@ -50,7 +49,6 @@ import {
 | `Firegrid` | Effect service tag for the client API. |
 | `FiregridConfig` | Config service for Durable Streams base URL, namespace, and optional protocol channel registrations. |
 | `FiregridLive` | Client service layer for host-composed apps that already provide the required protocol-backed capabilities. |
-| `FiregridClientOperations` | Protocol-backed operation catalog for client projections. Client decoders use these schema entries rather than a client-local contract or the runtime agent-tool projection. |
 | `local` | Helper constructors for local-process runtime intents. |
 
 The package does not export durable table tags or table-backed read layers.
@@ -100,7 +98,8 @@ RuntimeContext from a caller-owned external key through
 `HostSessionsCreateOrLoadChannel`, waits for agent output through normalized
 channel observations, and responds to permission
 requests through the host permission channel. Its inputs are decoded through
-protocol-owned session operation schemas exposed by `FiregridClientOperations`.
+protocol-owned schemas from `@firegrid/protocol/session-facade` and
+`@firegrid/protocol/agent-tools`.
 
 The public durable identity is `sessionId`. In v1, `sessionId` is encoded
 exactly as `RuntimeContext.contextId`; `contextId` remains on handles as a
@@ -307,9 +306,8 @@ operations.
 Transport-specific APIs should stay above this layer. If a product exposes
 Firegrid through HTTP, REST, gRPC, JSON-RPC, or another RPC shape, that adapter
 should decode its transport request into the same protocol operation schemas
-and channel contracts that `FiregridClientOperations` exposes, then delegate to
-the appropriate client, host, or runtime capability. It should not clone schemas
-or invent a parallel graph DSL.
+and channel contracts, then delegate to the appropriate client, host, or runtime
+capability. It should not clone schemas or invent a parallel graph DSL.
 
 ## Browser UI Reads
 

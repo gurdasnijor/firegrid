@@ -18,15 +18,6 @@ import {
   type PublicLaunchRuntimeIntent,
 } from "@firegrid/protocol/launch"
 import {
-  type PermissionRespondInput,
-  type SessionCancelToolInput,
-  type SessionCancelToolOutput,
-  type SessionCloseToolInput,
-  type SessionCloseToolOutput,
-  type SessionPromptToolInput,
-  type SessionPromptToolOutput,
-} from "@firegrid/protocol/session-facade"
-import {
   PublicPromptRequestSchema,
   type PublicPromptRequest,
 } from "@firegrid/protocol/runtime-ingress"
@@ -48,18 +39,38 @@ import {
   sessionContextIdForExternalKey,
   type FiregridSessionId,
   type RuntimeAgentOutputObservation,
+  SessionAgentOutputWaitInputSchema,
   type SessionAgentOutputWaitInput,
   type SessionAgentOutputWaitOutput,
+  SessionAttachInputSchema,
   type SessionAttachDecodedInput,
   type SessionAttachInput,
+  SessionCreateOrLoadInputSchema,
   type SessionCreateOrLoadInput,
+  SessionHandlePromptInputSchema,
+  SessionHandleReferenceSchema,
   type SessionHandlePromptInput,
+  SessionPermissionRequestWaitInputSchema,
   type SessionPermissionRequestWaitInput,
   type SessionPermissionRequestWaitOutput,
+  SessionPermissionRespondInputSchema,
   type SessionPermissionRespondInput,
 } from "@firegrid/protocol/session-facade"
 import {
   FiregridAgentToolOperations,
+  PermissionRespondInputSchema,
+  SessionCancelToolInputSchema,
+  SessionCancelToolOutputSchema,
+  type SessionCancelToolInput,
+  type SessionCancelToolOutput,
+  SessionCloseToolInputSchema,
+  SessionCloseToolOutputSchema,
+  type SessionCloseToolInput,
+  type SessionCloseToolOutput,
+  SessionPromptToolInputSchema,
+  type PermissionRespondInput,
+  type SessionPromptToolInput,
+  type SessionPromptToolOutput,
   type WaitAnyToolInput,
   type WaitAnyToolOutput,
   type WaitForToolInput,
@@ -69,6 +80,7 @@ import {
 } from "@firegrid/protocol/agent-tools"
 import { getFiregridProjectionMetadata } from "@firegrid/protocol/projection"
 import {
+  EventOffsetSchema,
   HostContextsCreateChannel,
   HostPermissionRespondChannel,
   HostPromptChannel,
@@ -80,7 +92,6 @@ import {
   SessionPromptChannel,
 } from "@firegrid/protocol/channels"
 import { Clock, Context, Data, Duration, Effect, Layer, Option, Schema, type Scope, Stream } from "effect"
-import { FiregridClientOperations } from "./operations.ts"
 import {
   autoApproveSessionPermissions,
   type PermissionAutoApproveOptions,
@@ -95,7 +106,6 @@ export type {
   SessionAgentOutputWaitOutput,
 } from "@firegrid/protocol/session-facade"
 export type { EventOffset } from "@firegrid/protocol/channels"
-export { FiregridClientOperations } from "./operations.ts"
 
 export interface ClientOptions {
   readonly durableStreamsBaseUrl?: string
@@ -408,21 +418,21 @@ const decodePublicPromptRequest = (
 const decodeSessionPromptInput = (
   request: SessionPromptToolInput,
 ): Effect.Effect<SessionPromptToolInput, PromptInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.sessions.prompt.input, {
+  Schema.decodeUnknown(SessionPromptToolInputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionAttachInput = (
   request: SessionAttachInput,
 ): Effect.Effect<SessionAttachDecodedInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.sessions.attach.input, {
+  Schema.decodeUnknown(SessionAttachInputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionHandlePromptInput = (
   request: SessionHandlePromptInput,
 ): Effect.Effect<SessionHandlePromptInput, PromptInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.sessions.promptScoped.input, {
+  Schema.decodeUnknown(SessionHandlePromptInputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
@@ -431,7 +441,7 @@ const decodeSessionPermissionRequestWaitInput = (
 ): Effect.Effect<SessionPermissionRequestWaitInput, LaunchInputError> =>
   request === undefined
     ? Effect.succeed({})
-    : Schema.decodeUnknown(FiregridClientOperations.wait.forPermissionRequest.input, {
+    : Schema.decodeUnknown(SessionPermissionRequestWaitInputSchema, {
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
@@ -440,7 +450,7 @@ const decodeSessionAgentOutputWaitInput = (
 ): Effect.Effect<SessionAgentOutputWaitInput, LaunchInputError> =>
   request === undefined
     ? Effect.succeed({})
-    : Schema.decodeUnknown(FiregridClientOperations.wait.forAgentOutput.input, {
+    : Schema.decodeUnknown(SessionAgentOutputWaitInputSchema, {
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
@@ -940,7 +950,7 @@ const make = (
     }
 
     const cancelSession = projectChannelMethod(
-      FiregridClientOperations.sessions.cancel,
+      { input: SessionCancelToolInputSchema, output: SessionCancelToolOutputSchema },
       request =>
         sessionCancelChannel.binding.append(request).pipe(
           Effect.as({
@@ -964,7 +974,7 @@ const make = (
     )
 
     const closeSession = projectChannelMethod(
-      FiregridClientOperations.sessions.close,
+      { input: SessionCloseToolInputSchema, output: SessionCloseToolOutputSchema },
       request =>
         sessionCloseChannel.binding.append(request).pipe(
           Effect.as({
@@ -1032,7 +1042,7 @@ const make = (
         // host-scoped HostPermissionRespondChannel, supplying the
         // handle's sessionId as contextId.
         const respondScoped = projectChannelMethod(
-          FiregridClientOperations.permissions.respondScoped,
+          { input: SessionPermissionRespondInputSchema, output: EventOffsetSchema },
           decoded =>
             hostPermissionRespondChannel.binding.append({
               contextId: sessionId,
@@ -1103,7 +1113,7 @@ const make = (
       })
 
     const createOrLoadSessionMethod = projectChannelMethod(
-      FiregridClientOperations.sessions.createOrLoad,
+      { input: SessionCreateOrLoadInputSchema, output: SessionHandleReferenceSchema },
       decoded =>
         Effect.gen(function* () {
           const runtime = yield* decodePublicLaunchRuntimeIntent(decoded.runtime)
@@ -1214,7 +1224,7 @@ const make = (
       },
       permissions: {
         respond: projectChannelMethod(
-          FiregridClientOperations.permissions.respond,
+          { input: PermissionRespondInputSchema, output: EventOffsetSchema },
           // tf-aago: dispatch through HostPermissionRespondChannel (callable,
           // host-scoped — contextId travels in the request).
           decoded =>

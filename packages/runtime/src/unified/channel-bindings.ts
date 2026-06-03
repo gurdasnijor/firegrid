@@ -116,54 +116,9 @@ const executeSessionInput = (options: {
   )
 
 /**
- * Stub `HostPromptChannel` — returns a stable offset without signaling.
- * Satisfies the Tag for consumers (`FiregridLive.make`) that resolve it
- * eagerly but never actually invoke it. Production hosts override with
- * `HostPromptChannelSignalingLive` (below) which actually delivers the
- * prompt signal to the session workflow body.
- */
-export const HostPromptChannelLive = Layer.succeed(
-  HostPromptChannel,
-  // stub channel: the generic `makeDurableEventChannel` return cannot be narrowed
-  // to the specific `HostPromptChannel["Type"]` (overridden by the SignalingLive layer).
-  // eslint-disable-next-line local/no-launder-cast -- generic channel → specific Type
-  makeDurableEventChannel({
-    target: HostPromptChannelTarget,
-    schema: HostContextsCreateRequestSchema as never,
-    append: (request) =>
-      stableOffset(
-        String(HostPromptChannelTarget),
-        `${(request as { contextId?: string }).contextId ?? ""}:${(request as { idempotencyKey?: string }).idempotencyKey ?? ""}`,
-      ),
-  }) as unknown as HostPromptChannel["Type"],
-)
-
-/**
- * Stub `SessionPromptChannel.forSession` — returns a stable offset.
- * Override with `SessionPromptChannelSignalingLive` for production.
- */
-export const SessionPromptChannelLive = Layer.succeed(
-  SessionPromptChannel,
-  SessionPromptChannel.of({
-    forSession: (sessionId) =>
-      // stub channel: the generic `makeDurableEventChannel` return cannot be narrowed
-      // to `SessionPromptChannel["Type"]["forSession"]` (overridden in production).
-      // eslint-disable-next-line local/no-launder-cast -- generic channel → specific Type
-      makeDurableEventChannel({
-        target: SessionPromptChannelTarget,
-        schema: HostSessionsCreateOrLoadRequestSchema as never,
-        append: (request) =>
-          stableOffset(
-            String(SessionPromptChannelTarget),
-            `${sessionId}:${(request as { idempotencyKey?: string }).idempotencyKey ?? ""}`,
-          ),
-      }) as unknown as ReturnType<SessionPromptChannel["Type"]["forSession"]>,
-  }),
-)
-
-/**
- * Stub `HostSessionsStartChannel` — returns a stable offset.
- * Override with `HostSessionsStartChannelSignalingLive` for production.
+ * `session.start` is an idempotent acknowledgement channel. Per-event prompt,
+ * terminal, and permission delivery happen through the signaling bindings
+ * below; start has no parked body to arm under the per-event model.
  */
 export const HostSessionsStartChannelLive = Layer.succeed(
   HostSessionsStartChannel,
@@ -175,56 +130,10 @@ export const HostSessionsStartChannelLive = Layer.succeed(
   }),
 )
 
-/**
- * Stub `SessionCancelChannel` — returns a stable offset.
- * Override with `SessionCancelChannelSignalingLive` for production.
- */
-export const SessionCancelChannelLive = Layer.succeed(
-  SessionCancelChannel,
-  makeDurableEventChannel({
-    target: SessionCancelChannelTarget,
-    schema: SessionCancelToolInputSchema,
-    append: (request) =>
-      stableOffset(String(SessionCancelChannelTarget), request.sessionId),
-  }),
-)
-
-/**
- * Stub `SessionCloseChannel` — returns a stable offset.
- * Override with `SessionCloseChannelSignalingLive` for production.
- */
-export const SessionCloseChannelLive = Layer.succeed(
-  SessionCloseChannel,
-  makeDurableEventChannel({
-    target: SessionCloseChannelTarget,
-    schema: SessionCloseToolInputSchema,
-    append: (request) =>
-      stableOffset(String(SessionCloseChannelTarget), request.sessionId),
-  }),
-)
-
-/**
- * Stub `HostPermissionRespondChannel`. Override with the signaling
- * version for production.
- */
-export const HostPermissionRespondChannelLive = Layer.succeed(
-  HostPermissionRespondChannel,
-  makeDurableEventChannel({
-    target: HostPermissionRespondChannelTarget,
-    schema: HostPermissionRespondChannelRequestSchema,
-    append: (request) =>
-      stableOffset(
-        String(HostPermissionRespondChannelTarget),
-        `${request.contextId}:${request.permissionRequestId}`,
-      ),
-  }),
-)
-
 // ── Production signaling overrides ─────────────────────────────────────────
 //
-// These Lives REPLACE the stub Lives above for production hosts. They
-// require `SignalTable` + `WorkflowEngine` (provided by FiregridHost's
-// substrate) and actually deliver signals to the unified workflow bodies.
+// These Lives require `WorkflowEngine` (provided by FiregridHost's substrate)
+// and actually execute the per-event workflow bodies.
 
 const signalPromptToSession = (options: {
   readonly engine: WorkflowEngine.WorkflowEngine["Type"]
@@ -444,24 +353,14 @@ export const HostPermissionRespondChannelSignalingLive = Layer.effect(
 )
 
 /**
- * Production signaling channel bindings — `FiregridHost` provides this
- * on top of the stub `UnifiedChannelBindingsLive` so the four
- * input-delivery channels actually wire to signals. Requires
- * `SignalTable` + `WorkflowEngine` from the substrate.
+ * Production signaling channel bindings. Requires `WorkflowEngine` from the
+ * substrate; `session.start` remains the explicit no-op acknowledgement
+ * channel because there is no parked body to arm under per-event delivery.
  */
 export const UnifiedSignalingChannelBindingsLive = HostPromptChannelSignalingLive.pipe(
   Layer.provideMerge(SessionPromptChannelSignalingLive),
-  // session.start has no parked body to arm (tf-k00i): reuse the no-op stub.
   Layer.provideMerge(HostSessionsStartChannelLive),
   Layer.provideMerge(SessionCancelChannelSignalingLive),
   Layer.provideMerge(SessionCloseChannelSignalingLive),
   Layer.provideMerge(HostPermissionRespondChannelSignalingLive),
-)
-
-export const UnifiedChannelBindingsLive = HostPromptChannelLive.pipe(
-  Layer.provideMerge(SessionPromptChannelLive),
-  Layer.provideMerge(HostSessionsStartChannelLive),
-  Layer.provideMerge(SessionCancelChannelLive),
-  Layer.provideMerge(SessionCloseChannelLive),
-  Layer.provideMerge(HostPermissionRespondChannelLive),
 )

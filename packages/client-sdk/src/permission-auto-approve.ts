@@ -1,5 +1,5 @@
+import type { PermissionDecision } from "@firegrid/protocol/agent-tools"
 import {
-  type PermissionDecision,
   type RuntimePermissionRequestObservation,
   type SessionPermissionRequestWaitInput,
   type SessionPermissionRequestWaitOutput,

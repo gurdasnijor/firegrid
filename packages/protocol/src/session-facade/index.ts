@@ -4,4 +4,3 @@
 // `AgentOutputEvent`) keep resolving unchanged.
 export * from "../agent-output/index.ts"
 export * from "./schema.ts"
-export * from "./operations.ts"

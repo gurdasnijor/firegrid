@@ -8,7 +8,8 @@ const dirname = fileURLToPath(new URL(".", import.meta.url))
 const clientSourceFiles = [
   "../src/firegrid.ts",
   "../src/index.ts",
-  "../src/operations.ts",
+  "../src/mcp.ts",
+  "../src/permission-auto-approve.ts",
 ] as const
 
 describe("Firegrid client package boundary", () => {

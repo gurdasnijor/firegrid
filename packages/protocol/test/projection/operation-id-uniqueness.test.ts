@@ -1,7 +1,7 @@
 // tf-0awo.3 — operationId-uniqueness gate.
 //
-// The protocol operation catalogs are the single source of truth; the
-// agent-tool / client / CLI bindings PROJECT from each operation's
+// The protocol schemas are the single source of truth; the
+// agent-tool / client / CLI bindings PROJECT from each schema's
 // `operationId` (the `firegridProjection` annotation on the input schema). If
 // two DISTINCT operations carried the same operationId, projection would
 // silently collide — one operation's projected tool/method would shadow the
@@ -10,9 +10,9 @@
 //
 // Subtlety this gate handles correctly: a single operation is legitimately
 // projected onto more than one surface by REUSING the same input schema object
-// across catalogs (e.g. `FiregridClientOperations.sessions.cancel` reuses
-// agent-tools' `SessionCancelToolInputSchema`, so `session.cancel` appears in
-// both catalogs via the SAME schema). That is one operation, not a collision.
+// across surfaces (e.g. the client cancel surface reuses agent-tools'
+// `SessionCancelToolInputSchema`, so `session.cancel` appears twice via the
+// SAME schema). That is one operation, not a collision.
 // So the invariant is keyed on schema IDENTITY: every operationId must be
 // backed by exactly one distinct input schema. A collision = one operationId
 // backed by two or more DISTINCT schemas.
@@ -20,8 +20,28 @@
 import type { SchemaAST } from "effect"
 import { Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { FiregridAgentToolOperations } from "@firegrid/protocol/agent-tools"
-import { FiregridClientOperations } from "@firegrid/protocol/session-facade"
+import {
+  FiregridAgentToolOperations,
+  PermissionRespondInputSchema,
+  SessionCancelToolInputSchema,
+  SessionCancelToolOutputSchema,
+  SessionCloseToolInputSchema,
+  SessionCloseToolOutputSchema,
+  SessionPromptToolInputSchema,
+  SessionPromptToolOutputSchema,
+} from "@firegrid/protocol/agent-tools"
+import { EventOffsetSchema } from "@firegrid/protocol/channels"
+import {
+  SessionAgentOutputWaitInputSchema,
+  SessionAgentOutputWaitOutputSchema,
+  SessionAttachInputSchema,
+  SessionCreateOrLoadInputSchema,
+  SessionHandlePromptInputSchema,
+  SessionHandleReferenceSchema,
+  SessionPermissionRequestWaitInputSchema,
+  SessionPermissionRequestWaitOutputSchema,
+  SessionPermissionRespondInputSchema,
+} from "@firegrid/protocol/session-facade"
 import {
   firegridProjection,
   getFiregridProjectionMetadata,
@@ -74,6 +94,55 @@ const collectOperations = (
   }
 }
 
+const ClientSchemaOperations = {
+  sessions: {
+    createOrLoad: {
+      input: SessionCreateOrLoadInputSchema,
+      output: SessionHandleReferenceSchema,
+    },
+    attach: {
+      input: SessionAttachInputSchema,
+      output: SessionHandleReferenceSchema,
+    },
+    prompt: {
+      input: SessionPromptToolInputSchema,
+      output: SessionPromptToolOutputSchema,
+    },
+    promptScoped: {
+      input: SessionHandlePromptInputSchema,
+      output: EventOffsetSchema,
+    },
+    cancel: {
+      input: SessionCancelToolInputSchema,
+      output: SessionCancelToolOutputSchema,
+    },
+    close: {
+      input: SessionCloseToolInputSchema,
+      output: SessionCloseToolOutputSchema,
+    },
+  },
+  wait: {
+    forAgentOutput: {
+      input: SessionAgentOutputWaitInputSchema,
+      output: SessionAgentOutputWaitOutputSchema,
+    },
+    forPermissionRequest: {
+      input: SessionPermissionRequestWaitInputSchema,
+      output: SessionPermissionRequestWaitOutputSchema,
+    },
+  },
+  permissions: {
+    respond: {
+      input: PermissionRespondInputSchema,
+      output: EventOffsetSchema,
+    },
+    respondScoped: {
+      input: SessionPermissionRespondInputSchema,
+      output: EventOffsetSchema,
+    },
+  },
+} as const
+
 // Collision detector: operationId -> distinct input-schema identities. A
 // collision is any operationId backed by >1 DISTINCT schema (reuse of one
 // schema object across catalogs is one operation, not a collision). Returns a
@@ -102,7 +171,7 @@ const collisionsOf = (entries: ReadonlyArray<CatalogEntry>): Array<string> => {
 describe("firegrid-schema-projection-contract — operationId uniqueness gate (tf-0awo.3)", () => {
   const entries: Array<CatalogEntry> = []
   collectOperations(FiregridAgentToolOperations, "agentTools", entries)
-  collectOperations(FiregridClientOperations, "client", entries)
+  collectOperations(ClientSchemaOperations, "client", entries)
 
   it("enumerates operations from both catalogs", () => {
     // Sanity: the walker found the operations (guards against a refactor that
