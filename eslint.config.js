@@ -1031,8 +1031,14 @@ const local = {
       },
       create(context) {
         return {
+          // Match the INNER `x as unknown` of a double-launder `x as unknown as T`
+          // (its parent is the outer `as T` expression). A bare `x as unknown`
+          // (e.g. narrowing `any` → `unknown`) is legitimate and not flagged.
           TSAsExpression(node) {
-            if (node.typeAnnotation?.type === "TSUnknownKeyword") {
+            if (
+              node.typeAnnotation?.type === "TSUnknownKeyword" &&
+              node.parent?.type === "TSAsExpression"
+            ) {
               context.report({ node, messageId: "noLaunderCast" })
             }
           },
@@ -1280,6 +1286,10 @@ export default tseslint.config(
       "local/no-date-now": "error",
       // relocated from the effect-quality ratchet (newDateIsoCount)
       "local/no-new-date-iso": "error",
+      // tf-byx1: ban the `as unknown as T` double-launder cast across all
+      // production src (was bin-only). Pre-existing genuine TS-limitation casts
+      // are grandfathered with documented `eslint-disable` + reason.
+      "local/no-launder-cast": "error",
       // relocated from the effect-quality ratchet (nodeCryptoImportCount) — kept
       // in this src-scoped block (not the broad base block) so test fixtures may
       // still use crypto, matching the ratchet's production-source-only scope.
@@ -1900,11 +1910,10 @@ export default tseslint.config(
     files: ["packages/runtime/src/bin/**/*.ts"],
     rules: {
       // tf-0awo.21 §6: bin/ is the cleaned launchability tier — bin/acp.ts no
-      // longer forges a launchable Layer with `as unknown as`. Lock the
-      // double-launder cast out so it cannot return. Rollout to the rest of
-      // runtime/src (channel-bindings.ts, mcp-host/toolkit.ts) + tests is tracked
-      // follow-up; those pre-existing bridges are out of this phase's scope.
-      "local/no-launder-cast": "error",
+      // longer forges a launchable Layer with `as unknown as`. (`local/no-launder-cast`
+      // is now enabled repo-wide in the production-src block above — tf-byx1 — so it
+      // already covers bin/; the few pre-existing genuine TS-limitation casts are
+      // grandfathered with documented `eslint-disable` + reason.)
       "no-restricted-imports": [
         "error",
         {

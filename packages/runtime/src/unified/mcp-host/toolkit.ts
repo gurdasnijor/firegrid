@@ -224,6 +224,10 @@ type ProjectedAgentTools = [
   ProjectedTool<AgentToolNames[10], (typeof AGENT_TOOL_GROUPS)[10]>,
 ]
 
+// `.map` over the tuple yields a homogeneous array, but the result must be the
+// positional `ProjectedAgentTools` tuple whose per-element tool names are computed
+// at runtime (from projection metadata) and cannot be derived by the type system.
+// eslint-disable-next-line local/no-launder-cast -- runtime-named positional tuple
 const AGENT_TOOLS = AGENT_TOOL_GROUPS.map(group =>
   projectTool(group),
 ) as unknown as ProjectedAgentTools

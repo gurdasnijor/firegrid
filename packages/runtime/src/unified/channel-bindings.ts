@@ -162,6 +162,9 @@ const writeSessionInputSignal = (options: {
  */
 export const HostPromptChannelLive = Layer.succeed(
   HostPromptChannel,
+  // stub channel: the generic `makeDurableEventChannel` return cannot be narrowed
+  // to the specific `HostPromptChannel["Type"]` (overridden by the SignalingLive layer).
+  // eslint-disable-next-line local/no-launder-cast -- generic channel → specific Type
   makeDurableEventChannel({
     target: HostPromptChannelTarget,
     schema: HostContextsCreateRequestSchema as never,
@@ -181,6 +184,9 @@ export const SessionPromptChannelLive = Layer.succeed(
   SessionPromptChannel,
   SessionPromptChannel.of({
     forSession: (sessionId) =>
+      // stub channel: the generic `makeDurableEventChannel` return cannot be narrowed
+      // to `SessionPromptChannel["Type"]["forSession"]` (overridden in production).
+      // eslint-disable-next-line local/no-launder-cast -- generic channel → specific Type
       makeDurableEventChannel({
         target: SessionPromptChannelTarget,
         schema: HostSessionsCreateOrLoadRequestSchema as never,
