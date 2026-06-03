@@ -2508,7 +2508,6 @@ export default tseslint.config(
     ignores: [
       ...portedSemgrepTestIgnores,
       "packages/runtime/src/authorities/**",
-      "packages/runtime/src/producers/**",
       "packages/runtime/src/tables/**",
       "packages/runtime/src/channels/**",
       "packages/runtime/src/control-plane/**",
@@ -2528,7 +2527,6 @@ export default tseslint.config(
     ignores: [
       ...portedSemgrepTestIgnores,
       "packages/runtime/src/authorities/**",
-      "packages/runtime/src/producers/**",
       "packages/runtime/src/tables/**",
       "packages/runtime/src/channels/**",
       "packages/runtime/src/control-plane/**",
@@ -2547,7 +2545,6 @@ export default tseslint.config(
     ignores: [
       ...portedSemgrepTestIgnores,
       "packages/runtime/src/authorities/**",
-      "packages/runtime/src/producers/**",
       "packages/runtime/src/tables/**",
       "packages/runtime/src/channels/**",
       "packages/runtime/src/control-plane/**",
@@ -2572,7 +2569,6 @@ export default tseslint.config(
     ignores: [
       ...portedSemgrepTestIgnores,
       "packages/runtime/src/authorities/**",
-      "packages/runtime/src/producers/**",
       "packages/runtime/src/tables/**",
       "packages/runtime/src/channels/**",
       "packages/runtime/src/control-plane/**",
@@ -2650,7 +2646,6 @@ export default tseslint.config(
     files: [
       "packages/runtime/src/workflow-engine/workflows/**/*.ts",
       "packages/runtime/src/sources/**/*.ts",
-      "packages/runtime/src/producers/**/*.ts",
       "packages/runtime/src/subscribers/**/*.ts",
       "packages/runtime/src/tables/**/*.ts",
       "packages/runtime/src/transforms/**/*.ts",

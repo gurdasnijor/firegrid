@@ -31,11 +31,11 @@ callers. Prefer explicit subpaths in new code:
 | `@firegrid/runtime/subscribers/{tool-dispatch,wait-router,scheduled-prompt,runtime-control}` | Runtime-owned Shape D workflow definitions, payload schemas, outcome schemas, and execution-id helpers. |
 | `@firegrid/runtime/events` | Normalized runtime agent event contracts and envelope helpers. |
 | `@firegrid/runtime/sources/codecs` | Scoped codec session contracts and concrete ACP / stdio JSONL session layers (Kafka-Connect "Source" tier — pure emitters). |
-| `@firegrid/runtime/sources/sandbox` | Sandbox and local-process source helpers. App code should prefer `composition/host-live` unless it truly needs producer-level configuration. |
+| `@firegrid/runtime/sources/sandbox` | Sandbox and local-process source helpers. App code should prefer `composition/host-live` unless it truly needs source-level configuration. |
 | `@firegrid/runtime/agent-adapters` | Adapter projections over codec sessions, including ACP adapter helpers (alias for `sources/codecs/agent-adapters`). |
 
-Legacy `@firegrid/runtime/producers/{sandbox,codecs}*` subpaths remain as
-back-compat aliases until PR-M6 of SDD #761 removes them. The
+The former `@firegrid/runtime/producers/{sandbox,codecs}*` back-compat aliases
+were removed after verification found no package callers. The
 `@firegrid/runtime/sources/*` paths above are canonical.
 
 Folders under `packages/runtime/src/**` that do not appear above are internal
@@ -47,12 +47,11 @@ docs-only metadata, compatibility aliases, or tests.
 | Folder | Responsibility |
 | --- | --- |
 | `src/events/` | Normalized agent input/output events, envelope helpers, and stage contracts (pipeline layer 1). |
-| `src/capabilities/` | Pure `Context.Tag` declarations for producer write capabilities. Subscribers depend on Tags from here; producers provide Live bindings (pipeline layer 1b). |
+| `src/capabilities/` | Pure `Context.Tag` declarations for write capabilities. Subscribers depend on Tags from here; owning provider layers supply Live bindings (pipeline layer 1b). |
 | `src/tables/` | Durable runtime state and event-table bindings — the durable "topics" in the Kafka-broker mapping (pipeline layer 2). |
 | `src/sources/sandbox/` | Live process, byte stream, and sandbox edges (Kafka-Connect "Source" emitters; pipeline layer 3a). |
 | `src/sources/codecs/` | Protocol wire/session normalization into `AgentSession` (Kafka-Connect "Source" emitters; pipeline layer 3a). |
 | `src/sources/codecs/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping (Shape A codec-adjacent). |
-| `src/producers/` | Kafka-broker "Producer" topic writers: layers consuming Streams from `sources/` and appending rows to `tables/` (pipeline layer 3b). Empty after PR-M1; PR-M2/M3 land concrete writers. |
 | `src/transforms/` | Pure stream/row-shaping reducers, decoders, trigger evaluation. |
 | `src/channels/` | Runtime channel implementations, route projections, host-plane router. |
 | `src/subscribers/runtime-context/` | Shape C per-event RuntimeContext handler. |
@@ -63,7 +62,7 @@ docs-only metadata, compatibility aliases, or tests.
 | `src/engine/` | Firegrid durable-table adapter for `@effect/workflow` (leaf-tier substrate). |
 | `src/verified-webhook-ingest/` | Adjacent verified webhook fact ingest adapter (split into tier folders in PR-M4 per SDD #761). |
 
-Layer order is `events < capabilities < tables < sources/producers/transforms/channels < subscribers < composition`. See
+Layer order is `events < capabilities < tables < sources/transforms/channels < subscribers < composition`. See
 [`docs/architecture/2026-05-22-runtime-physical-target-tree.md`](../../docs/architecture/2026-05-22-runtime-physical-target-tree.md)
 for the canonical map. The legacy `src/agent-event-pipeline/`, `src/kernel/`,
 `src/streams/`, `src/runtime-keyed-subscriber/`, and `src/workflow-engine/`
@@ -75,7 +74,7 @@ folders above or deleted dead compatibility shims.
 The runtime event pipeline is:
 
 ```txt
-sources/sandbox -> sources/codecs -> events -> transforms -> producers -> tables -> subscribers
+sources/sandbox -> sources/codecs -> events -> transforms -> tables -> subscribers
 ```
 
 The arrows describe role ownership, not import permission. The live-owner

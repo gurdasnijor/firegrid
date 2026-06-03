@@ -1,9 +1,8 @@
 # sources/
 
-Logical pipeline position: **3a** (peer with `producers/`, `transforms/`,
-`channels/`). May import `events/` and `capabilities/`. Must not import
-`tables/`, peers (`producers/`, `transforms/`, `channels/`), `subscribers/`,
-or `composition/`.
+Logical pipeline position: **3a** (peer with `transforms/`, `channels/`). May
+import `events/` and `capabilities/`. Must not import `tables/`, peers
+(`transforms/`, `channels/`), `subscribers/`, or `composition/`.
 
 Source: `docs/sdds/SDD_FIREGRID_RUNTIME_SOURCE_PRODUCER_ROLES.md`,
 `docs/architecture/2026-05-22-runtime-physical-target-tree.md`.
@@ -17,7 +16,8 @@ field is a `Stream`).
 
 Sources have **no row authority**. They do not import `tables/`, do not
 hold a `DurableTable` write capability, and do not append rows. Turning a
-source's stream into durable rows is the job of `producers/`.
+source's stream into durable rows is the job of the owning runtime write
+authority/provider layer.
 
 Sources have no owned RuntimeContext state. Their `R` channel names
 transport edges (process bytes, external HTTP, codec bytes), an
@@ -44,7 +44,7 @@ transport edges (process bytes, external HTTP, codec bytes), an
 ## Must not import
 
 - `tables/` (no row authority)
-- peer-tier `producers/`, `transforms/`, `channels/`
+- peer-tier `transforms/`, `channels/`
 - `subscribers/`, `composition/`
 - `_archive/`
 
@@ -58,5 +58,5 @@ transport edges (process bytes, external HTTP, codec bytes), an
 - `@firegrid/runtime/sources/codecs/agent-adapters` (also re-exported at
   the historical `@firegrid/runtime/agent-adapters` subpath)
 
-Legacy `@firegrid/runtime/producers/{sandbox,codecs}*` subpaths remain as
-back-compat aliases until PR-M6 of the SDD migration removes them.
+The legacy `@firegrid/runtime/producers/{sandbox,codecs}*` back-compat subpaths
+have been retired; use the `sources/*` subpaths above.

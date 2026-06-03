@@ -53,22 +53,6 @@
       "types": "./src/sources/sandbox/local-process-from-env.ts",
       "default": "./src/sources/sandbox/local-process-from-env.ts"
     },
-    "./producers/codecs": {
-      "types": "./src/sources/codecs/index.ts",
-      "default": "./src/sources/codecs/index.ts"
-    },
-    "./producers/codecs/session-byte-stream-adapter": {
-      "types": "./src/sources/codecs/session-byte-stream-adapter.ts",
-      "default": "./src/sources/codecs/session-byte-stream-adapter.ts"
-    },
-    "./producers/sandbox": {
-      "types": "./src/sources/sandbox/index.ts",
-      "default": "./src/sources/sandbox/index.ts"
-    },
-    "./producers/sandbox/local-process-from-env": {
-      "types": "./src/sources/sandbox/local-process-from-env.ts",
-      "default": "./src/sources/sandbox/local-process-from-env.ts"
-    },
     "./channels/router/live": {
       "types": "./src/channels/router/live.ts",
       "default": "./src/channels/router/live.ts"
@@ -110,10 +94,6 @@
       "default": "./src/transforms/index.ts"
     },
     "./sources/codecs/acp/stdio-edge": {
-      "types": "./src/sources/codecs/acp/stdio-edge.ts",
-      "default": "./src/sources/codecs/acp/stdio-edge.ts"
-    },
-    "./producers/codecs/acp/stdio-edge": {
       "types": "./src/sources/codecs/acp/stdio-edge.ts",
       "default": "./src/sources/codecs/acp/stdio-edge.ts"
     }
