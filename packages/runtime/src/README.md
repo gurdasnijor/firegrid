@@ -6,9 +6,9 @@ The Shape C cutover target layout is pinned at
 [`docs/architecture/2026-05-22-runtime-physical-target-tree.md`](../../../docs/architecture/2026-05-22-runtime-physical-target-tree.md).
 
 Each folder carries a README documenting what it owns, its logical pipeline
-position (`events` < `tables` < `sources` / `producers` / `transforms` /
-`channels` < `subscribers` < `composition`, with `capabilities/` as a
-pure-declaration peer of `events/`), and the import-direction rule.
+position (`events` < `tables` < `sources` / `transforms` / `channels` <
+`subscribers` < `composition`, with `capabilities/` as a pure-declaration peer
+of `events/`), and the import-direction rule.
 Subscriber folders declare their shape (`SHAPE: B | C | D`) in their README.
 
 ### Target Surfaces (semantic, first-class)
@@ -20,17 +20,15 @@ the surfaces below exists and is documented here:
 |---|---|---|
 | [`engine/`](./engine/README.md) | durable workflow-execution substrate (`DurableStreamsWorkflowEngine` + internals); leaf-tier sibling of `events/`. Importable by Shape D `subscribers/` + `composition/` only. | 0 |
 | [`events/`](./events/README.md) | event vocabulary; pure schemas, no I/O. | 1 |
-| [`capabilities/`](./capabilities/README.md) | typed `Context.Tag` capability declarations (no `Layer`, no behavior). Producers provide Live bindings; subscribers consume Tags. | 1b |
+| [`capabilities/`](./capabilities/README.md) | typed `Context.Tag` capability declarations (no `Layer`, no behavior). Runtime provider layers provide Live bindings; subscribers consume Tags. | 1b |
 | [`tables/`](./tables/README.md) | DurableTable-backed state of record (the runtime's durable "topics"). | 2 |
 | [`sources/`](./sources/README.md) | Kafka-Connect "Source" emitters: live boundaries that produce typed `Stream`s (`sandbox/`, `codecs/`). No row authority. | 3a |
-| [`producers/`](./producers/README.md) | Kafka-broker "Producer" topic writers: layers that consume Streams from `sources/` and append rows to `tables/`. | 3b |
 | [`transforms/`](./transforms/README.md) | pure row/event transforms; no `Effect`. | 4 |
 | [`channels/`](./channels/README.md) | wire-edge live routing (`host-control/`, `session/`, `routes/`, `router.ts`). | 5 |
 | [`unified/`](./unified/README.md) | unified validation kernel: workflow/session composition under stabilization. | 6 |
 | [`subscribers/`](./subscribers/README.md) | keyed subscribers — Shape B/C/D recorded in folder READMEs. | 6 |
 | [`composition/`](./composition/README.md) | runtime-local layer-graph wiring + topology checks. | 7 |
 | [`bin/`](./bin/) | runtime-owned daemon/process entrypoints (`firegrid run`, `firegrid start`, `firegrid acp`); outside pipeline order and may compose public client + runtime host surfaces. | — |
-| [`_archive/`](./_archive/DEPRECATED.md) | time-boxed holding pen for wrong-shape code pending deletion. | — |
 
 Folder names are semantic. Numeric prefixes are forbidden at the runtime
 root; the public-surface guard rejects any `^[0-9]+-` top-level directory.
@@ -60,7 +58,7 @@ must be explicitly named here and justified by role.
 The agent event pipeline is:
 
 ```txt
-sources/sandbox -> sources/codecs -> events -> transforms -> producers -> tables -> subscribers
+sources/sandbox -> sources/codecs -> events -> transforms -> tables -> subscribers
 ```
 
 The arrows describe ownership of data flow, not import permission. Durable
@@ -102,9 +100,8 @@ transform" abstraction, the boundary is probably misclassified.
 | [`sources/sandbox/`](./sources/sandbox/README.md) | Live byte/process/resource acquisition. Pure emitter — no row authority. |
 | [`sources/codecs/`](./sources/codecs/README.md) | Protocol wire-format normalization into `AgentSession`. Pure emitter — no row authority. |
 | [`events/`](./events/README.md) | Normalized runtime event contracts and envelope helpers. |
-| [`capabilities/`](./capabilities/README.md) | Typed `Context.Tag` declarations for Producer write capabilities (the interface subscribers depend on, with Live bindings in `producers/`). |
+| [`capabilities/`](./capabilities/README.md) | Typed `Context.Tag` declarations for write capabilities (the interface subscribers depend on, with Live bindings in owning provider layers). |
 | [`transforms/`](./transforms/README.md) | Pure stream/row shaping operators. |
-| [`producers/`](./producers/README.md) | Topic writers: layers that consume Streams from `sources/` and append to `tables/`. Subscribers reach these via Tags in `capabilities/`, never by direct import. |
 | [`tables/`](./tables/README.md) | Durable RuntimeContext/RuntimeOutput state-of-record bindings (the "topics" in the Kafka-broker mapping). |
 | [`subscribers/`](./subscribers/README.md) | Runtime subscriber landing zone. The Shape C RuntimeContext per-event handler lives under `subscribers/runtime-context/`; Shape B projection consumers live alongside as siblings. The Shape C subscribers' `R` channel must not name `WorkflowEngine`/`WorkflowInstance` (enforced by `firegrid-shape-c-no-workflow-engine-in-runtime-context-subscriber`). See [`docs/cannon/architecture/runtime-pipeline-type-boundaries.md`](../../../docs/cannon/architecture/runtime-pipeline-type-boundaries.md) §"Shape C" and the physical target tree doc. |
 
