@@ -38,7 +38,8 @@ import { IdGenerator, McpServer } from "@effect/ai"
 import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
 import { RpcSerialization, RpcServer } from "@effect/rpc"
-import { ContextNotFound } from "@firegrid/protocol/launch"
+import { HostPermissionRespondChannel } from "@firegrid/protocol/channels"
+import { ContextNotFound, RuntimeOutputTable, type RuntimeContext } from "@firegrid/protocol/launch"
 import { Config, Effect, Layer, Logger, Option } from "effect"
 // The MCP HTTP server lifetime is Effect-owned via McpServer.layerHttp +
 // NodeHttpServer.layer, bound only to loopback; `createServer` is the
@@ -47,6 +48,7 @@ import { Config, Effect, Layer, Logger, Option } from "effect"
 // durable-lint-allow-control-plane: @effect/platform-node NodeHttpServer.layer listener factory
 import { createServer } from "node:http"
 import { ContextResolverTag } from "../codec-adapter.ts"
+import type { FiregridMcpDurableStreamsWireOptions } from "./durable-streams-protocol.ts"
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
@@ -60,6 +62,10 @@ import {
   publishRuntimeContextMcpBase,
   runtimeContextMcpPath,
 } from "./runtime-context-mcp-base-url.ts"
+import {
+  layerProtocolDurableStreamsWithSessionPromptTasks,
+  makeRuntimeOutputTaskProjectionRuntime,
+} from "./task-projection.ts"
 
 const runtimeContextMcpRouterMaxParamLength = 4096
 
@@ -106,7 +112,7 @@ export type FiregridMcpServerListenerConfig = Config.Config.Success<
   typeof FiregridMcpServerListenerConfig
 >
 
-export interface FiregridMcpServerLayerOptions {
+export interface FiregridMcpHttpServerLayerOptions {
   readonly host: string
   readonly port: number
   /**
@@ -116,7 +122,26 @@ export interface FiregridMcpServerLayerOptions {
    */
   readonly path: HttpRouter.PathInput
   readonly toolProfile?: "full" | "primitive"
+  readonly durableStreams?: undefined
 }
+
+export interface FiregridMcpDurableStreamsServerLayerOptions {
+  readonly host: string
+  readonly port: number
+  /**
+   * Kept for option-shape compatibility with the HTTP listener. Durable-streams
+   * transport is scoped by `durableStreams.streamId` + `contextId`.
+   */
+  readonly path: HttpRouter.PathInput
+  readonly toolProfile?: "full" | "primitive"
+  readonly durableStreams: FiregridMcpDurableStreamsWireOptions & {
+    readonly contextId: string
+  }
+}
+
+export type FiregridMcpServerLayerOptions =
+  | FiregridMcpHttpServerLayerOptions
+  | FiregridMcpDurableStreamsServerLayerOptions
 
 /**
  * Resolves the `/runtime-context/:contextId` route parameter to a unified
@@ -138,14 +163,10 @@ const FiregridMcpRouteContextLayer = Layer.effect(
             Effect.fail(new ContextNotFound({ contextId: "<missing-mcp-route-context>" })),
           onSome: Effect.succeed,
         })
-        const runtimeContext = yield* resolver.resolve(contextId).pipe(
-          Effect.flatMap(Option.match({
-            onNone: () => Effect.fail(new ContextNotFound({ contextId })),
-            onSome: Effect.succeed,
-          })),
+        return yield* resolveFiregridAgentToolContext(
+          resolver,
+          contextId,
         )
-        yield* Effect.annotateCurrentSpan({ "firegrid.context.id": contextId })
-        return { contextId, runtimeContext }
       }).pipe(
         Effect.withSpan("firegrid.mcp.runtime_context.resolve", { kind: "server" }),
       ) as FiregridAgentToolContext["Type"]["resolve"],
@@ -153,26 +174,56 @@ const FiregridMcpRouteContextLayer = Layer.effect(
   }),
 )
 
-/**
- * The Firegrid MCP server Layer. Leaves `ToolDispatch` and
- * `ContextResolverTag` on the R-channel for the host composer (e.g.
- * `ToolDispatchLive` over the host `WorkflowEngine`, and a
- * control-plane-backed resolver).
- */
-export const FiregridMcpServerLayer = (
-  options: FiregridMcpServerLayerOptions,
-) => {
-  const toolProfile = options.toolProfile ?? "full"
-  const toolNames = toolProfile === "primitive"
+const FiregridMcpDurableStreamsContextLayer = (
+  contextId: string,
+) =>
+  Layer.effect(
+    FiregridAgentToolContext,
+    Effect.gen(function*() {
+      const resolver = yield* ContextResolverTag
+      return {
+        resolve: Effect.gen(function*() {
+          return yield* resolveFiregridAgentToolContext(
+            resolver,
+            contextId,
+          )
+        }).pipe(
+          Effect.withSpan("firegrid.mcp.durable_streams_context.resolve", {
+            kind: "server",
+          }),
+        ),
+      }
+    }),
+  )
+
+const resolveFiregridAgentToolContext = (
+  resolver: ContextResolverTag["Type"],
+  contextId: string,
+): Effect.Effect<{
+  readonly contextId: string
+  readonly runtimeContext?: RuntimeContext
+}, unknown> =>
+  resolver.resolve(contextId).pipe(
+    Effect.flatMap(Option.match({
+      onNone: () => Effect.fail(new ContextNotFound({ contextId })),
+      onSome: runtimeContext =>
+        Effect.annotateCurrentSpan({ "firegrid.context.id": contextId }).pipe(
+          Effect.as({ contextId, runtimeContext }),
+        ),
+    })),
+  )
+
+const toolNamesForProfile = (toolProfile: "full" | "primitive") =>
+  toolProfile === "primitive"
     ? Object.keys(FiregridPrimitiveProfileToolkit.tools).sort()
     : Object.keys(FiregridAgentToolkit.tools).sort()
-  // tf-x3sv: register the complete toolset as a build-time dependency of
-  // the serving layer (`Layer.provide` below), so registration fully
-  // completes before any request is routed. `McpServer.registerToolkit`
-  // pushes tools one at a time; making it happens-before serving means the
-  // first `tools/list` is always complete and `notifications/tools/list_changed`
-  // is not required for initial correctness.
-  const registerToolkitLayer = Layer.scopedDiscard(
+
+const makeRegisterToolkitLayer = (
+  toolProfile: "full" | "primitive",
+  toolNames: ReadonlyArray<string>,
+  contextLayer: Layer.Layer<FiregridAgentToolContext, unknown, ContextResolverTag | HttpRouter.RouteContext>,
+) =>
+  Layer.scopedDiscard(
     Effect.gen(function*() {
       if (toolProfile === "primitive") {
         yield* McpServer.registerToolkit(FiregridPrimitiveProfileToolkit)
@@ -195,8 +246,64 @@ export const FiregridMcpServerLayer = (
         ? FiregridPrimitiveProfileToolkitLayer
         : FiregridAgentToolkitLayer,
     ),
-    Layer.provide(FiregridMcpRouteContextLayer),
+    Layer.provide(contextLayer),
     Layer.provide(Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator)),
+  )
+
+const makeFiregridMcpDurableStreamsServerLayer = (
+  options: FiregridMcpDurableStreamsServerLayerOptions,
+) => {
+  const toolProfile = options.toolProfile ?? "full"
+  const toolNames = toolNamesForProfile(toolProfile)
+  const durableStreams = options.durableStreams
+  const registerToolkitLayer = makeRegisterToolkitLayer(
+    toolProfile,
+    toolNames,
+    FiregridMcpDurableStreamsContextLayer(durableStreams.contextId),
+  )
+  return Layer.unwrapEffect(
+    Effect.gen(function*() {
+      // eslint-disable-next-line local/sg-runtime-no-table-service-yield-outside-providers -- host composition wires the projection runtime to protocol-owned RuntimeOutput rows.
+      const output = yield* RuntimeOutputTable
+      const permissionRespond = yield* HostPermissionRespondChannel
+      const projectionRuntime = makeRuntimeOutputTaskProjectionRuntime(
+        output,
+        permissionRespond,
+      )
+      const mcpServerLayer = McpServer.layer({
+        name: "firegrid.agent-tools",
+        version: "0.0.0",
+      }).pipe(
+        Layer.provide(
+          layerProtocolDurableStreamsWithSessionPromptTasks(
+            durableStreams,
+            projectionRuntime,
+          ),
+        ),
+      )
+      return registerToolkitLayer.pipe(
+        Layer.provide(mcpServerLayer),
+        Layer.provide(Logger.remove(Logger.defaultLogger)),
+      )
+    }),
+  )
+}
+
+const makeFiregridMcpHttpServerLayer = (
+  options: FiregridMcpHttpServerLayerOptions,
+) => {
+  const toolProfile = options.toolProfile ?? "full"
+  const toolNames = toolNamesForProfile(toolProfile)
+  // tf-x3sv: register the complete toolset as a build-time dependency of
+  // the serving layer (`Layer.provide` below), so registration fully
+  // completes before any request is routed. `McpServer.registerToolkit`
+  // pushes tools one at a time; making it happens-before serving means the
+  // first `tools/list` is always complete and `notifications/tools/list_changed`
+  // is not required for initial correctness.
+  const registerToolkitLayer = makeRegisterToolkitLayer(
+    toolProfile,
+    toolNames,
+    FiregridMcpRouteContextLayer,
   )
   return Layer.mergeAll(
     HttpRouter.Default.serve(),
@@ -234,4 +341,24 @@ export const FiregridMcpServerLayer = (
     // surface remains the canonical operator log.
     Layer.provide(Logger.remove(Logger.defaultLogger)),
   )
+}
+
+/**
+ * The Firegrid MCP server Layer. Leaves `ToolDispatch` and
+ * `ContextResolverTag` on the R-channel for the host composer (e.g.
+ * `ToolDispatchLive` over the host `WorkflowEngine`, and a
+ * control-plane-backed resolver).
+ */
+export function FiregridMcpServerLayer(
+  options: FiregridMcpHttpServerLayerOptions,
+): ReturnType<typeof makeFiregridMcpHttpServerLayer>
+export function FiregridMcpServerLayer(
+  options: FiregridMcpDurableStreamsServerLayerOptions,
+): ReturnType<typeof makeFiregridMcpDurableStreamsServerLayer>
+export function FiregridMcpServerLayer(
+  options: FiregridMcpServerLayerOptions,
+): ReturnType<typeof makeFiregridMcpHttpServerLayer> | ReturnType<typeof makeFiregridMcpDurableStreamsServerLayer> {
+  return options.durableStreams === undefined
+    ? makeFiregridMcpHttpServerLayer(options)
+    : makeFiregridMcpDurableStreamsServerLayer(options)
 }
