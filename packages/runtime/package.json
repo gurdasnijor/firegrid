@@ -9,17 +9,9 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./errors": {
-      "types": "./src/runtime-errors.ts",
-      "default": "./src/runtime-errors.ts"
-    },
     "./channels": {
       "types": "./src/channels/index.ts",
       "default": "./src/channels/index.ts"
-    },
-    "./runtime-output": {
-      "types": "./src/tables/runtime-output-public.ts",
-      "default": "./src/tables/runtime-output-public.ts"
     },
     "./streams": {
       "types": "./src/channels/observation-streams/index.ts",
@@ -29,10 +21,6 @@
       "types": "./src/verified-webhook-ingest/index.ts",
       "default": "./src/verified-webhook-ingest/index.ts"
     },
-    "./engine/durable-streams-workflow-engine": {
-      "types": "./src/engine/durable-streams-workflow-engine.ts",
-      "default": "./src/engine/durable-streams-workflow-engine.ts"
-    },
     "./unified": {
       "types": "./src/unified/index.ts",
       "default": "./src/unified/index.ts"
@@ -41,57 +29,9 @@
       "types": "./src/events/index.ts",
       "default": "./src/events/index.ts"
     },
-    "./sources/codecs": {
-      "types": "./src/sources/codecs/index.ts",
-      "default": "./src/sources/codecs/index.ts"
-    },
-    "./sources/codecs/session-byte-stream-adapter": {
-      "types": "./src/sources/codecs/session-byte-stream-adapter.ts",
-      "default": "./src/sources/codecs/session-byte-stream-adapter.ts"
-    },
-    "./sources/sandbox/local-process-from-env": {
-      "types": "./src/sources/sandbox/local-process-from-env.ts",
-      "default": "./src/sources/sandbox/local-process-from-env.ts"
-    },
-    "./channels/router/live": {
-      "types": "./src/channels/router/live.ts",
-      "default": "./src/channels/router/live.ts"
-    },
-    "./channels/observation-streams": {
-      "types": "./src/channels/observation-streams/index.ts",
-      "default": "./src/channels/observation-streams/index.ts"
-    },
-    "./channels/session-self/live": {
-      "types": "./src/channels/session-self/live.ts",
-      "default": "./src/channels/session-self/live.ts"
-    },
-    "./channels/verified-webhook/live": {
-      "types": "./src/channels/verified-webhook/live.ts",
-      "default": "./src/channels/verified-webhook/live.ts"
-    },
-    "./channels/event-channel": {
-      "types": "./src/channels/event-channel.ts",
-      "default": "./src/channels/event-channel.ts"
-    },
-    "./channels/state-changes/live": {
-      "types": "./src/channels/state-changes/live.ts",
-      "default": "./src/channels/state-changes/live.ts"
-    },
-    "./sources/codecs/agent-adapters": {
-      "types": "./src/sources/codecs/agent-adapters/index.ts",
-      "default": "./src/sources/codecs/agent-adapters/index.ts"
-    },
-    "./agent-adapters": {
-      "types": "./src/sources/codecs/agent-adapters/index.ts",
-      "default": "./src/sources/codecs/agent-adapters/index.ts"
-    },
     "./sources/sandbox": {
       "types": "./src/sources/sandbox/index.ts",
       "default": "./src/sources/sandbox/index.ts"
-    },
-    "./transforms": {
-      "types": "./src/transforms/index.ts",
-      "default": "./src/transforms/index.ts"
     },
     "./sources/codecs/acp/stdio-edge": {
       "types": "./src/sources/codecs/acp/stdio-edge.ts",

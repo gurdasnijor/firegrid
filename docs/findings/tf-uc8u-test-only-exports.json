@@ -6,7 +6,7 @@
     {
       "file": "packages/effect-durable-operators/src/react.ts",
       "name": "useDurableLiveQuery",
-      "line": 26,
+      "line": 25,
       "kind": "export-specifier",
       "pkg": "effect-durable-operators",
       "isValue": true,
@@ -20,7 +20,7 @@
     {
       "file": "packages/effect-durable-operators/src/react.ts",
       "name": "DurableTableProvider",
-      "line": 128,
+      "line": 126,
       "kind": "function",
       "pkg": "effect-durable-operators",
       "isValue": true,
@@ -34,7 +34,7 @@
     {
       "file": "packages/effect-durable-operators/src/react.ts",
       "name": "useDurableTableProviderStatus",
-      "line": 183,
+      "line": 181,
       "kind": "function",
       "pkg": "effect-durable-operators",
       "isValue": true,
@@ -48,7 +48,7 @@
     {
       "file": "packages/effect-durable-operators/src/react.ts",
       "name": "useDurableTable",
-      "line": 195,
+      "line": 193,
       "kind": "function",
       "pkg": "effect-durable-operators",
       "isValue": true,
@@ -127,6 +127,24 @@
       "klass": "TEST-ONLY",
       "testRefs": [
         "packages/protocol/test/launch/authority.test.ts"
+      ]
+    },
+    {
+      "file": "packages/protocol/src/launch/authority.ts",
+      "name": "runtimeControlPlaneStreamUrl",
+      "line": 238,
+      "kind": "const",
+      "pkg": "protocol",
+      "isValue": true,
+      "intraModuleUse": false,
+      "testImporters": 5,
+      "klass": "TEST-ONLY",
+      "testRefs": [
+        "packages/protocol/test/launch/authority.test.ts",
+        "packages/runtime/test/channels/session-self-runtime-router.test.ts",
+        "packages/runtime/test/mcp-host/mcp-tool-dispatch-sleep.test.ts",
+        "packages/runtime/test/unified/cross-attempt-output-flush.test.ts",
+        "packages/runtime/test/unified/firegrid-runtime-composition-compile-spike.test.ts"
       ]
     },
     {
@@ -401,7 +419,7 @@
     {
       "file": "packages/runtime/src/unified/host.ts",
       "name": "FiregridHost",
-      "line": 322,
+      "line": 345,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -647,20 +665,6 @@
       "file": "packages/protocol/src/launch/authority.ts",
       "name": "NamespaceRuntimeStreamNameSchema",
       "line": 186,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 1,
-      "klass": "TEST-EXPOSED-INTERNAL",
-      "testRefs": [
-        "packages/protocol/test/launch/authority.test.ts"
-      ]
-    },
-    {
-      "file": "packages/protocol/src/launch/authority.ts",
-      "name": "namespaceRuntimeStreamName",
-      "line": 195,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -999,8 +1003,22 @@
     },
     {
       "file": "packages/runtime/src/unified/host.ts",
+      "name": "composeFiregridRuntimeWithFloor",
+      "line": 334,
+      "kind": "export-specifier",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 1,
+      "klass": "TEST-EXPOSED-INTERNAL",
+      "testRefs": [
+        "packages/runtime/test/unified/tf-cxwu-1-modularity-compile-spike.test.ts"
+      ]
+    },
+    {
+      "file": "packages/runtime/src/unified/host.ts",
       "name": "UnifiedTable",
-      "line": 336,
+      "line": 372,
       "kind": "export-specifier",
       "pkg": "runtime",
       "isValue": true,
@@ -1137,18 +1155,6 @@
       "pkg": "client-sdk",
       "isValue": true,
       "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/effect-durable-operators/src/react.ts",
-      "name": "useDurableLiveSuspenseQuery",
-      "line": 27,
-      "kind": "export-specifier",
-      "pkg": "effect-durable-operators",
-      "isValue": true,
-      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1550,6 +1556,42 @@
       "testRefs": []
     },
     {
+      "file": "packages/protocol/src/channels/core.ts",
+      "name": "makeBidirectionalChannel",
+      "line": 207,
+      "kind": "const",
+      "pkg": "protocol",
+      "isValue": true,
+      "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/channels/event.ts",
+      "name": "EventChannelSourceClasses",
+      "line": 9,
+      "kind": "const",
+      "pkg": "protocol",
+      "isValue": true,
+      "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/channels/event.ts",
+      "name": "eventChannelTarget",
+      "line": 20,
+      "kind": "const",
+      "pkg": "protocol",
+      "isValue": true,
+      "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
       "file": "packages/protocol/src/channels/human.ts",
       "name": "HumanHandleSchema",
       "line": 5,
@@ -1574,9 +1616,9 @@
       "testRefs": []
     },
     {
-      "file": "packages/protocol/src/channels/human/index.ts",
-      "name": "humanChannelPair",
-      "line": 17,
+      "file": "packages/protocol/src/channels/human.ts",
+      "name": "humanChannelTarget",
+      "line": 31,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1623,6 +1665,18 @@
     },
     {
       "file": "packages/protocol/src/channels/verified-webhook.ts",
+      "name": "VerifiedWebhookFactChannelTarget",
+      "line": 13,
+      "kind": "const",
+      "pkg": "protocol",
+      "isValue": true,
+      "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/channels/verified-webhook.ts",
       "name": "VerifiedWebhookFactChannel",
       "line": 22,
       "kind": "class",
@@ -1649,18 +1703,6 @@
       "file": "packages/protocol/src/launch/authority.ts",
       "name": "HostStreamSegmentSchema",
       "line": 42,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/launch/authority.ts",
-      "name": "namespaceRuntimeOutputStreamName",
-      "line": 200,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -2210,30 +2252,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/protocol/src/mcp/index.ts",
-      "name": "ensurePathInput",
-      "line": 31,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/mcp/index.ts",
-      "name": "runtimeContextMcpPath",
-      "line": 50,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/protocol/src/otel/row-otel.ts",
       "name": "parseTraceparent",
       "line": 67,
@@ -2462,18 +2480,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/channels/event-channel.ts",
-      "name": "eventChannel",
-      "line": 39,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/runtime/src/channels/host-control.ts",
       "name": "hostSessionLifecycleStream",
       "line": 30,
@@ -2630,78 +2636,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/channels/router/live.ts",
-      "name": "UnknownChannelTarget",
-      "line": 27,
-      "kind": "export-specifier",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/router/live.ts",
-      "name": "RuntimeContextMcpChannelCatalog",
-      "line": 46,
-      "kind": "class",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/router/live.ts",
-      "name": "makeRuntimeContextMcpChannelCatalog",
-      "line": 51,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/router/live.ts",
-      "name": "RuntimeContextMcpChannelCatalogLive",
-      "line": 58,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/router/live.ts",
-      "name": "makeRuntimeContextChannelRouter",
-      "line": 74,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/router/live.ts",
-      "name": "findRuntimeContextMcpChannel",
-      "line": 80,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/runtime/src/channels/session-lifecycle-route.ts",
       "name": "SessionLifecycleRouteInputSchema",
       "line": 4,
@@ -2717,66 +2651,6 @@
       "file": "packages/runtime/src/channels/session-log.ts",
       "name": "sessionLogChannel",
       "line": 16,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/session-self/live.ts",
-      "name": "makeSessionSelfChannels",
-      "line": 52,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/state-changes/live.ts",
-      "name": "stateChangesChannel",
-      "line": 17,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/verified-webhook/live.ts",
-      "name": "verifiedWebhookFactRows",
-      "line": 12,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/verified-webhook/live.ts",
-      "name": "verifiedWebhookFactChannel",
-      "line": 21,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/engine/durable-streams-workflow-engine.ts",
-      "name": "make",
-      "line": 19,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -2859,6 +2733,18 @@
     },
     {
       "file": "packages/runtime/src/runtime-errors.ts",
+      "name": "RuntimeContextError",
+      "line": 3,
+      "kind": "class",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/runtime-errors.ts",
       "name": "asRuntimeContextError",
       "line": 13,
       "kind": "const",
@@ -2882,33 +2768,9 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/runtime-errors.ts",
-      "name": "RuntimeIngressError",
-      "line": 34,
-      "kind": "class",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/runtime/src/sources/codecs/acp/stdio-edge.ts",
       "name": "classifyTurnIdleTimeoutReason",
       "line": 104,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/codecs/agent-adapters/acp/adapter.ts",
-      "name": "AcpAdapterCapabilities",
-      "line": 33,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -2966,18 +2828,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/sources/sandbox/local-process-from-env.ts",
-      "name": "FiregridLocalProcess",
-      "line": 19,
-      "kind": "class",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/runtime/src/sources/sandbox/supervisor-commands.ts",
       "name": "SandboxSupervisorCommandTable",
       "line": 22,
@@ -2993,18 +2843,6 @@
       "file": "packages/runtime/src/sources/sandbox/supervisor-commands.ts",
       "name": "SandboxStdinEmissionClaim",
       "line": 34,
-      "kind": "class",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/transforms/decode-ingress-row.ts",
-      "name": "RuntimeIngressAgentInputTransformError",
-      "line": 4,
       "kind": "class",
       "pkg": "runtime",
       "isValue": true,
@@ -3135,8 +2973,32 @@
     },
     {
       "file": "packages/runtime/src/unified/host.ts",
+      "name": "DurableStreams",
+      "line": 366,
+      "kind": "export-specifier",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/host.ts",
       "name": "DurableStreamsWorkflowEngine",
-      "line": 333,
+      "line": 368,
+      "kind": "export-specifier",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/host.ts",
+      "name": "StreamName",
+      "line": 371,
       "kind": "export-specifier",
       "pkg": "runtime",
       "isValue": true,
@@ -3148,7 +3010,7 @@
     {
       "file": "packages/runtime/src/unified/host.ts",
       "name": "ToolExecutor",
-      "line": 338,
+      "line": 374,
       "kind": "export-specifier",
       "pkg": "runtime",
       "isValue": true,
@@ -3540,138 +3402,6 @@
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "describeExperimentChannels",
-      "line": 141,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "participantPrompt",
-      "line": 148,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "launchExperimentParticipant",
-      "line": 168,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "launchExperimentParticipants",
-      "line": 204,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "durableRowSource",
-      "line": 211,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "loadExperimentArtifacts",
-      "line": 216,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "querySpans",
-      "line": 298,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "assertSpanExists",
-      "line": 304,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "queryDurableRows",
-      "line": 318,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "assertDurableRowExists",
-      "line": 326,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "requireAssertion",
-      "line": 341,
-      "kind": "const",
-      "pkg": "tiny-firegrid",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
     }
   ],
   "typeFindings": [
@@ -3941,6 +3671,18 @@
     },
     {
       "file": "packages/effect-durable-operators/src/DurableTable.ts",
+      "name": "ProjectionStream",
+      "line": 50,
+      "kind": "type",
+      "pkg": "effect-durable-operators",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/effect-durable-operators/src/DurableTable.ts",
       "name": "RowOf",
       "line": 73,
       "kind": "type",
@@ -4016,42 +3758,6 @@
       "name": "DurableTableTagClass",
       "line": 164,
       "kind": "type",
-      "pkg": "effect-durable-operators",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/effect-durable-operators/src/react.ts",
-      "name": "AnyDurableTableTag",
-      "line": 37,
-      "kind": "type",
-      "pkg": "effect-durable-operators",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/effect-durable-operators/src/react.ts",
-      "name": "DurableTableProviderStatus",
-      "line": 55,
-      "kind": "type",
-      "pkg": "effect-durable-operators",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/effect-durable-operators/src/react.ts",
-      "name": "DurableTableProviderProps",
-      "line": 80,
-      "kind": "interface",
       "pkg": "effect-durable-operators",
       "isValue": false,
       "intraModuleUse": true,
@@ -4504,6 +4210,18 @@
       "testRefs": []
     },
     {
+      "file": "packages/protocol/src/channels/event.ts",
+      "name": "EventChannel",
+      "line": 14,
+      "kind": "type",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
       "file": "packages/protocol/src/channels/host-control.ts",
       "name": "HostContextsCreateRequest",
       "line": 40,
@@ -4696,6 +4414,30 @@
       "testRefs": []
     },
     {
+      "file": "packages/protocol/src/channels/human.ts",
+      "name": "HumanChannelKind",
+      "line": 17,
+      "kind": "type",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/channels/human.ts",
+      "name": "HumanChannelPair",
+      "line": 19,
+      "kind": "interface",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
       "file": "packages/protocol/src/channels/router.ts",
       "name": "ChannelRouteSchemaMetadata",
       "line": 40,
@@ -4735,6 +4477,18 @@
       "file": "packages/protocol/src/channels/session-permission.ts",
       "name": "SessionPermissionChannelService",
       "line": 34,
+      "kind": "type",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/channels/state-changes.ts",
+      "name": "StateChangesChannel",
+      "line": 5,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4883,6 +4637,30 @@
       "pkg": "protocol",
       "isValue": false,
       "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/launch/durable-streams.ts",
+      "name": "StreamOptions",
+      "line": 48,
+      "kind": "interface",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/launch/durable-streams.ts",
+      "name": "DurableStreamsService",
+      "line": 54,
+      "kind": "interface",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": true,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5464,9 +5242,9 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/channels/router/live.ts",
-      "name": "RuntimeContextMcpChannelCatalogService",
-      "line": 38,
+      "file": "packages/runtime/src/channels/router.ts",
+      "name": "RuntimeChannelRouterService",
+      "line": 61,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
@@ -5478,7 +5256,7 @@
     {
       "file": "packages/runtime/src/channels/router/live.ts",
       "name": "ChannelMetadata",
-      "line": 95,
+      "line": 13,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
@@ -5515,30 +5293,6 @@
       "file": "packages/runtime/src/channels/session-lifecycle-route.ts",
       "name": "SessionLifecycleRouteInput",
       "line": 12,
-      "kind": "type",
-      "pkg": "runtime",
-      "isValue": false,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/engine/internal/table.ts",
-      "name": "WorkflowActivityRow",
-      "line": 41,
-      "kind": "type",
-      "pkg": "runtime",
-      "isValue": false,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/engine/internal/table.ts",
-      "name": "WorkflowDeferredRow",
-      "line": 60,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
@@ -5656,18 +5410,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/sources/codecs/agent-adapters/acp/adapter.ts",
-      "name": "AcpAgentAdapterOptions",
-      "line": 159,
-      "kind": "interface",
-      "pkg": "runtime",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/runtime/src/sources/codecs/agent-adapters/AgentAdapter.ts",
       "name": "AgentAdapterRegistryService",
       "line": 30,
@@ -5692,42 +5434,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
-      "name": "RuntimeContextSessionOutputWriter",
-      "line": 13,
-      "kind": "interface",
-      "pkg": "runtime",
-      "isValue": false,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
-      "name": "RuntimeRawByteSession",
-      "line": 21,
-      "kind": "interface",
-      "pkg": "runtime",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
-      "name": "RuntimeRawByteSessionStart",
-      "line": 28,
-      "kind": "interface",
-      "pkg": "runtime",
-      "isValue": false,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/runtime/src/sources/sandbox/effect-ai.ts",
       "name": "EffectAiSandboxConfig",
       "line": 18,
@@ -5743,6 +5449,18 @@
       "file": "packages/runtime/src/sources/sandbox/effect-ai.ts",
       "name": "EffectAiSandboxProviderHelper",
       "line": 23,
+      "kind": "interface",
+      "pkg": "runtime",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/sources/sandbox/local-process.ts",
+      "name": "LocalProcessSandboxProviderOptions",
+      "line": 40,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
@@ -5850,8 +5568,8 @@
     {
       "file": "packages/runtime/src/unified/host.ts",
       "name": "FiregridHostOptionsBase",
-      "line": 127,
-      "kind": "type",
+      "line": 132,
+      "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
       "intraModuleUse": true,
@@ -5862,7 +5580,7 @@
     {
       "file": "packages/runtime/src/unified/host.ts",
       "name": "FiregridHostOptionsWithAdapter",
-      "line": 129,
+      "line": 139,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
@@ -5874,7 +5592,7 @@
     {
       "file": "packages/runtime/src/unified/host.ts",
       "name": "FiregridHostOptionsWithCodecSugar",
-      "line": 140,
+      "line": 150,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
@@ -5886,7 +5604,7 @@
     {
       "file": "packages/runtime/src/unified/host.ts",
       "name": "FiregridHostOptions",
-      "line": 159,
+      "line": 169,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
@@ -5898,8 +5616,20 @@
     {
       "file": "packages/runtime/src/unified/host.ts",
       "name": "FiregridRuntimeAdapterLayer",
-      "line": 163,
+      "line": 173,
       "kind": "type",
+      "pkg": "runtime",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/host.ts",
+      "name": "FiregridRuntimeFloorSpec",
+      "line": 255,
+      "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
       "intraModuleUse": true,
@@ -6256,138 +5986,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "ExperimentParticipantPromptInput",
-      "line": 26,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "ExperimentParticipantSpec",
-      "line": 34,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "LaunchedExperimentParticipant",
-      "line": 45,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "DurableRowSource",
-      "line": 51,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "DurableRowSet",
-      "line": 56,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "ExperimentArtifactsOptions",
-      "line": 61,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "NativePerfArtifact",
-      "line": 67,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "ExperimentArtifacts",
-      "line": 73,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "SpanArtifactQuery",
-      "line": 93,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "ArtifactAssertionResult",
-      "line": 100,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/tiny-firegrid/src/experiment/index.ts",
-      "name": "ExperimentAssertionFailed",
-      "line": 107,
-      "kind": "interface",
-      "pkg": "tiny-firegrid",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/tiny-firegrid/src/types.ts",
       "name": "TinyFiregridStopSignal",
       "line": 15,
@@ -6426,20 +6024,6 @@
       ]
     },
     {
-      "file": "packages/runtime/src/sources/codecs/contract.ts",
-      "name": "AgentCodecMeta",
-      "line": 34,
-      "kind": "interface",
-      "pkg": "runtime",
-      "isValue": false,
-      "intraModuleUse": true,
-      "testImporters": 1,
-      "klass": "TEST-EXPOSED-INTERNAL",
-      "testRefs": [
-        "packages/runtime/test/sources/codecs/contract.test.ts"
-      ]
-    },
-    {
       "file": "packages/runtime/src/tables/codec-adapter-tags.ts",
       "name": "ContextResolver",
       "line": 7,
@@ -6447,10 +6031,11 @@
       "pkg": "runtime",
       "isValue": false,
       "intraModuleUse": true,
-      "testImporters": 1,
+      "testImporters": 2,
       "klass": "TEST-EXPOSED-INTERNAL",
       "testRefs": [
-        "packages/runtime/test/unified/firegrid-runtime-composition-compile-spike.test.ts"
+        "packages/runtime/test/unified/firegrid-runtime-composition-compile-spike.test.ts",
+        "packages/runtime/test/unified/tf-cxwu-1-modularity-compile-spike.test.ts"
       ]
     },
     {
@@ -6468,6 +6053,6 @@
       ]
     }
   ],
-  "prodFiles": 228,
-  "testFiles": 63
+  "prodFiles": 216,
+  "testFiles": 64
 }

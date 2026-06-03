@@ -5,33 +5,14 @@
 
 | package | total subpaths | used | unused |
 | --- | --- | --- | --- |
-| `@firegrid/runtime` | 23 | 7 | 16 |
-| `@firegrid/protocol` | 17 | 12 | 5 |
-| `@firegrid/tiny-firegrid` | 2 | 0 | 2 |
-| `@firegrid/client-sdk` | 4 | 3 | 1 |
-| `effect-durable-operators` | 2 | 1 | 1 |
+| `@firegrid/protocol` | 13 | 12 | 1 |
+| `@firegrid/runtime` | 8 | 7 | 1 |
 | `@firegrid/observability` | 2 | 1 | 1 |
-| `@firegrid/cli` | 1 | 0 | 1 |
 | `@firegrid/host-sdk` | 1 | 0 | 1 |
+| `@firegrid/tiny-firegrid` | 1 | 0 | 1 |
+| `@firegrid/client-sdk` | 3 | 3 | 0 |
+| `effect-durable-operators` | 1 | 1 | 0 |
 | `effect-durable-streams` | 1 | 1 | 0 |
-
-## `@firegrid/cli` — 1 unused subpath(s)
-
-| subpath | target |
-| --- | --- |
-| `.` | packages/cli/src/index.ts |
-
-## `@firegrid/client-sdk` — 1 unused subpath(s)
-
-| subpath | target |
-| --- | --- |
-| `./permission-auto-approve` | packages/client-sdk/src/permission-auto-approve.ts |
-
-## `effect-durable-operators` — 1 unused subpath(s)
-
-| subpath | target |
-| --- | --- |
-| `./react` | packages/effect-durable-operators/src/react.ts |
 
 ## `@firegrid/host-sdk` — 1 unused subpath(s)
 
@@ -45,41 +26,21 @@
 | --- | --- |
 | `.` | packages/observability/src/index.ts |
 
-## `@firegrid/protocol` — 5 unused subpath(s)
+## `@firegrid/protocol` — 1 unused subpath(s)
 
 | subpath | target |
 | --- | --- |
 | `.` | packages/protocol/src/index.ts |
-| `./operations` | packages/protocol/src/operations/index.ts |
-| `./channels/session-permission` | packages/protocol/src/channels/session-permission.ts |
-| `./channels/human` | packages/protocol/src/channels/human/index.ts |
-| `./mcp` | packages/protocol/src/mcp/index.ts |
 
-## `@firegrid/runtime` — 16 unused subpath(s)
+## `@firegrid/runtime` — 1 unused subpath(s)
 
 | subpath | target |
 | --- | --- |
 | `.` | packages/runtime/src/index.ts |
-| `./errors` | packages/runtime/src/runtime-errors.ts |
-| `./runtime-output` | packages/runtime/src/tables/runtime-output-public.ts |
-| `./engine/durable-streams-workflow-engine` | packages/runtime/src/engine/durable-streams-workflow-engine.ts |
-| `./sources/codecs` | packages/runtime/src/sources/codecs/index.ts |
-| `./sources/codecs/session-byte-stream-adapter` | packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts |
-| `./sources/sandbox/local-process-from-env` | packages/runtime/src/sources/sandbox/local-process-from-env.ts |
-| `./channels/router/live` | packages/runtime/src/channels/router/live.ts |
-| `./channels/observation-streams` | packages/runtime/src/channels/observation-streams/index.ts |
-| `./channels/session-self/live` | packages/runtime/src/channels/session-self/live.ts |
-| `./channels/verified-webhook/live` | packages/runtime/src/channels/verified-webhook/live.ts |
-| `./channels/event-channel` | packages/runtime/src/channels/event-channel.ts |
-| `./channels/state-changes/live` | packages/runtime/src/channels/state-changes/live.ts |
-| `./sources/codecs/agent-adapters` | packages/runtime/src/sources/codecs/agent-adapters/index.ts |
-| `./agent-adapters` | packages/runtime/src/sources/codecs/agent-adapters/index.ts |
-| `./transforms` | packages/runtime/src/transforms/index.ts |
 
-## `@firegrid/tiny-firegrid` — 2 unused subpath(s)
+## `@firegrid/tiny-firegrid` — 1 unused subpath(s)
 
 | subpath | target |
 | --- | --- |
 | `.` | packages/tiny-firegrid/src/types.ts |
-| `./experiment` | packages/tiny-firegrid/src/experiment/index.ts |
 

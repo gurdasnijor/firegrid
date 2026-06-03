@@ -4,33 +4,15 @@
   "note": "Machine-generated. UNUSED = 0 external importers.",
   "summary": [
     {
-      "pkg": "@firegrid/runtime",
-      "total": 23,
-      "used": 7,
-      "unused": 16
-    },
-    {
       "pkg": "@firegrid/protocol",
-      "total": 17,
+      "total": 13,
       "used": 12,
-      "unused": 5
-    },
-    {
-      "pkg": "@firegrid/tiny-firegrid",
-      "total": 2,
-      "used": 0,
-      "unused": 2
-    },
-    {
-      "pkg": "@firegrid/client-sdk",
-      "total": 4,
-      "used": 3,
       "unused": 1
     },
     {
-      "pkg": "effect-durable-operators",
-      "total": 2,
-      "used": 1,
+      "pkg": "@firegrid/runtime",
+      "total": 8,
+      "used": 7,
       "unused": 1
     },
     {
@@ -40,16 +22,28 @@
       "unused": 1
     },
     {
-      "pkg": "@firegrid/cli",
+      "pkg": "@firegrid/host-sdk",
       "total": 1,
       "used": 0,
       "unused": 1
     },
     {
-      "pkg": "@firegrid/host-sdk",
+      "pkg": "@firegrid/tiny-firegrid",
       "total": 1,
       "used": 0,
       "unused": 1
+    },
+    {
+      "pkg": "@firegrid/client-sdk",
+      "total": 3,
+      "used": 3,
+      "unused": 0
+    },
+    {
+      "pkg": "effect-durable-operators",
+      "total": 1,
+      "used": 1,
+      "unused": 0
     },
     {
       "pkg": "effect-durable-streams",
@@ -59,13 +53,6 @@
     }
   ],
   "subpaths": [
-    {
-      "pkg": "@firegrid/cli",
-      "subpath": ".",
-      "specifier": "@firegrid/cli",
-      "target": "packages/cli/src/index.ts",
-      "importers": []
-    },
     {
       "pkg": "@firegrid/client-sdk",
       "subpath": ".",
@@ -82,7 +69,6 @@
       "specifier": "@firegrid/client-sdk/firegrid",
       "target": "packages/client-sdk/src/firegrid.ts",
       "importers": [
-        "packages/tiny-firegrid/src/experiment/index.ts",
         "packages/tiny-firegrid/src/runner/runtime.ts",
         "packages/tiny-firegrid/src/simulations/channel-completion-contracts/driver.ts",
         "packages/tiny-firegrid/src/simulations/child-output-existing-channel-router/driver.ts",
@@ -113,13 +99,6 @@
         "packages/tiny-firegrid/src/simulations/mcp-client-sdk-gateway/driver.ts",
         "packages/tiny-firegrid/src/simulations/mcp-client-sdk-observations/driver.ts"
       ]
-    },
-    {
-      "pkg": "@firegrid/client-sdk",
-      "subpath": "./permission-auto-approve",
-      "specifier": "@firegrid/client-sdk/permission-auto-approve",
-      "target": "packages/client-sdk/src/permission-auto-approve.ts",
-      "importers": []
     },
     {
       "pkg": "@firegrid/host-sdk",
@@ -200,7 +179,6 @@
         "packages/client-sdk/src/firegrid.ts",
         "packages/runtime/src/bin/_compose.ts",
         "packages/runtime/src/bin/run.ts",
-        "packages/runtime/src/channels/event-channel.ts",
         "packages/runtime/src/channels/host-control.ts",
         "packages/runtime/src/channels/host-plane-router.ts",
         "packages/runtime/src/channels/router.ts",
@@ -209,8 +187,6 @@
         "packages/runtime/src/channels/session-agent-output.ts",
         "packages/runtime/src/channels/session-log.ts",
         "packages/runtime/src/channels/session-self/live.ts",
-        "packages/runtime/src/channels/state-changes/live.ts",
-        "packages/runtime/src/channels/verified-webhook/live.ts",
         "packages/runtime/src/channels/verified-webhook/source-live.ts",
         "packages/runtime/src/sources/codecs/acp/stdio-edge.ts",
         "packages/runtime/src/unified/channel-bindings.ts",
@@ -233,29 +209,13 @@
     },
     {
       "pkg": "@firegrid/protocol",
-      "subpath": "./channels/human",
-      "specifier": "@firegrid/protocol/channels/human",
-      "target": "packages/protocol/src/channels/human/index.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/protocol",
       "subpath": "./channels/router",
       "specifier": "@firegrid/protocol/channels/router",
       "target": "packages/protocol/src/channels/router.ts",
       "importers": [
         "packages/client-sdk/src/firegrid.ts",
-        "packages/runtime/src/channels/router.ts",
-        "packages/runtime/src/channels/router/live.ts",
-        "packages/tiny-firegrid/src/experiment/index.ts"
+        "packages/runtime/src/channels/router.ts"
       ]
-    },
-    {
-      "pkg": "@firegrid/protocol",
-      "subpath": "./channels/session-permission",
-      "specifier": "@firegrid/protocol/channels/session-permission",
-      "target": "packages/protocol/src/channels/session-permission.ts",
-      "importers": []
     },
     {
       "pkg": "@firegrid/protocol",
@@ -272,7 +232,6 @@
         "packages/runtime/src/channels/session-self/live.ts",
         "packages/runtime/src/sources/codecs/acp/stdio-edge.ts",
         "packages/runtime/src/sources/codecs/agent-adapters/AgentAdapter.ts",
-        "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
         "packages/runtime/src/sources/sandbox/secrets.ts",
         "packages/runtime/src/tables/codec-adapter-providers.ts",
         "packages/runtime/src/tables/codec-adapter-tags.ts",
@@ -295,18 +254,12 @@
         "packages/runtime/test/sources/codecs/agent-adapters/index.test.ts",
         "packages/runtime/test/unified/cross-attempt-output-flush.test.ts",
         "packages/runtime/test/unified/firegrid-runtime-composition-compile-spike.test.ts",
+        "packages/runtime/test/unified/tf-cxwu-1-modularity-compile-spike.test.ts",
         "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
         "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
         "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
         "packages/tiny-firegrid/src/simulations/verified-webhook-wait/host.ts"
       ]
-    },
-    {
-      "pkg": "@firegrid/protocol",
-      "subpath": "./mcp",
-      "specifier": "@firegrid/protocol/mcp",
-      "target": "packages/protocol/src/mcp/index.ts",
-      "importers": []
     },
     {
       "pkg": "@firegrid/protocol",
@@ -317,13 +270,6 @@
         "packages/runtime/test/channels/session-agent-output-route.test.ts",
         "packages/runtime/test/channels/session-self-runtime-router.test.ts"
       ]
-    },
-    {
-      "pkg": "@firegrid/protocol",
-      "subpath": "./operations",
-      "specifier": "@firegrid/protocol/operations",
-      "target": "packages/protocol/src/operations/index.ts",
-      "importers": []
     },
     {
       "pkg": "@firegrid/protocol",
@@ -378,14 +324,12 @@
         "packages/runtime/src/channels/session-agent-output.ts",
         "packages/runtime/src/events/output.ts",
         "packages/runtime/src/sources/codecs/acp/stdio-edge.ts",
-        "packages/runtime/src/transforms/decode-output-row.ts",
         "packages/runtime/src/unified/codec-adapter.ts",
         "packages/runtime/src/unified/mcp-host/task-projection.ts",
         "packages/runtime/src/unified/observers.ts",
         "packages/runtime/test/channels/session-agent-output-route.test.ts",
         "packages/runtime/test/channels/session-self-runtime-router.test.ts",
         "packages/runtime/test/mcp-host/mcp-tool-dispatch-sleep.test.ts",
-        "packages/tiny-firegrid/src/experiment/index.ts",
         "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
         "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
         "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
@@ -414,13 +358,6 @@
     },
     {
       "pkg": "@firegrid/runtime",
-      "subpath": "./agent-adapters",
-      "specifier": "@firegrid/runtime/agent-adapters",
-      "target": "packages/runtime/src/sources/codecs/agent-adapters/index.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
       "subpath": "./channels",
       "specifier": "@firegrid/runtime/channels",
       "target": "packages/runtime/src/channels/index.ts",
@@ -434,62 +371,6 @@
     },
     {
       "pkg": "@firegrid/runtime",
-      "subpath": "./channels/event-channel",
-      "specifier": "@firegrid/runtime/channels/event-channel",
-      "target": "packages/runtime/src/channels/event-channel.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./channels/observation-streams",
-      "specifier": "@firegrid/runtime/channels/observation-streams",
-      "target": "packages/runtime/src/channels/observation-streams/index.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./channels/router/live",
-      "specifier": "@firegrid/runtime/channels/router/live",
-      "target": "packages/runtime/src/channels/router/live.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./channels/session-self/live",
-      "specifier": "@firegrid/runtime/channels/session-self/live",
-      "target": "packages/runtime/src/channels/session-self/live.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./channels/state-changes/live",
-      "specifier": "@firegrid/runtime/channels/state-changes/live",
-      "target": "packages/runtime/src/channels/state-changes/live.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./channels/verified-webhook/live",
-      "specifier": "@firegrid/runtime/channels/verified-webhook/live",
-      "target": "packages/runtime/src/channels/verified-webhook/live.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./engine/durable-streams-workflow-engine",
-      "specifier": "@firegrid/runtime/engine/durable-streams-workflow-engine",
-      "target": "packages/runtime/src/engine/durable-streams-workflow-engine.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./errors",
-      "specifier": "@firegrid/runtime/errors",
-      "target": "packages/runtime/src/runtime-errors.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
       "subpath": "./events",
       "specifier": "@firegrid/runtime/events",
       "target": "packages/runtime/src/events/index.ts",
@@ -497,20 +378,6 @@
         "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts",
         "packages/tiny-firegrid/src/simulations/op-registry-prompt-keystone/host.ts"
       ]
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./runtime-output",
-      "specifier": "@firegrid/runtime/runtime-output",
-      "target": "packages/runtime/src/tables/runtime-output-public.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./sources/codecs",
-      "specifier": "@firegrid/runtime/sources/codecs",
-      "target": "packages/runtime/src/sources/codecs/index.ts",
-      "importers": []
     },
     {
       "pkg": "@firegrid/runtime",
@@ -522,20 +389,6 @@
         "packages/tiny-firegrid/src/simulations/mcp-production-task-projection/host.ts",
         "packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts"
       ]
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./sources/codecs/agent-adapters",
-      "specifier": "@firegrid/runtime/sources/codecs/agent-adapters",
-      "target": "packages/runtime/src/sources/codecs/agent-adapters/index.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./sources/codecs/session-byte-stream-adapter",
-      "specifier": "@firegrid/runtime/sources/codecs/session-byte-stream-adapter",
-      "target": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
-      "importers": []
     },
     {
       "pkg": "@firegrid/runtime",
@@ -554,26 +407,12 @@
     },
     {
       "pkg": "@firegrid/runtime",
-      "subpath": "./sources/sandbox/local-process-from-env",
-      "specifier": "@firegrid/runtime/sources/sandbox/local-process-from-env",
-      "target": "packages/runtime/src/sources/sandbox/local-process-from-env.ts",
-      "importers": []
-    },
-    {
-      "pkg": "@firegrid/runtime",
       "subpath": "./streams",
       "specifier": "@firegrid/runtime/streams",
       "target": "packages/runtime/src/channels/observation-streams/index.ts",
       "importers": [
         "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts"
       ]
-    },
-    {
-      "pkg": "@firegrid/runtime",
-      "subpath": "./transforms",
-      "specifier": "@firegrid/runtime/transforms",
-      "target": "packages/runtime/src/transforms/index.ts",
-      "importers": []
     },
     {
       "pkg": "@firegrid/runtime",
@@ -617,13 +456,6 @@
       "importers": []
     },
     {
-      "pkg": "@firegrid/tiny-firegrid",
-      "subpath": "./experiment",
-      "specifier": "@firegrid/tiny-firegrid/experiment",
-      "target": "packages/tiny-firegrid/src/experiment/index.ts",
-      "importers": []
-    },
-    {
       "pkg": "effect-durable-operators",
       "subpath": ".",
       "specifier": "effect-durable-operators",
@@ -632,14 +464,13 @@
         "packages/protocol/src/channels/session-log.ts",
         "packages/protocol/src/index.ts",
         "packages/protocol/src/launch/control-request.ts",
+        "packages/protocol/src/launch/durable-streams.ts",
         "packages/protocol/src/launch/host-context-authority.ts",
         "packages/protocol/src/launch/table.ts",
         "packages/protocol/src/runtime-ingress/schema.ts",
-        "packages/runtime/src/channels/event-channel.ts",
         "packages/runtime/src/channels/observation-streams/runtime-observation-streams.ts",
         "packages/runtime/src/channels/session-agent-output.ts",
         "packages/runtime/src/channels/session-log.ts",
-        "packages/runtime/src/channels/state-changes/live.ts",
         "packages/runtime/src/engine/durable-streams-workflow-engine.ts",
         "packages/runtime/src/engine/internal/engine-runtime.ts",
         "packages/runtime/src/engine/internal/table.ts",
@@ -654,13 +485,6 @@
         "packages/tiny-firegrid/src/simulations/factory-capstone/host.ts",
         "packages/tiny-firegrid/src/simulations/verified-webhook-wait/host.ts"
       ]
-    },
-    {
-      "pkg": "effect-durable-operators",
-      "subpath": "./react",
-      "specifier": "effect-durable-operators/react",
-      "target": "packages/effect-durable-operators/src/react.ts",
-      "importers": []
     },
     {
       "pkg": "effect-durable-streams",

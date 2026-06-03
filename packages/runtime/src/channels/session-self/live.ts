@@ -49,7 +49,7 @@ const lifecycleEventFromRow = (
   },
 })
 
-export const makeSessionSelfChannels = (
+const makeSessionSelfChannels = (
   options: {
     readonly control: RuntimeControlPlaneTable["Type"]
   },

@@ -30,14 +30,3 @@ export const mapRuntimeContextError = <E>(
 ) =>
   Effect.mapError((cause: E) =>
     asRuntimeContextError(op, message, contextId, cause))
-
-export class RuntimeIngressError extends Schema.TaggedError<RuntimeIngressError>()(
-  "RuntimeIngressError",
-  {
-    op: Schema.String,
-    contextId: Schema.optional(Schema.String),
-    inputId: Schema.optional(Schema.String),
-    message: Schema.String,
-    cause: Schema.optional(Schema.Unknown),
-  },
-) {}

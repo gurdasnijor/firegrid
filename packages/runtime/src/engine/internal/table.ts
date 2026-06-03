@@ -38,7 +38,6 @@ const WorkflowActivityRowSchema = Schema.Struct({
   attempt: Schema.Number,
   result: Schema.Unknown,
 })
-export type WorkflowActivityRow = Schema.Schema.Type<typeof WorkflowActivityRowSchema>
 
 const WorkflowActivityClaimRowSchema = Schema.Struct({
   claimKey: Schema.String.pipe(DurableTable.primaryKey),
@@ -57,7 +56,6 @@ const WorkflowDeferredRowSchema = Schema.Struct({
   deferredName: Schema.String,
   exit: Schema.Unknown,
 })
-export type WorkflowDeferredRow = Schema.Schema.Type<typeof WorkflowDeferredRowSchema>
 
 const WorkflowClockWakeupRowSchema = Schema.Struct({
   clockKey: Schema.String.pipe(DurableTable.primaryKey),

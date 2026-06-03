@@ -31,7 +31,7 @@ export class AgentCodecError extends Schema.TaggedError<AgentCodecError>()(
   },
 ) {}
 
-export interface AgentCodecMeta {
+interface AgentCodecMeta {
   readonly kind: string
   readonly capabilities: AgentCapabilities
 }
