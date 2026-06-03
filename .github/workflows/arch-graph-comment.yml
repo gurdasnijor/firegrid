@@ -56,6 +56,13 @@ jobs:
             if [ "$(grep -c '\["' /tmp/affected.mmd 2>/dev/null || echo 0)" -gt 0 ]; then
               echo 'Modules changed since base **and everything that can reach them** (changed ones highlighted), via `depcruise --affected`:'
               echo
+              # GitHub's inline mermaid is hard to read for large graphs. Offer a
+              # one-click pan/zoom viewer (newmo-oss/mermaid-viewer): DEFLATE-
+              # compress the source (zlib, matching the viewer's
+              # CompressionStream("deflate")) + standard base64 into the URL hash.
+              VIEWER_HASH="$(python3 -c 'import zlib,base64,sys; sys.stdout.write(base64.b64encode(zlib.compress(sys.stdin.buffer.read())).decode())' < /tmp/affected.mmd)"
+              echo "🔍 **[Open in pan/zoom viewer](https://newmo-oss.github.io/mermaid-viewer/#${VIEWER_HASH})** — interactive zoom for large graphs."
+              echo
               echo '```mermaid'
               cat /tmp/affected.mmd
               echo ''   # depcruise emits no trailing newline — keep the closing fence on its own line
