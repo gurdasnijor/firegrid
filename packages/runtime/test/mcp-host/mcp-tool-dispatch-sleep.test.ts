@@ -17,6 +17,7 @@
 
 import { WorkflowEngine } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
+import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
   HostPromptChannel,
   HostPromptChannelTarget,
@@ -24,11 +25,29 @@ import {
   makeDurableEventChannel,
   makeEgressChannel,
 } from "@firegrid/protocol/channels"
+import {
+  CurrentHostSession,
+  HostIdSchema,
+  HostSessionIdSchema,
+  makeHostSessionRow,
+  makeRuntimeContext,
+  normalizeRuntimeIntent,
+  RuntimeControlPlaneTable,
+  runtimeControlPlaneStreamUrl,
+} from "@firegrid/protocol/launch"
 import { PublicPromptRequestSchema } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Exit, Layer, Ref, Schema } from "effect"
+import { Effect, Exit, Layer, Option, Ref, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { RuntimeChannelRouter, makeRuntimeChannelRouter, runtimeRouteFromChannel } from "../../src/channels/index.ts"
+import {
+  HostControlChannelBindingsLive,
+  HostPlaneSessionControlRouterLive,
+  RuntimeChannelRouter,
+  makeRuntimeChannelRouter,
+  runtimeRouteFromChannel,
+} from "../../src/channels/index.ts"
 import { DurableStreamsWorkflowEngine } from "../../src/engine/durable-streams-workflow-engine.ts"
+import { ContextResolverTag } from "../../src/tables/codec-adapter-tags.ts"
+import { UnifiedChannelBindingsLive } from "../../src/unified/channel-bindings.ts"
 import {
   buildMcpToolDispatchLayer,
   makeFiregridAgentToolExecutor,
@@ -54,10 +73,49 @@ afterEach(async () => {
 const streamUrlFor = (tag: string): string =>
   `${baseUrl}/v1/stream/mcp-tool-dispatch-${tag}-${crypto.randomUUID()}`
 
-const runWith = <A, E>(
+const controlPlaneLayer = (namespace: string) =>
+  RuntimeControlPlaneTable.layer({
+    streamOptions: {
+      url: runtimeControlPlaneStreamUrl({
+        baseUrl: baseUrl!,
+        namespace,
+      }),
+      contentType: "application/json",
+    },
+  })
+
+const currentHostSessionLayer = (namespace: string) =>
+  Layer.succeed(
+    CurrentHostSession,
+    makeHostSessionRow({
+      hostId: Schema.decodeSync(HostIdSchema)("mcp-tool-dispatch-host"),
+      hostSessionId: Schema.decodeSync(HostSessionIdSchema)(
+        "mcp-tool-dispatch-host-session",
+      ),
+      namespace,
+      startedAtMs: 0,
+    }),
+  )
+
+const contextResolverFromControlPlaneTable = Layer.effect(
+  ContextResolverTag,
+  Effect.gen(function*() {
+    const control = yield* RuntimeControlPlaneTable
+    return {
+      resolve: (contextId: string) => control.contexts.get(contextId),
+    }
+  }),
+)
+
+const sessionNewHostPlaneLayer = HostPlaneSessionControlRouterLive.pipe(
+  Layer.provideMerge(HostControlChannelBindingsLive),
+  Layer.provideMerge(UnifiedChannelBindingsLive),
+)
+
+const runWith = <A, E, R>(
   streamUrl: string,
-  workflowLayer: Layer.Layer<never, unknown, WorkflowEngine.WorkflowEngine>,
-  effect: Effect.Effect<A, E, unknown>,
+  workflowLayer: Layer.Layer<R, unknown, WorkflowEngine.WorkflowEngine>,
+  effect: Effect.Effect<A, E, R | WorkflowEngine.WorkflowEngine>,
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
@@ -68,7 +126,7 @@ const runWith = <A, E>(
           ),
         ),
       ),
-    ) as Effect.Effect<A, unknown, never>,
+    ),
   )
 
 const promptRecorderLayer = (
@@ -232,6 +290,69 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
     if (Exit.isFailure(exit)) {
       expect(String(exit.cause)).toContain("not yet ported")
     }
+  })
+
+  it("firegrid-factory-aligned-agent-tools.SESSION.1 firegrid-factory-aligned-agent-tools.OBSERVATION.1 persists session_new child context row with parentContextId", async () => {
+    const namespace = `session-new-parent-fk-${crypto.randomUUID()}`
+    const parentContextId = "ctx-parent-session-new-fk"
+    const toolUseId = "tu-session-new-fk"
+    const result = await runWith(
+      streamUrlFor("session-new-parent-fk"),
+      ToolDispatchLive.pipe(
+        Layer.provideMerge(contextResolverFromControlPlaneTable),
+        Layer.provideMerge(sessionNewHostPlaneLayer),
+        Layer.provideMerge(controlPlaneLayer(namespace)),
+        Layer.provideMerge(currentHostSessionLayer(namespace)),
+      ),
+      Effect.gen(function*() {
+        const control = yield* RuntimeControlPlaneTable
+        const hostSession = yield* CurrentHostSession
+        yield* control.contexts.insertOrGet(
+          makeRuntimeContext({
+            contextId: parentContextId,
+            createdAtMs: 0,
+            createdBy: "test-parent",
+            runtime: normalizeRuntimeIntent({
+              provider: "local-process",
+              config: {
+                argv: ["node", "parent-agent.js"],
+                agent: "parent-agent",
+                agentProtocol: "acp",
+              },
+            }),
+            host: {
+              hostId: hostSession.hostId,
+              streamPrefix: hostSession.streamPrefix,
+              boundAtMs: 0,
+            },
+          }),
+        )
+
+        const dispatch = yield* ToolDispatch
+        const output = yield* dispatch.call({
+          contextId: parentContextId,
+          toolUseId,
+          toolName: "session_new",
+          input: {
+            agentKind: "child-agent",
+            prompt: "Implement the child task.",
+          },
+        }).pipe(
+          Effect.flatMap(Schema.decodeUnknown(AgentToolSchemas.SessionNewToolOutputSchema)),
+        )
+        const child = yield* control.contexts.get(output.session.contextId)
+        return { output, child }
+      }),
+    )
+
+    expect(result.output.session.metadata).toMatchObject({ parentContextId })
+    expect(Option.isSome(result.child)).toBe(true)
+    if (!Option.isSome(result.child)) throw new Error("expected child context row")
+    expect(result.child.value).toMatchObject({
+      contextId: `session:firegrid.mcp.session_new:${parentContextId}:${toolUseId}`,
+      createdBy: `mcp:${parentContextId}`,
+      parentContextId,
+    })
   })
 
   it("tf-0awo.15: wait_until without prompt resolves inline without appending a new turn", async () => {

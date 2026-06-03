@@ -133,6 +133,7 @@ export const makeLocalRuntimeContextForHostSession = (
     readonly contextId: string
     readonly createdAtMs: number
     readonly createdBy?: string
+    readonly parentContextId?: string
   },
 ) =>
   Effect.gen(function* () {
@@ -143,6 +144,7 @@ export const makeLocalRuntimeContextForHostSession = (
       contextId: options.contextId,
       createdAtMs: options.createdAtMs,
       ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
+      ...(options.parentContextId === undefined ? {} : { parentContextId: options.parentContextId }),
       runtime: intent,
       host: hostBindingFromSession(session, options.createdAtMs),
     })
@@ -172,6 +174,7 @@ export const insertLocalRuntimeContext = (
   options: {
     readonly contextId: string
     readonly createdBy?: string
+    readonly parentContextId?: string
   },
 ) =>
   Effect.gen(function* () {

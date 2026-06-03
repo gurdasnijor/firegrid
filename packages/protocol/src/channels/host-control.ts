@@ -32,6 +32,7 @@ export const HostContextsCreateRequestSchema = Schema.Struct({
   contextId: Schema.String.pipe(Schema.minLength(1)),
   runtime: PublicLaunchRuntimeIntentSchema,
   createdBy: Schema.optional(Schema.String),
+  parentContextId: Schema.optional(Schema.String),
 }).annotations({
   identifier: "firegrid.channel.hostContextsCreate.request",
   title: "Host contexts create request",

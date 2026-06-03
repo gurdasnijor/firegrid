@@ -38,6 +38,7 @@ const insertHostBoundRuntimeContext = (options: {
   readonly hostSession: HostSessionRow
   readonly contextId: string
   readonly createdBy?: string
+  readonly parentContextId?: string
   readonly runtime: Omit<RuntimeContext["runtime"], "journal">
 }) =>
   Effect.gen(function*() {
@@ -46,6 +47,7 @@ const insertHostBoundRuntimeContext = (options: {
       contextId: options.contextId,
       createdAt: new Date(nowMs).toISOString(),
       ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
+      ...(options.parentContextId === undefined ? {} : { parentContextId: options.parentContextId }),
       runtime: {
         provider: options.runtime.provider,
         config: options.runtime.config,
@@ -58,6 +60,14 @@ const insertHostBoundRuntimeContext = (options: {
       },
     }).pipe(Effect.orDie, Effect.asVoid)
   })
+
+const runtimeContextProvenance = (options: {
+  readonly createdBy: string | undefined
+  readonly parentContextId: string | undefined
+}) => ({
+  ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
+  ...(options.parentContextId === undefined ? {} : { parentContextId: options.parentContextId }),
+})
 
 export const HostContextsCreateChannelLive = Layer.effect(
   HostContextsCreateChannel,
@@ -74,7 +84,10 @@ export const HostContextsCreateChannelLive = Layer.effect(
             control,
             hostSession,
             contextId: request.contextId,
-            ...(request.createdBy === undefined ? {} : { createdBy: request.createdBy }),
+            ...runtimeContextProvenance({
+              createdBy: request.createdBy,
+              parentContextId: request.parentContextId,
+            }),
             runtime: request.runtime,
           })
           return {
@@ -102,7 +115,10 @@ export const HostSessionsCreateOrLoadChannelLive = Layer.effect(
             control,
             hostSession,
             contextId: id,
-            ...(request.createdBy === undefined ? {} : { createdBy: request.createdBy }),
+            ...runtimeContextProvenance({
+              createdBy: request.createdBy,
+              parentContextId: request.parentContextId,
+            }),
             runtime: request.runtime,
           })
           return {
