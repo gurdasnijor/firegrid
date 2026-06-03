@@ -166,18 +166,3 @@ export const withRowOtelParent = (
     ? (effect as Effect.Effect<A, E, Exclude<R, Tracer.ParentSpan>>)
     : Effect.withParentSpan(effect, parent)
 }
-
-/**
- * Build a `Tracer.SpanLink` from a row that may carry `_otel`, for the wait
- * router's wait-registrar-as-link use case. Returns `undefined` when the row
- * has no `_otel` so callers can drop it from the `links: [...]` array.
- */
-export const rowOtelSpanLink = (
-  row: unknown,
-  attributes: Readonly<Record<string, unknown>> = {},
-): Tracer.SpanLink | undefined => {
-  const span = rowOtelExternalSpan(row)
-  return span === undefined
-    ? undefined
-    : { _tag: "SpanLink", span, attributes }
-}

@@ -5,10 +5,7 @@
 // Uses `effect-durable-operators` projection types so canonical home is
 // runtime/channels (not protocol).
 
-import type {
-  DurableTableCollectionFacade,
-  ProjectionStream,
-} from "effect-durable-operators"
+import type { ProjectionStream } from "effect-durable-operators"
 import type { DurableTableError } from "effect-durable-operators"
 import type { Schema } from "effect"
 import {
@@ -37,19 +34,3 @@ export const stateChangesChannel = <S extends Schema.Schema.Any>(
     sourceClass: "static-source",
   }
 }
-
-export const stateChangesChannelFromCollection = <S extends Schema.Schema.Any>(
-  options: {
-    readonly target: ChannelTarget | string
-    readonly schema: S
-    readonly collection: Pick<
-      DurableTableCollectionFacade<Schema.Schema.Type<S> & object, unknown>,
-      "rows"
-    >
-  },
-): StateChangesChannel<S> =>
-  stateChangesChannel({
-    target: options.target,
-    schema: options.schema,
-    rows: options.collection.rows,
-  })

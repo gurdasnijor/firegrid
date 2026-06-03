@@ -1,21 +1,6 @@
-import {
-  VerifiedWebhookFactChannel,
-  VerifiedWebhookFactChannelTarget,
-  makeIngressChannel,
-  type ChannelTarget,
-  type IngressChannel,
-} from "@firegrid/protocol/channels"
-import {
-  VerifiedWebhookFactSchema,
-} from "@firegrid/protocol/verified-webhook"
-import {
-  CallerOwnedFactStreams,
-} from "../observation-streams/index.ts"
-import {
-  VerifiedWebhookFactTable,
-  type VerifiedWebhookFactTableService,
-} from "../../verified-webhook-ingest/index.ts"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { VerifiedWebhookFactChannelTarget, makeIngressChannel, type ChannelTarget, type IngressChannel } from "@firegrid/protocol/channels"
+import { type VerifiedWebhookFactTableService } from "../../verified-webhook-ingest/index.ts"
+import { Schema, Stream } from "effect"
 
 // Relocated from the deleted host-sdk path
 // `host-sdk/src/host/channels/verified-webhook/index.ts` (Class D
@@ -50,31 +35,3 @@ export const verifiedWebhookFactChannel = <S extends Schema.Schema.AnyNoContext>
       }),
     ),
   })
-
-export const VerifiedWebhookFactChannelLive = Layer.effect(
-  VerifiedWebhookFactChannel,
-  Effect.gen(function*() {
-    const table = yield* VerifiedWebhookFactTable
-    return verifiedWebhookFactChannel(table, {
-      schema: VerifiedWebhookFactSchema,
-    })
-  }),
-)
-
-export const VerifiedWebhookFactCallerOwnedFactStreamsLive: Layer.Layer<
-  CallerOwnedFactStreams,
-  never,
-  VerifiedWebhookFactChannel
-> =
-  Layer.effect(
-    CallerOwnedFactStreams,
-    Effect.gen(function*() {
-      const channel = yield* VerifiedWebhookFactChannel
-      return CallerOwnedFactStreams.of({
-        streamFor: stream =>
-          stream === String(channel.target)
-            ? channel.binding.stream
-            : Stream.empty,
-      })
-    }),
-  )

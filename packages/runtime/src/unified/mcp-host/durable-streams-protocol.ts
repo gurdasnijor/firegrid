@@ -1,7 +1,7 @@
 import { FetchHttpClient } from "@effect/platform"
 import { RpcServer } from "@effect/rpc"
 import type * as RpcMessage from "@effect/rpc/RpcMessage"
-import { Data, Effect, Layer, Mailbox, Option, Schema, Stream } from "effect"
+import { Data, Effect, Mailbox, Option, Schema, Stream } from "effect"
 
 export interface FiregridMcpDurableStreamsWireOptions {
   readonly baseUrl: string
@@ -216,14 +216,3 @@ export const makeDurableStreamsProtocol = (
         }
       }))
   })
-
-export const layerProtocolDurableStreams = (
-  options: FiregridMcpDurableStreamsWireOptions,
-): Layer.Layer<RpcServer.Protocol> =>
-  Layer.scoped(
-    RpcServer.Protocol,
-    makeDurableStreamsProtocol(options, {
-      onRequest: ({ clientId, message, writeRequest }) =>
-        writeRequest(clientId, message),
-    }).pipe(Effect.orDie),
-  )

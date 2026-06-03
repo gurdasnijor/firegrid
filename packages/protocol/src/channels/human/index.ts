@@ -11,17 +11,7 @@
 // for protocol's CLI-safe / browser-safe subpath.
 
 import type { Effect, Stream } from "effect"
-import {
-  makeIngressChannel,
-  makeEgressChannel,
-  makeChannelTarget,
-  type ChannelTarget,
-  type HumanChannelKind,
-  type HumanChannelPair,
-  HumanMessageSchema,
-  humanChannelTarget,
-  type HumanMessage,
-} from "../index.ts"
+import { makeIngressChannel, makeEgressChannel, makeChannelTarget, type ChannelTarget, type HumanChannelKind, type HumanChannelPair, humanChannelTarget } from "../index.ts"
 import type { Schema } from "effect"
 
 export const humanChannelPair = <S extends Schema.Schema.Any>(
@@ -60,33 +50,3 @@ export const humanChannelPair = <S extends Schema.Schema.Any>(
     registrations: [ingress, egress],
   }
 }
-
-interface HumanMessageChannelOptions {
-  readonly handle: string
-  readonly target?: ChannelTarget | string
-  readonly incoming: Stream.Stream<HumanMessage, unknown, never>
-  readonly send: (payload: HumanMessage) => Effect.Effect<void, unknown, never>
-}
-
-const humanMessageChannel = (
-  kind: HumanChannelKind,
-  options: HumanMessageChannelOptions,
-): HumanChannelPair<typeof HumanMessageSchema> =>
-  humanChannelPair({
-    kind,
-    handle: options.handle,
-    ...(options.target === undefined ? {} : { target: options.target }),
-    schema: HumanMessageSchema,
-    incoming: options.incoming,
-    send: options.send,
-  })
-
-export const dmChannel = (
-  options: HumanMessageChannelOptions,
-): HumanChannelPair<typeof HumanMessageSchema> =>
-  humanMessageChannel("dm", options)
-
-export const notificationChannel = (
-  options: HumanMessageChannelOptions,
-): HumanChannelPair<typeof HumanMessageSchema> =>
-  humanMessageChannel("notification", options)

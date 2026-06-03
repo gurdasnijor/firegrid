@@ -1,10 +1,5 @@
 import { Schema } from "effect"
-import type {
-  ChannelRegistration,
-  ChannelTarget,
-  EgressChannel,
-  IngressChannel,
-} from "./core.ts"
+import type { ChannelTarget, EgressChannel, IngressChannel } from "./core.ts"
 import { makeChannelTarget } from "./core.ts"
 
 export const HumanHandleSchema = Schema.String.pipe(Schema.minLength(1))
@@ -38,8 +33,3 @@ export const humanChannelTarget = (
   handle: string,
 ): ChannelTarget =>
   makeChannelTarget(`${kind}.${Schema.decodeUnknownSync(HumanHandleSchema)(handle)}`)
-
-export const humanChannelRegistrations = (
-  channels: Iterable<HumanChannelPair<Schema.Schema.Any>>,
-): ReadonlyArray<ChannelRegistration> =>
-  Array.from(channels).flatMap(channel => channel.registrations)

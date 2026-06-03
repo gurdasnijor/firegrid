@@ -9,7 +9,6 @@ export {
 } from "./session-agent-output-route.ts"
 export {
   SessionLifecycleRouteInputSchema,
-  sessionLifecycleTerminalRoute,
   type SessionLifecycleRouteInput,
 } from "./session-lifecycle-route.ts"
 // `submitSessionPermissionResponse` deleted per SDD_FIREGRID_PROTOCOL_

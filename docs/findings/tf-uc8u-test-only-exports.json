@@ -385,6 +385,20 @@
       ]
     },
     {
+      "file": "packages/runtime/src/sources/sandbox/local-process.ts",
+      "name": "localProcessSpawnEnvFromHostEnv",
+      "line": 107,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": false,
+      "testImporters": 1,
+      "klass": "TEST-ONLY",
+      "testRefs": [
+        "packages/runtime/test/sources/sandbox/local-process.test.ts"
+      ]
+    },
+    {
       "file": "packages/runtime/src/sources/sandbox/secrets.ts",
       "name": "resolveMcpServerHeaders",
       "line": 187,
@@ -475,7 +489,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnToolInputSchema",
-      "line": 369,
+      "line": 368,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -489,7 +503,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnAllToolInputSchema",
-      "line": 417,
+      "line": 416,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -880,6 +894,20 @@
       "klass": "TEST-EXPOSED-INTERNAL",
       "testRefs": [
         "packages/runtime/test/channels/session-agent-output-route.test.ts"
+      ]
+    },
+    {
+      "file": "packages/runtime/src/events/contract.ts",
+      "name": "AgentPromptSchema",
+      "line": 30,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 1,
+      "klass": "TEST-EXPOSED-INTERNAL",
+      "testRefs": [
+        "packages/runtime/test/events/contract.test.ts"
       ]
     },
     {
@@ -1318,6 +1346,18 @@
     },
     {
       "file": "packages/protocol/src/agent-output/schema.ts",
+      "name": "PermissionOptionSchema",
+      "line": 36,
+      "kind": "const",
+      "pkg": "protocol",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/agent-output/schema.ts",
       "name": "AgentOutputEventOrUnknownSchema",
       "line": 140,
       "kind": "const",
@@ -1331,7 +1371,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "WaitForToolMatchSchema",
-      "line": 138,
+      "line": 137,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1343,7 +1383,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "ChannelToolTargetSchema",
-      "line": 253,
+      "line": 252,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1355,7 +1395,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "WaitAnyMatchSchema",
-      "line": 294,
+      "line": 293,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1367,7 +1407,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "WaitAnyDescriptorSchema",
-      "line": 304,
+      "line": 303,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1379,7 +1419,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnOptionsSchema",
-      "line": 358,
+      "line": 357,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1391,7 +1431,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "WorkflowTerminalStateSchema",
-      "line": 382,
+      "line": 381,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1403,7 +1443,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnToolOutputSchema",
-      "line": 395,
+      "line": 394,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1415,7 +1455,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnTaskSchema",
-      "line": 406,
+      "line": 405,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1427,7 +1467,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnAllChildResultSchema",
-      "line": 428,
+      "line": 427,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1439,7 +1479,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnAllToolOutputSchema",
-      "line": 435,
+      "line": 434,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1451,7 +1491,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionStatusSchema",
-      "line": 449,
+      "line": 448,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1463,7 +1503,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionHandleSchema",
-      "line": 463,
+      "line": 462,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1475,7 +1515,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionStatusInputSchema",
-      "line": 557,
+      "line": 556,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1487,7 +1527,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionStatusOutputSchema",
-      "line": 569,
+      "line": 568,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1499,7 +1539,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SandboxRefSchema",
-      "line": 648,
+      "line": 647,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1511,7 +1551,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "LegacyExecuteToolInputSchema",
-      "line": 657,
+      "line": 656,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1523,7 +1563,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionCapabilityRefSchema",
-      "line": 670,
+      "line": 669,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1535,43 +1575,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionExecuteToolInputSchema",
-      "line": 683,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/agent-tools/schema.ts",
-      "name": "ApprovalCallRequestSchema",
-      "line": 785,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/agent-tools/schema.ts",
-      "name": "ApprovalCallPermissionRequestSchema",
-      "line": 800,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/agent-tools/schema.ts",
-      "name": "ApprovalCallOutputSchema",
-      "line": 817,
+      "line": 682,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1619,7 +1623,7 @@
     {
       "file": "packages/protocol/src/channels/human.ts",
       "name": "HumanHandleSchema",
-      "line": 10,
+      "line": 5,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1630,20 +1634,8 @@
     },
     {
       "file": "packages/protocol/src/channels/human.ts",
-      "name": "humanChannelRegistrations",
-      "line": 42,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/channels/human/index.ts",
-      "name": "humanChannelPair",
-      "line": 27,
+      "name": "HumanMessageSchema",
+      "line": 7,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1654,20 +1646,8 @@
     },
     {
       "file": "packages/protocol/src/channels/human/index.ts",
-      "name": "dmChannel",
-      "line": 84,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/channels/human/index.ts",
-      "name": "notificationChannel",
-      "line": 89,
+      "name": "humanChannelPair",
+      "line": 17,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1704,6 +1684,18 @@
       "file": "packages/protocol/src/channels/state-changes.ts",
       "name": "StateRowsChannel",
       "line": 10,
+      "kind": "class",
+      "pkg": "protocol",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/channels/verified-webhook.ts",
+      "name": "VerifiedWebhookFactChannel",
+      "line": 22,
       "kind": "class",
       "pkg": "protocol",
       "isValue": true,
@@ -1751,11 +1743,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "runtimeContextRequestId",
-      "line": 45,
+      "line": 39,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1763,11 +1755,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "runtimeStartRequestId",
-      "line": 53,
+      "line": 47,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1775,11 +1767,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "runtimeContextRequestClaimId",
-      "line": 56,
+      "line": 50,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1787,11 +1779,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "runtimeStartRequestClaimId",
-      "line": 62,
+      "line": 56,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1799,11 +1791,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "runtimeCancelRequestId",
-      "line": 74,
+      "line": 68,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1811,11 +1803,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "runtimeCloseRequestId",
-      "line": 77,
+      "line": 71,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1823,11 +1815,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "runtimeCancelRequestClaimId",
-      "line": 80,
+      "line": 74,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1835,11 +1827,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "runtimeCloseRequestClaimId",
-      "line": 86,
+      "line": 80,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -1847,7 +1839,7 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeContextRequestRowSchema",
-      "line": 99,
+      "line": 93,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1859,7 +1851,7 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeStartRequestRowSchema",
-      "line": 123,
+      "line": 117,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1871,7 +1863,7 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeLifecycleRequestRowSchema",
-      "line": 145,
+      "line": 139,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1883,7 +1875,7 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeControlRequestKindSchema",
-      "line": 163,
+      "line": 157,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1895,7 +1887,7 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeControlRequestCompletionStatusSchema",
-      "line": 173,
+      "line": 167,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1907,7 +1899,7 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeControlRequestClaimRowSchema",
-      "line": 182,
+      "line": 176,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -1919,71 +1911,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeControlRequestCompletionRowSchema",
-      "line": 202,
+      "line": 196,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
       "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/launch/control-request.ts",
-      "name": "makeRuntimeContextRequestRow",
-      "line": 230,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/launch/control-request.ts",
-      "name": "makeRuntimeStartRequestRow",
-      "line": 248,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/launch/control-request.ts",
-      "name": "makeRuntimeLifecycleRequestRow",
-      "line": 281,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/launch/control-request.ts",
-      "name": "makeRuntimeControlRequestClaimRow",
-      "line": 302,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/launch/control-request.ts",
-      "name": "makeRuntimeControlRequestCompletionRow",
-      "line": 329,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -2003,7 +1935,7 @@
     {
       "file": "packages/protocol/src/launch/host-context-authority.ts",
       "name": "ContextNotLocal",
-      "line": 84,
+      "line": 78,
       "kind": "class",
       "pkg": "protocol",
       "isValue": true,
@@ -2015,7 +1947,7 @@
     {
       "file": "packages/protocol/src/launch/host-context-authority.ts",
       "name": "CurrentHostStopped",
-      "line": 93,
+      "line": 87,
       "kind": "class",
       "pkg": "protocol",
       "isValue": true,
@@ -2027,11 +1959,11 @@
     {
       "file": "packages/protocol/src/launch/host-context-authority.ts",
       "name": "findRuntimeContext",
-      "line": 108,
+      "line": 102,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -2039,7 +1971,7 @@
     {
       "file": "packages/protocol/src/launch/host-context-authority.ts",
       "name": "makeLocalRuntimeContextForHostSession",
-      "line": 129,
+      "line": 123,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -2051,31 +1983,7 @@
     {
       "file": "packages/protocol/src/launch/host-context-authority.ts",
       "name": "insertLocalRuntimeContext",
-      "line": 172,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/launch/host-context-authority.ts",
-      "name": "requireLocalContext",
-      "line": 199,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/launch/host-context-authority.ts",
-      "name": "provideRuntimeContext",
-      "line": 230,
+      "line": 166,
       "kind": "const",
       "pkg": "protocol",
       "isValue": true,
@@ -2373,18 +2281,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/protocol/src/launch/views.ts",
-      "name": "filterRuntimeRowsForContext",
-      "line": 45,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/protocol/src/mcp/index.ts",
       "name": "ensurePathInput",
       "line": 31,
@@ -2428,18 +2324,6 @@
       "pkg": "protocol",
       "isValue": true,
       "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/otel/row-otel.ts",
-      "name": "rowOtelSpanLink",
-      "line": 175,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -2649,18 +2533,6 @@
       "testRefs": []
     },
     {
-      "file": "packages/protocol/src/session-facade/schema.ts",
-      "name": "runtimePermissionRequestObservationFromRow",
-      "line": 574,
-      "kind": "const",
-      "pkg": "protocol",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/runtime/src/bin/acp.ts",
       "name": "acpProgram",
       "line": 92,
@@ -2711,19 +2583,7 @@
     {
       "file": "packages/runtime/src/channels/event-channel.ts",
       "name": "eventChannel",
-      "line": 50,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/event-channel.ts",
-      "name": "eventChannelFromCollection",
-      "line": 71,
+      "line": 39,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -2878,8 +2738,8 @@
     },
     {
       "file": "packages/runtime/src/channels/router.ts",
-      "name": "HostPlaneChannelRouterLive",
-      "line": 198,
+      "name": "RuntimeChannelRouterLive",
+      "line": 193,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -2891,7 +2751,7 @@
     {
       "file": "packages/runtime/src/channels/router/live.ts",
       "name": "UnknownChannelTarget",
-      "line": 33,
+      "line": 27,
       "kind": "export-specifier",
       "pkg": "runtime",
       "isValue": true,
@@ -2903,7 +2763,7 @@
     {
       "file": "packages/runtime/src/channels/router/live.ts",
       "name": "RuntimeContextMcpChannelCatalog",
-      "line": 52,
+      "line": 46,
       "kind": "class",
       "pkg": "runtime",
       "isValue": true,
@@ -2915,7 +2775,7 @@
     {
       "file": "packages/runtime/src/channels/router/live.ts",
       "name": "makeRuntimeContextMcpChannelCatalog",
-      "line": 57,
+      "line": 51,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -2927,7 +2787,7 @@
     {
       "file": "packages/runtime/src/channels/router/live.ts",
       "name": "RuntimeContextMcpChannelCatalogLive",
-      "line": 64,
+      "line": 58,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -2939,7 +2799,7 @@
     {
       "file": "packages/runtime/src/channels/router/live.ts",
       "name": "makeRuntimeContextChannelRouter",
-      "line": 80,
+      "line": 74,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -2950,32 +2810,8 @@
     },
     {
       "file": "packages/runtime/src/channels/router/live.ts",
-      "name": "RuntimeContextChannelRouterLive",
-      "line": 85,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/router/live.ts",
       "name": "findRuntimeContextMcpChannel",
-      "line": 91,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/router/live.ts",
-      "name": "channelMetadata",
-      "line": 132,
+      "line": 80,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -2987,23 +2823,11 @@
     {
       "file": "packages/runtime/src/channels/session-lifecycle-route.ts",
       "name": "SessionLifecycleRouteInputSchema",
-      "line": 36,
+      "line": 4,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
       "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/session-lifecycle-route.ts",
-      "name": "sessionLifecycleTerminalRoute",
-      "line": 54,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -3035,19 +2859,7 @@
     {
       "file": "packages/runtime/src/channels/state-changes/live.ts",
       "name": "stateChangesChannel",
-      "line": 20,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/state-changes/live.ts",
-      "name": "stateChangesChannelFromCollection",
-      "line": 41,
+      "line": 17,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3059,7 +2871,7 @@
     {
       "file": "packages/runtime/src/channels/verified-webhook/live.ts",
       "name": "verifiedWebhookFactRows",
-      "line": 27,
+      "line": 12,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3071,31 +2883,7 @@
     {
       "file": "packages/runtime/src/channels/verified-webhook/live.ts",
       "name": "verifiedWebhookFactChannel",
-      "line": 36,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/verified-webhook/live.ts",
-      "name": "VerifiedWebhookFactChannelLive",
-      "line": 54,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/channels/verified-webhook/live.ts",
-      "name": "VerifiedWebhookFactCallerOwnedFactStreamsLive",
-      "line": 64,
+      "line": 21,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3108,6 +2896,18 @@
       "file": "packages/runtime/src/engine/durable-streams-workflow-engine.ts",
       "name": "make",
       "line": 19,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/events/contract.ts",
+      "name": "AgentToolResultPartSchema",
+      "line": 33,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3177,33 +2977,21 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/events/stage-contracts.ts",
-      "name": "runtimeSubscriberId",
-      "line": 24,
+      "file": "packages/runtime/src/runtime-errors.ts",
+      "name": "asRuntimeContextError",
+      "line": 13,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
-      "intraModuleUse": false,
+      "intraModuleUse": true,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/events/stage-contracts.ts",
-      "name": "runtimeAuthoritySourceName",
-      "line": 27,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/events/stage-contracts.ts",
-      "name": "runtimeIdempotencyKey",
-      "line": 30,
+      "file": "packages/runtime/src/runtime-errors.ts",
+      "name": "mapRuntimeContextError",
+      "line": 26,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3220,18 +3008,6 @@
       "pkg": "runtime",
       "isValue": true,
       "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/runtime-errors.ts",
-      "name": "runtimeIngressError",
-      "line": 45,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -3309,97 +3085,13 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
-      "name": "makeRawRuntimeContextByteSession",
-      "line": 253,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
-      "name": "prepareRawRuntimeContextInput",
-      "line": 285,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
-      "name": "runCodecRuntimeContextStderrJournal",
-      "line": 351,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/runtime/src/sources/sandbox/local-process-from-env.ts",
       "name": "FiregridLocalProcess",
-      "line": 23,
+      "line": 19,
       "kind": "class",
       "pkg": "runtime",
       "isValue": true,
       "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/sandbox/local-process-from-env.ts",
-      "name": "FiregridLocalProcessFromEnv",
-      "line": 33,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/sandbox/local-process-from-env.ts",
-      "name": "FiregridEnvBindingsFromEnv",
-      "line": 44,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/sandbox/process-stream.ts",
-      "name": "streamSandboxProcess",
-      "line": 9,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/sandbox/runtime-command.ts",
-      "name": "commandForContext",
-      "line": 17,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -3411,7 +3103,7 @@
       "kind": "class",
       "pkg": "runtime",
       "isValue": true,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -3429,49 +3121,13 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/sources/sandbox/supervisor-commands.ts",
-      "name": "SandboxStdinEmissionClaimLive",
-      "line": 42,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/sources/sandbox/supervisor-commands.ts",
-      "name": "stdinEmissionCommandId",
-      "line": 69,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
       "file": "packages/runtime/src/transforms/decode-ingress-row.ts",
       "name": "RuntimeIngressAgentInputTransformError",
-      "line": 28,
+      "line": 4,
       "kind": "class",
       "pkg": "runtime",
       "isValue": true,
       "intraModuleUse": true,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/transforms/decode-ingress-row.ts",
-      "name": "agentInputEventFromRuntimeIngressRow",
-      "line": 108,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -3681,9 +3337,81 @@
       "testRefs": []
     },
     {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "firegridMcpDurableStreamName",
+      "line": 12,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "firegridMcpDurableStreamUrl",
+      "line": 24,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "WireRpcMessageSchema",
+      "line": 30,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "createFiregridMcpDurableStreams",
+      "line": 67,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "readFiregridMcpDurableRequests",
+      "line": 106,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "appendFiregridMcpDurableResponse",
+      "line": 122,
+      "kind": "const",
+      "pkg": "runtime",
+      "isValue": true,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
       "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
       "name": "FiregridMcpServerListenerConfig",
-      "line": 98,
+      "line": 104,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3827,7 +3555,7 @@
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "ScheduledPromptPayloadSchema",
-      "line": 34,
+      "line": 29,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3839,7 +3567,7 @@
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "ScheduledPromptResultSchema",
-      "line": 42,
+      "line": 37,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3851,7 +3579,7 @@
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "ScheduledPromptWorkflow",
-      "line": 48,
+      "line": 43,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3863,7 +3591,7 @@
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "PEER_EVENT_SIGNAL",
-      "line": 101,
+      "line": 96,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3875,7 +3603,7 @@
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "peerEventDeferred",
-      "line": 109,
+      "line": 104,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3886,20 +3614,8 @@
     },
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
-      "name": "emitPeerEvent",
-      "line": 141,
-      "kind": "const",
-      "pkg": "runtime",
-      "isValue": true,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "PeerEventObserverPayloadSchema",
-      "line": 177,
+      "line": 114,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3911,7 +3627,7 @@
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "PeerEventObserverResultSchema",
-      "line": 185,
+      "line": 122,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -3923,7 +3639,7 @@
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "PeerEventObserverWorkflow",
-      "line": 193,
+      "line": 130,
       "kind": "const",
       "pkg": "runtime",
       "isValue": true,
@@ -4609,7 +4325,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "ChannelToolTarget",
-      "line": 263,
+      "line": 262,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4621,7 +4337,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "WaitAnyMatch",
-      "line": 302,
+      "line": 301,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4633,7 +4349,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "WaitAnyDescriptor",
-      "line": 311,
+      "line": 310,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4645,7 +4361,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnOptions",
-      "line": 367,
+      "line": 366,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4657,7 +4373,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnToolInput",
-      "line": 380,
+      "line": 379,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4669,7 +4385,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "WorkflowTerminalState",
-      "line": 393,
+      "line": 392,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4681,7 +4397,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnToolOutput",
-      "line": 404,
+      "line": 403,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4693,7 +4409,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnTask",
-      "line": 415,
+      "line": 414,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4705,7 +4421,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnAllToolInput",
-      "line": 426,
+      "line": 425,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4717,7 +4433,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnAllChildResult",
-      "line": 433,
+      "line": 432,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4729,7 +4445,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SpawnAllToolOutput",
-      "line": 443,
+      "line": 442,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4741,7 +4457,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionStatus",
-      "line": 461,
+      "line": 460,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4753,7 +4469,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionHandle",
-      "line": 478,
+      "line": 477,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4765,7 +4481,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionStatusInput",
-      "line": 567,
+      "line": 566,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4777,7 +4493,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionStatusOutput",
-      "line": 576,
+      "line": 575,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4789,7 +4505,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SandboxRef",
-      "line": 655,
+      "line": 654,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4801,7 +4517,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "LegacyExecuteToolInput",
-      "line": 666,
+      "line": 665,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4813,7 +4529,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionCapabilityRef",
-      "line": 679,
+      "line": 678,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -4825,43 +4541,7 @@
     {
       "file": "packages/protocol/src/agent-tools/schema.ts",
       "name": "SessionExecuteToolInput",
-      "line": 693,
-      "kind": "type",
-      "pkg": "protocol",
-      "isValue": false,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/agent-tools/schema.ts",
-      "name": "ApprovalCallRequest",
-      "line": 796,
-      "kind": "type",
-      "pkg": "protocol",
-      "isValue": false,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/agent-tools/schema.ts",
-      "name": "ApprovalCallPermissionRequest",
-      "line": 813,
-      "kind": "type",
-      "pkg": "protocol",
-      "isValue": false,
-      "intraModuleUse": false,
-      "testImporters": 0,
-      "klass": "DEAD",
-      "testRefs": []
-    },
-    {
-      "file": "packages/protocol/src/agent-tools/schema.ts",
-      "name": "ApprovalCallOutput",
-      "line": 833,
+      "line": 692,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -5016,6 +4696,18 @@
     },
     {
       "file": "packages/protocol/src/channels/host-control.ts",
+      "name": "SessionLifecycleChannelService",
+      "line": 127,
+      "kind": "interface",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/channels/host-control.ts",
       "name": "HostPermissionRespondChannelRequest",
       "line": 142,
       "kind": "type",
@@ -5070,6 +4762,18 @@
       "pkg": "protocol",
       "isValue": false,
       "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/channels/human.ts",
+      "name": "HumanMessage",
+      "line": 15,
+      "kind": "type",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5185,11 +4889,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeContextRequestRow",
-      "line": 113,
+      "line": 107,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5197,11 +4901,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeStartRequestRow",
-      "line": 136,
+      "line": 130,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5209,11 +4913,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeLifecycleRequestRow",
-      "line": 159,
+      "line": 153,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5221,11 +4925,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeControlRequestKind",
-      "line": 169,
+      "line": 163,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5233,11 +4937,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeControlRequestCompletionStatus",
-      "line": 178,
+      "line": 172,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5245,11 +4949,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeControlRequestClaimRow",
-      "line": 198,
+      "line": 192,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5257,11 +4961,11 @@
     {
       "file": "packages/protocol/src/launch/control-request.ts",
       "name": "RuntimeControlRequestCompletionRow",
-      "line": 219,
+      "line": 213,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5448,6 +5152,18 @@
     },
     {
       "file": "packages/protocol/src/launch/schema.ts",
+      "name": "RuntimeRunEvent",
+      "line": 526,
+      "kind": "type",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/launch/schema.ts",
       "name": "RuntimeOutputEventKey",
       "line": 534,
       "kind": "type",
@@ -5606,6 +5322,18 @@
       "file": "packages/protocol/src/runtime-ingress/schema.ts",
       "name": "RuntimeInputDeliveryKey",
       "line": 83,
+      "kind": "type",
+      "pkg": "protocol",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/protocol/src/runtime-ingress/schema.ts",
+      "name": "RuntimeIngressInputRow",
+      "line": 97,
       "kind": "type",
       "pkg": "protocol",
       "isValue": false,
@@ -5809,7 +5537,7 @@
     {
       "file": "packages/runtime/src/channels/router/live.ts",
       "name": "RuntimeContextMcpChannelCatalogService",
-      "line": 44,
+      "line": 38,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
@@ -5821,11 +5549,11 @@
     {
       "file": "packages/runtime/src/channels/router/live.ts",
       "name": "ChannelMetadata",
-      "line": 106,
+      "line": 95,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5857,7 +5585,7 @@
     {
       "file": "packages/runtime/src/channels/session-lifecycle-route.ts",
       "name": "SessionLifecycleRouteInput",
-      "line": 44,
+      "line": 12,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
@@ -5933,7 +5661,7 @@
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5945,7 +5673,7 @@
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -5957,7 +5685,7 @@
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -6037,11 +5765,11 @@
     {
       "file": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
       "name": "RuntimeContextSessionOutputWriter",
-      "line": 35,
+      "line": 13,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -6049,7 +5777,7 @@
     {
       "file": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
       "name": "RuntimeRawByteSession",
-      "line": 43,
+      "line": 21,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
@@ -6061,11 +5789,11 @@
     {
       "file": "packages/runtime/src/sources/codecs/session-byte-stream-adapter.ts",
       "name": "RuntimeRawByteSessionStart",
-      "line": 50,
+      "line": 28,
       "kind": "interface",
       "pkg": "runtime",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -6251,9 +5979,57 @@
       "testRefs": []
     },
     {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "WireRpcMessage",
+      "line": 37,
+      "kind": "type",
+      "pkg": "runtime",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "DurableStreamsProtocolRequestHandlerInput",
+      "line": 142,
+      "kind": "interface",
+      "pkg": "runtime",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "DurableStreamsProtocolResponseHandlerInput",
+      "line": 155,
+      "kind": "interface",
+      "pkg": "runtime",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/durable-streams-protocol.ts",
+      "name": "DurableStreamsProtocolHandlers",
+      "line": 164,
+      "kind": "interface",
+      "pkg": "runtime",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
       "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
       "name": "FiregridMcpServerListenerConfig",
-      "line": 105,
+      "line": 111,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
@@ -6264,9 +6040,33 @@
     },
     {
       "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
-      "name": "FiregridMcpServerLayerOptions",
-      "line": 109,
+      "name": "FiregridMcpHttpServerLayerOptions",
+      "line": 115,
       "kind": "interface",
+      "pkg": "runtime",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
+      "name": "FiregridMcpDurableStreamsServerLayerOptions",
+      "line": 128,
+      "kind": "interface",
+      "pkg": "runtime",
+      "isValue": false,
+      "intraModuleUse": true,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/mcp-host/mcp-host.ts",
+      "name": "FiregridMcpServerLayerOptions",
+      "line": 142,
+      "kind": "type",
       "pkg": "runtime",
       "isValue": false,
       "intraModuleUse": true,
@@ -6433,7 +6233,7 @@
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "ScheduledPromptPayload",
-      "line": 40,
+      "line": 35,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
@@ -6445,8 +6245,20 @@
     {
       "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
       "name": "ObserverSignalTarget",
-      "line": 112,
+      "line": 107,
       "kind": "interface",
+      "pkg": "runtime",
+      "isValue": false,
+      "intraModuleUse": false,
+      "testImporters": 0,
+      "klass": "DEAD",
+      "testRefs": []
+    },
+    {
+      "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
+      "name": "PeerEventObserverPayload",
+      "line": 119,
+      "kind": "type",
       "pkg": "runtime",
       "isValue": false,
       "intraModuleUse": true,
@@ -6455,13 +6267,13 @@
       "testRefs": []
     },
     {
-      "file": "packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts",
-      "name": "PeerEventObserverPayload",
-      "line": 182,
+      "file": "packages/runtime/src/unified/tables.ts",
+      "name": "UnifiedTableService",
+      "line": 61,
       "kind": "type",
       "pkg": "runtime",
       "isValue": false,
-      "intraModuleUse": true,
+      "intraModuleUse": false,
       "testImporters": 0,
       "klass": "DEAD",
       "testRefs": []
@@ -6741,6 +6553,6 @@
       ]
     }
   ],
-  "prodFiles": 221,
+  "prodFiles": 231,
   "testFiles": 63
 }

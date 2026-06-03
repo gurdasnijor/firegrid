@@ -111,8 +111,6 @@ export {
   findRuntimeContext,
   insertLocalRuntimeContext,
   makeLocalRuntimeContextForHostSession,
-  provideRuntimeContext,
-  requireLocalContext,
 } from "./host-context-authority.ts"
 // Per SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION phase 2: legacy
 // binding factories deleted. Channel bindings live in
@@ -133,11 +131,6 @@ export {
   RuntimeContextRequestRowSchema,
   RuntimeLifecycleRequestRowSchema,
   RuntimeStartRequestRowSchema,
-  makeRuntimeControlRequestClaimRow,
-  makeRuntimeControlRequestCompletionRow,
-  makeRuntimeContextRequestRow,
-  makeRuntimeLifecycleRequestRow,
-  makeRuntimeStartRequestRow,
   runtimeCancelRequestClaimId,
   runtimeCancelRequestId,
   runtimeCloseRequestClaimId,
@@ -165,7 +158,6 @@ export {
   type RuntimeRunEventRow,
 } from "./table.ts"
 export {
-  filterRuntimeRowsForContext,
   runtimeContextsView,
   runtimeEventsForContextView,
   runtimeLogsForContextView,

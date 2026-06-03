@@ -41,18 +41,3 @@ export class RuntimeIngressError extends Schema.TaggedError<RuntimeIngressError>
     cause: Schema.optional(Schema.Unknown),
   },
 ) {}
-
-export const runtimeIngressError = (
-  op: string,
-  message: string,
-  contextId?: string,
-  inputId?: string,
-  cause?: unknown,
-): RuntimeIngressError =>
-  new RuntimeIngressError({
-    op,
-    message,
-    ...(contextId === undefined ? {} : { contextId }),
-    ...(inputId === undefined ? {} : { inputId }),
-    ...(cause === undefined ? {} : { cause }),
-  })
