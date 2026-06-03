@@ -83,6 +83,7 @@
   },
   "scripts": {
     "diagnostics": "effect-language-service diagnostics --project tsconfig.json --strict",
+    "overview": "effect-language-service overview --project tsconfig.json",
     "build": "tsc",
     "check": "pnpm run typecheck && pnpm run test",
     "test": "vitest run",
