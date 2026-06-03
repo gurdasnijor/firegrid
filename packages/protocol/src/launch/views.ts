@@ -1,19 +1,17 @@
 /**
- * Protocol-owned, browser-safe READ VIEWS over the runtime control-plane and
- * output tables — the read side of the §12 composition (see
+ * Protocol-owned, browser-safe READ VIEWS over runtime control-plane and output
+ * rows — the read side of the §12 composition (see
  * docs/cannon/architecture/runtime-design-constraints.md). Pure row projections
  * (filter/derive by contextId), no live resources, so a read-only consumer can
  * follow runtime state without importing host/runtime internals.
  *
- * NOTE: repointing the client SDK read-path onto these views is tracked by the
- * open bead tf-0awo.6 (it still reads the durable-table facades directly today).
+ * Callers provide the row source: a live table `.rows()` stream, a finite
+ * snapshot stream, or any other projection-safe row stream.
  */
 import { Stream } from "effect"
 import type {
-  RuntimeControlPlaneTableService,
   RuntimeEventRow,
   RuntimeLogLineRow,
-  RuntimeOutputTableService,
   RuntimeRunEventRow,
 } from "./table.ts"
 import type { RuntimeContext } from "./schema.ts"
@@ -22,27 +20,27 @@ const byContextId = (contextId: string) =>
   (row: { readonly contextId: string }) => row.contextId === contextId
 
 export const runtimeContextsView = (
-  control: RuntimeControlPlaneTableService,
+  contexts: Stream.Stream<RuntimeContext, unknown>,
 ): Stream.Stream<RuntimeContext, unknown> =>
-  control.contexts.rows()
+  contexts
 
 export const runtimeRunsForContextView = (
-  control: RuntimeControlPlaneTableService,
+  runs: Stream.Stream<RuntimeRunEventRow, unknown>,
   contextId: string,
 ): Stream.Stream<RuntimeRunEventRow, unknown> =>
-  control.runs.rows().pipe(Stream.filter(byContextId(contextId)))
+  runs.pipe(Stream.filter(byContextId(contextId)))
 
 export const runtimeEventsForContextView = (
-  output: RuntimeOutputTableService,
+  events: Stream.Stream<RuntimeEventRow, unknown>,
   contextId: string,
 ): Stream.Stream<RuntimeEventRow, unknown> =>
-  output.events.rows().pipe(Stream.filter(byContextId(contextId)))
+  events.pipe(Stream.filter(byContextId(contextId)))
 
 export const runtimeLogsForContextView = (
-  output: RuntimeOutputTableService,
+  logs: Stream.Stream<RuntimeLogLineRow, unknown>,
   contextId: string,
 ): Stream.Stream<RuntimeLogLineRow, unknown> =>
-  output.logs.rows().pipe(Stream.filter(byContextId(contextId)))
+  logs.pipe(Stream.filter(byContextId(contextId)))
 
 export const filterRuntimeRowsForContext = (contextId: string) =>
   byContextId(contextId)
