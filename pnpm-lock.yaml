@@ -65,12 +65,24 @@ importers:
 
   packages/client-sdk:
     dependencies:
+      '@effect/ai':
+        specifier: ^0.35.0
+        version: 0.35.0(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@effect/platform':
+        specifier: ^0.96.1
+        version: 0.96.1(effect@3.21.2)
+      '@effect/rpc':
+        specifier: 0.75.1
+        version: 0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)
       '@firegrid/protocol':
         specifier: workspace:*
         version: link:../protocol
       effect:
         specifier: ^3.21.2
         version: 3.21.2
+      effect-durable-streams:
+        specifier: workspace:*
+        version: link:../effect-durable-streams
     devDependencies:
       typescript:
         specifier: ^5.7.0

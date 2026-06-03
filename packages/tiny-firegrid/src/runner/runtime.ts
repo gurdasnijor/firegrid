@@ -91,7 +91,7 @@ const firegridClientLayer = (
   })
   return FiregridLive.pipe(
     Layer.provideMerge(hostLayer),
-    Layer.provide(configLayer),
+    Layer.provideMerge(configLayer),
   )
 }
 

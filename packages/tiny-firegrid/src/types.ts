@@ -1,5 +1,6 @@
 import type {
   Firegrid,
+  FiregridConfig,
 } from "@firegrid/client-sdk/firegrid"
 import type {
   FiregridRuntime as RuntimeFiregridRuntime,
@@ -34,7 +35,7 @@ export interface TinyFiregridSimulationDefinition<A, E = unknown> {
     env: TinyFiregridHostEnv,
   ) => ReadonlyArray<ChannelRegistration>
   readonly launchHost?: boolean
-  readonly driver: Effect.Effect<A, E, Firegrid>
+  readonly driver: Effect.Effect<A, E, Firegrid | FiregridConfig>
 }
 
 declare const TinyFiregridSimulationBrand: unique symbol

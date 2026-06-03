@@ -20,6 +20,10 @@
     "./permission-auto-approve": {
       "types": "./src/permission-auto-approve.ts",
       "default": "./src/permission-auto-approve.ts"
+    },
+    "./mcp-durable-streams-spike": {
+      "types": "./src/mcp-durable-streams-spike.ts",
+      "default": "./src/mcp-durable-streams-spike.ts"
     }
   },
   "files": [
@@ -37,7 +41,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@effect/ai": "^0.35.0",
+    "@effect/platform": "^0.96.1",
+    "@effect/rpc": "0.75.1",
     "@firegrid/protocol": "workspace:*",
+    "effect-durable-streams": "workspace:*",
     "effect": "^3.21.2"
   },
   "devDependencies": {
