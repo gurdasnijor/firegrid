@@ -28,6 +28,24 @@
     "check": {
       "dependsOn": ["build"],
       "outputs": []
+    },
+    "trace:seams:ukv": {
+      "outputs": [],
+      "cache": false
+    },
+    "//#lint": {
+      "cache": false
+    },
+    "//#lint:dead": {
+      "cache": false
+    },
+    "//#lint:dup": {
+      "inputs": ["packages/*/src/**", ".jscpd.json"],
+      "outputs": []
+    },
+    "//#lint:deps": {
+      "inputs": ["packages/**", ".dependency-cruiser.cjs", "tsconfig.json", "tsconfig.eslint.json"],
+      "outputs": []
     }
   }
 }

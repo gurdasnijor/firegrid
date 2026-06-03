@@ -184,10 +184,11 @@ slow and the Effect-quality metric in particular is easy to miss locally:
 pnpm preflight
 ```
 
-`pnpm preflight` (`tooling/src/preflight.ts`) is the canonical gate: `test`,
-`typecheck`, `effect:diagnostics`, `lint`, `lint:dead`, `lint:dup`, `lint:deps`,
-`trace:seams:ukv`, run in parallel with a full summary. `pnpm run verify` is an
-alias of it. CI runs the same gates split across parallel jobs (see
+`pnpm preflight` is the canonical gate — a single `turbo run … --continue` over
+`test`, `typecheck`, `diagnostics`, `lint`, `lint:dead`, `lint:dup`, `lint:deps`,
+`trace:seams:ukv` (turbo owns the DAG / concurrency / keep-going / caching; the
+slow gates cache, the whole-repo + sim gates are `cache: false`). `pnpm run verify`
+is an alias of it. CI runs the same gates split across parallel jobs (see
 `docs/TOOLING.md`).
 
 Effect-quality enforcement is now AST-precise strict-0 `local/*` ESLint rules
