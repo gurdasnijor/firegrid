@@ -120,6 +120,13 @@ const controlPlaneAllowComment = "durable-lint-allow-control-plane"
 // firegrid-remediation-hardening.STATIC_QUALITY.10
 const extendsErrorAllowComment = "effect-quality-allow-extends-error"
 const processEnvAllowComment = "effect-quality-allow-process-env"
+// Pure value-builders / non-durable metadata / CLI filename stamps may default
+// to wall-clock at a documented boundary; durable Effect code must read Clock.
+const wallClockAllowComment = "effect-quality-allow-wall-clock"
+// C2 / WORKFLOW_ADMISSION: every production `Workflow.make` is an owned durable
+// workflow that must be SDD-justified in docs/workflow-make-admission-ledger.md.
+// The admission comment is the per-site gate (replaces the retired count ratchet).
+const workflowMakeAdmissionComment = "workflow-make-admission"
 
 const getStaticPropertyName = (node) => {
   if (node?.type !== "MemberExpression" || node.computed) {
@@ -175,6 +182,28 @@ const isTopLevelDeclaration = (node) => {
   const parent = node.parent
   const grandparent = parent?.parent
   return parent?.type === "Program" || grandparent?.type === "Program"
+}
+
+// Walk ancestors for an enclosing `Object.method(...)` call (e.g. inside
+// `Effect.sync(() => …)` / `Effect.gen(…)`) — the ESLint-AST analogue of the
+// retired ratchet's `isInsideMemberCall` pattern-inside check.
+const hasMemberCallAncestor = (node, objectName, propertyName) => {
+  let current = node.parent
+  while (current != null) {
+    if (
+      current.type === "CallExpression" &&
+      current.callee?.type === "MemberExpression" &&
+      !current.callee.computed &&
+      current.callee.object?.type === "Identifier" &&
+      current.callee.object.name === objectName &&
+      current.callee.property?.type === "Identifier" &&
+      current.callee.property.name === propertyName
+    ) {
+      return true
+    }
+    current = current.parent
+  }
+  return false
 }
 
 const hasLoopAncestor = (node) => {
@@ -738,6 +767,219 @@ const local = {
         }
       },
     },
+    // Relocated from the effect-quality ts-morph ratchet (`newDateIsoCount`).
+    // `new Date().toISOString()` (no-arg) reads wall-clock outside Effect, so it
+    // is not replay-safe; durable code must read `Clock.currentTimeMillis` and
+    // format `new Date(millis).toISOString()`. Pure value-builders / non-durable
+    // metadata / CLI filename stamps escape-hatch with the documented allow
+    // comment (matches the ratchet's AST-precise detector — no string/comment FPs).
+    "no-new-date-iso": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow `new Date().toISOString()` (no-arg) in library code; read Clock.currentTimeMillis and format `new Date(millis).toISOString()`.",
+        },
+        schema: [],
+        messages: {
+          noNewDateIso:
+            "`new Date().toISOString()` reads wall-clock and is not replay-safe. Read `yield* Clock.currentTimeMillis` (or `DateTime.now`) inside Effect code and format `new Date(millis).toISOString()`. Pure value-builders / CLI stamps may escape-hatch with `// effect-quality-allow-wall-clock`.",
+        },
+      },
+      create(context) {
+        return {
+          CallExpression(node) {
+            const callee = node.callee
+            if (
+              callee.type !== "MemberExpression" ||
+              callee.computed ||
+              callee.property?.type !== "Identifier" ||
+              callee.property.name !== "toISOString" ||
+              node.arguments.length !== 0
+            ) {
+              return
+            }
+            const receiver = callee.object
+            if (
+              receiver?.type === "NewExpression" &&
+              receiver.callee?.type === "Identifier" &&
+              receiver.callee.name === "Date" &&
+              receiver.arguments.length === 0 &&
+              !hasNearbyAllowComment(context, node, [wallClockAllowComment])
+            ) {
+              context.report({ node, messageId: "noNewDateIso" })
+            }
+          },
+        }
+      },
+    },
+    // Relocated from the effect-quality ratchet (`nodeCryptoImportCount`). Node's
+    // crypto RNG is not replay-safe; use a deterministic / Effect-resolved source.
+    "no-node-crypto-import": {
+      meta: {
+        type: "problem",
+        docs: { description: "Disallow node:crypto / crypto imports in library code (non-replay-safe RNG)." },
+        schema: [],
+        messages: {
+          noNodeCrypto:
+            "node:crypto / crypto is not replay-safe. Use a deterministic id/hash helper or an Effect-resolved randomness source instead.",
+        },
+      },
+      create(context) {
+        const report = (node) => {
+          const source = node?.source?.value
+          if (source === "node:crypto" || source === "crypto") {
+            context.report({ node, messageId: "noNodeCrypto" })
+          }
+        }
+        return { ImportDeclaration: report, ExportAllDeclaration: report, ExportNamedDeclaration: report }
+      },
+    },
+    // Relocated from the effect-quality ratchet (`newDurableStreamSiteCount`).
+    // Direct `new DurableStream(...)` bypasses the DurableTable / declared-service
+    // boundary; construct streams through the supported factories.
+    "no-new-durable-stream": {
+      meta: {
+        type: "problem",
+        docs: { description: "Disallow direct `new DurableStream(...)`; use the supported factories." },
+        schema: [],
+        messages: {
+          noNewDurableStream:
+            "Do not construct `new DurableStream(...)` directly; go through DurableTable / the declared stream factories.",
+        },
+      },
+      create(context) {
+        return {
+          NewExpression(node) {
+            if (node.callee?.type === "Identifier" && node.callee.name === "DurableStream") {
+              context.report({ node, messageId: "noNewDurableStream" })
+            }
+          },
+        }
+      },
+    },
+    // Relocated from the effect-quality ratchet (`forOfInPackageSourceCount`).
+    // Effect-native source prefers Array/Stream/Chunk combinators over imperative
+    // `for…of` iteration.
+    "no-for-of-in-source": {
+      meta: {
+        type: "problem",
+        docs: { description: "Disallow imperative for…of in library source; use Array/Stream/Chunk combinators." },
+        schema: [],
+        messages: {
+          noForOf:
+            "Avoid imperative `for…of` in library source; use Array/Stream/Chunk combinators (Effect-native iteration).",
+        },
+      },
+      create(context) {
+        return {
+          ForOfStatement(node) {
+            context.report({ node, messageId: "noForOf" })
+          },
+        }
+      },
+    },
+    // Relocated from the effect-quality ratchet (`anyNoContextCastCount`). Casting
+    // to `Schema.Schema.AnyNoContext` launders away the schema's real context.
+    "no-any-no-context-cast": {
+      meta: {
+        type: "problem",
+        docs: { description: "Disallow `as …Schema.AnyNoContext` casts (type laundering)." },
+        schema: [],
+        messages: {
+          noAnyNoContextCast:
+            "Do not cast to `Schema.Schema.AnyNoContext`; carry the schema's real context type instead of laundering it.",
+        },
+      },
+      create(context) {
+        return {
+          TSAsExpression(node) {
+            const text = context.sourceCode.getText(node.typeAnnotation)
+            if (text.includes("Schema.Schema.AnyNoContext")) {
+              context.report({ node, messageId: "noAnyNoContextCast" })
+            }
+          },
+        }
+      },
+    },
+    // Relocated from the effect-quality ratchet (`detachedPromiseInEffectSyncCount`,
+    // STRICT_ZERO). A `void <promise>.then(...)` inside `Effect.sync(...)` detaches
+    // an unmanaged promise from the Effect runtime (no interruption / error
+    // propagation). Ancestor-walking (the ratchet's pattern-inside semantics).
+    "no-detached-promise-in-effect-sync": {
+      meta: {
+        type: "problem",
+        docs: { description: "Disallow `void <promise>.then(...)` inside Effect.sync (detached unmanaged promise)." },
+        schema: [],
+        messages: {
+          noDetachedPromise:
+            "Detached `void <promise>.then(...)` inside Effect.sync escapes the Effect runtime. Model the async work as an Effect (Effect.promise / Effect.tryPromise) and fork it with the runtime instead.",
+        },
+      },
+      create(context) {
+        return {
+          UnaryExpression(node) {
+            if (node.operator !== "void") return
+            let arg = node.argument
+            if (
+              arg?.type === "CallExpression" &&
+              arg.callee?.type === "MemberExpression" &&
+              !arg.callee.computed &&
+              arg.callee.property?.type === "Identifier" &&
+              arg.callee.property.name === "catch" &&
+              arg.callee.object?.type === "CallExpression"
+            ) {
+              arg = arg.callee.object
+            }
+            const isThenCall =
+              arg?.type === "CallExpression" &&
+              arg.callee?.type === "MemberExpression" &&
+              !arg.callee.computed &&
+              arg.callee.property?.type === "Identifier" &&
+              arg.callee.property.name === "then"
+            if (isThenCall && hasMemberCallAncestor(node, "Effect", "sync")) {
+              context.report({ node, messageId: "noDetachedPromise" })
+            }
+          },
+        }
+      },
+    },
+    // Re-homed C2 / WORKFLOW_ADMISSION guard from the retired effect-quality
+    // ratchet (`workflowMakeSiteCount`). Was a grandfathered COUNT (fail-on-
+    // increase) — now a per-site annotation gate: every production `Workflow.make`
+    // must carry a nearby `// workflow-make-admission` comment, forcing a net-new
+    // owner workflow to add its ledger justification. Pins the finding to
+    // path+line (which the count ratchet could not). See
+    // docs/workflow-make-admission-ledger.md.
+    "no-unclassified-workflow-make": {
+      meta: {
+        type: "problem",
+        docs: { description: "Require a workflow-make-admission ledger annotation on every production Workflow.make." },
+        schema: [],
+        messages: {
+          noUnclassified:
+            "Net-new `Workflow.make` is an owned durable workflow (C2 / WORKFLOW_ADMISSION). SDD-justify it in docs/workflow-make-admission-ledger.md and annotate this site with `// workflow-make-admission`.",
+        },
+      },
+      create(context) {
+        return {
+          CallExpression(node) {
+            const callee = node.callee
+            if (
+              callee.type === "MemberExpression" &&
+              !callee.computed &&
+              callee.object?.type === "Identifier" &&
+              callee.object.name === "Workflow" &&
+              callee.property?.type === "Identifier" &&
+              callee.property.name === "make" &&
+              !hasNearbyAllowComment(context, node, [workflowMakeAdmissionComment])
+            ) {
+              context.report({ node, messageId: "noUnclassified" })
+            }
+          },
+        }
+      },
+    },
     // firegrid-remediation-hardening.STATIC_QUALITY.14 (relocated from ast-grep)
     "hrtime-number-arithmetic": {
       meta: {
@@ -1028,6 +1270,21 @@ export default tseslint.config(
       "local/no-process-env-outside-bin": "error",
       // ported from Semgrep firegrid-no-date-now (ERROR)
       "local/no-date-now": "error",
+      // relocated from the effect-quality ratchet (newDateIsoCount)
+      "local/no-new-date-iso": "error",
+      // relocated from the effect-quality ratchet (nodeCryptoImportCount) — kept
+      // in this src-scoped block (not the broad base block) so test fixtures may
+      // still use crypto, matching the ratchet's production-source-only scope.
+      "local/no-node-crypto-import": "error",
+      // relocated from the effect-quality ratchet (newDurableStreamSiteCount,
+      // forOfInPackageSourceCount, anyNoContextCastCount,
+      // detachedPromiseInEffectSyncCount — the last was the ratchet's STRICT_ZERO)
+      "local/no-new-durable-stream": "error",
+      "local/no-for-of-in-source": "error",
+      "local/no-any-no-context-cast": "error",
+      "local/no-detached-promise-in-effect-sync": "error",
+      // re-homed C2 / WORKFLOW_ADMISSION guard (was ratchet workflowMakeSiteCount)
+      "local/no-unclassified-workflow-make": "error",
     },
   },
   {
@@ -1913,6 +2170,7 @@ export default tseslint.config(
     rules: {
       "local/no-process-env-outside-bin": "off",
       "local/no-date-now": "off",
+      "local/no-new-date-iso": "off",
     },
   },
 

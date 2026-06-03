@@ -117,6 +117,10 @@ export const runtimeIngressInputIdForIdempotencyKey = (
 ): string =>
   `input_${contextId}_${idempotencyKey.replace(/[^A-Za-z0-9_-]/g, "_")}`
 
+// Pure row-builder default for `createdAt`; durable callers supply
+// `options.createdAt` from their Effect Clock, so this fires only in
+// non-durable/test construction (no production caller).
+// effect-quality-allow-wall-clock
 const nowIso = (): string => new Date().toISOString()
 
 const optionalRuntimeIngressPayloadFields = (

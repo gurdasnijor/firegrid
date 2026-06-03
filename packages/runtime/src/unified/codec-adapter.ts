@@ -44,7 +44,7 @@ import {
   type McpServerDeclaration,
 } from "@firegrid/protocol/launch"
 import { encodeRuntimeAgentOutputEnvelope } from "@firegrid/protocol/session-facade"
-import { Context, Effect, Exit, ExecutionStrategy, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
+import { Clock, Context, Effect, Exit, ExecutionStrategy, Layer, Option, Ref, Schema, Scope, Stream } from "effect"
 import {
   AgentInputEventSchema,
   type AgentInputEvent,
@@ -154,7 +154,7 @@ const drainOutputsToJournal = (
     Stream.tap((event) =>
       Effect.gen(function*() {
         const sequence = yield* Ref.modify(sequenceRef, (n) => [n, n + 1])
-        const receivedAt = new Date().toISOString()
+        const receivedAt = new Date(yield* Clock.currentTimeMillis).toISOString()
         yield* journal.append({
           eventId: { contextId, activityAttempt: attempt, target: "events", sequence },
           contextId,

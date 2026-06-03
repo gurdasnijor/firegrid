@@ -19,8 +19,6 @@
     "lint:dead": "knip --treat-config-hints-as-errors",
     "lint:deps": "depcruise --config .dependency-cruiser.cjs packages && depcruise --config .dependency-cruiser.cjs --include-only '(^packages/.*/src|^packages/tiny-firegrid/test)' packages/tiny-firegrid/test",
     "lint:dup": "jscpd packages/*/src",
-    "lint:effect-quality": "node scripts/effect-quality-metrics-check.mjs",
-    "lint:effect-quality:baseline": "node scripts/effect-quality-metrics-baseline.mjs",
     "preflight": "pnpm --filter tooling run preflight",
     "trace:seams": "pnpm --filter @firegrid/tiny-firegrid run trace:seams",
     "trace:seams:ukv": "pnpm --filter @firegrid/tiny-firegrid run trace:seams:ukv",

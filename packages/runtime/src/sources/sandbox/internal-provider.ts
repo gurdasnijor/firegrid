@@ -41,6 +41,9 @@ export const runningSandboxFromConfig = (
   provider,
   state: "running",
   labels: config.labels ?? {},
+  // Pure sync Sandbox value-builder (passed as a non-Effect callback to the
+  // in-memory store); `createdAt` is local metadata, not durable workflow state.
+  // effect-quality-allow-wall-clock
   createdAt: new Date().toISOString(),
   connectionInfo: {},
   metadata,

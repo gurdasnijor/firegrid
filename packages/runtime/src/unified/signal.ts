@@ -42,7 +42,7 @@ import {
   WorkflowEngine,
   Workflow as WorkflowNamespace,
 } from "@effect/workflow"
-import { Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { DurableTable } from "effect-durable-operators"
 import {
   WorkflowEngineTable,
@@ -78,28 +78,31 @@ export class SignalTable extends DurableTable("firegrid.unified.signals", {
 
 export type SignalTableService = SignalTable["Type"]
 
-const now = (): string => new Date().toISOString()
-
 const signalKeyFor = (executionId: string, name: string): string =>
   `${executionId}|${name}`
 
 const insertSignalRow = (options: {
   readonly signals: SignalTableService
   readonly workflowName: string
-	  readonly executionId: string
-	  readonly name: string
-	  readonly payloadJson: string
-	  readonly workflowPayloadJson?: string
-	}) =>
-	  options.signals.signals.insertOrGet({
-	    signalKey: signalKeyFor(options.executionId, options.name),
-	    workflowName: options.workflowName,
-	    executionId: options.executionId,
-	    name: options.name,
-	    payloadJson: options.payloadJson,
-	    ...(options.workflowPayloadJson === undefined ? {} : { workflowPayloadJson: options.workflowPayloadJson }),
-	    recordedAt: now(),
-	  }).pipe(Effect.orDie)
+  readonly executionId: string
+  readonly name: string
+  readonly payloadJson: string
+  readonly workflowPayloadJson?: string
+}) =>
+  Clock.currentTimeMillis.pipe(
+    Effect.flatMap((millis) =>
+      options.signals.signals.insertOrGet({
+        signalKey: signalKeyFor(options.executionId, options.name),
+        workflowName: options.workflowName,
+        executionId: options.executionId,
+        name: options.name,
+        payloadJson: options.payloadJson,
+        ...(options.workflowPayloadJson === undefined ? {} : { workflowPayloadJson: options.workflowPayloadJson }),
+        recordedAt: new Date(millis).toISOString(),
+      }),
+    ),
+    Effect.orDie,
+  )
 
 const signalSpanAttributes = (options: {
   readonly workflowName: string

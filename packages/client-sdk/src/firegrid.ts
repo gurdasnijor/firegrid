@@ -862,7 +862,8 @@ const makeWaitClient = (
       const decoded = yield* decodeWaitUntilInput(request)
       const delay = yield* waitDelayMs(decoded.time)
       yield* Clock.sleep(Duration.millis(delay))
-      return { waited: true, firedAt: new Date().toISOString() } as const
+      const firedAtMs = yield* Clock.currentTimeMillis
+      return { waited: true, firedAt: new Date(firedAtMs).toISOString() } as const
     })
 
   const waitAny = (

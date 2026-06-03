@@ -30,7 +30,7 @@ as low-value tool-wrappers and that ACID deprecated; see tf-dbxp.)
 | Dead code | `lint:dead` | Any Knip finding or config-hint | Remove the dead export/import/file (or fix knip.json) | Native strict-0: `knip --treat-config-hints-as-errors`, no baseline. |
 | Duplicate code | `lint:dup` | Any jscpd-detected duplication | Extract a shared helper or keep the implementation single-source | Native strict-0: `jscpd packages/*/src` (.jscpd.json threshold 0). |
 | Dependency boundaries | `lint:deps` | Forbidden package/app dependency edges | Move code to the owning package or depend on a public subpath | Uses `.dependency-cruiser.cjs`. |
-| Effect quality | `lint:effect-quality` | Regressions in AST-counted Effect/runtime anti-patterns (incl. the count-ratcheted rules relocated from Semgrep) | Use Effect services, scoped layers, typed errors, and approved adapters | ts-morph count ratchet, pending conversion to strict-0 ESLint rules (tf-q6vf). |
+| Effect quality | `lint` (`local/*` rules) | Effect/runtime anti-patterns (replay-unsafe time/RNG, detached promises, type laundering, `Workflow.make` admission) | Use Effect services, scoped layers, typed errors, and approved adapters | Strict-0 AST ESLint rules; the ts-morph count ratchet was deleted (tf-q6vf). |
 | Effect diagnostics | `effect:diagnostics` | Effect language-service diagnostics | Fix Effect-specific type/service issues | CI runs this separately from TS typecheck. |
 | Tests | `test` | Runtime behavior regressions | Add/fix tests near the owning feature | Runs workspace package tests through Turbo. |
 
@@ -46,15 +46,19 @@ preserved:
   that had no live findings. They scan source text with Semgrep's exact regexes,
   scoped per the original rule's `paths` via the enabling block's `files`/
   `ignores`. Edit them in `eslint.config.js` (search `sg-`).
-- **`effect-quality` ts-morph count ratchet** (`lint:effect-quality`) — the rules
-  that had live findings (so a zero-tolerance ESLint rule would break the build):
-  `workflowMakeSiteCount` (the C2 workflow-admission guard; grandfathered owners
-  in `docs/workflow-make-admission-ledger.md`), `newDateIsoCount`,
-  `manualTaggedErrorTypeCount`, `switchOnTagCount`, `effectRunInLibraryCount`,
-  `tryPromiseMultiAwaitCount`, `mutableStateInEffectGenCount`,
-  `fireAndForgetVoidPromiseCount`, `detachedPromiseInEffectSyncCount` (strict-zero),
-  and `promiseThenCatchChainCount`. The ratchet grandfathers current counts and
-  fails CI on any increase.
+- **Strict-0 `local/*` ESLint rules** (`lint`) — the live-finding Semgrep rules
+  briefly lived in an `effect-quality` ts-morph count ratchet; that ratchet was
+  **deleted** (tf-q6vf) and its enforcement re-homed to AST-precise ESLint rules:
+  `local/no-unclassified-workflow-make` (the C2 workflow-admission guard; per-site
+  `// workflow-make-admission` annotation, owners in
+  `docs/workflow-make-admission-ledger.md`), `local/no-new-date-iso`,
+  `local/no-node-crypto-import`, `local/no-new-durable-stream`,
+  `local/no-for-of-in-source`, `local/no-any-no-context-cast`, and
+  `local/no-detached-promise-in-effect-sync`. Heuristic / legitimate / excluded
+  metrics (`manualTaggedErrorType`, `mutableStateInEffectGen`, `switchOnTag`,
+  `tryPromiseMultiAwait`, `fireAndForgetVoidPromise`, `promiseThenCatchChain`,
+  `effectRunInLibrary`) were dropped after per-pattern verification — full mapping
+  in `docs/contributing/effect-quality-metrics.md`.
 
 | Guard | Engine / id | What It Forbids | Canonical Replacement | Main Exclusions |
 |---|---|---|---|---|
@@ -72,19 +76,19 @@ preserved:
 | Runtime host-internal / runtime-errors imports | ESLint `local/sg-runtime-no-host-internal-imports-outside-host`, `local/sg-runtime-no-runtime-errors-imports-outside-runtime` | importing runtime host impl files / `runtime-errors.ts` externally | the host barrel / public `@firegrid/runtime` exports | inside `runtime/src` |
 | Cannon C4/C6/C7 + Shape-C guards | ESLint `local/sg-c4-*`, `local/sg-c6-*`, `local/sg-c7-*`, `local/sg-shape-c-*`, `local/sg-transforms-purity-import-boundary`, `local/sg-composition-no-legacy-imports` | DurableDeferred waits / cursor taxonomies / edge terminal synthesis / workflow machinery in Shape-C / impure transforms / legacy composition imports | the design-constraint-compliant shape | tests |
 | Inline tagged-error fail / mutable-identity let / non-exhaustive Match | ESLint `local/sg-no-inline-tagged-error-fail`, `local/sg-no-mutable-identity-let`, `local/sg-match-should-be-exhaustive` | the respective shapes | `Data.TaggedError`; const-before-use identity; `Match.exhaustive` | tests |
-| Workflow.make admission (C2) + the live-finding Effect idioms | `lint:effect-quality` ratchet | net-new `Workflow.make`; growth of new-Date-ISO / manual tagged-error type / switch-on-`_tag` / library `Effect.run*` / multi-await `tryPromise` / mutable Map in `Effect.gen` / detached & fire-and-forget promises | see each rule's canonical replacement above | tests, `src/bin`, scripts |
+| Workflow.make admission (C2) | ESLint `local/no-unclassified-workflow-make` | net-new `Workflow.make` without a `// workflow-make-admission` ledger annotation | SDD-justify + annotate; see `docs/workflow-make-admission-ledger.md` | tests, `__tests__` |
+| Replay/durability + type-safety idioms | ESLint `local/no-new-date-iso`, `local/no-node-crypto-import`, `local/no-new-durable-stream`, `local/no-for-of-in-source`, `local/no-any-no-context-cast`, `local/no-detached-promise-in-effect-sync` | `new Date().toISOString()` / `node:crypto` / `new DurableStream` / imperative `for…of` / `…AnyNoContext` casts / detached `void promise.then()` in `Effect.sync` | each rule's message names the canonical replacement | tests, `__tests__`, `src/bin` (date/crypto) |
 
 ## Baselines
 
 `lint:dead` (knip) and `lint:dup` (jscpd) are **native strict-0** — no baseline
 JSON. `.jscpd.json` holds the config (`threshold: 0`); there is no knip baseline.
 
-One ratchet still carries a baseline pending its conversion to strict-0 ESLint
-rules (tf-q6vf):
-
-- `effect-quality-metrics-baseline.json` stores per-metric maximums (including
-  the count-ratcheted rules relocated from Semgrep; the grandfathered
-  `Workflow.make` owners are listed in `docs/workflow-make-admission-ledger.md`).
+There are **no baseline-JSON gates left** in the repo. The last one,
+`effect-quality-metrics-baseline.json`, was deleted (tf-q6vf); its enforcement is
+now strict-0 `local/*` ESLint rules. The grandfathered `Workflow.make` owners are
+recorded in `docs/workflow-make-admission-ledger.md` and gated per-site by
+`local/no-unclassified-workflow-make`.
 
 Only update that baseline when the current code improved the metric or when a
 rule PR intentionally introduces a staged baseline. Do not add baseline entries

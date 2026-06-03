@@ -58,7 +58,6 @@ const gates = [
   { script: "lint:dead", description: "Knip dead-code gate (strict-0)", weight: 1 },
   { script: "lint:dup", description: "jscpd duplicate-code gate (strict-0)", weight: 1 },
   { script: "lint:deps", description: "Dependency cruiser boundaries", weight: 1 },
-  { script: "lint:effect-quality", description: "Effect-quality metrics ratchet", weight: 1 },
   { script: "trace:seams:ukv", description: "UKV production trace seam gate", weight: 1 },
 ] as const
 

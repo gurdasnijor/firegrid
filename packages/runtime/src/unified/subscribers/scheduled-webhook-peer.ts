@@ -59,6 +59,7 @@ export const ScheduledPromptResultSchema = Schema.Struct({
   firedAt: Schema.String,
 })
 
+// workflow-make-admission: see docs/workflow-make-admission-ledger.md
 export const ScheduledPromptWorkflow = Workflow.make({
   name: "unified.scheduled-prompt",
   payload: ScheduledPromptPayloadSchema,
@@ -92,7 +93,8 @@ const scheduledPromptBody = (payload: ScheduledPromptPayload) =>
       inMemoryThreshold: Duration.zero,
     })
 
-    return { scheduleId: payload.scheduleId, firedAt: new Date().toISOString() }
+    const firedAtMs = yield* Clock.currentTimeMillis
+    return { scheduleId: payload.scheduleId, firedAt: new Date(firedAtMs).toISOString() }
   }) as Effect.Effect<
     Schema.Schema.Type<typeof ScheduledPromptResultSchema>,
     never,
@@ -310,6 +312,7 @@ export const WebhookFactObserverResultSchema = Schema.Struct({
   eventType: Schema.String,
 })
 
+// workflow-make-admission: see docs/workflow-make-admission-ledger.md
 export const WebhookFactObserverWorkflow = Workflow.make({
   name: "unified.webhook-fact-observer",
   payload: WebhookFactObserverPayloadSchema,
@@ -365,6 +368,7 @@ export const PeerEventObserverResultSchema = Schema.Struct({
   emitterContextId: Schema.String,
 })
 
+// workflow-make-admission: see docs/workflow-make-admission-ledger.md
 export const PeerEventObserverWorkflow = Workflow.make({
   name: "unified.peer-event-observer",
   payload: PeerEventObserverPayloadSchema,

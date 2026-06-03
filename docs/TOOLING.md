@@ -16,7 +16,7 @@ first), keeps going after failures, and replays each failing gate's output in on
 pass. Gates:
 
 `test` · `typecheck` · `effect:diagnostics` · `lint` · `lint:dead` · `lint:dup` ·
-`lint:deps` · `lint:effect-quality` · `trace:seams:ukv`
+`lint:deps` · `trace:seams:ukv`
 
 `task-exit.sh` runs `pnpm preflight` and refuses to push on failure.
 
@@ -54,14 +54,14 @@ exceptions use a nearby escape comment with a reason:
 pnpm run lint:dead          # knip --treat-config-hints-as-errors: zero unused exports/files/deps + clean config
 pnpm run lint:dup           # jscpd packages/*/src: zero duplication (.jscpd.json threshold 0)
 pnpm run lint:deps          # dependency-cruiser boundary/cycle/direction checks
-pnpm run lint:effect-quality # ts-morph per-pattern Effect-quality count ratchet
 ```
 
 `lint:dead` and `lint:dup` are the tools' **native strict-0** enforcement — no
 baseline JSON to drift (the former `.mjs` count-wrappers + `.knip-baseline.json`
-were removed). `lint:effect-quality` remains a ts-morph count ratchet pending its
-conversion to strict-0 ESLint rules (tf-q6vf). See
-`docs/contributing/quality-gates.md` and
+were removed). The `effect-quality` ts-morph count ratchet + its
+`effect-quality-metrics-baseline.json` were **deleted** (tf-q6vf) — the last
+baseline gate in the repo. Its enforcement moved to AST-precise `local/*` ESLint
+rules; see `docs/contributing/quality-gates.md` and
 `docs/contributing/effect-quality-metrics.md`.
 
 ## Build
@@ -142,26 +142,26 @@ scoped per block via `files`/`ignores`, run under `pnpm run lint`); rules with l
 findings moved to the `effect-quality` ts-morph count ratchet
 (`pnpm run lint:effect-quality`). ast-grep was likewise retired — its one gated
 rule now lives as `local/hrtime-number-arithmetic`. To add a source-pattern guard:
-prefer a type-aware ESLint rule; for a pure text shape add a `local/sg-*` block; or
-— if it would have live findings — add a counter to
-`scripts/effect-artifacts/quality-metrics.mjs` and re-baseline. See
-`docs/static-analysis-catalog.md`.
+prefer a type-aware `local/*` ESLint rule; for a pure text shape add a `local/sg-*`
+block. **Do not** add a baseline-JSON count ratchet — the last one was deleted
+(below). See `docs/static-analysis-catalog.md`.
 
-## Effect-quality metric ratchet
+## Effect-quality enforcement — strict-0 ESLint rules (was a ratchet)
 
-`pnpm run lint:effect-quality` runs `scripts/effect-quality-metrics-check.mjs`,
-which counts per-pattern findings across `packages/*/src` with ts-morph
-(AST-precise, so comments/strings don't false-positive) and compares to
-`effect-quality-metrics-baseline.json`. CI fails on any increase; decreases
-recompute via `pnpm run lint:effect-quality:baseline` (never auto-raises).
-
-Strict-zero rules layered alongside: `local/no-extends-error`,
-`local/no-process-env-outside-bin`. Tracked ratchet metrics include
-`throwOutsideBinScriptCount`, `forOfInPackageSourceCount`, `anyNoContextCastCount`,
-`nodeCryptoImportCount`, `dataTaggedErrorDeclarationCount`, `newDurableStreamSiteCount`,
-`perCallLayerProvideSiteCount`, `effectOrDieSiteCount`, and the test-migration
-counters. New tagged-error classes are normal feature work — land the class and
-re-run the baseline in the same PR.
+The `effect-quality` ts-morph **count ratchet** and its
+`effect-quality-metrics-baseline.json` were **deleted** (tf-q6vf): the last
+baseline gate in the repo. Per-pattern verification showed its 20 metrics were a
+mix of genuine guards, over-matching heuristics, legitimate patterns, and
+already-covered cases — "fix 38 → strict-0" was a mirage. Enforcement re-homed to
+AST-precise `local/*` ESLint rules (no comment/string false positives, pinned to
+path+line): `no-new-date-iso`, `no-node-crypto-import`, `no-new-durable-stream`,
+`no-for-of-in-source`, `no-any-no-context-cast`,
+`no-detached-promise-in-effect-sync`, plus the pre-existing `no-extends-error` /
+`no-process-env-outside-bin`. The C2 `Workflow.make` admission guard moved to
+`local/no-unclassified-workflow-make` (per-site `// workflow-make-admission`
+annotation). `Effect.orDie` / library `Effect.run*` keep their advisory warns.
+Heuristic / legitimate / excluded-scope metrics were dropped — full mapping in
+`docs/contributing/effect-quality-metrics.md`.
 
 ### Policy exceptions (deliberate, documented)
 
