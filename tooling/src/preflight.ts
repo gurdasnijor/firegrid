@@ -27,7 +27,7 @@ const missingDeps = ["node_modules", "tooling/node_modules"].filter(
 if (missingDeps.length > 0) {
   process.stderr.write(
     `\npreflight: dependencies are not installed (missing: ${missingDeps.join(", ")}).\n` +
-      `Run \`pnpm install\` in this worktree, then re-run \`pnpm preflight\`.\n\n`,
+      "Run `pnpm install` in this worktree, then re-run `pnpm preflight`.\n\n",
   )
   process.exit(1)
 }

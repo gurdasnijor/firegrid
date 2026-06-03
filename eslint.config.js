@@ -111,6 +111,7 @@ const tsOnly = (configs) =>
       "packages/**/*.tsx",
       "apps/**/*.ts",
       "apps/**/*.tsx",
+      "tooling/**/*.ts",
     ],
   }))
 const relativeJsSpecifierPattern = /^\.{1,2}\/.*\.js$/u
@@ -1130,6 +1131,7 @@ export default tseslint.config(
       "packages/**/*.tsx",
       "apps/**/*.ts",
       "apps/**/*.tsx",
+      "tooling/**/*.ts",
     ],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
@@ -2675,6 +2677,18 @@ export default tseslint.config(
         "error",
         [{ pattern: '\\bexport\\s+(interface\\s+[A-Za-z_$][A-Za-z0-9_$]*|type\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*=\\s*\\{)', message: "Exported factory app contracts must be Effect Schema-backed (Schema.Struct + Schema.Schema.Type), not raw interfaces/object-literal type aliases." }],
       ],
+    },
+  },
+  {
+    // tf-x794: `tooling/src/*.ts` are node-native build/gate scripts (run via
+    // node's TS stripping), so they get the type-aware + stylistic rules but NOT
+    // the product effect-native bans — node:process is the legitimate boundary
+    // here (e.g. the dep-guard preamble that must run before @effect/platform is
+    // importable). Product node:I/O bans (no-raw-node-io etc.) are already scoped
+    // to packages/apps src and don't reach tooling.
+    files: ["tooling/**/*.ts"],
+    rules: {
+      "local/no-node-process-import": "off",
     },
   },
 )

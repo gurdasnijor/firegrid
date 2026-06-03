@@ -39,14 +39,36 @@ if (!existsSync(join(repoRoot, "node_modules"))) {
 }
 
 // Production source only — test files are not gated (see header).
-const isTestFile = (file) =>
+const isTestFile = (file: string) =>
   file.endsWith(".test.ts") ||
   file.endsWith(".test.tsx") ||
   file.endsWith(".spec.ts") ||
   file.includes("/__tests__/") ||
   file.includes("/test/")
 
-const sortKey = (entry) =>
+// Shape of one entry in the effect-language-service `--format json` output.
+interface RawDiagnostic {
+  readonly file: string
+  readonly line: number
+  readonly column: number
+  readonly severity: string
+  readonly name: string
+  readonly message: string
+}
+interface LanguageServiceOutput {
+  readonly diagnostics?: ReadonlyArray<RawDiagnostic>
+}
+// Our normalized, repo-root-relative diagnostic.
+interface Diagnostic {
+  readonly file: string
+  readonly line: number
+  readonly column: number
+  readonly severity: string
+  readonly code: string
+  readonly message: string
+}
+
+const sortKey = (entry: Diagnostic) =>
   [entry.file, String(entry.line), String(entry.column), entry.severity, entry.code].join(" ")
 
 // Collect this package's current production-source diagnostics from the
@@ -67,16 +89,16 @@ const collect = () => {
     error(`effect-language-service exited ${String(result.status)} for ${project}`)
     process.exit(result.status ?? 1)
   }
-  let parsed
+  let parsed: LanguageServiceOutput
   try {
-    parsed = JSON.parse(result.stdout)
+    parsed = JSON.parse(result.stdout) as LanguageServiceOutput
   } catch {
     error(`Could not parse effect-language-service JSON output for ${project}.`)
     if (result.stderr.length > 0) process.stderr.write(result.stderr)
     process.exit(1)
   }
   return (parsed.diagnostics ?? [])
-    .map((d) => ({
+    .map((d): Diagnostic => ({
       file: relative(repoRoot, d.file),
       line: d.line,
       column: d.column,
