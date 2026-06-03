@@ -151,3 +151,20 @@ const Live = FiregridRuntimeHostWithWorkflowLive({
 - Runtime-private workflow tables stay in this package.
 - Acquire runtime layers once per host scope; do not create table layers per
   row operation.
+
+## Mapping this package's Effect surface
+
+This is the largest Effect surface in the repo (services, layers, typed errors).
+Before refactoring runtime composition, map it with the Effect language service
+rather than grepping — these commands read the **resolved** Effect types:
+
+```sh
+pnpm --filter @firegrid/runtime overview     # census: every Service / Layer / Yieldable Error here
+pnpm effect:layerinfo --file packages/runtime/src/<f>.ts --name <LayerName>   # one layer's provides/requires + composition
+pnpm effect:quickfixes                       # Effect-idiom cleanups with diffs
+```
+
+`overview` is the shrink scoreboard — re-run it after a consolidation to confirm
+the service/layer count actually dropped. See
+[`docs/TOOLING.md` → Effect diagnostics & devtools](../../docs/TOOLING.md) for
+the full workflow.

@@ -102,6 +102,43 @@ stay editor-advisory. There is no baseline (the per-package
 that false-positive or flag legitimate raw-IO boundaries / deliberate test fixtures
 carry documented inline `// @effect-diagnostics <rule>:off` directives.
 
+### Comprehension — see the Effect surface (`overview`, `layerinfo`, `quickfixes`)
+
+`diagnostics` is the *gate*. The language service also has *comprehension*
+commands that map the Effect semantic layer — services, layers, typed errors —
+which a text grep cannot, because they read the **resolved** Effect types. They
+are on-demand (slow + verbose, ~30–60s over a package), **not** CI gates. In the
+shrink-the-architecture phase these are the primary instruments for *seeing and
+reducing the owned surface*.
+
+```sh
+pnpm effect:overview                         # census of runtime's Effect surface
+pnpm --filter @firegrid/protocol overview    # per-package census (every package has an `overview` script)
+pnpm effect:quickfixes                       # diagnostics WITH proposed fixes/diffs (the simplification pass)
+pnpm effect:layerinfo --file packages/runtime/src/<f>.ts --name <LayerName>
+```
+
+- **`overview`** — the shrink scoreboard. Lists every Yieldable Error, Service,
+  and Layer with its source location. On `runtime` today: **~103 errors / 64
+  services / 138 layers** (duplicate entries in the output are barrel
+  re-exports — the same over-export the package-`exports` audit targets, see
+  `scripts/package-exports-audit.ts`). Re-run after a consolidation to watch the
+  counts fall; it is the Effect-semantic dual of the export-surface audit.
+- **`layerinfo`** — for one layer, what it **provides**, what it **requires**,
+  and a suggested `Layer.mergeAll(...)` composition order. The tool for
+  untangling the layer graph or chasing a `missingLayerContext` diagnostic. Takes
+  `--file` (NOT `--project`) + `--name`; optional `--outputs 1,2,3`.
+- **`quickfixes`** — the `diagnostics` rules that carry an automatic fix, shown
+  with the proposed diff (`unnecessaryEffectGen`, `missedPipeableOpportunity`,
+  `catchAllToMapError`, `multipleEffectProvide`, …) — drives the simplification
+  pass.
+
+**Agent workflow:** before a runtime/host refactor, run `pnpm effect:overview`
+to see the service/layer boundaries you're touching; use `effect:layerinfo` to
+confirm a layer's wiring before and after; finish with `effect:quickfixes` for
+mechanical Effect-idiom cleanup. The `overview` counts are the honest
+before/after metric for "did this shrink the surface."
+
 ### The `local/*` Effect guards are NOT redundant with the language service
 
 The language service ships effect-native diagnostics that *look* like duplicates
