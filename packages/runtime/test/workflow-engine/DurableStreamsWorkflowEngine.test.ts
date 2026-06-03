@@ -1,3 +1,6 @@
+// Test fixture: timeout helpers fail with `new Error(...)`; tagged errors aren't
+// warranted for throwaway test-polling timeouts.
+// @effect-diagnostics effect/globalErrorInEffectFailure:off
 import {
   Activity,
   DurableClock,

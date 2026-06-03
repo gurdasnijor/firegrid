@@ -1,7 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "cacheDir": ".turbo/cache",
-  "globalDependencies": ["tooling/src/effect-diagnostics-check.ts"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -13,7 +12,7 @@
     },
     "diagnostics": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "tsconfig.json"],
+      "inputs": ["src/**", "test/**", "tsconfig.json"],
       "outputs": []
     },
     "test": {
