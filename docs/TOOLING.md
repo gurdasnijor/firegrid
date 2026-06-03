@@ -180,6 +180,30 @@ scoping — net more config, not less.
   `npx effect-language-service codegen --project packages/<pkg>/tsconfig.json`
   fills it in (`--force` to regenerate, `--verbose` to log changes).
 
+### Effect Dev Tools (the live Tracer / Metrics panel)
+
+This is a **different tool** from the language service: the
+[Effect Dev Tools](https://marketplace.visualstudio.com/items?itemName=effectful-tech.effect-vscode)
+VS Code/Cursor extension opens a **Tracer / Metrics** panel and runs a WebSocket
+server on `ws://localhost:34437`. It shows spans/metrics from a **running** Effect
+program — it has nothing to do with diagnostics or refactors.
+
+Firegrid emits spans to **OpenTelemetry** by default (`@firegrid/observability`),
+*not* to that panel, so the panel stays empty until a process opts in. The CLI
+composition wires a dev-gated Effect Dev Tools tracer behind
+`FIREGRID_EFFECT_DEVTOOLS`:
+
+```sh
+# 1. open the "Effect Dev Tools" panel (it must show "Server listening on port 34437")
+# 2. run any firegrid CLI process with the flag set:
+FIREGRID_EFFECT_DEVTOOLS=1 pnpm firegrid:run --cwd "$PWD" --prompt "hi" -- node agent.mjs
+```
+
+Spans (e.g. the `Effect.annotateSpans("firegrid.side", …)` annotations on the MCP
+toolkit) then stream into the panel's timeline. It installs the Effect Tracer, so
+run it **instead of** an active OTel exporter, and only with the panel listening
+(it's a dev side-channel, off in production).
+
 ## Architecture dependency graphs
 
 Graphs are **review evidence, not a gate**, and are **not committed**. Render one
