@@ -15,7 +15,7 @@
 // types, and idempotent constructors only. No client/host wiring, no table
 // membership change. The client/CLI/factory flip and the host reconciler are
 // a later single coordinated transaction (see
-// docs/sdds/SDD_FIREGRID_CLIENT_HOST_BOUNDARY.md, Q1 = Option B).
+// docs/sdds/_archive/SDD_FIREGRID_CLIENT_HOST_BOUNDARY.md, Q1 = Option B).
 //
 // Shape mirrors the already-blessed `RuntimeInputIntentRow` precedent
 // (`@firegrid/protocol/runtime-ingress`): an append-only, idempotent row
