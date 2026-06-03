@@ -19,6 +19,9 @@ import { WorkflowEngine } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
+  eventOffset,
+  HostPermissionRespondChannel,
+  HostPermissionRespondChannelRequestSchema,
   HostPromptChannel,
   HostPromptChannelTarget,
   HostPermissionRespondChannelTarget,
@@ -26,9 +29,18 @@ import {
   HostSessionsCreateOrLoadChannelTarget,
   HostSessionsCreateOrLoadRequestSchema,
   HostSessionsCreateOrLoadResponseSchema,
+  HostSessionsStartChannel,
+  HostSessionsStartChannelTarget,
+  HostSessionsStartRequestSchema,
   makeCallableChannel,
   makeDurableEventChannel,
   makeEgressChannel,
+  SessionCancelChannel,
+  SessionCancelChannelTarget,
+  SessionCloseChannel,
+  SessionCloseChannelTarget,
+  SessionPromptChannel,
+  SessionPromptChannelTarget,
 } from "@firegrid/protocol/channels"
 import {
   CurrentHostSession,
@@ -41,6 +53,7 @@ import {
   runtimeControlPlaneStreamUrl,
 } from "@firegrid/protocol/launch"
 import { PublicPromptRequestSchema } from "@firegrid/protocol/runtime-ingress"
+import { SessionHandlePromptInputSchema } from "@firegrid/protocol/session-facade"
 import { Effect, Exit, Layer, Option, Ref, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
@@ -53,7 +66,6 @@ import {
 } from "../../src/channels/index.ts"
 import { DurableStreamsWorkflowEngine } from "../../src/engine/durable-streams-workflow-engine.ts"
 import { ContextResolverTag } from "../../src/tables/codec-adapter-tags.ts"
-import { UnifiedChannelBindingsLive } from "../../src/unified/channel-bindings.ts"
 import {
   buildMcpToolDispatchLayer,
   makeFiregridAgentToolExecutor,
@@ -113,9 +125,64 @@ const contextResolverFromControlPlaneTable = Layer.effect(
   }),
 )
 
+const hostPlaneNoopEventChannelsLayer = Layer.mergeAll(
+  Layer.succeed(
+    HostSessionsStartChannel,
+    makeDurableEventChannel({
+      target: HostSessionsStartChannelTarget,
+      schema: HostSessionsStartRequestSchema,
+      append: request =>
+        Effect.succeed(eventOffset(`host.sessions.start:${request.sessionId}`)),
+    }),
+  ),
+  Layer.succeed(
+    SessionPromptChannel,
+    SessionPromptChannel.of({
+      forSession: sessionId =>
+        makeDurableEventChannel({
+          target: SessionPromptChannelTarget,
+          schema: SessionHandlePromptInputSchema,
+          append: request =>
+            Effect.succeed(
+              eventOffset(`session.prompt:${sessionId}:${request.idempotencyKey}`),
+            ),
+        }),
+    }),
+  ),
+  Layer.succeed(
+    SessionCancelChannel,
+    makeDurableEventChannel({
+      target: SessionCancelChannelTarget,
+      schema: AgentToolSchemas.SessionCancelToolInputSchema,
+      append: request =>
+        Effect.succeed(eventOffset(`session.cancel:${request.sessionId}`)),
+    }),
+  ),
+  Layer.succeed(
+    SessionCloseChannel,
+    makeDurableEventChannel({
+      target: SessionCloseChannelTarget,
+      schema: AgentToolSchemas.SessionCloseToolInputSchema,
+      append: request =>
+        Effect.succeed(eventOffset(`session.close:${request.sessionId}`)),
+    }),
+  ),
+  Layer.succeed(
+    HostPermissionRespondChannel,
+    makeDurableEventChannel({
+      target: HostPermissionRespondChannelTarget,
+      schema: HostPermissionRespondChannelRequestSchema,
+      append: request =>
+        Effect.succeed(
+          eventOffset(`host.permissions.respond:${request.contextId}:${request.permissionRequestId}`),
+        ),
+    }),
+  ),
+)
+
 const sessionNewHostPlaneLayer = HostPlaneSessionControlRouterLive.pipe(
   Layer.provideMerge(HostControlChannelBindingsLive),
-  Layer.provideMerge(UnifiedChannelBindingsLive),
+  Layer.provideMerge(hostPlaneNoopEventChannelsLayer),
 )
 
 const hostSessionsCreateOrLoadStubLayer = Layer.succeed(
@@ -136,7 +203,7 @@ const hostSessionsCreateOrLoadStubLayer = Layer.succeed(
 
 const hostPlanePermissionRouterLayer = HostPlaneSessionControlRouterLive.pipe(
   Layer.provideMerge(hostSessionsCreateOrLoadStubLayer),
-  Layer.provideMerge(UnifiedChannelBindingsLive),
+  Layer.provideMerge(hostPlaneNoopEventChannelsLayer),
 )
 
 const runWith = <A, E, R>(

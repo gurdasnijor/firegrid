@@ -7,7 +7,6 @@ import {
   SessionPromptToolInputSchema,
 } from "../../src/agent-tools/schema.ts"
 import { getFiregridProjectionMetadata } from "../../src/projection/schema.ts"
-import { FiregridClientOperations } from "../../src/session-facade/operations.ts"
 import {
   RuntimePermissionRequestObservationSchema,
   type RuntimeAgentOutputObservation,
@@ -15,8 +14,11 @@ import {
   RuntimeContextIdSchema,
   SessionAttachInputSchema,
   SessionAgentOutputWaitInputSchema,
+  SessionAgentOutputWaitOutputSchema,
   SessionCreateOrLoadInputSchema,
   SessionExternalKeySchema,
+  SessionHandleReferenceSchema,
+  SessionPermissionRespondInputSchema,
   decodeRuntimeAgentOutputEnvelope,
   encodeRuntimeAgentOutputEnvelope,
   runtimeAgentOutputObservationFromRow,
@@ -103,19 +105,19 @@ describe("session facade protocol schema", () => {
     })
   })
 
-  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.1 firegrid-schema-projection-contract.SCHEMA_CATALOG.3 defines client operations from protocol schemas without copying agent-tool shapes", () => {
-    expect(FiregridClientOperations.sessions.createOrLoad.input).toBe(
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.1 firegrid-schema-projection-contract.SCHEMA_CATALOG.3 keeps client surfaces on canonical protocol schemas", () => {
+    const clientSchemas = [
       SessionCreateOrLoadInputSchema,
-    )
-    expect(FiregridClientOperations.sessions.prompt.input).toBe(
       SessionPromptToolInputSchema,
-    )
-    expect(FiregridClientOperations.wait.forAgentOutput.input).toBe(
       SessionAgentOutputWaitInputSchema,
-    )
-    expect(FiregridClientOperations.permissions.respond.input).toBe(
       PermissionRespondInputSchema,
-    )
+      SessionPermissionRespondInputSchema,
+    ]
+    for (const schema of clientSchemas) {
+      expect(Option.isSome(getFiregridProjectionMetadata(schema))).toBe(true)
+    }
+    expect(SessionHandleReferenceSchema).toHaveProperty("ast")
+    expect(SessionAgentOutputWaitOutputSchema).toHaveProperty("ast")
   })
 
   it("tf-nors keeps call schema honest: no obsolete approval.* fallback is advertised", () => {
