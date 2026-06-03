@@ -1,3 +1,7 @@
+// Test fixture: layers a fake `FetchHttpClient.Fetch` under the http client via two
+// scoped provides — readable + correct; the production "combine provides" advice
+// doesn't apply here.
+// @effect-diagnostics effect/multipleEffectProvide:off
 import { FetchHttpClient, type HttpClient } from "@effect/platform"
 import { Effect, Layer, Schema, type Scope, Stream } from "effect"
 import { describe, expect, it } from "vitest"

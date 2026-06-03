@@ -1,3 +1,6 @@
+// Test fixture: uses `new Error(...)` to simulate stream/effect failures; tagged
+// errors aren't warranted for throwaway test failures.
+// @effect-diagnostics effect/globalErrorInEffectFailure:off
 import { NodeContext } from "@effect/platform-node"
 import {
   SandboxProvider,

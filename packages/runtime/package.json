@@ -126,7 +126,7 @@
     "access": "public"
   },
   "scripts": {
-    "diagnostics": "node ../../tooling/src/effect-diagnostics-check.ts",
+    "diagnostics": "effect-language-service diagnostics --project tsconfig.json --strict",
     "build": "tsc",
     "check": "pnpm run typecheck && pnpm run test",
     "typecheck": "tsc --noEmit",

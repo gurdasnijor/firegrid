@@ -320,12 +320,6 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
-  tooling:
-    devDependencies:
-      typescript:
-        specifier: ^5.0.0
-        version: 5.9.3
-
   tools/durable-streams-ui:
     dependencies:
       '@durable-streams/client':

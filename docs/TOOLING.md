@@ -84,7 +84,7 @@ autofixes this convention.
 ## Effect diagnostics & devtools
 
 ```sh
-pnpm run effect:diagnostics            # turbo run diagnostics (strict-0, production src)
+pnpm run effect:diagnostics            # turbo run diagnostics (effect-language-service --strict)
 pnpm run effect:patch / effect:unpatch # opt-in: patch local TS for build-time diagnostics
 ```
 
@@ -92,13 +92,15 @@ pnpm run effect:patch / effect:unpatch # opt-in: patch local TS for build-time d
 package tsconfig; editors must use the workspace TypeScript version for the plugin
 to load. For VS Code / Cursor, set `"typescript.tsdk": "node_modules/typescript/lib"`.
 
-The `diagnostics` turbo task (`tooling/src/effect-diagnostics-check.ts`) is
-**strict-0 over production `src/**`** — there is no baseline. The per-package
-`.effect-diagnostics-baseline.json` files were deleted (tf-ov4w): genuine
-diagnostics are fixed at the site, and the few rules that false-positive or flag
-legitimate raw-IO boundaries carry documented inline `// @effect-diagnostics
-<rule>:off` directives. Test files are not gated (they legitimately use `new
-Error` / try-catch / multi-`Effect.provide`), mirroring the ESLint test exemption.
+The `diagnostics` turbo task runs the language-service's **own** gate directly —
+each package's `diagnostics` script is `effect-language-service diagnostics
+--project tsconfig.json --strict` (tf-mnpo; the hand-rolled
+`effect-diagnostics-check.ts` parser/exit wrapper + the whole `tooling/` package
+were deleted). `--strict` fails on any **error or warning**; message-level hints
+stay editor-advisory. There is no baseline (the per-package
+`.effect-diagnostics-baseline.json` files were deleted in tf-ov4w). The few rules
+that false-positive or flag legitimate raw-IO boundaries / deliberate test fixtures
+carry documented inline `// @effect-diagnostics <rule>:off` directives.
 
 ## Architecture dependency graphs
 
