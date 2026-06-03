@@ -1,3 +1,6 @@
+// Raw ACP codec boundary: JSON.stringify feeds a byte-stable payload digest /
+// serializes wire frames; typed Schema decode happens at the layers above.
+// @effect-diagnostics effect/preferSchemaOverJson:off
 import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
 import { defaultAcpPermissionPolicy, type AcpPermissionPolicy } from "@firegrid/protocol/acp"
@@ -782,9 +785,7 @@ export const AcpSessionLive = (
       const sendPermissionResponse = (
         event: Extract<AgentInputEvent, { _tag: "PermissionResponse" }>,
       ): Effect.Effect<void, AgentCodecError> =>
-        Effect.gen(function*() {
-          yield* completePermissionDecision(event.permissionRequestId, event.decision)
-        }).pipe(
+        completePermissionDecision(event.permissionRequestId, event.decision).pipe(
           Effect.withSpan("firegrid.agent_event_pipeline.acp.permission_response", {
             kind: "producer",
             attributes: {

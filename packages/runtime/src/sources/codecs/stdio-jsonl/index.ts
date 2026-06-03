@@ -1,3 +1,6 @@
+// Raw stdio-JSONL codec boundary: JSON.parse operates on newline-delimited wire
+// frames (unknown payloads); typed Schema decode happens at the layers above.
+// @effect-diagnostics effect/preferSchemaOverJson:off
 import { Prompt, Response } from "@effect/ai"
 import { Effect, Layer, Match, Schema, Stream } from "effect"
 import type {

@@ -1,3 +1,6 @@
+// Raw transport boundary: JSON.stringify serializes already-schema-encoded
+// events into the wire request body; no further Schema step applies here.
+// @effect-diagnostics effect/preferSchemaOverJson:off
 import { type HttpClient } from "@effect/platform"
 import {
   Cause,
@@ -88,7 +91,7 @@ const sendBatch = <A, I>(
           // New (200) or duplicate (204) success. Advance only on ack.
           yield* Ref.update(state, (s): ProducerState => ({ epoch: s.epoch, lastSeq: nextSeq }))
           if (res.streamClosed) {
-            return yield* Effect.fail(new StreamClosed({ finalOffset: res.nextOffset }))
+            return yield* new StreamClosed({ finalOffset: res.nextOffset })
           }
           return
         }
@@ -106,34 +109,26 @@ const sendBatch = <A, I>(
           // typically means the server keeps returning 403 — bug, proxy
           // stripping the epoch header, or genuine contention). Surface as
           // a typed failure so the caller can decide what to do.
-          return yield* Effect.fail(
-            new StaleEpoch({ currentEpoch: res.producerEpoch ?? current.epoch }),
-          )
+          return yield* new StaleEpoch({ currentEpoch: res.producerEpoch ?? current.epoch })
         }
         if (res.status === 409) {
           if (res.streamClosed) {
-            return yield* Effect.fail(new StreamClosed({ finalOffset: res.nextOffset }))
+            return yield* new StreamClosed({ finalOffset: res.nextOffset })
           }
           // §5.2.1 invariant violation: client's local lastSeq diverged from
           // the server's. Surface as a typed failure — the caller cannot
           // recover, but it learns what went wrong.
-          return yield* Effect.fail(
-            new SequenceGap({
+          return yield* new SequenceGap({
               expectedSeq: res.producerExpectedSeq ?? -1,
               receivedSeq: res.producerReceivedSeq ?? nextSeq,
-            }),
-          )
+            })
         }
         const missing = Http.missingStreamError(res.status, String(opts.endpoint.url))
-        if (missing !== undefined) return yield* Effect.fail(missing)
+        if (missing !== undefined) return yield* missing
         if (res.status === 400) {
-          return yield* Effect.fail(
-            new Conflict({ reason: `400 Bad Request from producer epoch=${current.epoch} seq=${nextSeq}` }),
-          )
+          return yield* new Conflict({ reason: `400 Bad Request from producer epoch=${current.epoch} seq=${nextSeq}` })
         }
-        return yield* Effect.fail(
-          new TransportError({ cause: new Error(`POST returned status ${res.status}`) }),
-        )
+        return yield* new TransportError({ cause: new Error(`POST returned status ${res.status}`) })
       })
 
     yield* attempt(0)

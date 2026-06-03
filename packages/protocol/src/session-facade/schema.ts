@@ -252,12 +252,7 @@ export type RuntimePermissionOption = Schema.Schema.Type<
   typeof RuntimePermissionOptionSchema
 >
 
-const RuntimePermissionRequestEventSchema = Schema.Struct({
-  _tag: Schema.Literal("PermissionRequest"),
-  permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
-  toolUseId: Schema.String.pipe(Schema.minLength(1)),
-  options: Schema.Array(RuntimePermissionOptionSchema),
-})
+const RuntimePermissionRequestEventSchema = Schema.TaggedStruct("PermissionRequest", { permissionRequestId: Schema.String.pipe(Schema.minLength(1)), toolUseId: Schema.String.pipe(Schema.minLength(1)), options: Schema.Array(RuntimePermissionOptionSchema) })
 
 const RuntimeAgentOutputObservationBaseFields = {
   source: Schema.Literal(FiregridRuntimeObservationSourceNames.agentOutputEvents),
@@ -278,54 +273,14 @@ const RuntimeAgentOutputObservationSupplementalFields = {
 } as const
 
 export const RuntimeAgentOutputObservationSchema = Schema.Union(
-  Schema.Struct({
-    ...RuntimeAgentOutputObservationBaseFields,
-    ...RuntimeAgentOutputObservationSupplementalFields,
-    _tag: Schema.Literal("Ready"),
-    event: AgentReadyEventSchema,
-  }),
-  Schema.Struct({
-    ...RuntimeAgentOutputObservationBaseFields,
-    ...RuntimeAgentOutputObservationSupplementalFields,
-    _tag: Schema.Literal("TextChunk"),
-    event: AgentTextChunkEventSchema,
-  }),
-  Schema.Struct({
-    ...RuntimeAgentOutputObservationBaseFields,
-    ...RuntimeAgentOutputObservationSupplementalFields,
-    _tag: Schema.Literal("ToolUse"),
-    event: AgentToolUseEventSchema,
-  }),
-  Schema.Struct({
-    ...RuntimeAgentOutputObservationBaseFields,
-    ...RuntimeAgentOutputObservationSupplementalFields,
-    _tag: Schema.Literal("PermissionRequest"),
-    event: AgentPermissionRequestEventSchema,
-  }),
-  Schema.Struct({
-    ...RuntimeAgentOutputObservationBaseFields,
-    ...RuntimeAgentOutputObservationSupplementalFields,
-    _tag: Schema.Literal("TurnComplete"),
-    event: AgentTurnCompleteEventSchema,
-  }),
-  Schema.Struct({
-    ...RuntimeAgentOutputObservationBaseFields,
-    ...RuntimeAgentOutputObservationSupplementalFields,
-    _tag: Schema.Literal("Status"),
-    event: AgentStatusEventSchema,
-  }),
-  Schema.Struct({
-    ...RuntimeAgentOutputObservationBaseFields,
-    ...RuntimeAgentOutputObservationSupplementalFields,
-    _tag: Schema.Literal("Error"),
-    event: AgentErrorEventSchema,
-  }),
-  Schema.Struct({
-    ...RuntimeAgentOutputObservationBaseFields,
-    ...RuntimeAgentOutputObservationSupplementalFields,
-    _tag: Schema.Literal("Terminated"),
-    event: AgentTerminatedEventSchema,
-  }),
+  Schema.TaggedStruct("Ready", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentReadyEventSchema }),
+  Schema.TaggedStruct("TextChunk", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentTextChunkEventSchema }),
+  Schema.TaggedStruct("ToolUse", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentToolUseEventSchema }),
+  Schema.TaggedStruct("PermissionRequest", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentPermissionRequestEventSchema }),
+  Schema.TaggedStruct("TurnComplete", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentTurnCompleteEventSchema }),
+  Schema.TaggedStruct("Status", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentStatusEventSchema }),
+  Schema.TaggedStruct("Error", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentErrorEventSchema }),
+  Schema.TaggedStruct("Terminated", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentTerminatedEventSchema }),
 ).annotations({
   identifier: "firegrid.operation.session.agentOutputObservation",
   title: "Runtime agent-output observation",
@@ -339,14 +294,7 @@ export type RuntimeAgentOutputObservation = Schema.Schema.Type<
   typeof RuntimeAgentOutputObservationSchema
 >
 
-export const RuntimePermissionRequestObservationSchema = Schema.Struct({
-  ...RuntimeAgentOutputObservationBaseFields,
-  _tag: Schema.Literal("PermissionRequest"),
-  permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
-  toolUseId: Schema.String.pipe(Schema.minLength(1)),
-  options: Schema.Array(RuntimePermissionOptionSchema),
-  event: AgentPermissionRequestEventSchema,
-}).annotations({
+export const RuntimePermissionRequestObservationSchema = Schema.TaggedStruct("PermissionRequest", { ...RuntimeAgentOutputObservationBaseFields, permissionRequestId: Schema.String.pipe(Schema.minLength(1)), toolUseId: Schema.String.pipe(Schema.minLength(1)), options: Schema.Array(RuntimePermissionOptionSchema), event: AgentPermissionRequestEventSchema }).annotations({
   identifier: "firegrid.operation.session.permissionRequestObservation",
   title: "Runtime permission request observation",
   description:

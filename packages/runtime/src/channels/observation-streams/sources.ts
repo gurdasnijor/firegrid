@@ -10,16 +10,9 @@ import { Schema } from "effect"
  * predicate language layered on top of the stream is owned by that consumer,
  * not by this source catalog.
  */
-export const AgentOutputObservationSourceSchema = Schema.Struct({
-  _tag: Schema.Literal("AgentOutput"),
-})
+export const AgentOutputObservationSourceSchema = Schema.TaggedStruct("AgentOutput", {})
 
-export const AgentOutputAfterObservationSourceSchema = Schema.Struct({
-  _tag: Schema.Literal("AgentOutputAfter"),
-  contextId: Schema.String,
-  activityAttempt: Schema.Number,
-  afterSequence: Schema.Number,
-})
+export const AgentOutputAfterObservationSourceSchema = Schema.TaggedStruct("AgentOutputAfter", { contextId: Schema.String, activityAttempt: Schema.Number, afterSequence: Schema.Number })
 
 /**
  * firegrid-typed-wait-source-redesign.CONTEXT.3
@@ -29,10 +22,7 @@ export const AgentOutputAfterObservationSourceSchema = Schema.Struct({
  * the app's collection binds the concrete stream behind this name through
  * the `CallerOwnedFactStreams` capability.
  */
-export const CallerFactObservationSourceSchema = Schema.Struct({
-  _tag: Schema.Literal("CallerFact"),
-  stream: Schema.String,
-})
+export const CallerFactObservationSourceSchema = Schema.TaggedStruct("CallerFact", { stream: Schema.String })
 
 // `_tag: "RuntimeRun"` variant removed in the Wave-D-D cleanup wave; the
 // channel-router `session.lifecycle` route is the production observation

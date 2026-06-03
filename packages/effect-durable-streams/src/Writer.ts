@@ -66,7 +66,7 @@ export const append = <A, I>(
     }
     if (res.status === 409) {
       yield* failIfClosed(res)
-      return yield* Effect.fail(new Conflict({ reason: "409 Conflict on append" }))
+      return yield* new Conflict({ reason: "409 Conflict on append" })
     }
     return yield* failMissingOrTransport(opts.endpoint, res.status)
   })
@@ -93,25 +93,19 @@ export const appendWithProducer = <A, I>(
         : { _tag: "Duplicate", offset: res.nextOffset }
     }
     if (res.status === 403) {
-      return yield* Effect.fail(
-        new StaleEpoch({ currentEpoch: res.producerEpoch ?? opts.producerEpoch }),
-      )
+      return yield* new StaleEpoch({ currentEpoch: res.producerEpoch ?? opts.producerEpoch })
     }
     if (res.status === 409) {
       yield* failIfClosed(res)
-      return yield* Effect.fail(
-        new SequenceGap({
+      return yield* new SequenceGap({
           expectedSeq: res.producerExpectedSeq ?? -1,
           receivedSeq: res.producerReceivedSeq ?? opts.producerSeq,
-        }),
-      )
+        })
     }
     if (res.status === 400) {
-      return yield* Effect.fail(
-        new Conflict({
+      return yield* new Conflict({
           reason: `400 Bad Request from producer epoch=${opts.producerEpoch} seq=${opts.producerSeq}`,
-        }),
-      )
+        })
     }
     return yield* failMissingOrTransport(opts.endpoint, res.status)
   })
@@ -143,11 +137,9 @@ export const create = (
     const res = yield* Http.put(endpoint, putOpts)
     if (res.status === 200 || res.status === 201) return
     if (res.status === 409) {
-      return yield* Effect.fail(new Conflict({ reason: "Stream exists with different config" }))
+      return yield* new Conflict({ reason: "Stream exists with different config" })
     }
-    return yield* Effect.fail(
-      new TransportError({ cause: new Error(`PUT returned status ${res.status}`) }),
-    )
+    return yield* new TransportError({ cause: new Error(`PUT returned status ${res.status}`) })
   })
 
 export const close = (
@@ -168,11 +160,9 @@ export const close = (
       return { finalOffset: res.nextOffset }
     }
     if (res.status === 404) {
-      return yield* Effect.fail(new NotFound({ url: String(endpoint.url) }))
+      return yield* new NotFound({ url: String(endpoint.url) })
     }
-    return yield* Effect.fail(
-      new TransportError({ cause: new Error(`Close returned status ${res.status}`) }),
-    )
+    return yield* new TransportError({ cause: new Error(`Close returned status ${res.status}`) })
   })
 
 export const del = (
@@ -182,8 +172,6 @@ export const del = (
   Effect.gen(function* () {
     const res = yield* Http.del(endpoint, callHeaders)
     if (res.status === 200 || res.status === 204) return
-    if (res.status === 404) return yield* Effect.fail(new NotFound({ url: String(endpoint.url) }))
-    return yield* Effect.fail(
-      new TransportError({ cause: new Error(`DELETE returned status ${res.status}`) }),
-    )
+    if (res.status === 404) return yield* new NotFound({ url: String(endpoint.url) })
+    return yield* new TransportError({ cause: new Error(`DELETE returned status ${res.status}`) })
   })

@@ -775,6 +775,8 @@ const makeFacade = <Row extends object, Key>(options: {
         "insert",
         row,
       ),
+    // Advisory Effect.fn suggestion; kept as a plain gen on this hot table path.
+    // @effect-diagnostics-next-line effect/effectFnOpportunity:off
     insertOrGet: (row) =>
       Effect.gen(function* () {
         const { encoded, encodedKey } = yield* Effect.try({

@@ -380,15 +380,12 @@ export const SpawnToolInputSchema = Schema.Struct({
 export type SpawnToolInput = Schema.Schema.Type<typeof SpawnToolInputSchema>
 
 export const WorkflowTerminalStateSchema = Schema.Union(
-  Schema.Struct({ _tag: Schema.Literal("Completed"), output: Schema.Unknown }),
-  Schema.Struct({
-    _tag: Schema.Literal("Failed"),
-    error: Schema.Struct({
+  Schema.TaggedStruct("Completed", { output: Schema.Unknown }),
+  Schema.TaggedStruct("Failed", { error: Schema.Struct({
       message: Schema.String,
       code: Schema.optional(Schema.String),
-    }),
-  }),
-  Schema.Struct({ _tag: Schema.Literal("Cancelled") }),
+    }) }),
+  Schema.TaggedStruct("Cancelled", {}),
 ).annotations({
   identifier: "firegrid.agentTool.workflowTerminalState",
   title: "Child workflow terminal state",
@@ -725,20 +722,21 @@ export type ExecuteToolOutput = Schema.Schema.Type<typeof ExecuteToolOutputSchem
 // permission response
 // ---------------------------------------------------------------------------
 
+// Kept as explicit `Schema.Struct` with a `_tag` literal: this is a parallel
+// definition of `runtime/src/events/contract.ts` PermissionDecisionSchema (the
+// wire schema vs the codec-event contract). Converting both to `TaggedStruct`
+// makes them textually identical and trips the strict-0 jscpd clone gate;
+// dedup to one canonical schema is a separate follow-up.
+// @effect-diagnostics effect/schemaStructWithTag:off
 export const PermissionDecisionSchema = Schema.Union(
-  Schema.Struct({
-    _tag: Schema.Literal("Allow"),
-    optionId: Schema.optional(Schema.String),
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("Deny"),
-    reason: Schema.optional(Schema.String),
-  }),
+  Schema.Struct({ _tag: Schema.Literal("Allow"), optionId: Schema.optional(Schema.String) }),
+  Schema.Struct({ _tag: Schema.Literal("Deny"), reason: Schema.optional(Schema.String) }),
   Schema.Struct({ _tag: Schema.Literal("Cancelled") }),
 ).annotations({
   identifier: "firegrid.agentTool.permissionDecision",
   title: "Permission decision",
 })
+// @effect-diagnostics effect/schemaStructWithTag:message
 export type PermissionDecision = Schema.Schema.Type<typeof PermissionDecisionSchema>
 
 export const PermissionRespondInputSchema = Schema.Struct({
