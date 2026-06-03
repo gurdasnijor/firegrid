@@ -2,6 +2,7 @@ import { Prompt, Response } from "@effect/ai"
 import { describe, expect, it } from "vitest"
 import { Option, Schema, SchemaAST } from "effect"
 import {
+  CallToolInputSchema,
   PermissionRespondInputSchema,
   SessionPromptToolInputSchema,
 } from "../../src/agent-tools/schema.ts"
@@ -115,6 +116,16 @@ describe("session facade protocol schema", () => {
     expect(FiregridClientOperations.permissions.respond.input).toBe(
       PermissionRespondInputSchema,
     )
+  })
+
+  it("tf-nors keeps call schema honest: no obsolete approval.* fallback is advertised", () => {
+    const description =
+      CallToolInputSchema.ast.annotations[SchemaAST.DescriptionAnnotationId]
+
+    expect(description).toBe(
+      "Invoke a registered callable channel. Requests are decoded with the channel schema.",
+    )
+    expect(String(description)).not.toContain("approval")
   })
 
   it("firegrid-schema-projection-contract.SCHEMA_CATALOG.4 stores client projection metadata on session Effect Schemas", () => {

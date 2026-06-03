@@ -23,7 +23,6 @@
 
 import { Schema } from "effect"
 import { firegridProjection } from "../projection/schema.ts"
-import { PermissionOptionSchema } from "../agent-output/schema.ts"
 import { EventOffsetSchema } from "../channels/core.ts"
 
 export {
@@ -768,72 +767,6 @@ export type PermissionRespondInput = Schema.Schema.Type<
 // now a `DurableEventChannel` returning `EventOffset`; the `inputId`
 // cross-row reference is replaced by signal-name correlation.
 
-// ---------------------------------------------------------------------------
-// call(approval)
-// ---------------------------------------------------------------------------
-
-const ApprovalCallNonEmptyStringSchema = Schema.String.pipe(Schema.minLength(1))
-const ApprovalCallNonNegativeIntSchema = Schema.Number.pipe(
-  Schema.int(),
-  Schema.greaterThanOrEqualTo(0),
-)
-const ApprovalCallActivityAttemptSchema = Schema.Number.pipe(
-  Schema.int(),
-  Schema.greaterThanOrEqualTo(1),
-)
-
-export const ApprovalCallRequestSchema = Schema.Struct({
-  decision: PermissionDecisionSchema,
-  afterSequence: Schema.optional(ApprovalCallNonNegativeIntSchema),
-  timeoutMs: Schema.optional(ApprovalCallNonNegativeIntSchema),
-  idempotencyKey: Schema.optional(ApprovalCallNonEmptyStringSchema),
-}).annotations({
-  identifier: "firegrid.agentTool.call.approval.request",
-  title: "Approval call request",
-  description:
-    "Approval-channel request: wait for a pending PermissionRequest and respond with the supplied decision.",
-})
-export type ApprovalCallRequest = Schema.Schema.Type<
-  typeof ApprovalCallRequestSchema
->
-
-export const ApprovalCallPermissionRequestSchema = Schema.Struct({
-  contextId: ApprovalCallNonEmptyStringSchema,
-  activityAttempt: ApprovalCallActivityAttemptSchema,
-  sequence: ApprovalCallNonNegativeIntSchema,
-  permissionRequestId: ApprovalCallNonEmptyStringSchema,
-  toolUseId: ApprovalCallNonEmptyStringSchema,
-  options: Schema.Array(PermissionOptionSchema),
-}).annotations({
-  identifier: "firegrid.agentTool.call.approval.permissionRequest",
-  title: "Approval call permission request",
-  description:
-    "Normalized PermissionRequest selected by the approval call channel.",
-})
-export type ApprovalCallPermissionRequest = Schema.Schema.Type<
-  typeof ApprovalCallPermissionRequestSchema
->
-
-export const ApprovalCallOutputSchema = Schema.Union(
-  Schema.Struct({
-    matched: Schema.Literal(true),
-    request: ApprovalCallPermissionRequestSchema,
-    response: EventOffsetSchema,
-  }),
-  Schema.Struct({
-    matched: Schema.Literal(false),
-    timedOut: Schema.Literal(true),
-  }),
-).annotations({
-  identifier: "firegrid.agentTool.call.approval.output",
-  title: "Approval call output",
-  description:
-    "Result of waiting for and responding to a PermissionRequest via the approval channel.",
-})
-export type ApprovalCallOutput = Schema.Schema.Type<
-  typeof ApprovalCallOutputSchema
->
-
 export const CallToolInputSchema = Schema.Struct({
   channel: ChannelToolTargetSchema,
   request: Schema.Unknown,
@@ -842,13 +775,7 @@ export const CallToolInputSchema = Schema.Struct({
   kind: "input",
   title: "Call tool input",
   description:
-    "Invoke a callable channel. Registered call channels decode requests with their channel schema; approval.* targets keep the permission request/response fallback.",
-  examples: [
-    {
-      channel: "approval.operator",
-      request: { decision: { _tag: "Allow", optionId: "allow_once" } },
-    },
-  ],
+    "Invoke a registered callable channel. Requests are decoded with the channel schema.",
   toolName: "call",
 }))
 export type CallToolInput = Schema.Schema.Type<typeof CallToolInputSchema>
@@ -858,7 +785,7 @@ export const CallToolOutputSchema = Schema.Unknown.annotations(toolAnnotations({
   kind: "output",
   title: "Call tool output",
   description:
-    "Call-channel response payload. Approval fallback returns the ApprovalCallOutput shape.",
+    "Call-channel response payload.",
   toolName: "call",
 }))
 export type CallToolOutput = Schema.Schema.Type<typeof CallToolOutputSchema>
