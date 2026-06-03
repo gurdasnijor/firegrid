@@ -12,6 +12,7 @@
     "effect:unpatch": "effect-language-service unpatch",
     "firegrid": "tsx packages/runtime/src/bin/firegrid.ts",
     "firegrid:env": "node --env-file-if-exists=.env --import tsx packages/runtime/src/bin/firegrid.ts",
+    "inventory:operations": "tsx scripts/operation-inventory.ts",
     "format": "eslint . --fix",
     "publish:oss": "bash scripts/publish-oss.sh",
     "lint": "eslint . --max-warnings 0 --cache --cache-location .eslintcache",
