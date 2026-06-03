@@ -156,16 +156,34 @@ report or act. Especially before deleting.
 
 In rough priority:
 
-1. **Fix the tf-uc8u detector's reference-resolution false-positives.** It flagged
-   genuinely-*used* exports as DEAD (`acpPermissionPolicies` — used in
-   `runtime/src/bin/acp.ts`; `runtimeContextMcpPath` — used in `mcp-host.ts:323`;
-   `insertLocalRuntimeContext`, `evaluateFieldEquals`,
-   `findRuntimeContextMcpChannel`, `RuntimeContextMcpChannelCatalogLive`). These
-   are resolver gaps (likely bin-entry imports, name collisions across packages,
-   or a member/alias path the resolver misses). The DEAD list isn't fully
-   trustworthy until this is fixed — and a wrong DEAD entry is a deletion that
-   breaks the build. **Reproduce:** `pnpm gate:test-only-exports`, then grep each
-   DEAD value export for real (non-barrel, non-comment) production references.
+1. ~~**Fix the tf-uc8u detector's reference-resolution false-positives.**~~
+   **RESOLVED — and the diagnosis above was WRONG (tf-ztwu, 2026-06-03).** The
+   six exports named below were NOT false-positives; every one is *genuinely
+   dead*, verified against source:
+   - `acpPermissionPolicies`, `runtimeContextMcpPath` — the live importers use a
+     same-named **copy in `@firegrid/runtime`** (`stdio-edge.ts` /
+     `runtime-context-mcp-base-url.ts`); the flagged `@firegrid/protocol` copies
+     have zero importers (`@firegrid/protocol/mcp` is imported by nobody at all).
+   - `insertLocalRuntimeContext`, `findRuntimeContextMcpChannel`,
+     `RuntimeContextMcpChannelCatalogLive` — only barrel-forward or comment refs.
+   - `evaluateFieldEquals` — re-exported through two barrels, but the only other
+     mention is a *code comment*; no import/call anywhere.
+
+   The grep-based refutation in the handoff matched **cross-package name
+   collisions, barrel re-exports, and comments**, then asserted "used" without
+   checking *which declaration* — the exact "inference ≠ verified ground-truth"
+   trap. The gate's real import resolution was correct on all six.
+
+   The detector *did* have one genuine gap, but a different one: **dynamic
+   `import("literal")` was invisible** (only static `ImportDeclaration` parsed),
+   which falsely flagged `permissionDecisionDeferred` (used via `import()` in
+   `channel-bindings.ts`) and `sseStream` (in `Read.ts`). Rather than teach the
+   detector to chase dynamic imports, tf-ztwu **enforces the invariant**: a new
+   `local/no-literal-dynamic-import` ESLint rule bans literal-specifier dynamic
+   imports (computed `import(expr)` plugin loaders stay legal), and the two sites
+   were converted to static imports. DEAD is now 217 and trustworthy w.r.t. the
+   import graph. **Lesson:** when a count looks wrong, verify the *specific
+   declaration* against source before declaring the tool broken.
 
 2. **The 205 over-exports (de-export pass).** Most "DEAD" is live internal code
    that's merely `export`ed with no consumer (`intraModuleUse:true`). The clean

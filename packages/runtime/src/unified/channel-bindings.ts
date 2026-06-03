@@ -54,6 +54,10 @@ import { type SessionInputPayload } from "./adapter.ts"
 import {
   RuntimeContextSessionWorkflow,
 } from "./subscribers/runtime-context.ts"
+import {
+  PermissionRoundtripWorkflow,
+  permissionDecisionDeferred,
+} from "./subscribers/permission-and-tool.ts"
 
 const stableOffset = (target: string, key: string) =>
   Effect.succeed(eventOffset(`${target}:${key}`))
@@ -317,8 +321,6 @@ export const HostPermissionRespondChannelSignalingLive = Layer.effect(
   HostPermissionRespondChannel,
   Effect.gen(function*() {
     const engine = yield* WorkflowEngine.WorkflowEngine
-    const { PermissionRoundtripWorkflow, permissionDecisionDeferred } =
-      yield* Effect.promise(() => import("./subscribers/permission-and-tool.ts"))
     return makeDurableEventChannel({
       target: HostPermissionRespondChannelTarget,
       schema: HostPermissionRespondChannelRequestSchema,
