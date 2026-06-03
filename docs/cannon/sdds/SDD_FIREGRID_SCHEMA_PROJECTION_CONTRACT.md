@@ -24,16 +24,14 @@ Related specs:
 
 ---
 
-## Mental model (unchanged — this is the durable part)
+## Mental model (unchanged catalog; refined binding shape)
 
 ```txt
 protocol operation/observation/channel catalog        ← the product contract
-  → bindings  (project the same contract to each surface)
-       → agent-tool binding   (Effect AI Tool/Toolkit over MCP)
-       → client-sdk binding   (browser/app-safe TypeScript)
-       → CLI binding          (@effect/cli)
-       → future REST / gRPC / JSON-RPC
-  → dispatch seam  (RuntimeChannelRouter / HostPlaneChannelRouter / ToolDispatch)
+  → binding shapes
+       → router-shaped bindings   (MCP, HTTP, gRPC request/response ingress routers)
+       → client-shaped bindings   (client-sdk facade, CLI launcher)
+  → execution router  (RuntimeChannelRouter / HostPlaneChannelRouter)
   → execution      (channel-binding Lives → per-event RuntimeContext handler)
 ```
 
@@ -41,6 +39,15 @@ The schema/channel catalog in `@firegrid/protocol` is the source of truth.
 Tools, client APIs, the CLI, and future transports are **bindings** of that
 catalog. Bindings may differ in names and transport; they must not define
 different contracts. Execution is owned by the unified host, not by any binding.
+
+A binding has exactly two existing shapes. **Router-shaped** bindings are
+request/response transport ingress routers whose handlers decode a transport
+request and delegate to the execution router; **client-shaped** bindings are
+programmatic facades or launchers that call the client facade directly and do
+not create an inbound route table. The duality is: an ingress router maps
+`transport request -> handler` at the edge, while `RuntimeChannelRouter` maps
+`(target, verb) -> channel binding` at execution; a router-shaped binding is
+the adapter between those two registries.
 
 This is deliberately **not** "agent tools → client API", "client API → agent
 tools", or "a new service layer → everything." Every user-facing operation has
@@ -56,28 +63,39 @@ tools", or "a new service layer → everything." Every user-facing operation has
 
 The contract a binding must satisfy:
 
-- **Imports `@firegrid/protocol` only.** Never a peer binding, never runtime
-  internals (waits/host/engine/durable tables).
-- **Never executes.** It validates against the schema and *delegates* through the
-  dispatch seam (`router.dispatch({ target, verb, payload })`, a channel Tag's
-  `binding.call`/`binding.append`, or `ToolDispatch.call`). It does not perform
-  substrate effects.
+- **Uses protocol as the contract source.** The projection data is
+  `FiregridProjectionMetadata { operationId, toolName?, clientName?, cliName? }`
+  (`packages/protocol/src/projection/schema.ts:4-9`), attached by
+  `firegridProjection(...)` (`packages/protocol/src/projection/schema.ts:15-19`)
+  and read with `getFiregridProjectionMetadata(...)`
+  (`packages/protocol/src/projection/schema.ts:21-28`).
+- **Delegates instead of inventing execution.** Router-shaped bindings delegate
+  to `channelRouter.dispatch({ target, verb, payload })`
+  (`packages/runtime/src/channels/router.ts:70-72`). Client-shaped bindings call
+  the client facade/channel Tags (`packages/client-sdk/src/firegrid.ts:352-375`,
+  `:420-450`, `:1186-1221`, `:1405-1451`). MCP delegates through the
+  `ToolDispatch` facade (`packages/runtime/src/unified/mcp-host/toolkit-layer.ts:72-78`,
+  `packages/runtime/src/unified/mcp-host/tool-dispatch.ts:777-791`).
 - **Never clones a schema.** Names/help/examples come from the schema's
-  annotations (`getFiregridProjectionMetadata`, `packages/protocol/src/projection/schema.ts:21`);
-  request/response shapes come from the schema itself. A binding never redefines
-  a contract field.
+  annotations; request/response shapes come from the schema itself. A binding
+  never redefines a contract field.
 - **Projects responses back through the schema.** Rows → public observations are
   `Schema.transform`/decoders owned by protocol (e.g.
-  `runtimeAgentOutputObservationFromRow`, `packages/protocol/src/session-facade/schema.ts:455`),
-  never `JSON.parse(row.raw)` in the binding.
+  `RuntimeAgentOutputObservationFromRowSchema`,
+  `packages/protocol/src/session-facade/schema.ts:540-546`, consumed by
+  `runtimeAgentOutputObservationFromRow`,
+  `packages/protocol/src/session-facade/schema.ts:548-551`), never
+  `JSON.parse(row.raw)` in the binding.
 
 **The invariant that matters is IMPORT DIRECTION, not a folder taxonomy.**
-binding ← protocol schemas; execution ← the router/`ToolDispatch`. There is no
-`Binding<T>` base class, no `defineBinding` descriptor, and no required package
-layout. A file is a binding iff it depends only on protocol schemas and
-delegates; it is execution iff it performs effects. (The same rule forbids a
-`defineFiregridOperation` descriptor as the contract source of truth — see
-Boundary rules.)
+projection ← protocol schemas; execution ← the router/channel-binding Lives.
+There is no `Binding<T>` base class, no `defineBinding` descriptor, and no
+required package layout. A file is projection if it reads protocol schemas and
+names; it is execution if it performs substrate effects. A router-shaped edge
+may live in runtime/host composition because it needs the execution router, but
+its transport surface still comes from protocol, not from cloned schemas or a
+peer binding. (The same rule forbids a `defineFiregridOperation` descriptor as
+the contract source of truth — see Boundary rules.)
 
 ---
 
@@ -95,12 +113,13 @@ Boundary rules.)
    └────────┼──────────────────────────┼──────────────────────────────┼─ channels/router.ts ──┘
             │  read shapes              │  read per-surface names       │  send | wait_for | call
             ▼                           ▼                               ▼
-   ┌─────────────────────────────  BINDINGS (project; import protocol only)  ──────────────────┐
-   │  agent-tool  toolkit.ts      client  firegrid.ts      CLI  (per CLI SDD)   gRPC/REST (TODO) │
+   ┌─────────────────────────────  BINDING SHAPES  ────────────────────────────────────────────┐
+   │  router-shaped: MCP toolkit / future HTTP / future gRPC  → ingress router handlers         │
+   │  client-shaped: client-sdk facade / CLI launcher          → programmatic calls              │
    └───────────────────────────────────────────┬───────────────────────────────────────────────┘
-                                                │  delegate (never execute)
+                                                │  delegate (never invent execution)
                                                 ▼
-   ┌──────────────────────────  DISPATCH SEAM (runtime)  ──────────────────────────────────────┐
+   ┌──────────────────────────  EXECUTION ROUTER / FACADES (runtime)  ─────────────────────────┐
    │  RuntimeChannelRouter / HostPlaneChannelRouter .dispatch({target,verb,payload})            │
    │  channels/router.ts        ·        ToolDispatch.call(...)   mcp-host/tool-dispatch.ts      │
    └───────────────────────────────────────────┬───────────────────────────────────────────────┘
@@ -115,13 +134,31 @@ Boundary rules.)
 | Component | What it is | Lives in (file:line) | Boundary |
 | --- | --- | --- | --- |
 | **Schema catalog** | The operation/observation request/response shapes (`Schema.Struct`/`Schema.Union`). The product contract. | `protocol/src/agent-tools/schema.ts`, `protocol/src/session-facade/schema.ts`, `protocol/src/channels/*` | Source of truth. No transport, no execution. |
-| **`firegridProjection` metadata** | The one Firegrid custom annotation carrying per-surface names: `{ operationId, toolName?, clientName?, cliName? }`. Read with `getFiregridProjectionMetadata`. | `protocol/src/projection/schema.ts:4` (type), `:15` (`firegridProjection`), `:21` (`getFiregridProjectionMetadata`); applied via `toolAnnotations` `agent-tools/schema.ts:79` | Only **input** schemas carry it (`agent-tools/schema.ts:79`). A binding reads it; never invents one. |
-| **Channel TARGET** | A typed, branded string address for a route (e.g. `host.prompt`, `session.prompt`, `session.cancel`). | `protocol/src/channels/core.ts:24` (`makeChannelTarget`); e.g. `host-control.ts:64/73/84/106/115/137` | Stable address. The dispatch key. |
-| **Channel VERB** | The action over a target: `send` \| `wait_for` \| `call`. Verbs are derived from direction. | `protocol/src/channels/router.ts:11` (`ChannelRouteVerbSchema`), `:20` (`channelRouteVerbsForDirection`) | egress→`send`, ingress→`wait_for`, call→`call`, bidirectional→`send`+`wait_for`. |
-| **Channel KIND** | The shape of a route (see table below). | `protocol/src/channels/core.ts:99/110/121/139/303` | Determines the binding (stream/append/call) and the legal verbs. |
-| **`RuntimeChannelRouter` / `HostPlaneChannelRouter`** | The dispatch seam: `Context.Tag`s exposing `dispatch({ target, verb, payload })`. Decode-then-invoke a registered route. | `runtime/src/channels/router.ts:79` / `:87` (Tags), `:70` (`dispatch`), `:126` (`makeRuntimeChannelRouter`), `:224` (`runtimeRouteFromChannel`) | Runtime-owned. The single place a validated call becomes a route invocation. |
-| **Channel-binding Lives** | The execution-side `Layer`s backing each target. Post-#863 they EXECUTE a fresh per-event RuntimeContext handler — no `signal.ts`. | `runtime/src/unified/channel-bindings.ts:103` (`executeSessionInput`), `:307`/`:333`/`:361` (Signaling Lives), `:452` (`UnifiedSignalingChannelBindingsLive`) | Runtime-owned execution. Bindings never import these. |
-| **`ToolDispatch`** | The agent-tool facade: `ToolDispatch.call({contextId, toolUseId, toolName, input})` → the MCP dispatch workflow. | `runtime/src/unified/mcp-host/tool-dispatch.ts:789` (Tag), `:777` (`call` sig), `:817` (`call`→`McpToolDispatchWorkflow.execute`) | The agent-tool binding's only execution dependency. |
+| **`firegridProjection` metadata** | The one Firegrid custom annotation carrying per-surface names: `{ operationId, toolName?, clientName?, cliName? }`. | `packages/protocol/src/projection/schema.ts:4-9` (type), `:15-19` (`firegridProjection`), `:21-28` (`getFiregridProjectionMetadata`); agent-tool inputs attach it via `toolAnnotations` (`packages/protocol/src/agent-tools/schema.ts:78-85`). | Input schemas carry projection names. `cliName` is reserved; see the CLI resolution below. |
+| **Channel TARGET** | A typed, branded string address for a route. | `packages/protocol/src/channels/core.ts:18-25` (`ChannelTarget`, `makeChannelTarget`). | Stable dispatch key. |
+| **Channel VERB** | The action over a target: `send` \| `wait_for` \| `call`. | `packages/protocol/src/channels/router.ts:11-18` (`ChannelRouteVerb`), `:20-33` (`channelRouteVerbsForDirection`). | egress→`send`, ingress→`wait_for`, call→`call`, bidirectional→`send`+`wait_for`. |
+| **Channel KIND** | The route shape and its binding slot. | `packages/protocol/src/channels/core.ts:99-108` (`IngressChannel`/`binding.stream`), `:110-119` (`EgressChannel`/`binding.append`), `:121-137` (`BidirectionalChannel`/`stream`+`append`), `:139-149` (`CallableChannel`/`binding.call`), `:151-155` (`ChannelRegistration`). | Determines legal verbs and whether execution is stream, append, or call. |
+| **Dispatch request** | The execution-router request envelope `{ target, verb, payload? }`. | `packages/protocol/src/channels/router.ts:89-93` (`ChannelDispatchRequest`). | Transport-neutral request to the execution router. |
+| **Execution router** | `RuntimeChannelRoute` plus `RuntimeChannelRouter` / `HostPlaneChannelRouter` Tags. | `packages/runtime/src/channels/router.ts:45-52` (`RuntimeChannelRoute`), `:61-73` (`RuntimeChannelRouterService`), `:79-89` (Tags), `:126-190` (`makeRuntimeChannelRouter`), `:224-249` (`runtimeRouteFromChannel`). | Runtime-owned. Decodes the route payload, checks the verb, then invokes `binding.append`/`binding.call`/`binding.stream`. |
+| **Router-shaped binding** | A transport ingress router whose handlers project catalog routes/tools and then delegate to the execution router/facade. | Effect `HttpRouter`: `repos/effect/packages/platform-node/examples/http-router.ts:16-54`; tagged `HttpRouter`: `repos/effect/packages/platform-node/examples/http-tag-router.ts:6-24`, `:37-41`. MCP: `Tool.make(...).setParameters(...).setSuccess(...)` (`packages/runtime/src/unified/mcp-host/toolkit.ts:168-178`), handler `ToolDispatch.call(...)` (`packages/runtime/src/unified/mcp-host/toolkit-layer.ts:72-78`), tool executor `router.dispatch(...)` (`packages/runtime/src/unified/mcp-host/tool-dispatch.ts:164-176`, `:191-224`). | MCP/HTTP/gRPC request/response ingress. It owns transport decoding/encoding; execution stays behind the router. |
+| **Client-shaped binding** | A programmatic facade or launcher with no inbound route table. | Client facade interfaces/Tag: `packages/client-sdk/src/firegrid.ts:285-375`; metadata-driven method wrapper: `:420-450`; writes through channel Tags: `:1186-1221`, `:1405-1451`, `:1463-1533`; reads through protocol views: `:956-966`, `:993-1019`, `:1034-1040`, `:1063-1064`. CLI edge today: `@firegrid/cli` shell (`packages/cli/src/index.ts:1-5`) and `@effect/cli` commands in runtime bins (`packages/runtime/src/bin/firegrid.ts:120-193`). | client-sdk and CLI launcher. No `cliName` route projection, no transport ingress router. |
+| **Channel-binding Lives** | The execution-side `Layer`s backing each target. Post-#863 they execute a fresh per-event RuntimeContext handler — no `signal.ts`. | `packages/runtime/src/unified/channel-bindings.ts:103` (`executeSessionInput`), `:311`/`:339`/`:365` (signaling Lives), `:452` (production bundle). | Runtime-owned execution. |
+| **`ToolDispatch`** | The MCP facade: `ToolDispatch.call({contextId, toolUseId, toolName, input})` → the MCP dispatch workflow. | `packages/runtime/src/unified/mcp-host/tool-dispatch.ts:777-791` (service + Tag), `:817-824` (`call`→`McpToolDispatchWorkflow.execute`). | MCP entry's execution facade. |
+
+### Router duality — side by side
+
+| Edge ingress router | Execution router |
+| --- | --- |
+| Effect `HttpRouter` registers `(method, path) -> handler`: `HttpRouter.empty.pipe(HttpRouter.get("/", ...), HttpRouter.post("/upload", ...))` (`repos/effect/packages/platform-node/examples/http-router.ts:16-39`) and `HttpServer.serve(...)` turns the router into a server (`repos/effect/packages/platform-node/examples/http-router.ts:52-54`). `HttpRouter.Tag` gives the same registry shape through a Tag/Layer surface (`repos/effect/packages/platform-node/examples/http-tag-router.ts:6-24`) and `HttpRouter.Default.unwrap(HttpServer.serve(...))` serves it (`repos/effect/packages/platform-node/examples/http-tag-router.ts:37-41`). | Firegrid `RuntimeChannelRouter` registers `(target, verb) -> RuntimeChannelRoute`: `ChannelDispatchRequest` carries `target`, `verb`, and `payload` (`packages/protocol/src/channels/router.ts:89-93`); `RuntimeChannelRoute.invoke(payload, verb)` is the registered handler (`packages/runtime/src/channels/router.ts:45-52`); `makeRuntimeChannelRouter(...).dispatch(...)` finds the target, checks the verb, decodes the payload, then calls `matched.invoke(...)` (`packages/runtime/src/channels/router.ts:126-190`). |
+
+The decision rule is therefore mechanical:
+
+- **Is the surface transport request/response-shaped?** Use a router-shaped
+  binding: build a transport ingress router whose handlers decode the transport
+  request, then call `channelRouter.dispatch({ target, verb, payload })`.
+- **Is the surface programmatic or a process launcher?** Use a client-shaped
+  binding: expose a facade/launcher over the client-sdk operation methods. Do
+  not project per-operation CLI routes and do not introduce an inbound router.
 
 ### Channel kinds — what each means + when to use
 
@@ -146,124 +183,145 @@ evidence, carried by a `receiptSchema`, typically `RouteCompletionReceipt`,
 
 ---
 
-## How to create a binding to ANY platform
+## How to add a new binding
 
-The recipe is identical for MCP, CLI, TS-API, gRPC, and REST. Only step (iii)
-differs in surface idiom.
+Start from the shape, not from the transport name.
 
-1. **Depend on `@firegrid/protocol` only.** No runtime, no host-sdk, no peer
-   binding. (Enforced by dep-cruiser — see Package-boundary graph.)
+### Router-shaped transport: MCP / HTTP / gRPC
 
-2. **For each operation, read its schema + projection metadata.** Get the
-   input/output (or request/response) schema from the catalog, and call
-   `getFiregridProjectionMetadata(schema)` (`projection/schema.ts:21`) for the
-   transport-specific name. Use `toolName` for MCP, `clientName` for the client,
-   `cliName` for the CLI, `operationId` as the stable fallback. *Only* add a new
-   projection field (e.g. `grpcName`) to `FiregridProjectionMetadata`
-   (`projection/schema.ts:4`) if a distinct name is genuinely needed — otherwise
-   reuse `operationId`.
+1. Read protocol schemas, channel targets, verbs, and route metadata:
+   `FiregridProjectionMetadata` (`packages/protocol/src/projection/schema.ts:4-9`),
+   channel kinds (`packages/protocol/src/channels/core.ts:99-155`), and
+   `ChannelRouteVerb` / `ChannelDispatchRequest`
+   (`packages/protocol/src/channels/router.ts:11-33`, `:89-93`).
+2. Build the transport ingress router. HTTP uses Effect `HttpRouter.get/post`
+   handlers (`repos/effect/packages/platform-node/examples/http-router.ts:16-39`);
+   MCP uses Effect AI `Tool.make(...).setParameters(...).setSuccess(...)`
+   (`packages/runtime/src/unified/mcp-host/toolkit.ts:168-178`).
+3. Each handler decodes the inbound transport request to the schema payload and
+   delegates to the execution router:
+   `channelRouter.dispatch({ target, verb, payload })`. The runtime router then
+   checks the target/verb and invokes the channel binding
+   (`packages/runtime/src/channels/router.ts:153-175`, `:224-249`).
+4. Encode the dispatch result through the response schema/route metadata. A
+   transport-specific success envelope belongs at the edge; the route's schema
+   remains protocol-owned.
 
-3. **Project the schema onto the transport surface.** Map the input schema to the
-   transport's parameter shape and the output schema to its result shape:
-   - MCP: `Tool.make(name, ...).setParameters(input).setSuccess(output)`
-   - client: a typed method whose args/return are `Schema.Type<input/output>`
-   - CLI: an `@effect/cli` `Command`/`Options` decoded against the input schema
-   - gRPC/REST: a service method / route whose body decodes to the input schema
+**gRPC sketch:** a generated gRPC method is one ingress-router handler. The
+service/method name maps to a protocol `target` and `verb`; the protobuf/JSON
+payload decodes to the route input schema; the handler calls
+`channelRouter.dispatch({ target, verb, payload })`; the returned value is
+encoded through the route response schema. gRPC is router-shaped because the
+ingress edge is a request/response server.
 
-4. **On a validated call, DELEGATE through the dispatch seam.** Never execute.
-   - generic routes: `router.dispatch({ target, verb, payload })`
-     (`runtime/src/channels/router.ts:70`) — `verb` is `send`/`wait_for`/`call`
-     per the channel kind.
-   - agent tools: `ToolDispatch.call({ contextId, toolUseId, toolName, input })`
-     (`mcp-host/tool-dispatch.ts:777`).
-   - client: resolve the protocol channel `Tag` at composition time and invoke
-     its `binding.append(...)` / `binding.call(...)`.
+### Client-shaped facade or launcher: client-sdk / CLI
 
-5. **Project the response/observation back through the schema.** Decode the
-   dispatch result against the route's response schema; express row → observation
-   as a `Schema.transform`/protocol decoder
-   (`runtimeAgentOutputObservationFromRow`, `session-facade/schema.ts:455`).
-   Never `JSON.parse(row.raw)` and never decode `AgentOutputEventSchema` inside a
-   binding.
+1. Expose programmatic methods whose names come from `clientName` or an explicit
+   facade decision, not from a route table. The current client facade is the
+   `Firegrid` Tag and `FiregridService` interfaces
+   (`packages/client-sdk/src/firegrid.ts:285-375`).
+2. Validate input with the operation schema and annotate spans from projection
+   metadata (`packages/client-sdk/src/firegrid.ts:420-450`).
+3. Call the owned facade/channel Tag directly. Examples: `session.prompt` calls
+   `sessionPromptChannel.forSession(sessionId).binding.append(...)`
+   (`packages/client-sdk/src/firegrid.ts:1204-1221`), `sessions.createOrLoad`
+   calls `hostSessionsCreateOrLoadChannel.binding.call(...)`
+   (`packages/client-sdk/src/firegrid.ts:1405-1451`), and top-level methods are
+   returned from `Firegrid.of(...)` (`packages/client-sdk/src/firegrid.ts:1463-1533`).
+4. For a CLI, build `@effect/cli` commands as a launcher over the client facade.
+   The source evidence for the CLI type shape is `Command.make(...)` /
+   `Command.withSubcommands(...)` (`packages/runtime/src/bin/firegrid.ts:120-183`)
+   and `Command.run(...)` (`packages/runtime/src/bin/firegrid.ts:185-193`). That is
+   a launcher shape, not an inbound router shape.
 
-### Worked example — MCP (realized)
+### Worked example — MCP (router-shaped, realized)
 
 `runtime/src/unified/mcp-host/toolkit.ts` realizes the recipe verbatim:
 
 - step 2: `const metadata = Option.getOrThrow(getFiregridProjectionMetadata(group.input))`
-  (`toolkit.ts:169`); `const toolName = metadata.toolName ?? metadata.operationId`
-  (`toolkit.ts:170`).
+  (`packages/runtime/src/unified/mcp-host/toolkit.ts:169`);
+  `const toolName = metadata.toolName ?? metadata.operationId`
+  (`packages/runtime/src/unified/mcp-host/toolkit.ts:170`).
 - step 3: `Tool.make(toolName, ...).setParameters(group.input).setSuccess(group.output).setFailure(...)`
-  (`toolkit.ts:171`); collected into `FiregridAgentToolkit = Toolkit.make(...)`
-  (`toolkit.ts:259`).
+  (`packages/runtime/src/unified/mcp-host/toolkit.ts:171-177`);
+  collected into `FiregridAgentToolkit = Toolkit.make(...)`
+  (`packages/runtime/src/unified/mcp-host/toolkit.ts:259`).
 - step 4: the toolkit handler resolves `ToolDispatch` and calls
   `dispatch.call({ contextId, toolUseId, toolName, input })`
-  (`toolkit-layer.ts:72`); `ToolDispatch.call` runs `McpToolDispatchWorkflow.execute(...)`
-  (`tool-dispatch.ts:817`), whose body dispatches each tool through
-  `router.dispatch({ target, verb, payload })` (`tool-dispatch.ts:174`).
+  (`packages/runtime/src/unified/mcp-host/toolkit-layer.ts:72-78`);
+  `ToolDispatch.call` runs `McpToolDispatchWorkflow.execute(...)`
+  (`packages/runtime/src/unified/mcp-host/tool-dispatch.ts:817-824`), whose body
+  dispatches each tool through `router.dispatch({ target, verb, payload })`
+  (`packages/runtime/src/unified/mcp-host/tool-dispatch.ts:174`).
 
-The `Tool`/`Toolkit` values import only protocol schemas + the `ToolDispatch`
-tag — no waits, host, or engine (verified: `toolkit.ts`/`toolkit-layer.ts` import
-nothing from `/engine`/`/host`).
+The MCP binding is router-shaped even though its ingress router is a toolkit
+instead of an HTTP path table: `Tool.make(...)` registers tool handlers, the
+handler delegates to `ToolDispatch.call(...)`, and the executor lowers tool
+names to `RuntimeChannelRouter.dispatch(...)` (`packages/runtime/src/unified/mcp-host/tool-dispatch.ts:164-176`,
+`:191-224`).
 
-### Worked example — client (realized)
+### Worked example — client (client-shaped, realized)
 
 `client-sdk/src/firegrid.ts` projects the session-facade catalog into the client
 facade. It is browser-safe (protocol-only imports, enforced by
 `client-sdk-no-runtime`).
 
 - step 2: `const metadata = Option.getOrThrow(getFiregridProjectionMetadata(operation.input))`
-  (`firegrid.ts:432`), reading `operationId`/`clientName` (`:434`).
+  (`packages/client-sdk/src/firegrid.ts:434`), reading `operationId`/`clientName`
+  (`packages/client-sdk/src/firegrid.ts:435-439`).
 - step 3/4: writes resolve a protocol channel `Tag` and invoke its binding —
   e.g. `session.start()` → `hostSessionsStartChannel.binding.append({ sessionId })`
-  (`firegrid.ts:1359`); `session.prompt` → `sessionPromptChannel.forSession(sessionId).binding.append(...)`
-  (`firegrid.ts:1189`); `sessions.cancel` → `sessionCancelChannel.binding.append(...)`
-  (`firegrid.ts:1209`); `permissions.respond` → `hostPermissionRespondChannel.binding.append(...)`
-  (`firegrid.ts:1503`).
+  (`packages/client-sdk/src/firegrid.ts:1373-1381`); `session.prompt` →
+  `sessionPromptChannel.forSession(sessionId).binding.append(...)`
+  (`packages/client-sdk/src/firegrid.ts:1204-1221`); `sessions.cancel` →
+  `sessionCancelChannel.binding.append(...)`
+  (`packages/client-sdk/src/firegrid.ts:1224-1249`); `permissions.respond` →
+  `hostPermissionRespondChannel.binding.append(...)`
+  (`packages/client-sdk/src/firegrid.ts:1517-1533`).
 - step 5: reads project rows → observations via
-  `runtimeAgentOutputObservationFromRow` (`firegrid.ts:909`, `:1044`).
+  `runtimeAgentOutputObservationFromRow`
+  (`packages/client-sdk/src/firegrid.ts:911`, `:1063-1064`), and caller-facing
+  read paths use protocol-owned views (`runtimeContextsView`,
+  `runtimeRunsForContextView`, `runtimeEventsForContextView`,
+  `runtimeLogsForContextView`) rather than table-shaped logic
+  (`packages/client-sdk/src/firegrid.ts:956-966`, `:993-1019`, `:1034-1040`,
+  `:1063-1064`; view definitions in `packages/protocol/src/launch/views.ts:22-46`).
 
-> **Open boundary gap (tf-ll90.8.3):** the read path still resolves
-> `RuntimeControlPlaneTable` + `RuntimeOutputTable` directly
-> (`firegrid.ts:933-934`). That is a durable-table *facade* used as the caller
-> path, which this contract forbids. Writes already dispatch through
-> protocol-owned channels; the read path should likewise route through a
-> protocol-owned read capability/observation source rather than the table tags.
-> (`runtimeAgentOutputObservationFromRow` is also a hand-written `_tag` switch at
-> `session-facade/schema.ts:455`; express it as a `Schema.transform`.)
+### Worked example — CLI (client-shaped resolution)
 
-### Worked example — CLI (per the CLI SDD)
+`cliName` is **reserved**. It remains a metadata field
+(`packages/protocol/src/projection/schema.ts:4-9`) and some historical schemas
+still carry values (`packages/protocol/src/agent-tools/schema.ts:480-499`,
+`:516-538`, `:557-566`, `:578-590`, `:608-619`), but the resolved model does not
+use `cliName` to project an inbound router or per-operation route table.
 
-The CLI launchers were deleted in #765 and are being rebuilt — see
-`docs/sdds/SDD_FIREGRID_CLI_LAUNCHERS.md`. This contract adds one rule: the CLI's
-*binding* half (`@effect/cli` `Command`/`Options`, help, examples, defaults,
-validation) projects from the schema catalog and the `cliName` projection field
-(already present on the agent-tool input schemas, e.g.
-`agent-tools/schema.ts:480` `SessionNewToolInputSchema` carries
-`cliName: "sessions create"`); the *execution* half (Node, embedded
-durable-streams, host composition, MCP startup) stays runtime-side and delegates
-through the router. A binding file serializes schemas; an execution file performs
-effects; no file does both.
+The CLI is client-shaped: it is a launcher/facade over Firegrid operations, not
+a request/response transport server. Current source confirms that
+`@firegrid/cli` is only a package shell pointing to runtime bin entrypoints
+(`packages/cli/src/index.ts:1-5`), and those bin entrypoints are process
+launchers built with `@effect/cli` `Command.make(...)` /
+`Command.withSubcommands(...)` / `Command.run(...)`
+(`packages/runtime/src/bin/firegrid.ts:120-193`). The current runtime-owned
+`firegrid run` path still composes host/runtime services and invokes channel
+Tags directly (`packages/runtime/src/bin/run.ts:97-153`); that is a process
+entrypoint, not a precedent for a CLI projection router. The open-slice-2 text
+"project flags/help from `cliName`" is therefore corrected: rebuild any
+programmatic CLI as a client-shaped launcher over the client-sdk facade; keep
+`cliName` reserved unless a future SDD reactivates it for non-router help text.
 
-### Worked example — gRPC / REST (the same recipe, sketched)
+### Worked example — gRPC / REST (router-shaped sketch)
 
-A new transport joins as a projection package importing **protocol only**:
+A new HTTP/gRPC/JSON-RPC transport is router-shaped:
 
-1. depend on `@firegrid/protocol`.
-2. for each service method, read its schema and (if a distinct name is needed)
-   add `grpcName?`/`restName?` to `FiregridProjectionMetadata`
-   (`projection/schema.ts:4`); otherwise reuse `operationId`.
-3. generate the `.proto` service / OpenAPI route from the encoded schema
-   (`Schema.encodedSchema`) — the wire shape is the schema's encoded form.
-4. on a validated request, call `router.dispatch({ target, verb, payload })`
-   (`runtime/src/channels/router.ts:70`) with the channel's target + the verb its
-   kind permits (`send` for a `DurableEventChannel`, `wait_for` for ingress,
-   `call` for a `CallableChannel`).
-5. encode the dispatch result/observation back through the response schema.
-
-No new dispatch machinery is required — the router already decodes the payload
-against the route's `inputSchema` (`router.ts:170`) and rejects unsupported verbs
-(`router.ts:163`), so a transport gets validation + routing for free.
+1. Depend on protocol schemas for operation shapes and channel route metadata.
+2. Build an ingress router in the host/transport layer: `HttpRouter` for HTTP,
+   a gRPC service implementation for gRPC.
+3. For each transport handler, decode the request body to the protocol input,
+   call `channelRouter.dispatch({ target, verb, payload })`, and encode the
+   result through the protocol response schema.
+4. Do not add a second execution registry. The runtime router already decodes the
+   payload against the route `inputSchema` and invokes the channel binding
+   (`packages/runtime/src/channels/router.ts:166-175`, `:224-249`).
 
 ---
 
@@ -360,10 +418,11 @@ annotation ids + `getFiregridProjectionMetadata`). They do **not** depend on a
 
 > **Resolved (was open cleanup):** the transitional
 > `FiregridOperationEntry` / `defineFiregridOperation` wrapper is **gone** —
-> `protocol/src/operations/schema.ts` is now a 6-line re-export of
-> `projection/schema.ts` (`operations/schema.ts:1-6`); zero callers of the
-> wrapper remain. The good path (annotation + `getFiregridProjectionMetadata`) is
-> what `toolkit.ts`/`firegrid.ts` use.
+> `packages/protocol/src/operations/index.ts` is now an empty compatibility
+> module (`packages/protocol/src/operations/index.ts:1`), and `rg
+> "defineFiregridOperation|FiregridOperationEntry" packages/protocol/src` finds
+> no live wrapper definitions. The good path (annotation +
+> `getFiregridProjectionMetadata`) is what `toolkit.ts`/`firegrid.ts` use.
 
 ---
 
@@ -371,18 +430,20 @@ annotation ids + `getFiregridProjectionMetadata`). They do **not** depend on a
 
 | Binding | Lives in | State |
 | --- | --- | --- |
-| Agent-tool (MCP) | `runtime/src/unified/mcp-host/toolkit.ts` (`Tool.make`/`Toolkit.make` → `ToolDispatch.call`) | realized ✓ |
-| Client | `client-sdk/src/firegrid.ts` | realized; one read-path leak open (above) |
-| Read-side observations | `protocol/src/session-facade/schema.ts:276` (`RuntimeAgentOutputObservationSchema`, a `Schema.Union`) | realized ✓ |
-| CLI | rebuilding — `docs/sdds/SDD_FIREGRID_CLI_LAUNCHERS.md` | pending |
+| Agent-tool (MCP) | `packages/runtime/src/unified/mcp-host/toolkit.ts:168-178` (`Tool.make`/`Toolkit.make`) + `packages/runtime/src/unified/mcp-host/toolkit-layer.ts:72-78` (`ToolDispatch.call`) | router-shaped, realized |
+| Client facade | `packages/client-sdk/src/firegrid.ts:285-375`, `:420-450`, `:1463-1533` | client-shaped, realized |
+| Client read-side views | `packages/protocol/src/launch/views.ts:22-46` consumed by `packages/client-sdk/src/firegrid.ts:956-966`, `:993-1019`, `:1034-1040`, `:1063-1064` | caller-facing read projection realized; row-source wiring still uses protocol table Tags at composition (`packages/client-sdk/src/firegrid.ts:935-936`, `:1548-1579`) |
+| Read-side observations | `packages/protocol/src/session-facade/schema.ts:276-285` (`RuntimeAgentOutputObservationSchema`, a `Schema.Union`) and `:548-551` (`runtimeAgentOutputObservationFromRow`) | realized |
+| CLI | `packages/cli/src/index.ts:1-5` shell; process bins in `packages/runtime/src/bin/firegrid.ts:120-193` | client-shaped resolution; no router projection |
 
-The agent-tool binding already follows the target shape: a tool is **(a)** a
+The agent-tool binding already follows the router-shaped target: a tool is **(a)** a
 schema in `@firegrid/protocol/agent-tools`, **(b)** a `Tool.make(...)` in
 `toolkit.ts` reading its name from the schema's projection annotation
-(`toolkit.ts:169-171`), **(c)** an entry in `Toolkit.make(...)`
-(`toolkit.ts:259`), and **(d)** a handler that routes through `ToolDispatch.call`
-(`toolkit-layer.ts:72`) — so the binding never imports waits, host, or the
-workflow engine directly.
+(`packages/runtime/src/unified/mcp-host/toolkit.ts:169-171`), **(c)** an entry in
+`Toolkit.make(...)` (`packages/runtime/src/unified/mcp-host/toolkit.ts:259`), and
+**(d)** a handler that routes through `ToolDispatch.call`
+(`packages/runtime/src/unified/mcp-host/toolkit-layer.ts:72-78`) — so the binding
+never imports waits, host, or the workflow engine directly.
 
 Read binding: operation schemas project into methods; observation schemas project
 into snapshots, streams, and waits. No product app should ever
@@ -397,23 +458,28 @@ into snapshots, streams, and waits. No product app should ever
 @firegrid/protocol           ← contract; no client/runtime imports
 @firegrid/client-sdk         → protocol only (browser/app-safe)
 @firegrid/host-sdk           → public host-composition surface (unified)
-@firegrid/runtime            → execution substrate; not a binding
-@firegrid/cli                → thin tsx launcher (see CLI SDD)
+@firegrid/runtime            → execution substrate + runtime-owned process bins
+@firegrid/cli                → package shell / terminal launcher surface
 ```
 
 These are not review conventions — they are dep-cruiser rules today:
 `client-sdk-no-runtime-scan`, `runtime-no-host-sdk-scan`,
 `host-sdk-public-composition-surface-only-unified`, `protocol-no-client-or-runtime`,
-`client-sdk-no-broad-durable-streams-root` (`.dependency-cruiser.cjs`). New
-transports (REST/gRPC/JSON-RPC) join as projection packages that import
-**protocol only** and delegate execution to host/runtime composition — they never
-clone schemas or import a peer binding.
+`client-sdk-no-broad-durable-streams-root`
+(`.dependency-cruiser.cjs:422-428`, `:414-419`, `:389-397`, `:443-448`,
+`:487-492`). The current bin carve-out is explicit:
+`runtime/src/bin/**` is a process-composition tier, not runtime substrate
+importing the CLI (`.dependency-cruiser.cjs:346-354`). New transports
+(REST/gRPC/JSON-RPC) join as router-shaped host/transport edges: their catalog
+projection imports protocol; their ingress handler delegates to the
+runtime/host execution router. They never clone schemas or import a peer
+binding.
 
 Note: there is no separate `@firegrid/agent-tools` package. The agent-tool
 *schemas* live in `@firegrid/protocol/agent-tools`; the *binding* lives in the
 host runtime (`runtime/src/unified/mcp-host`). The invariant that matters is the
-import direction (binding ← protocol schemas; execution via the router /
-`ToolDispatch`), not the package count or folder layout.
+import direction (projection ← protocol schemas; execution via the router /
+`ToolDispatch` facade), not the package count or folder layout.
 
 ---
 
@@ -421,13 +487,18 @@ import direction (binding ← protocol schemas; execution via the router /
 
 - Protocol schema/observation/channel catalog is the source of truth.
 - Agent tools and client APIs are **bindings**, not the programmer contract.
-- A binding imports protocol only — not runtime, not a peer binding (dep-cruiser).
+- A pure projection imports protocol only. A router-shaped host/transport edge
+  may import the execution router/facade; it still must not clone schemas,
+  import peer bindings, or perform substrate execution outside the router.
 - A binding validates and **delegates** (`router.dispatch` / channel `binding` /
-  `ToolDispatch.call`); it never performs substrate effects and never clones a
+  `ToolDispatch.call`); it never invents a second executor and never clones a
   schema.
 - Client snapshots/waits return normalized protocol observations; the client does
-  not write runtime-owned state, nor read durable-table facades, as its
-  caller-facing path.
+  not write runtime-owned state, and its caller-facing read projection goes
+  through protocol views, not table-shaped logic.
+- `cliName` is reserved. Do not generate a CLI route table or describe CLI as a
+  router projection unless a future SDD reactivates that metadata for a concrete
+  non-router launcher use.
 - Common execution is the unified host; introduce shared execution helpers only
   where bindings share identical substrate semantics.
 - Do not split `@firegrid/client-sdk` into many packages; do not publish one
@@ -440,25 +511,31 @@ import direction (binding ← protocol schemas; execution via the router /
 
 ## Open slices (the gap between this contract and the tree)
 
-1. Close the client read-path leak (tf-ll90.8.3): route reads through a
-   protocol-owned read capability/observation source, not `RuntimeControlPlaneTable`
-   / `RuntimeOutputTable` (`client-sdk/src/firegrid.ts:933-934`).
-2. Rebuild the CLI binding per the CLI SDD, projecting flags/help from the
-   `cliName` projection metadata.
-3. Express row→observation and id conversions as `Schema.transform` projections
-   where hand-written (e.g. `runtimeAgentOutputObservationFromRow`,
-   `protocol/src/session-facade/schema.ts:455`).
-4. Tidy the historical `signal.ts` vocabulary still in comments
+1. Decide whether the client row-source wiring should stay as protocol table Tags
+   (`packages/client-sdk/src/firegrid.ts:935-936`, `:1548-1579`) or move to a
+   narrower browser-safe row-source capability. The caller-facing projection leak
+   is closed by protocol views (`packages/protocol/src/launch/views.ts:22-46`);
+   this remaining item is composition/source ownership, not route projection.
+2. Express any remaining row→observation and id conversions as
+   `Schema.transform` projections where still hand-written. The main
+   agent-output path is already schema-backed via
+   `RuntimeAgentOutputObservationFromRowSchema`
+   (`packages/protocol/src/session-facade/schema.ts:540-551`).
+3. Tidy the historical `signal.ts` vocabulary still in comments
    (`SignalTable` / `writeSessionInputSignal` / `readSignalsFor` mentions in
-   `unified/channel-bindings.ts`, `unified/subscribers/runtime-context.ts`,
-   `unified/observers.ts`) so a reader doesn't mistake retired names for live
-   primitives. (`signal.ts` itself is already deleted; this is comment hygiene,
-   not code.)
+   `packages/runtime/src/unified/channel-bindings.ts:99`, `:226`, `:450`;
+   `packages/runtime/src/unified/subscribers/runtime-context.ts:4`;
+   `packages/runtime/src/unified/observers.ts:30`) so a reader doesn't mistake
+   retired names for live primitives. (`signal.ts` itself is already deleted;
+   this is comment hygiene, not code.)
 
 Each is independently shippable; none requires a "transactional, all bindings at
 once" cutover, because the binding/execution split already exists.
 
 **Resolved since the prior revision:** the `defineFiregridOperation` /
-`FiregridOperationEntry` removal (now a re-export shim, `operations/schema.ts`)
-and the `RuntimeIngressTable` deletion. `DurableDeferred` is no longer a residual
-to GC — it is the await-once relay primitive of the per-event design.
+`FiregridOperationEntry` removal (`packages/protocol/src/operations/index.ts:1`),
+the caller-facing client read projection now using protocol views
+(`packages/client-sdk/src/firegrid.ts:956-966`, `:993-1019`, `:1034-1040`,
+`:1063-1064`), the `cliName` route-projection framing, and the
+`RuntimeIngressTable` deletion. `DurableDeferred` is no longer a residual to GC —
+it is the await-once relay primitive of the per-event design.
