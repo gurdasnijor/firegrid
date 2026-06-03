@@ -329,12 +329,19 @@ module.exports = {
     {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.1
       // firegrid-host-sdk.PACKAGE_GRAPH.3
-      name: "client-sdk-no-runtime",
+      name: "client-sdk-no-runtime-or-durable-substrate",
       severity: "error",
       comment:
-        "The browser/app-facing client-sdk package must not import runtime code or runtime-only dependencies.",
+        "The browser/app-facing client-sdk package must not import runtime code or durable-table substrate. MCP/RPC plus durable-streams wire imports are allowed; runtime and effect-durable-operators are not.",
       from: { path: "^packages/client-sdk/src" },
-      to: { path: "^packages/runtime/src" },
+      to: {
+        path: [
+          "^packages/runtime/src",
+          "^packages/effect-durable-operators/src",
+          "^node_modules/effect-durable-operators",
+          "effect-durable-operators",
+        ],
+      },
     },
     {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.2

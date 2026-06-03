@@ -24,7 +24,7 @@ Firegrid has three caller-facing shapes over the same protocol contracts:
 
 | Caller | Surface | What the caller sees |
 | --- | --- | --- |
-| Application code | `firegrid.sessions.createOrLoad`, `session.start`, `session.permissions.respond`, `session.wait.forAgentOutput` | Typed methods scoped to a durable session. |
+| Application code | `firegrid.sessions.createOrLoad`, `session.start`, `session.permissions.respond`, `session.wait.forAgentOutput` | Typed control methods scoped to a durable session; observations read through protocol channels or the MCP client. |
 | Agents | `wait_for(channel, { match })`, `send(channel, payload)`, `call(channel, request)` | Opaque semantic channel names plus decoded payloads. |
 | CLI / future RPC | Commands or endpoint handlers | Transport-shaped projection of the same schemas and channel contracts. |
 
@@ -41,7 +41,6 @@ import {
   FiregridConfig,
   FiregridClientOperations,
   FiregridLive,
-  FiregridStandaloneLive,
   local,
 } from "@firegrid/client-sdk"
 ```
@@ -49,15 +48,14 @@ import {
 | Export | Purpose |
 | --- | --- |
 | `Firegrid` | Effect service tag for the client API. |
-| `FiregridConfig` | Config service for Durable Streams URLs, namespace, content type, auth headers, and tx timeout. |
+| `FiregridConfig` | Config service for Durable Streams base URL, namespace, and optional protocol channel registrations. |
 | `FiregridLive` | Client service layer for host-composed apps that already provide the required protocol-backed capabilities. |
-| `FiregridStandaloneLive` | `FiregridLive` plus default browser/edge-safe client layers. Use this for app code that is not also composing the runtime host in-process. |
 | `FiregridClientOperations` | Protocol-backed operation catalog for client projections. Client decoders use these schema entries rather than a client-local contract or the runtime agent-tool projection. |
 | `local` | Helper constructors for local-process runtime intents. |
 
-Compatibility exports for raw table diagnostics may remain in the package, but
-they are not the product API. New application flows should use session methods
-and semantic channel waits instead of importing durable table tags or stream URL
+The package does not export durable table tags or table-backed read layers.
+New application flows should use session methods, semantic channel waits, and
+the MCP observation client instead of importing durable table tags or stream URL
 helpers.
 
 ## Is It Browser Safe?
@@ -74,29 +72,18 @@ part of the browser-facing package surface.
 
 ## Configuration
 
-Applications pass Durable Streams configuration explicitly. For Electric Cloud,
-`durableStreamsBaseUrl` can be the service-scoped root shown in the dashboard,
-for example `https://api.electric-sql.cloud/v1/stream/<service-id>`. Firegrid
-appends encoded stream names below that root.
+Applications pass Durable Streams configuration explicitly to the host-composed
+client layer and to the MCP client transport.
 
 ```ts
-import { FiregridConfig, FiregridStandaloneLive } from "@firegrid/client-sdk"
-import type { DurableTableHeaders } from "@firegrid/protocol"
+import { FiregridConfig, FiregridLive } from "@firegrid/client-sdk"
 import { Layer } from "effect"
 
-const token = import.meta.env.VITE_FIREGRID_DURABLE_STREAMS_TOKEN
-const headers = token === undefined || token.length === 0
-  ? undefined
-  : ({
-    Authorization: () => `Bearer ${token}`,
-  }) satisfies DurableTableHeaders
-
-export const FiregridBrowserLive = FiregridStandaloneLive.pipe(
+export const FiregridBrowserLive = FiregridLive.pipe(
   Layer.provide(
     Layer.succeed(FiregridConfig, {
       durableStreamsBaseUrl: import.meta.env.VITE_DURABLE_STREAMS_BASE_URL,
       namespace: import.meta.env.VITE_FIREGRID_RUNTIME_NAMESPACE,
-      ...(headers === undefined ? {} : { headers }),
     }),
   ),
 )
@@ -110,8 +97,8 @@ address Firegrid state.
 
 The main app-facing projection is the session facade. It creates or loads a
 RuntimeContext from a caller-owned external key through
-`HostSessionsCreateOrLoadChannel`, reads durable snapshots through normalized
-observation projections, waits for agent output, and responds to permission
+`HostSessionsCreateOrLoadChannel`, waits for agent output through normalized
+channel observations, and responds to permission
 requests through the host permission channel. Its inputs are decoded through
 protocol-owned session operation schemas exposed by `FiregridClientOperations`.
 
@@ -136,7 +123,7 @@ export const createPlanner = Effect.gen(function*() {
     createdBy: "factory",
   })
 
-  return yield* session.snapshot()
+  return session
 })
 ```
 
@@ -163,8 +150,6 @@ restating runtime config:
 
 ```ts
 const session = yield* firegrid.sessions.attach({ sessionId })
-
-const snapshot = yield* session.snapshot()
 ```
 
 `sessions.attach` is a client handle operation. It does not start a runtime,
@@ -186,7 +171,7 @@ if (permission.matched) {
 }
 ```
 
-For product session reads, use normalized agent-output observations instead of
+For product session output, use normalized agent-output observations instead of
 parsing raw output rows:
 
 ```ts
@@ -195,16 +180,13 @@ const next = yield* session.wait.forAgentOutput({
   timeoutMs: 30_000,
 })
 
-const snapshot = yield* session.snapshot()
-for (const output of snapshot.agentOutputs) {
-  console.log(output.sequence, output._tag, output.event)
+if (next.matched) {
+  console.log(next.output.sequence, next.output._tag, next.output.event)
 }
 ```
 
-`snapshot.agentOutputs` and `wait.forAgentOutput` are derived through the
-`SessionAgentOutputChannel` projection and protocol-owned observation schemas.
-`snapshot.events` and `snapshot.logs` remain available for raw inspectors and
-diagnostics.
+`wait.forAgentOutput` is derived through the `SessionAgentOutputChannel`
+projection and protocol-owned observation schemas.
 
 `wait.forPermissionRequest` reads normalized PermissionRequest observations from
 the same agent-output channel projection for the scoped session. It returns
@@ -317,8 +299,7 @@ yes → durable channel. See the design rationale in
 
 ## Lower-Level Operations
 
-`firegrid.launch` and `firegrid.open(contextId).snapshot` remain available for
-lower-level integrations and tests.
+`firegrid.launch` remains available for lower-level integrations and tests.
 Prefer `firegrid.sessions.createOrLoad(...)` for new RuntimeContext-backed app
 work because it centralizes deterministic context identity and scoped session
 operations.
@@ -332,10 +313,11 @@ or invent a parallel graph DSL.
 
 ## Browser UI Reads
 
-For UI code, use the configured client for point-in-time runtime snapshots:
+For UI code, use the MCP client for point-in-time runtime snapshots and watch
+observations:
 
 ```ts
-const snapshot = yield* firegrid.open(contextId).snapshot
+const snapshot = yield* mcp.observations.snapshot(contextId)
 ```
 
 The snapshot includes:
@@ -345,10 +327,9 @@ The snapshot includes:
 - host-owned output events and logs;
 - normalized agent-output observations for product session semantics.
 
-For live product views, prefer `session.wait.*` methods or an app-owned read
-model that subscribes through documented semantic channels. Raw table providers
-are appropriate for inspectors and diagnostics only; they should be labeled as
-raw storage views, not product session APIs.
+For live product views, prefer the MCP observation client or `session.wait.*`
+methods over raw storage views. The client SDK no longer exports durable-table
+providers as a caller-facing read path.
 
 ## What Belongs In Firegrid vs. The App
 

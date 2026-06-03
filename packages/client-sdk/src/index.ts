@@ -1,20 +1,13 @@
-// TODO(tf-8oaq): durable-table escape hatches below remain for documented
-// advanced composition; Cycle 2 should replace or narrow them behind channels.
 export {
   AppendError,
   Firegrid,
   FiregridConfig,
   FiregridConfigError,
   FiregridChannelError,
-  FiregridControlPlaneTableLive,
   FiregridLive,
-  FiregridRuntimeTables,
-  FiregridStandaloneLive,
   LaunchInputError,
   PreloadError,
-  firegridRuntimeTableTags,
   local,
-  runtimeControlPlaneStreamUrl,
   type ClientOptions,
   type FiregridChannelMatch,
   type FiregridChannelsClient,
@@ -26,13 +19,11 @@ export {
   type FiregridService,
   type FiregridSessionHandle,
   type FiregridSessionPermissionsClient,
-  type FiregridSessionWaitClient,
   type FiregridSessionsClient,
   type FiregridWaitClient,
   type PromptInputError,
   type EventOffset,
   type RuntimeContextHandle,
-  type RuntimeContextSnapshot,
 } from "./firegrid.ts"
 export {
   FiregridMcpClientError,

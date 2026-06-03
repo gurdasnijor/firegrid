@@ -53,24 +53,24 @@ const runScenario = Effect.scoped(Effect.gen(function*() {
   // Wait for streamed output, then for the natural exit → Terminated to
   // propagate and the observer-delivered terminal input to run deregister.
   let waited = yield* session.wait.forAgentOutput({ timeoutMs: 8_000 })
+  const outputTags: Array<string> = []
   let remaining = 12
   while (waited.matched && waited.output._tag !== "Terminated" && remaining > 0) {
+    outputTags.push(waited.output._tag)
     waited = yield* session.wait.forAgentOutput({ timeoutMs: 8_000 })
     remaining -= 1
   }
+  if (waited.matched) outputTags.push(waited.output._tag)
   // Let the journaled Terminated reach the observer and the terminal per-event
   // execution run `adapter.deregister`.
   yield* Effect.sleep("2500 millis")
-
-  const snapshot = yield* launched.snapshot
-  const outputTags = snapshot.agentOutputs.map((output) => output._tag)
 
   return {
     contextId: launched.contextId,
     startRecorded: startOffset.offset.length > 0,
     promptRecorded: promptOffset.offset.length > 0,
     terminatedObserved: outputTags.includes("Terminated"),
-    snapshotOutputCount: snapshot.agentOutputs.length,
+    outputCount: outputTags.length,
     outputTags: outputTags.join(","),
   }
 }))
@@ -83,8 +83,8 @@ export const naturalExitTerminalDriver = Effect.gen(function*() {
     "firegrid.r06u36.start_recorded": scenario.startRecorded,
     "firegrid.r06u36.prompt_recorded": scenario.promptRecorded,
     "firegrid.r06u36.terminated_observed": scenario.terminatedObserved,
-    "firegrid.r06u36.snapshot_output_count": scenario.snapshotOutputCount,
-    "firegrid.r06u36.snapshot_output_tags": scenario.outputTags,
+    "firegrid.r06u36.output_count": scenario.outputCount,
+    "firegrid.r06u36.output_tags": scenario.outputTags,
     "firegrid.r06u36.spawn_target": "src/bin/self-exiting-acp-agent-process.ts",
     "firegrid.r06u36.codec": "acp",
   })

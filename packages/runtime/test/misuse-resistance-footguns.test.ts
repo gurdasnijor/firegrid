@@ -21,7 +21,8 @@
  *
  * Companion gates (this corpus is the SYMBOL/type-surface half of obligation 4;
  * the MODULE-boundary half is already enforced by existing dependency-cruiser
- * rules — `client-sdk-no-runtime` and `host-sdk-no-workflow-or-durable-substrate-scan`
+ * rules — `client-sdk-no-runtime-or-durable-substrate` and
+ * `host-sdk-no-workflow-or-durable-substrate-scan`
  * in `.dependency-cruiser.cjs`). The type checker is used here because it catches
  * `as`-aliased and `export *` re-exports that a regex/pattern rule would miss.
  *
@@ -30,13 +31,12 @@
  *   - channel direction / payload typing: the client channel facade is
  *     `(target: string, payload: unknown)`, so a wrong-direction or
  *     substrate-shaped payload still compiles (§9 obligation 5 — unmet).
- *   - `FiregridRuntimeTables` / `firegridRuntimeTableTags`: documented substrate
- *     escape-hatch VALUES still on the client barrel (tf-8oaq).
  */
 
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import type { FiregridService } from "@firegrid/client-sdk"
+import type * as ClientSdkValues from "@firegrid/client-sdk"
 import type * as ClientSdk from "@firegrid/client-sdk"
 // A real substrate handle from the host-composition barrel, used to prove it
 // CANNOT be fed to a client verb (F5). FiregridHost is the public host factory.
@@ -99,16 +99,19 @@ export type _NoWorkflowEngine =
 export type _NoDurableTable =
   // @ts-expect-error `DurableTable` is substrate, absent from the client barrel
   ClientSdk.DurableTable
-// The control-plane / output tables are reachable internally via the documented
-// `FiregridRuntimeTables` escape-hatch VALUE (tf-8oaq), but their TYPE names must
-// not be on the public barrel. dep-cruiser can't see this (they route through
-// the allowed `@firegrid/protocol/launch`), so the type checker is the gate.
 export type _NoRuntimeControlPlaneTable =
   // @ts-expect-error `RuntimeControlPlaneTable` is substrate, not a named client-barrel export
   ClientSdk.RuntimeControlPlaneTable
 export type _NoRuntimeOutputTable =
   // @ts-expect-error `RuntimeOutputTable` is substrate, not a named client-barrel export
   ClientSdk.RuntimeOutputTable
+
+export type _NoFiregridRuntimeTablesValue =
+  // @ts-expect-error table escape hatches are no longer client-sdk values
+  typeof ClientSdkValues.FiregridRuntimeTables
+export type _NoFiregridRuntimeTableTagsValue =
+  // @ts-expect-error table escape hatches are no longer client-sdk values
+  typeof ClientSdkValues.firegridRuntimeTableTags
 
 // Reference the never-called footgun closures so noUnusedLocals stays happy
 // without executing them (their type errors are evaluated by tsc regardless).

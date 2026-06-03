@@ -26,7 +26,7 @@
 import {
   Firegrid,
   local,
-  type FiregridSessionHandle,
+  type FiregridService,
 } from "@firegrid/client-sdk/firegrid"
 import { Config, Effect, Option } from "effect"
 
@@ -60,55 +60,70 @@ const externalKey: ExternalKey = {
 const sessionContextIdForExternalKey = (key: ExternalKey): string =>
   `session:${key.source}:${key.id}`
 
+const sessionAgentOutputTarget = "session.agent_output"
+
+interface AgentOutputObservation {
+  readonly _tag: string
+  readonly sequence: number
+  readonly event?: {
+    readonly _tag?: string
+    readonly part?: {
+      readonly delta?: string
+    }
+  }
+}
+
+const asObservation = (event: unknown): AgentOutputObservation | undefined => {
+  if (typeof event !== "object" || event === null) return undefined
+  const record = event as Record<string, unknown>
+  if (typeof record._tag !== "string" || typeof record.sequence !== "number") {
+    return undefined
+  }
+  return event as AgentOutputObservation
+}
+
 /**
  * Drive one full turn of raw agent_output until the agent completes its turn
  * (`TurnComplete`) or surfaces the marker text — proving the real agent is alive
  * and producing agent_output BEFORE any terminal is issued.
  */
 const waitForTurn = (
-  session: FiregridSessionHandle,
+  firegrid: FiregridService,
 ) =>
   Effect.gen(function*() {
-    let afterSequence: number | undefined
-    let outputCount = 0
     let text = ""
-    let timedOut = false
     let markerObserved = false
-    let turnCompleteObserved = false
-    let terminatedObserved = false
     const outputTags: Array<string> = []
 
-    while (!turnCompleteObserved && outputCount < 40 && !timedOut) {
-      const next = yield* session.wait.forAgentOutput({
-        ...(afterSequence === undefined ? {} : { afterSequence }),
-        timeoutMs: 15_000,
-      })
-
-      if (!next.matched) {
-        timedOut = true
-      } else {
-        afterSequence = next.output.sequence
-        outputCount += 1
-        const event = next.output.event
-        outputTags.push(event._tag)
-        if (event._tag === "TextChunk") {
-          text += event.part.delta
-          markerObserved = markerObserved || text.includes(marker)
-        }
-        if (event._tag === "TurnComplete") turnCompleteObserved = true
-        if (event._tag === "Terminated") terminatedObserved = true
+    const textChunk = yield* firegrid.channels.waitFor(sessionAgentOutputTarget, {
+      match: { _tag: "TextChunk" },
+      timeoutMs: 30_000,
+    })
+    if (textChunk.matched) {
+      const observation = asObservation(textChunk.event)
+      if (observation !== undefined) {
+        outputTags.push(observation._tag)
+        text += observation.event?.part?.delta ?? ""
+        markerObserved = text.includes(marker)
       }
     }
+    const turnComplete = yield* firegrid.channels.waitFor(sessionAgentOutputTarget, {
+      match: { _tag: "TurnComplete" },
+      timeoutMs: 60_000,
+    })
+    const turnObservation = turnComplete.matched
+      ? asObservation(turnComplete.event)
+      : undefined
+    if (turnObservation !== undefined) outputTags.push(turnObservation._tag)
 
     return {
-      outputCount,
+      outputCount: outputTags.length,
       outputTags: outputTags.join(","),
       textLength: text.length,
-      timedOut,
+      timedOut: !turnComplete.matched,
       markerObserved,
-      turnCompleteObserved,
-      terminatedObserved,
-      lastSequence: afterSequence ?? -1,
+      turnCompleteObserved: turnComplete.matched,
+      lastSequence: turnObservation?.sequence ?? -1,
     }
   })
 
@@ -150,9 +165,7 @@ export const shapeCTerminalOrderingDriver: Effect.Effect<void, unknown, Firegrid
 
     // 1) Observe a full turn of raw agent_output. A `TurnComplete` here does NOT
     //    terminate the session — the durable lifecycle is untouched.
-    const turn = yield* waitForTurn(session)
-
-    const preCloseSnapshot = yield* session.snapshot()
+    const turn = yield* waitForTurn(firegrid)
 
     // 2) Issue the explicit DURABLE terminal. This is the only thing that binds
     //    the lifecycle end: close binding → terminal_signal → terminal per-event
@@ -169,12 +182,13 @@ export const shapeCTerminalOrderingDriver: Effect.Effect<void, unknown, Firegrid
       }),
     )
 
-    // Let the journaled terminal input reach the per-event handler and run
-    // `adapter.deregister` (Scope.close → reap) before snapshotting.
-    yield* Effect.sleep("2500 millis")
-
-    const postCloseSnapshot = yield* session.snapshot()
-    const postTags = postCloseSnapshot.agentOutputs.map(output => output._tag)
+    const postCloseTerminated = yield* firegrid.channels.waitFor(
+      sessionAgentOutputTarget,
+      {
+        match: { _tag: "Terminated" },
+        timeoutMs: 30_000,
+      },
+    )
 
     yield* Effect.annotateCurrentSpan({
       "firegrid.shape_c_terminal.status": turn.turnCompleteObserved
@@ -189,11 +203,8 @@ export const shapeCTerminalOrderingDriver: Effect.Effect<void, unknown, Firegrid
       "firegrid.shape_c_terminal.turn_output_count": turn.outputCount,
       "firegrid.shape_c_terminal.turn_output_tags": turn.outputTags,
       "firegrid.shape_c_terminal.turn_complete_observed": turn.turnCompleteObserved,
-      "firegrid.shape_c_terminal.terminated_observed_pre_close": turn.terminatedObserved,
+      "firegrid.shape_c_terminal.terminated_observed_post_close": postCloseTerminated.matched,
       "firegrid.shape_c_terminal.marker_observed": turn.markerObserved,
-      "firegrid.shape_c_terminal.pre_close_output_count": preCloseSnapshot.agentOutputs.length,
-      "firegrid.shape_c_terminal.post_close_output_count": postCloseSnapshot.agentOutputs.length,
-      "firegrid.shape_c_terminal.post_close_output_tags": postTags.join(","),
       "firegrid.shape_c_terminal.spawn_target": claudeAcpArgv.join(" "),
       "firegrid.shape_c_terminal.codec": "acp",
     })

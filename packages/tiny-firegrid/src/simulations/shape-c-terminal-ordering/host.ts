@@ -18,17 +18,21 @@ import {
   defaultProductionAdapterLayer,
   FiregridRuntime,
 } from "@firegrid/runtime/unified"
+import { sessionAgentOutputChannel } from "@firegrid/runtime/channels"
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import type { Layer } from "effect"
+import type { ChannelRegistration } from "@firegrid/protocol/channels"
 import type {
   FiregridHost,
   TinyFiregridHostEnv,
 } from "../../types.ts"
 
+const contextId = "session:tiny-firegrid:shape-c-terminal-ordering"
+
 export const shapeCTerminalOrderingHost = (
   env: TinyFiregridHostEnv,
 ): Layer.Layer<FiregridHost, unknown> =>
-  FiregridRuntime(
+	  FiregridRuntime(
     {
       durableStreamsBaseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
@@ -41,4 +45,14 @@ export const shapeCTerminalOrderingHost = (
         lookupEnv: name => env.processEnv[name],
       }),
     ),
-  )
+	  )
+
+export const shapeCTerminalOrderingChannels = (
+  env: TinyFiregridHostEnv,
+): ReadonlyArray<ChannelRegistration> => [
+  sessionAgentOutputChannel({
+    durableStreamsBaseUrl: env.durableStreamsBaseUrl,
+    namespace: env.namespace,
+    contextId,
+  }),
+]

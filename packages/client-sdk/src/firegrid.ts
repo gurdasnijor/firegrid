@@ -5,30 +5,17 @@
 // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.3
 //
 // Public Firegrid client. This package is browser/app safe: it writes
-// launch/start/permission control requests through protocol channel Tags and
-// reads durable control/output projections, but it does not own live runtime
-// input delivery. Prompt dispatches through egress channels whose append
-// receipts preserve the stored RuntimeInputIntentRow client contract.
+// launch/start/permission control requests through protocol channel Tags, but
+// it does not own live runtime input delivery or host durable-table reads.
+// Prompt dispatches through egress channels whose append receipts preserve the
+// stored RuntimeInputIntentRow client contract.
 
 import {
-  ContextNotFound,
   PublicLaunchRequestSchema,
   PublicLaunchRuntimeIntentSchema,
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
   local,
-  runtimeControlPlaneStreamUrl,
-  runtimeContextsView,
-  runtimeEventsForContextView,
-  runtimeLogsForContextView,
-  runtimeOutputStreamUrl,
-  runtimeRunsForContextView,
   type PublicLaunchRequest,
   type PublicLaunchRuntimeIntent,
-  type RuntimeContext,
-  type RuntimeEventRow,
-  type RuntimeLogLineRow,
-  type RuntimeRunEventRow,
 } from "@firegrid/protocol/launch"
 import {
   type PermissionRespondInput,
@@ -57,7 +44,6 @@ import {
   type ChannelRouteMetadata,
 } from "@firegrid/protocol/channels/router"
 import {
-  runtimeAgentOutputObservationFromRow,
   runtimePermissionRequestObservationFromAgentOutput,
   sessionContextIdForExternalKey,
   type FiregridSessionId,
@@ -72,7 +58,6 @@ import {
   type SessionPermissionRequestWaitOutput,
   type SessionPermissionRespondInput,
 } from "@firegrid/protocol/session-facade"
-import type { DurableTableHeaders } from "@firegrid/protocol"
 import {
   FiregridAgentToolOperations,
   type WaitAnyToolInput,
@@ -89,12 +74,12 @@ import {
   HostPromptChannel,
   HostSessionsCreateOrLoadChannel,
   HostSessionsStartChannel,
+  SessionAgentOutputChannel,
   SessionCancelChannel,
   SessionCloseChannel,
   SessionPromptChannel,
 } from "@firegrid/protocol/channels"
-import { Clock, Context, Data, Duration, Effect, Layer, Option, Ref, Schema, type Scope, Stream } from "effect"
-import { projectionWait } from "./internal/projection-wait.ts"
+import { Clock, Context, Data, Duration, Effect, Layer, Option, Schema, type Scope, Stream } from "effect"
 import { FiregridClientOperations } from "./operations.ts"
 import {
   autoApproveSessionPermissions,
@@ -116,23 +101,9 @@ export interface ClientOptions {
   readonly durableStreamsBaseUrl?: string
   readonly namespace?: string
   readonly runtimeStreamUrl?: string
-  readonly controlPlaneStreamUrl?: string
-  readonly outputStreamUrl?: string
   readonly contentType?: string
-  readonly headers?: DurableTableHeaders
   readonly txTimeoutMs?: number
   readonly channels?: ReadonlyArray<ChannelRegistration>
-  /**
-   * Upper bound (ms) for the reflected-context wait that dependent writes
-   * (`firegrid.prompt`, `firegrid.sessions.prompt`, `session.prompt`,
-   * `session.start`) perform before writing. A real in-flight context
-   * materializes well within this window; an unknown/typo context id never
-   * materializes, so the wait is bounded — on timeout the barrier does one
-   * authoritative control-plane read and fails with `ContextNotFound`
-   * (wrapped in `AppendError`) if the context is absent, instead of hanging
-   * forever. Defaults to 30s. tf-1r3h.
-   */
-  readonly contextReflectionTimeoutMs?: number
 }
 
 export class FiregridConfig extends Context.Tag("@firegrid/client/FiregridConfig")<
@@ -239,19 +210,8 @@ export interface FiregridWaitClient {
   ) => Effect.Effect<WaitAnyToolOutput, LaunchInputError | FiregridChannelError>
 }
 
-export interface RuntimeContextSnapshot {
-  readonly contextId: string
-  readonly context?: RuntimeContext
-  readonly status?: RuntimeRunEventRow["status"]
-  readonly runs: ReadonlyArray<RuntimeRunEventRow>
-  readonly events: ReadonlyArray<RuntimeEventRow>
-  readonly logs: ReadonlyArray<RuntimeLogLineRow>
-  readonly agentOutputs: ReadonlyArray<RuntimeAgentOutputObservation>
-}
-
 export interface RuntimeContextHandle {
   readonly contextId: string
-  readonly snapshot: Effect.Effect<RuntimeContextSnapshot, PreloadError>
 }
 
 export interface FiregridSessionWaitClient {
@@ -259,13 +219,13 @@ export interface FiregridSessionWaitClient {
     request?: SessionAgentOutputWaitInput,
   ) => Effect.Effect<
     SessionAgentOutputWaitOutput,
-    LaunchInputError | PreloadError
+    LaunchInputError | PreloadError | FiregridChannelError
   >
   readonly forPermissionRequest: (
     request?: SessionPermissionRequestWaitInput,
   ) => Effect.Effect<
     SessionPermissionRequestWaitOutput,
-    LaunchInputError | PreloadError
+    LaunchInputError | PreloadError | FiregridChannelError
   >
 }
 
@@ -285,9 +245,6 @@ export interface FiregridSessionPermissionsClient {
 export interface FiregridSessionHandle {
   readonly sessionId: FiregridSessionId
   readonly contextId: string
-  // tf-2osu: no public `whenReady`. "Context materialized" is a substrate
-  // detail; the operations that need it (prompt/start, the wait/observe reads,
-  // snapshot) own a bounded materialization barrier internally.
   readonly prompt: (
     request: SessionHandlePromptInput,
   ) => Effect.Effect<EventOffset, PromptInputError | AppendError>
@@ -301,7 +258,6 @@ export interface FiregridSessionHandle {
   readonly close: (
     request?: Omit<SessionCloseToolInput, "sessionId">,
   ) => Effect.Effect<SessionCloseToolOutput, LaunchInputError | AppendError>
-  readonly snapshot: () => Effect.Effect<RuntimeContextSnapshot, PreloadError>
   readonly wait: FiregridSessionWaitClient
   readonly permissions: FiregridSessionPermissionsClient
 }
@@ -364,9 +320,6 @@ export interface FiregridService {
   readonly channels: FiregridChannelsClient
   readonly wait: FiregridWaitClient
   readonly open: (contextId: string) => RuntimeContextHandle
-  readonly watchContexts: (
-    predicate?: (context: RuntimeContext) => boolean,
-  ) => Stream.Stream<RuntimeContext, PreloadError>
 }
 
 export class Firegrid extends Context.Tag("@firegrid/client/Firegrid")<
@@ -374,28 +327,7 @@ export class Firegrid extends Context.Tag("@firegrid/client/Firegrid")<
   FiregridService
 >() {}
 
-export { local, runtimeControlPlaneStreamUrl }
-
-export const FiregridRuntimeTables = {
-  ControlPlane: RuntimeControlPlaneTable,
-  Output: RuntimeOutputTable,
-} as const
-
-export const firegridRuntimeTableTags = [
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
-] as const
-
-const latestStatus = (
-  events: ReadonlyArray<RuntimeRunEventRow>,
-): RuntimeRunEventRow["status"] | undefined => {
-  const rank = (status: RuntimeRunEventRow["status"]): number =>
-    status === "started" ? 0 : status === "failed" ? 1 : 2
-  return [...events].sort((left, right) =>
-    left.at.localeCompare(right.at) ||
-    rank(left.status) - rank(right.status),
-  ).at(-1)?.status
-}
+export { local }
 
 const makeContextId = (): string => `ctx_${crypto.randomUUID()}`
 
@@ -451,59 +383,6 @@ const projectChannelMethod = <
       )
     })
 }
-
-interface ResolvedConfig {
-  readonly baseUrl: string
-  readonly namespace: string | undefined
-  readonly controlPlaneStreamUrl: string
-  readonly outputStreamUrl: string
-  readonly contentType: string
-  readonly headers: DurableTableHeaders | undefined
-  readonly txTimeoutMs: number
-  readonly contextReflectionTimeoutMs: number
-}
-
-const resolveConfig = (
-  cfg: ClientOptions,
-): Effect.Effect<ResolvedConfig, FiregridConfigError> =>
-  Effect.gen(function* () {
-    const controlPlaneStreamUrl =
-      cfg.controlPlaneStreamUrl ??
-      cfg.runtimeStreamUrl ??
-      (cfg.durableStreamsBaseUrl !== undefined && cfg.namespace !== undefined
-        ? runtimeControlPlaneStreamUrl({
-          baseUrl: cfg.durableStreamsBaseUrl,
-          namespace: cfg.namespace,
-        })
-        : undefined)
-    const outputStreamUrl =
-      cfg.outputStreamUrl ??
-      (cfg.durableStreamsBaseUrl !== undefined && cfg.namespace !== undefined
-        ? runtimeOutputStreamUrl({
-          baseUrl: cfg.durableStreamsBaseUrl,
-          namespace: cfg.namespace,
-        })
-        : undefined)
-
-    if (controlPlaneStreamUrl === undefined || outputStreamUrl === undefined) {
-      return yield* new FiregridConfigError({
-        cause: new Error(
-          "FiregridConfig requires durableStreamsBaseUrl + namespace or explicit control-plane and output stream URLs",
-        ),
-      })
-    }
-
-    return {
-      baseUrl: cfg.durableStreamsBaseUrl ?? "",
-      namespace: cfg.namespace,
-      controlPlaneStreamUrl,
-      outputStreamUrl,
-      contentType: cfg.contentType ?? "application/json",
-      headers: cfg.headers,
-      txTimeoutMs: cfg.txTimeoutMs ?? 2_000,
-      contextReflectionTimeoutMs: cfg.contextReflectionTimeoutMs ?? 30_000,
-    }
-  })
 
 const decodePublicLaunchRequest = (
   request: PublicLaunchRequest,
@@ -896,44 +775,10 @@ const makeWaitClient = (
   }
 }
 
-const snapshotFromJournal = (
-  contextId: string,
-  inputs: {
-    readonly context?: RuntimeContext
-    readonly runs: ReadonlyArray<RuntimeRunEventRow>
-    readonly events: ReadonlyArray<RuntimeEventRow>
-    readonly logs: ReadonlyArray<RuntimeLogLineRow>
-  },
-): RuntimeContextSnapshot => {
-  const events = inputs.events
-    .filter(row => row.contextId === contextId)
-  const agentOutputs = events.flatMap(row => {
-    const observation = runtimeAgentOutputObservationFromRow(row)
-    return Option.isSome(observation) ? [observation.value] : []
-  })
-  const logs = inputs.logs
-    .filter(row => row.contextId === contextId)
-  const runs = [...inputs.runs].sort((left, right) =>
-    left.at.localeCompare(right.at))
-  const status = latestStatus(runs)
-  return {
-    contextId,
-    ...(inputs.context === undefined ? {} : { context: inputs.context }),
-    ...(status === undefined ? {} : { status }),
-    runs,
-    events,
-    logs,
-    agentOutputs,
-  }
-}
-
 const make = (
-  config: ResolvedConfig,
   channels: ReadonlyArray<ChannelRegistration>,
 ) =>
   Effect.gen(function* () {
-    const control = yield* RuntimeControlPlaneTable
-    const output = yield* RuntimeOutputTable
     // tf-35f4 Sim 2: createOrLoad now dispatches via the protocol-owned
     // HostSessionsCreateOrLoadChannel Tag. Capturing the resolved channel
     // here keeps the requirement at make-time (Layer composition), so the
@@ -953,91 +798,35 @@ const make = (
     const sessionCancelChannel = yield* SessionCancelChannel
     const sessionCloseChannel = yield* SessionCloseChannel
     const hostPermissionRespondChannel = yield* HostPermissionRespondChannel
-    const contextRows = runtimeContextsView(control.contexts.rows())
-    const collectReadRows = <A>(
-      rows: Stream.Stream<A, unknown>,
-    ): Effect.Effect<ReadonlyArray<A>, PreloadError> =>
-      rows.pipe(
-        Stream.runCollect,
-        Effect.map(chunk => Array.from(chunk)),
-        Effect.mapError(cause => new PreloadError({ cause })),
-      )
-    const currentContextRows = (): Stream.Stream<RuntimeContext, unknown> =>
-      runtimeContextsView(Stream.fromIterable(control.contexts.collection.toArray))
-
-    /**
-     * Resolve a context row from the namespace-scoped control plane.
-     * Read paths use this once and then dispatch to host-owned
-     * ingress / output streams; cross-host reads work uniformly
-     * because the host binding is on the row.
-     */
-    const resolveContext = (
-      contextId: string,
-    ): Effect.Effect<RuntimeContext | undefined, PreloadError> =>
-      currentContextRows().pipe(
-        Stream.filter(context => context.contextId === contextId),
-        Stream.runHead,
-        Effect.map(Option.getOrUndefined),
-        Effect.mapError(cause => new PreloadError({ cause })),
-      )
-
-    const readSnapshot = (
-      contextId: string,
-    ): Effect.Effect<RuntimeContextSnapshot, PreloadError> =>
-      Effect.gen(function* () {
-        // tf-2osu: snapshot owns its readiness — bounded wait for the context
-        // to materialize (callers no longer gate this with whenReady). A
-        // provably-absent id errors bounded rather than hanging.
-        yield* awaitContextMaterializedForRead(contextId)
-        const context = yield* resolveContext(contextId)
-        const runs = yield* collectReadRows(
-          runtimeRunsForContextView(
-            Stream.fromIterable(control.runs.collection.toArray),
-            contextId,
-          ),
-        )
-
-        if (context === undefined) {
-          return snapshotFromJournal(contextId, {
-            runs,
-            events: [],
-            logs: [],
-          })
-        }
-
-        const events = yield* collectReadRows(
-          runtimeEventsForContextView(
-            Stream.fromIterable(output.events.collection.toArray),
-            contextId,
-          ),
-        )
-        const logs = yield* collectReadRows(
-          runtimeLogsForContextView(
-            Stream.fromIterable(output.logs.collection.toArray),
-            contextId,
-          ),
-        )
-
-        return snapshotFromJournal(contextId, {
-          context,
-          runs,
-          events,
-          logs,
-        })
-      })
 
     const open = (contextId: string): RuntimeContextHandle => ({
       contextId,
-      snapshot: readSnapshot(contextId),
     })
 
-    const watchContexts = (
-      predicate: (context: RuntimeContext) => boolean = () => true,
-    ): Stream.Stream<RuntimeContext, PreloadError> =>
-      contextRows.pipe(
-        Stream.filter(predicate),
-        Stream.mapError(cause => new PreloadError({ cause })),
-      )
+    const agentOutputStream = (
+      contextId: string,
+    ): Effect.Effect<
+      Stream.Stream<RuntimeAgentOutputObservation, unknown, never>,
+      FiregridChannelError
+    > =>
+      Effect.gen(function*() {
+        const sessionAgentOutputChannel = yield* Effect.serviceOption(SessionAgentOutputChannel)
+        if (Option.isNone(sessionAgentOutputChannel)) {
+          return yield* channelError(
+            String(SessionAgentOutputChannelTarget),
+            "wait_for",
+            new Error("SessionAgentOutputChannel is not provided"),
+          )
+        }
+        const channel = sessionAgentOutputChannel.value.forContext(contextId)
+        return channel.binding.stream.pipe(
+          Stream.filter((observation): observation is RuntimeAgentOutputObservation =>
+            typeof observation === "object" &&
+            observation !== null &&
+            (observation as { readonly contextId?: unknown }).contextId === contextId &&
+            typeof (observation as { readonly sequence?: unknown }).sequence === "number"),
+        )
+      })
 
     const waitForAgentOutputObservation = (
       contextId: string,
@@ -1047,46 +836,27 @@ const make = (
       ) => boolean = () => true,
     ): Effect.Effect<
       Option.Option<RuntimeAgentOutputObservation>,
-      LaunchInputError | PreloadError
+      FiregridChannelError
     > =>
-      Effect.gen(function* () {
-        // tf-2osu: the wait/observe read owns its readiness — bounded wait for
-        // the context to materialize before resolving the output stream. This
-        // is why a forked permissions.autoApprove loop no longer needs an
-        // explicit whenReady before it; a provably-absent id errors bounded.
-        yield* awaitContextMaterializedForRead(contextId)
-        if ((yield* resolveContext(contextId)) === undefined) {
-          return yield* new PreloadError({
-            cause: new Error(`runtime context ${contextId} not found`),
-          })
-        }
-        const run = runtimeEventsForContextView(output.events.rows(), contextId).pipe(
-          Stream.filterMap(runtimeAgentOutputObservationFromRow),
+      Effect.gen(function*() {
+        const stream = yield* agentOutputStream(contextId)
+        const run = stream.pipe(
           Stream.filter(observation =>
             (input.afterSequence === undefined ||
               observation.sequence > input.afterSequence) &&
             predicate(observation),
           ),
           Stream.runHead,
-          Effect.withSpan("firegrid.client.channel.wait_for", {
-            kind: "client",
-            attributes: {
-              "firegrid.channel.target": String(SessionAgentOutputChannelTarget),
-              "firegrid.channel.direction": "ingress",
-              "firegrid.wait.bucket": "projection",
-            },
-          }),
-          Effect.mapError(cause => new PreloadError({ cause })),
+          Effect.mapError(cause =>
+            channelError(String(SessionAgentOutputChannelTarget), "wait_for", cause)),
         )
-        const awaited = input.timeoutMs === undefined
-          ? run
-          : Effect.raceFirst(
-            run,
-            Clock.sleep(Duration.millis(input.timeoutMs)).pipe(
-              Effect.as(Option.none<RuntimeAgentOutputObservation>()),
-            ),
-          )
-        return yield* awaited
+        if (input.timeoutMs === undefined) return yield* run
+        return yield* Effect.raceFirst(
+          run,
+          Clock.sleep(Duration.millis(input.timeoutMs)).pipe(
+            Effect.as(Option.none<RuntimeAgentOutputObservation>()),
+          ),
+        )
       })
 
     const waitForAgentOutput = (
@@ -1094,9 +864,9 @@ const make = (
       request?: SessionAgentOutputWaitInput,
     ): Effect.Effect<
       SessionAgentOutputWaitOutput,
-      LaunchInputError | PreloadError
+      LaunchInputError | FiregridChannelError
     > =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const input = yield* decodeSessionAgentOutputWaitInput(request)
         const matched = yield* waitForAgentOutputObservation(contextId, input)
         return Option.match(matched, {
@@ -1110,9 +880,9 @@ const make = (
       request?: SessionPermissionRequestWaitInput,
     ): Effect.Effect<
       SessionPermissionRequestWaitOutput,
-      LaunchInputError | PreloadError
+      LaunchInputError | FiregridChannelError
     > =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const input = yield* decodeSessionPermissionRequestWaitInput(request)
         const matched = yield* waitForAgentOutputObservation(
           contextId,
@@ -1130,58 +900,6 @@ const make = (
           },
         })
       })
-
-    const waitUntilContextReady = (
-      contextId: string,
-    ): Effect.Effect<void, PreloadError> =>
-      projectionWait(
-        contextRows,
-        context => context.contextId === contextId,
-      ).pipe(
-        Effect.mapError(cause => new PreloadError({ cause })),
-      )
-
-    // tf-2osu: internal substrate plumbing — NOT exported, NOT a public
-    // readiness primitive (that was `whenReady`, now deleted). The operations
-    // that need a materialized context (prompt/start, the wait/observe reads,
-    // snapshot) call this internally so callers never wait on "context
-    // materialized" themselves.
-    //
-    // tf-1r3h (#587): BOUNDED. A real in-flight context materializes within the
-    // window and the wait completes normally; an unknown/typo context id never
-    // materializes, so an unbounded wait would hang forever. On timeout we do
-    // one authoritative control-plane read: present (projection merely lagged
-    // the table) -> proceed; absent -> fail with ContextNotFound so the calling
-    // op surfaces a bounded error instead of hanging. (Subsumes tf-5sb7: with no
-    // public whenReady, there is no unbounded absent-id readiness wait left.)
-    const awaitContextMaterialized = (
-      contextId: string,
-    ): Effect.Effect<void, AppendError> =>
-      Effect.gen(function* () {
-        const ready = yield* Effect.timeoutOption(
-          waitUntilContextReady(contextId),
-          Duration.millis(config.contextReflectionTimeoutMs),
-        ).pipe(Effect.mapError(cause => new AppendError({ contextId, cause })))
-        if (Option.isSome(ready)) return
-        const existing = yield* resolveContext(contextId).pipe(
-          Effect.mapError(error => new AppendError({ contextId, cause: error.cause })),
-        )
-        if (existing === undefined) {
-          return yield* new AppendError({
-            contextId,
-            cause: new ContextNotFound({ contextId }),
-          })
-        }
-      })
-
-    // PreloadError-typed view for read/observe paths (snapshot, waits) whose
-    // error channel is PreloadError; preserves the ContextNotFound cause.
-    const awaitContextMaterializedForRead = (
-      contextId: string,
-    ): Effect.Effect<void, PreloadError> =>
-      awaitContextMaterialized(contextId).pipe(
-        Effect.mapError(error => new PreloadError({ cause: error.cause })),
-      )
 
     const appendHostPrompt = (
       request: PublicPromptRequest,
@@ -1224,24 +942,21 @@ const make = (
     const cancelSession = projectChannelMethod(
       FiregridClientOperations.sessions.cancel,
       request =>
-        Effect.gen(function*() {
-          yield* awaitContextMaterialized(request.sessionId)
-          return yield* sessionCancelChannel.binding.append(request).pipe(
-            Effect.as({
-              cancelled: true,
-              sessionId: request.sessionId,
-            } satisfies SessionCancelToolOutput),
-            Effect.withSpan("firegrid.client.session.cancel.append", {
-              kind: "producer",
-              attributes: {
-                "firegrid.channel.target": String(sessionCancelChannel.target),
-                "firegrid.channel.direction": sessionCancelChannel.direction,
-                "firegrid.context.id": request.sessionId,
-                "firegrid.session.id": request.sessionId,
-              },
-            }),
-          )
-        }),
+        sessionCancelChannel.binding.append(request).pipe(
+          Effect.as({
+            cancelled: true,
+            sessionId: request.sessionId,
+          } satisfies SessionCancelToolOutput),
+          Effect.withSpan("firegrid.client.session.cancel.append", {
+            kind: "producer",
+            attributes: {
+              "firegrid.channel.target": String(sessionCancelChannel.target),
+              "firegrid.channel.direction": sessionCancelChannel.direction,
+              "firegrid.context.id": request.sessionId,
+              "firegrid.session.id": request.sessionId,
+            },
+          }),
+        ),
       (request, cause) =>
         isAppendError(cause)
           ? cause
@@ -1251,24 +966,21 @@ const make = (
     const closeSession = projectChannelMethod(
       FiregridClientOperations.sessions.close,
       request =>
-        Effect.gen(function*() {
-          yield* awaitContextMaterialized(request.sessionId)
-          return yield* sessionCloseChannel.binding.append(request).pipe(
-            Effect.as({
-              closed: true,
-              sessionId: request.sessionId,
-            } satisfies SessionCloseToolOutput),
-            Effect.withSpan("firegrid.client.session.close.append", {
-              kind: "producer",
-              attributes: {
-                "firegrid.channel.target": String(sessionCloseChannel.target),
-                "firegrid.channel.direction": sessionCloseChannel.direction,
-                "firegrid.context.id": request.sessionId,
-                "firegrid.session.id": request.sessionId,
-              },
-            }),
-          )
-        }),
+        sessionCloseChannel.binding.append(request).pipe(
+          Effect.as({
+            closed: true,
+            sessionId: request.sessionId,
+          } satisfies SessionCloseToolOutput),
+          Effect.withSpan("firegrid.client.session.close.append", {
+            kind: "producer",
+            attributes: {
+              "firegrid.channel.target": String(sessionCloseChannel.target),
+              "firegrid.channel.direction": sessionCloseChannel.direction,
+              "firegrid.context.id": request.sessionId,
+              "firegrid.session.id": request.sessionId,
+            },
+          }),
+        ),
       (request, cause) =>
         isAppendError(cause)
           ? cause
@@ -1284,33 +996,26 @@ const make = (
     const makeSessionHandle = (
       sessionId: FiregridSessionId,
     ): Effect.Effect<FiregridSessionHandle> =>
-      Effect.gen(function* () {
-        // Per-session-handle tracking of the last agent-output sequence
-        // observed by wait.forAgentOutput. Defaultizes afterSequence so a
-        // driver loop ("give me the next agent output") actually waits
-        // instead of immediately re-matching the first observation. An
-        // explicit request.afterSequence still overrides the tracked value
-        // so callers can rewind/replay (structural readiness pattern, PR #435).
-        const lastAgentOutputSequence = yield* Ref.make<number | undefined>(undefined)
+      Effect.sync(() => {
+        let lastAgentOutputSequence: number | undefined
         const forAgentOutput = (
           request?: SessionAgentOutputWaitInput,
         ): Effect.Effect<
           SessionAgentOutputWaitOutput,
-          LaunchInputError | PreloadError
+          LaunchInputError | PreloadError | FiregridChannelError
         > =>
           withClientSpan("firegrid.client.session.wait.for_agent_output", {
             "firegrid.session.id": sessionId,
             "firegrid.context.id": sessionId,
-            "firegrid.wait.bucket": "projection",
-          }, Effect.gen(function* () {
-            const tracked = yield* Ref.get(lastAgentOutputSequence)
+            "firegrid.wait.bucket": "channel",
+          }, Effect.gen(function*() {
             const effective: SessionAgentOutputWaitInput | undefined =
-              request?.afterSequence !== undefined || tracked === undefined
+              request?.afterSequence !== undefined || lastAgentOutputSequence === undefined
                 ? request
-                : { ...request, afterSequence: tracked }
+                : { ...request, afterSequence: lastAgentOutputSequence }
             const result = yield* waitForAgentOutput(sessionId, effective)
             if (result.matched) {
-              yield* Ref.set(lastAgentOutputSequence, result.output.sequence)
+              lastAgentOutputSequence = result.output.sequence
             }
             return result
           }))
@@ -1320,7 +1025,7 @@ const make = (
             withClientSpan("firegrid.client.session.wait.for_permission_request", {
               "firegrid.session.id": sessionId,
               "firegrid.context.id": sessionId,
-              "firegrid.wait.bucket": "projection",
+              "firegrid.wait.bucket": "channel",
             }, waitForPermissionRequest(sessionId, request)),
         }
         // tf-aago: session-scoped respond dispatches through the same
@@ -1363,7 +1068,6 @@ const make = (
               "firegrid.session.id": sessionId,
             }, Effect.gen(function* () {
               const decoded = yield* decodeSessionHandlePromptInput(request)
-              yield* awaitContextMaterialized(sessionId)
               yield* Effect.annotateCurrentSpan({
                 "firegrid.context.id": sessionId,
                 "firegrid.input.idempotency_key": decoded.idempotencyKey ?? "",
@@ -1374,12 +1078,9 @@ const make = (
             withClientSpan("firegrid.client.session.start", {
               "firegrid.session.id": sessionId,
               "firegrid.context.id": sessionId,
-            }, Effect.gen(function*() {
-              yield* awaitContextMaterialized(sessionId)
-              return yield* hostSessionsStartChannel.binding.append({ sessionId }).pipe(
+            }, hostSessionsStartChannel.binding.append({ sessionId }).pipe(
                 Effect.mapError(cause => new AppendError({ contextId: sessionId, cause })),
-              )
-            })),
+              )),
           cancel: request =>
             withClientSpan("firegrid.client.session.cancel", {
               "firegrid.session.id": sessionId,
@@ -1396,7 +1097,6 @@ const make = (
               sessionId,
               ...(request?.reason === undefined ? {} : { reason: request.reason }),
             })),
-          snapshot: () => readSnapshot(sessionId),
           wait: waitClient,
           permissions: permissionsClient,
         }
@@ -1479,7 +1179,6 @@ const make = (
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
         const decoded = yield* decodePublicPromptRequest(request)
-        yield* awaitContextMaterialized(decoded.contextId)
         return yield* appendHostPrompt(decoded)
       }),
       sessions: {
@@ -1489,7 +1188,6 @@ const make = (
           "firegrid.session.id": request.sessionId,
         }, Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)
-          yield* awaitContextMaterialized(decoded.sessionId)
           const inputId = decoded.inputId ?? `input_${crypto.randomUUID()}`
           yield* Effect.annotateCurrentSpan({
             "firegrid.context.id": decoded.sessionId,
@@ -1534,86 +1232,25 @@ const make = (
       channels: channelsClient,
       wait: makeWaitClient(channelsClient),
       open,
-      watchContexts,
     })
   })
 
-// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
-//
-// Namespace-scoped control plane layer. Consumed by the Firegrid
-// client and host runtime; co-locating them on a single layer
-// instance gives both sides one materialized RuntimeContext index
-// so durable context/start requests and runtime projections share one
-// materialized namespace view with the runtime host layer.
-const configuredFiregridControlPlaneLayer = (
-  cfg: ClientOptions,
-) =>
-  Effect.map(resolveConfig(cfg), (resolved) =>
-    RuntimeControlPlaneTable.layer({
-      streamOptions: {
-        url: resolved.controlPlaneStreamUrl,
-        contentType: resolved.contentType,
-        ...(resolved.headers === undefined ? {} : { headers: resolved.headers }),
-      },
-      txTimeoutMs: resolved.txTimeoutMs,
-    }))
-
-export const FiregridControlPlaneTableLive = Layer.unwrapEffect(
-  Effect.flatMap(FiregridConfig, configuredFiregridControlPlaneLayer),
-)
-
-const configuredFiregridOutputLayer = (
-  cfg: ClientOptions,
-) =>
-  Effect.map(resolveConfig(cfg), (resolved) =>
-    RuntimeOutputTable.layer({
-      streamOptions: {
-        url: resolved.outputStreamUrl,
-        contentType: resolved.contentType,
-        ...(resolved.headers === undefined ? {} : { headers: resolved.headers }),
-      },
-      txTimeoutMs: resolved.txTimeoutMs,
-    }))
-
-export const FiregridOutputTableLive = Layer.unwrapEffect(
-  Effect.flatMap(FiregridConfig, configuredFiregridOutputLayer),
-)
-
 const firegridServiceLayer = Layer.scoped(
   Firegrid,
-  Effect.flatMap(FiregridConfig, (cfg) =>
-    Effect.flatMap(resolveConfig(cfg), config => make(config, cfg.channels ?? []))),
+  Effect.flatMap(FiregridConfig, (cfg) => make(cfg.channels ?? [])),
 )
 
 /**
  * The Firegrid client service layer.
  *
  * Requires from scope:
- *   - `RuntimeControlPlaneTable`
- *   - `RuntimeOutputTable`
  *   - the protocol-owned channel Tags the rewired methods dispatch
  *     through (createOrLoad / contexts.create / sessions.start /
- *     permissions.respond), provided below by the client-sdk
- *     standalone-default Layers. Production hosts may override by
- *     providing the host-sdk-owned channel Live Layers upstream.
- *
- * Standalone consumers can fall back to the exported table Lives.
+ *     permissions.respond). Production hosts provide the host-sdk-owned
+ *     channel Live Layers upstream.
  */
 // `FiregridLive` no longer provides standalone channel defaults — the
 // host-side unified channel-bindings module is the canonical source of
 // the channel Tags. Standalone client composition must compose the
 // unified bindings explicitly (or run against a real host).
 export const FiregridLive = firegridServiceLayer
-
-/**
- * Standalone wiring: FiregridLive plus its own control-plane layer.
- * Suitable for clients that do not also run a runtime host in process
- * (e.g. a scenario that reads durable state through the snapshot
- * surface only).
- */
-export const FiregridStandaloneLive = FiregridLive.pipe(
-  Layer.provide(Layer.mergeAll(
-    FiregridControlPlaneTableLive,
-    FiregridOutputTableLive,
-  )),
-)
