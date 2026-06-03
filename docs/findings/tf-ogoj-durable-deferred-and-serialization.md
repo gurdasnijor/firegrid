@@ -28,6 +28,17 @@ This question defeated two successive attribution errors; the honest record:
   the spawn+send — the realistic per-event ordering (read position → do work → advance) —
   so the read→advance windows **overlap**. This finally tests the cursor under true
   concurrency. Result below.
+- **v4 (this revision)** reconciled v3 against the substrate's actual guarantees and
+  re-pointed the citations to verifiable in-repo `file:line` (an earlier draft cited an
+  external `PROTOCOL.md` git-ref that does **not** resolve in this checkout, and misread the
+  `producerId` derivation).
+
+**The bankable calibration lesson:** across v1→v4 the *substance* stayed roughly right (the
+per-event shape has a real per-`contextId` coordination cost), but the **source attribution
+slipped four times** — sim-seq-race → scheduler-staggering → over-generalization ("the cursor
+races") → a **phantom external doc citation**. Every slip was a *plausible* story attached to
+*unverified* evidence. Rule going forward: **cite verifiable in-repo `file:line`, never an
+external or remembered doc; and verify the timing/mechanism, not just the outcome.**
 
 ## H1 — `DurableDeferred` await-once rides the real engine — **CONFIRMED**
 
@@ -91,22 +102,30 @@ drove a body); it does not affect findings (1) or (2).
 
 ### (4) The cursor "race" is a SIM-DESIGN artifact, not a durable-streams gap — durable-streams DOES serialize
 
-[protocol-grounded; durable-streams `PROTOCOL.md@71b3555` §5.2.1] durable-streams guarantees
-**per-`(stream, producerId)` serialization** of validation+append **and** a **monotonic total
-offset order** ("offsets MUST be lexicographically greater than all previously assigned"). It does
-**not** provide compare-and-swap / conditional append ("No compare-and-swap, expected-offset, or
-conditional append mechanism exists"). The `DurableTable` cursor uses **one `producerId` per table**
-([read] `DurableTable.ts:522`) writing via blind `upsert` ([read] `:863`, fresh `txid` per write,
-no precondition).
+[verified in-repo] durable-streams keeps a producer's sends **serialized to preserve producer-seq
+ordering** ([read] `packages/effect-durable-streams/src/protocol/Producer.ts:239` — "Sends remain
+serialized to preserve producer-seq ordering") with a **monotonically-bounded stream cursor token**
+([read] `packages/effect-durable-streams/src/DurableStream.ts:119-122`). The `DurableTable`
+write facade is explicitly **not** a coordination primitive — no CAS / lock ([read]
+`packages/effect-durable-operators/src/DurableTable.ts:121` — "This is not a lock, claim, mutex,
+semaphore, lease, or general coordination primitive"). Crucially, `DurableTable` derives the
+`producerId` **per-(table, row primary key)**, not per-table:
+`["durable-table", durableType, encodeHeaderFragment(encodedKey)].join(":")` ([read]
+`DurableTable.ts:521-525`) — so **the cursor row, keyed by `contextId`, has its own producerId**, and
+all writes to it are serialized at the producer level (`Producer.ts:239`). (An external
+durable-streams protocol spec was cited in an earlier draft as `PROTOCOL.md §5.2.1`; it is **not
+vendored in this repo and is unverified here** — the in-repo lines above are the verifiable sources.)
 
-So the v3 lost updates are **not** durable-streams failing to serialize — the 5 `upsert`s *were*
-serialized and offset-ordered. They lost increments because the body did a **non-atomic
-read-modify-write** (`get`→stale 0→blind `upsert` absolute 1) and durable-streams has **no CAS** to
-reject a stale-based write. **The race is a property of modeling the consume position as a mutable
-RMW counter — the wrong primitive — not of the infra.** Using the guarantee the infra DOES give —
-an **append-ordered position** (append a consume-event per input; position = monotonic offset /
-`Stream-Seq`) or a **single-writer-per-key** — the consume cursor is race-free. [This append-cursor
-claim is protocol-grounded, NOT yet sim-verified — flagged to avoid a fourth attribution error.]
+So the v3 lost updates are **not** durable-streams failing to serialize — the cursor row's writes are
+producer-serialized. They lost increments because the body did a **non-atomic read-modify-write**
+(`get`→stale 0→blind `upsert` absolute 1) and the `DurableTable` facade offers **no CAS** to reject a
+stale-based write. **The race is a property of modeling the consume position as a mutable RMW counter
+— the wrong primitive — not of the infra.** This *strengthens* the fix: because the cursor row
+already has a single per-key producerId with serialized ordering, an **append-ordered position**
+(append a consume-event per input; position = the serialized append order) or a **single-writer-per-
+key** is race-free **by the infra's own guarantee**. [The append-cursor claim is grounded in the
+serialized-per-producer guarantee above, but is **NOT yet sim-verified** — flagged to avoid a fifth
+attribution error.]
 
 ### Net for §2.4 / §0.1 (decision-grade)
 

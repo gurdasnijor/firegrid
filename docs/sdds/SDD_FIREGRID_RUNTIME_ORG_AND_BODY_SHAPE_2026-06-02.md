@@ -357,17 +357,22 @@ finding 4]: it computes a deterministic executionId (dedupes a *chosen* executio
 executions per `contextId`** run for one entity. The question is what serializes their effects. The
 tf-ogoj sim's **H2 (§9)** drove concurrent same-`contextId` inputs. After isolating two timing
 confounds and reconciling with the durable-streams protocol, the answer is **two separable
-resources**, only one of which is a real gap [read, sim v3 + `PROTOCOL.md@71b3555` §5.2.1]:
+resources**, only one of which is a real gap [read, sim v3 + in-repo durable-streams sources below]:
 - **The consume cursor is serializable on durable-streams — with the right primitive (NOT a gap).**
-  durable-streams guarantees per-`(stream, producerId)` serialization + a **monotonic total offset
-  order**, but provides **no compare-and-swap / conditional append**. The sim modeled the consume
-  position as a **mutable read-modify-write counter** (blind `upsert consumed=N+1`); under
+  durable-streams keeps a producer's sends **serialized to preserve producer-seq ordering** ([read]
+  `effect-durable-streams/src/protocol/Producer.ts:239`) and `DurableTable` derives the `producerId`
+  **per-(table, row primary key)** ([read] `effect-durable-operators/src/DurableTable.ts:521-525`,
+  `["durable-table", durableType, encodeHeaderFragment(encodedKey)]`) — so the cursor row (keyed by
+  `contextId`) already has its **own single-writer producerId**. But the `DurableTable` facade is
+  **not a coordination primitive — no CAS** ([read] `DurableTable.ts:121`). The sim modeled the
+  consume position as a **mutable read-modify-write counter** (blind `upsert consumed=N+1`); under
   concurrency the bodies read a stale value and overwrite (v3: 5 read 0 → final 1, 4 lost) — because
-  there is no CAS, **not** because durable-streams fails to serialize (the appends *were* serialized
-  + offset-ordered). A correct per-event cursor uses the infra guarantee the protocol DOES give — an
-  **append-ordered position** (monotonic offset / `Stream-Seq`) or a **single-writer-per-key** — and
-  does not race. So A's cursor cost is **"use the right primitive," not a missing coordinator**.
-  [The append-cursor claim is protocol-grounded, not yet sim-verified.]
+  there is no CAS, **not** because durable-streams fails to serialize (the row's writes *are*
+  producer-serialized). A correct per-event cursor uses that per-key serialized-ordering guarantee —
+  an **append-ordered position** or a **single-writer-per-key** — and does not race. So A's cursor
+  cost is **"use the right primitive," not a missing coordinator**. (An external `PROTOCOL.md §5.2.1`
+  cited in an earlier draft is **not vendored here / unverified**; the lines above are verifiable.)
+  [The append-cursor claim is grounded in the per-producer serialization above, not yet sim-verified.]
 - **The adapter `startOrAttach` race is genuine and infra-independent.** It is an in-memory `Ref`
   **TOCTOU** (`codec-adapter.ts:408-440`) — nothing to do with durable-streams; N concurrent
   per-event executions spawned **5 `claude-agent` processes for one `contextId`** in the trace. This
@@ -608,7 +613,7 @@ dep-cruiser tier rules are **[read·2]** via delegated readers; the tf-o8zu revi
 **Confirm before building** (priority): (1) **The §0.1 PO decision** — A vs B/C — gates §3 rows
 (1,4,5,14) and the D.2 strict-zero rule. (2) **The relay+single-adapter sim slice** (caveats b,d) —
 confirm the per-event shape carries the permission/tool relay and a production single-adapter wiring
-before deleting the parked body. (3) **Per-`contextId` coordination under A** (§2.4, sim H2 v3 + durable-streams `PROTOCOL.md` §5.2.1):
+before deleting the parked body. (3) **Per-`contextId` coordination under A** (§2.4, sim H2 v3 + `Producer.ts:239`/`DurableTable.ts:121,521-525`):
 the **consume cursor is serializable on durable-streams with the right primitive** (append-ordered /
 single-writer — the blind-`upsert` counter races only because the protocol has no CAS), and the
 **adapter `startOrAttach`** is a genuine in-memory `Ref` TOCTOU (5 processes for one session). Option
@@ -633,9 +638,11 @@ strengthens the C4 line — awaits ride the **real engine seam**, not a parallel
 
 - **C1 (keyed durable state container):** **complies (A) with the right cursor primitive + an atomic
   `startOrAttach`.** RuntimeContext keyed by `contextId`. C1's "all mutations for the same key are
-  serialized by the runtime owner" is achievable on durable-streams (per-`(stream,producerId)`
-  serialization + monotonic offset order, `PROTOCOL.md` §5.2.1) — but the sim's **blind-`upsert`
-  consume counter** races (no CAS; H2 v3: 5 read 0, 4 lost), so A must model the cursor as
+  serialized by the runtime owner" is achievable on durable-streams (per-producer-seq serialized
+  ordering `Producer.ts:239`, with `DurableTable`'s `producerId` derived per-(table,row-key)
+  `DurableTable.ts:521-525` — so the cursor row keyed by `contextId` is single-writer) — but the
+  facade offers **no CAS** (`DurableTable.ts:121`), so the sim's **blind-`upsert` consume counter**
+  races (H2 v3: 5 read 0, 4 lost). A must model the cursor as
   append-ordered / single-writer, **and** must make the in-memory adapter **`startOrAttach`** atomic
   (its `Ref` TOCTOU spawned 5 processes for one `contextId` — an infra-independent race). Both are
   named §0.1 costs (confirm-item 3). Under B: the single parked body owns the key by construction —
@@ -692,9 +699,10 @@ the prose finding (`docs/findings/tf-ogoj-durable-deferred-and-serialization.md`
   resume) on the real engine — confirming the seam Firegrid implements backs the standard combinator.
 - **H2 — per-`contextId` coordination under CONCURRENT inputs** (the c71h gap; c71h drove only
   sequentially). N **concurrent** same-`contextId` prompts. Net (after isolating two timing confounds
-  + reconciling with durable-streams `PROTOCOL.md` §5.2.1): the **consume cursor is serializable on
-  durable-streams with the right primitive** (append-ordered / single-writer — a blind-`upsert`
-  counter races only because the protocol has no CAS), and the **adapter `startOrAttach` is a genuine
+  + reconciling with in-repo durable-streams sources `Producer.ts:239`/`DurableTable.ts:121,521-525`):
+  the **consume cursor is serializable on durable-streams with the right primitive** (append-ordered /
+  single-writer — the cursor row already has a per-key producerId; a blind-`upsert` counter races only
+  because the `DurableTable` facade has no CAS), and the **adapter `startOrAttach` is a genuine
   in-memory `Ref` TOCTOU** (5 processes for one `contextId`). A's costs: an append-ordered/single-
   writer cursor **and** an atomic `startOrAttach` (the latter is the robust, infra-independent one).
 - **H3 — non-clock `DurableDeferred` crash-recovery** (deferred row written, crash before resume). If
@@ -714,11 +722,12 @@ the prose finding (`docs/findings/tf-ogoj-durable-deferred-and-serialization.md`
   count` then `insertOrGet`) — artifact; **v2** (`…34-47`) mis-attributed a clean 0–4 to a "single-row
   tx" when it was the single-threaded scheduler staggering sub-ms accesses; **v3** (`…00-59-28`, advance
   *after* the spawn) forced the read→advance windows to overlap and the blind-`upsert` counter lost
-  updates (5 read 0 → final 1). Reconciled with durable-streams `PROTOCOL.md@71b3555` §5.2.1
-  (per-`(stream,producerId)` serialization + monotonic offset order, **no CAS**): the v3 loss is a
+  updates (5 read 0 → final 1). Reconciled with in-repo durable-streams sources (per-producer-seq
+  serialized ordering `Producer.ts:239`; `producerId` derived per-(table,row-key) `DurableTable.ts:521-525`
+  → the cursor row is single-writer; facade has **no CAS** `DurableTable.ts:121`): the v3 loss is a
   property of modeling the consume position as a **mutable RMW counter**, not a durable-streams gap —
-  an **append-ordered / single-writer** cursor uses the infra guarantee and is race-free [protocol-
-  grounded, not yet sim-verified]. **The robust, infra-independent finding is the adapter
+  an **append-ordered / single-writer** cursor uses the infra guarantee and is race-free
+  [infra-grounded, not yet sim-verified]. **The robust, infra-independent finding is the adapter
   `startOrAttach` TOCTOU** (`codec-adapter.ts:408-440`, in-memory `Ref`): all 6 `start_or_attach` for
   one `contextId` but **5 distinct `open_byte_pipe` spawns + 5 distinct `firegrid.process.id`** — the
   production TOCTOU the single-execution parked body prevents via `idempotencyKey (contextId,attempt)`
