@@ -5,6 +5,19 @@ import type {
   SessionNewToolOutput,
   SessionPromptToolInput,
 } from "@firegrid/protocol/agent-tools"
+import type {
+  RuntimeContext,
+  RuntimeEventRow,
+  RuntimeLogLineRow,
+  RuntimeRunEventRow,
+} from "@firegrid/protocol/launch"
+import type {
+  RuntimeAgentOutputObservation,
+  SessionAgentOutputWaitInput,
+  SessionAgentOutputWaitOutput,
+  SessionPermissionRequestWaitInput,
+  SessionPermissionRequestWaitOutput,
+} from "@firegrid/protocol/session-facade"
 import { Data, Duration, Effect, Option, Ref, Stream } from "effect"
 
 export interface FiregridMcpClientOptions {
@@ -38,6 +51,44 @@ export interface FiregridMcpPermissionResponder {
   ) => Effect.Effect<unknown, FiregridMcpClientError>
 }
 
+export interface FiregridMcpRuntimeContextSnapshot {
+  readonly contextId: string
+  readonly context?: RuntimeContext
+  readonly status?: RuntimeRunEventRow["status"]
+  readonly runs: ReadonlyArray<RuntimeRunEventRow>
+  readonly events: ReadonlyArray<RuntimeEventRow>
+  readonly logs: ReadonlyArray<RuntimeLogLineRow>
+  readonly agentOutputs: ReadonlyArray<RuntimeAgentOutputObservation>
+}
+
+export interface FiregridMcpObservationClient {
+  readonly listContexts: Effect.Effect<ReadonlyArray<RuntimeContext>, FiregridMcpClientError>
+  readonly watchContexts: (
+    predicate?: (context: RuntimeContext) => boolean,
+  ) => Stream.Stream<RuntimeContext, FiregridMcpClientError>
+  readonly snapshot: (
+    contextId: string,
+  ) => Effect.Effect<FiregridMcpRuntimeContextSnapshot, FiregridMcpClientError>
+  readonly waitForAgentOutput: (
+    contextId: string,
+    request?: SessionAgentOutputWaitInput,
+  ) => Effect.Effect<SessionAgentOutputWaitOutput, FiregridMcpClientError>
+  readonly waitForPermissionRequest: (
+    contextId: string,
+    request?: SessionPermissionRequestWaitInput,
+  ) => Effect.Effect<SessionPermissionRequestWaitOutput, FiregridMcpClientError>
+  readonly resourcesList: Effect.Effect<unknown, FiregridMcpClientError>
+}
+
+export interface FiregridMcpSessionWaitClient {
+  readonly forAgentOutput: (
+    request?: SessionAgentOutputWaitInput,
+  ) => Effect.Effect<SessionAgentOutputWaitOutput, FiregridMcpClientError>
+  readonly forPermissionRequest: (
+    request?: SessionPermissionRequestWaitInput,
+  ) => Effect.Effect<SessionPermissionRequestWaitOutput, FiregridMcpClientError>
+}
+
 export interface FiregridMcpSessionHandle
   extends FiregridMcpTaskReader, FiregridMcpPermissionResponder
 {
@@ -48,6 +99,8 @@ export interface FiregridMcpSessionHandle
       readonly taskTtlMs?: number
     },
   ) => Effect.Effect<FiregridMcpTask, FiregridMcpClientError>
+  readonly snapshot: () => Effect.Effect<FiregridMcpRuntimeContextSnapshot, FiregridMcpClientError>
+  readonly wait: FiregridMcpSessionWaitClient
 }
 
 export interface FiregridMcpClient extends FiregridMcpTaskReader {
@@ -76,6 +129,7 @@ export interface FiregridMcpClient extends FiregridMcpTaskReader {
       request: SessionNewToolInput,
     ) => Effect.Effect<FiregridMcpSessionHandle, FiregridMcpClientError>
   }
+  readonly observations: FiregridMcpObservationClient
 }
 
 export class FiregridMcpClientError extends Data.TaggedError("FiregridMcpClientError")<{
@@ -101,6 +155,26 @@ const catchClientError = (cause: unknown): FiregridMcpClientError =>
   clientError(String(cause), cause)
 
 const terminalTaskStatuses = new Set(["completed", "failed", "cancelled"])
+
+const contextsResourceUri = "firegrid://runtime/contexts"
+
+const contextSnapshotResourceUri = (contextId: string) =>
+  `firegrid://runtime/contexts/${encodeURIComponent(contextId)}/snapshot`
+
+const waitResourceUri = (
+  contextId: string,
+  kind: "agent-output" | "permission-request",
+  request: SessionAgentOutputWaitInput = {},
+) => {
+  const uri = new URL(`firegrid://runtime/contexts/${encodeURIComponent(contextId)}/${kind}/wait`)
+  if (request.afterSequence !== undefined) {
+    uri.searchParams.set("afterSequence", String(request.afterSequence))
+  }
+  if (request.timeoutMs !== undefined) {
+    uri.searchParams.set("timeoutMs", String(request.timeoutMs))
+  }
+  return uri.toString()
+}
 
 const streamName = (
   options: FiregridMcpClientOptions,
@@ -273,6 +347,30 @@ const toolOutputFromValue = (
     : Effect.succeed(value)
 }
 
+const resourceJsonFromValue = <A>(
+  value: unknown,
+): Effect.Effect<A, FiregridMcpClientError> => {
+  const record = typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : {}
+  const contents: ReadonlyArray<unknown> = Array.isArray(record.contents)
+    ? record.contents
+    : []
+  const first = contents.find((content): content is { readonly text: string } => {
+    const candidate = typeof content === "object" && content !== null
+      ? content as { readonly text?: unknown }
+      : undefined
+    return typeof candidate?.text === "string"
+  })
+  if (first === undefined) {
+    return Effect.fail(clientError("MCP resource read did not include text content", value))
+  }
+  return Effect.try({
+    try: () => JSON.parse(first.text) as A,
+    catch: catchClientError,
+  })
+}
+
 export const makeFiregridMcpClient = (
   options: FiregridMcpClientOptions,
 ): Effect.Effect<FiregridMcpClient, FiregridMcpClientError> =>
@@ -359,23 +457,91 @@ export const makeFiregridMcpClient = (
       rpc("tasks/update", { taskId, input })
     const respondToPermission = (taskId: string, decision: PermissionDecision) =>
       updateTask(taskId, { decision })
+    const resourcesList = rpc("resources/list", {})
+    const readResourceJson = <A>(
+      uri: string,
+    ): Effect.Effect<A, FiregridMcpClientError> =>
+      rpc("resources/read", { uri }).pipe(
+        Effect.flatMap(resourceJsonFromValue<A>),
+      )
+    const listContexts = readResourceJson<ReadonlyArray<RuntimeContext>>(contextsResourceUri)
+    const snapshot = (
+      contextId: string,
+    ) =>
+      readResourceJson<FiregridMcpRuntimeContextSnapshot>(
+        contextSnapshotResourceUri(contextId),
+      )
+    const waitForAgentOutput = (
+      contextId: string,
+      request?: SessionAgentOutputWaitInput,
+    ) =>
+      readResourceJson<SessionAgentOutputWaitOutput>(
+        waitResourceUri(contextId, "agent-output", request),
+      )
+    const waitForPermissionRequest = (
+      contextId: string,
+      request?: SessionPermissionRequestWaitInput,
+    ) =>
+      readResourceJson<SessionPermissionRequestWaitOutput>(
+        waitResourceUri(contextId, "permission-request", request),
+      )
+    const watchContexts = (
+      predicate: (context: RuntimeContext) => boolean = () => true,
+    ): Stream.Stream<RuntimeContext, FiregridMcpClientError> =>
+      Stream.repeatEffect(listContexts).pipe(
+        Stream.tap(() => Effect.sleep(Duration.millis(pollIntervalMs))),
+        Stream.flatMap(contexts => Stream.fromIterable(contexts)),
+        Stream.filter(predicate),
+      )
+    const observations: FiregridMcpObservationClient = {
+      listContexts,
+      watchContexts,
+      snapshot,
+      waitForAgentOutput,
+      waitForPermissionRequest,
+      resourcesList,
+    }
 
     const makeSessionHandle = (
       output: SessionNewToolOutput,
     ): Effect.Effect<FiregridMcpSessionHandle, FiregridMcpClientError> =>
-      Effect.succeed({
-        sessionId: output.session.sessionId,
-        contextId: output.session.contextId,
-        promptTask: request =>
-          callToolTask("session_prompt", {
-            sessionId: output.session.sessionId,
-            prompt: request.prompt,
-            ...(request.inputId === undefined ? {} : { inputId: request.inputId }),
-            ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
-          }, request.taskTtlMs === undefined ? undefined : { ttlMs: request.taskTtlMs }),
-        taskStates,
-        taskResult,
-        respondToPermission,
+      Effect.gen(function*() {
+        const lastAgentOutputSequence = yield* Ref.make<number | undefined>(undefined)
+        const forAgentOutput = (
+          request?: SessionAgentOutputWaitInput,
+        ): Effect.Effect<SessionAgentOutputWaitOutput, FiregridMcpClientError> =>
+          Effect.gen(function*() {
+            const tracked = yield* Ref.get(lastAgentOutputSequence)
+            const effective: SessionAgentOutputWaitInput | undefined =
+              request?.afterSequence !== undefined || tracked === undefined
+                ? request
+                : { ...request, afterSequence: tracked }
+            const result = yield* waitForAgentOutput(output.session.contextId, effective)
+            if (result.matched) {
+              yield* Ref.set(lastAgentOutputSequence, result.output.sequence)
+            }
+            return result
+          })
+        return {
+          sessionId: output.session.sessionId,
+          contextId: output.session.contextId,
+          promptTask: request =>
+            callToolTask("session_prompt", {
+              sessionId: output.session.sessionId,
+              prompt: request.prompt,
+              ...(request.inputId === undefined ? {} : { inputId: request.inputId }),
+              ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+            }, request.taskTtlMs === undefined ? undefined : { ttlMs: request.taskTtlMs }),
+          taskStates,
+          taskResult,
+          respondToPermission,
+          snapshot: () => snapshot(output.session.contextId),
+          wait: {
+            forAgentOutput,
+            forPermissionRequest: request =>
+              waitForPermissionRequest(output.session.contextId, request),
+          },
+        }
       })
 
     const createOrLoad = (
@@ -406,5 +572,6 @@ export const makeFiregridMcpClient = (
       taskResult,
       updateTask,
       sessions: { createOrLoad },
+      observations,
     }
   })

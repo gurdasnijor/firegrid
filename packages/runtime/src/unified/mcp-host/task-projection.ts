@@ -2,12 +2,26 @@ import { RpcServer } from "@effect/rpc"
 import type * as RpcMessage from "@effect/rpc/RpcMessage"
 import type { PermissionDecision } from "@firegrid/protocol/agent-tools"
 import type { HostPermissionRespondChannel } from "@firegrid/protocol/channels"
-import { runtimeEventsForContextView, type RuntimeEventRow } from "@firegrid/protocol/launch"
+import {
+  runtimeContextsView,
+  runtimeEventsForContextView,
+  runtimeLogsForContextView,
+  runtimeRunsForContextView,
+  type RuntimeContext,
+  type RuntimeEventRow,
+  type RuntimeLogLineRow,
+  type RuntimeRunEventRow,
+} from "@firegrid/protocol/launch"
 import {
   runtimeAgentOutputObservationFromRow,
+  runtimePermissionRequestObservationFromAgentOutput,
   type RuntimeAgentOutputObservation,
+  type SessionAgentOutputWaitInput,
+  type SessionAgentOutputWaitOutput,
+  type SessionPermissionRequestWaitInput,
+  type SessionPermissionRequestWaitOutput,
 } from "@firegrid/protocol/session-facade"
-import { Data, Duration, Effect, Layer, Ref, Stream } from "effect"
+import { Data, Duration, Effect, Layer, Option, Ref, Stream } from "effect"
 import {
   makeDurableStreamsProtocol,
   type FiregridMcpDurableStreamsWireOptions,
@@ -59,12 +73,57 @@ interface McpTaskProjectionRuntime {
   }) => Effect.Effect<unknown, unknown>
 }
 
+interface RuntimeContextSnapshot {
+  readonly contextId: string
+  readonly runs: ReadonlyArray<RuntimeRunEventRow>
+  readonly events: ReadonlyArray<RuntimeEventRow>
+  readonly logs: ReadonlyArray<RuntimeLogLineRow>
+  readonly agentOutputs: ReadonlyArray<RuntimeAgentOutputObservation>
+  readonly status?: RuntimeRunEventRow["status"]
+  readonly context?: RuntimeContext
+}
+
+interface McpObservationProjectionRuntime {
+  readonly contexts: Effect.Effect<ReadonlyArray<RuntimeContext>, unknown>
+  readonly snapshot: (contextId: string) => Effect.Effect<RuntimeContextSnapshot, unknown>
+  readonly waitForAgentOutput: (
+    contextId: string,
+    input: SessionAgentOutputWaitInput,
+  ) => Effect.Effect<SessionAgentOutputWaitOutput, unknown>
+  readonly waitForPermissionRequest: (
+    contextId: string,
+    input: SessionPermissionRequestWaitInput,
+  ) => Effect.Effect<SessionPermissionRequestWaitOutput, unknown>
+}
+
+interface McpProjectionRuntime extends McpTaskProjectionRuntime {
+  readonly observations?: McpObservationProjectionRuntime
+}
+
+interface RuntimeControlRowsSource {
+  readonly contexts: {
+    readonly collection: {
+      readonly toArray: ReadonlyArray<RuntimeContext>
+    }
+  }
+  readonly runs: {
+    readonly collection: {
+      readonly toArray: ReadonlyArray<RuntimeRunEventRow>
+    }
+  }
+}
+
 interface RuntimeOutputRowsSource {
   readonly events: {
     readonly collection: {
       readonly toArray: ReadonlyArray<RuntimeEventRow>
     }
     readonly rows: () => Stream.Stream<RuntimeEventRow, unknown>
+  }
+  readonly logs: {
+    readonly collection: {
+      readonly toArray: ReadonlyArray<RuntimeLogLineRow>
+    }
   }
 }
 
@@ -110,6 +169,119 @@ const failureResponse = (
     },
   },
 })
+
+const jsonResourceResponse = (
+  uri: string,
+  value: unknown,
+) => ({
+  contents: [{
+    uri,
+    mimeType: "application/json",
+    text: JSON.stringify(value),
+  }],
+})
+
+const contextsResourceUri = "firegrid://runtime/contexts"
+
+const contextSnapshotResourceUri = (contextId: string) =>
+  `firegrid://runtime/contexts/${encodeURIComponent(contextId)}/snapshot`
+
+const parseNonNegativeInteger = (
+  name: string,
+  value: string | null,
+): number | undefined => {
+  if (value === null) return undefined
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer`)
+  }
+  return parsed
+}
+
+const parseWaitInput = (
+  uri: URL,
+): SessionAgentOutputWaitInput => {
+  const afterSequence = parseNonNegativeInteger("afterSequence", uri.searchParams.get("afterSequence"))
+  const timeoutMs = parseNonNegativeInteger("timeoutMs", uri.searchParams.get("timeoutMs"))
+  return {
+    ...(afterSequence === undefined ? {} : { afterSequence }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  }
+}
+
+const observationResourcePath = (
+  uri: string,
+): Effect.Effect<
+  | { readonly _tag: "Contexts" }
+  | { readonly _tag: "Snapshot"; readonly contextId: string }
+  | { readonly _tag: "AgentOutputWait"; readonly contextId: string; readonly input: SessionAgentOutputWaitInput }
+  | { readonly _tag: "PermissionRequestWait"; readonly contextId: string; readonly input: SessionPermissionRequestWaitInput },
+  unknown
+> =>
+  Effect.try({
+    try: () => {
+      const parsed = new URL(uri)
+      if (parsed.protocol !== "firegrid:" || parsed.hostname !== "runtime") {
+        throw new Error(`unsupported Firegrid resource uri: ${uri}`)
+      }
+      if (parsed.pathname === "/contexts") return { _tag: "Contexts" as const }
+      const parts = parsed.pathname.split("/").filter(part => part.length > 0)
+      if (parts[0] !== "contexts" || parts[1] === undefined) {
+        throw new Error(`unsupported Firegrid resource uri: ${uri}`)
+      }
+      const contextId = decodeURIComponent(parts[1])
+      if (parts.length === 3 && parts[2] === "snapshot") {
+        return { _tag: "Snapshot" as const, contextId }
+      }
+      if (parts.length === 4 && parts[2] === "agent-output" && parts[3] === "wait") {
+        return { _tag: "AgentOutputWait" as const, contextId, input: parseWaitInput(parsed) }
+      }
+      if (parts.length === 4 && parts[2] === "permission-request" && parts[3] === "wait") {
+        return { _tag: "PermissionRequestWait" as const, contextId, input: parseWaitInput(parsed) }
+      }
+      throw new Error(`unsupported Firegrid resource uri: ${uri}`)
+    },
+    catch: projectionError,
+  })
+
+const latestRunStatus = (
+  events: ReadonlyArray<RuntimeRunEventRow>,
+): RuntimeRunEventRow["status"] | undefined => {
+  const rank = (status: RuntimeRunEventRow["status"]): number =>
+    status === "started" ? 0 : status === "failed" ? 1 : 2
+  return [...events].sort((left, right) =>
+    left.at.localeCompare(right.at) ||
+    rank(left.status) - rank(right.status),
+  ).at(-1)?.status
+}
+
+const snapshotFromJournal = (
+  contextId: string,
+  inputs: {
+    readonly context?: RuntimeContext
+    readonly runs: ReadonlyArray<RuntimeRunEventRow>
+    readonly events: ReadonlyArray<RuntimeEventRow>
+    readonly logs: ReadonlyArray<RuntimeLogLineRow>
+  },
+): RuntimeContextSnapshot => {
+  const events = inputs.events.filter(row => row.contextId === contextId)
+  const agentOutputs = events.flatMap(row => {
+    const observation = runtimeAgentOutputObservationFromRow(row)
+    return Option.isSome(observation) ? [observation.value] : []
+  })
+  const logs = inputs.logs.filter(row => row.contextId === contextId)
+  const runs = [...inputs.runs].sort((left, right) => left.at.localeCompare(right.at))
+  const status = latestRunStatus(runs)
+  return {
+    contextId,
+    ...(inputs.context === undefined ? {} : { context: inputs.context }),
+    ...(status === undefined ? {} : { status }),
+    runs,
+    events,
+    logs,
+    agentOutputs,
+  }
+}
 
 const encodeTaskId = (spec: SessionPromptTaskSpec): string =>
   `firegrid:session_prompt:${Buffer.from(JSON.stringify(spec), "utf8").toString("base64url")}`
@@ -332,6 +504,7 @@ const sessionPromptTaskSupportTool = (tool: unknown) => {
 }
 
 const rewriteResult = (
+  observations: McpObservationProjectionRuntime | undefined,
   requestTag: string | undefined,
   response: RpcMessage.FromServerEncoded,
 ): RpcMessage.FromServerEncoded => {
@@ -356,6 +529,14 @@ const rewriteResult = (
               update: true,
               cancel: false,
             },
+            ...(observations === undefined
+              ? {}
+              : {
+                resources: {
+                  listChanged: true,
+                  subscribe: false,
+                },
+              }),
           },
         },
       },
@@ -514,7 +695,7 @@ const makeSessionPromptTask = (
 
 const makeTaskProjectionProtocol = (
   options: FiregridMcpDurableStreamsWireOptions,
-  runtime: McpTaskProjectionRuntime,
+  runtime: McpProjectionRuntime,
 ) =>
   Effect.gen(function*() {
     const requestTags = yield* Ref.make(new Map<string, string>())
@@ -579,6 +760,41 @@ const makeTaskProjectionProtocol = (
             return
           }
 
+          if (runtime.observations !== undefined && request.tag === "resources/list") {
+            const contexts = yield* runtime.observations.contexts
+            yield* sendToClient(clientId, successResponse(request.id, {
+              resources: [
+                {
+                  uri: contextsResourceUri,
+                  name: "Firegrid runtime contexts",
+                  mimeType: "application/json",
+                },
+                ...contexts.map(context => ({
+                  uri: contextSnapshotResourceUri(context.contextId),
+                  name: `Firegrid runtime snapshot: ${context.contextId}`,
+                  mimeType: "application/json",
+                })),
+              ],
+            }))
+            return
+          }
+
+          if (runtime.observations !== undefined && request.tag === "resources/read") {
+            const payload = toolsCallPayload(request)
+            const uri = typeof payload.uri === "string" ? payload.uri : ""
+            const resource = yield* observationResourcePath(uri)
+            const readResource = resource._tag === "Contexts"
+              ? runtime.observations.contexts
+              : resource._tag === "Snapshot"
+              ? runtime.observations.snapshot(resource.contextId)
+              : resource._tag === "AgentOutputWait"
+              ? runtime.observations.waitForAgentOutput(resource.contextId, resource.input)
+              : runtime.observations.waitForPermissionRequest(resource.contextId, resource.input)
+            const value = yield* readResource
+            yield* sendToClient(clientId, successResponse(request.id, jsonResourceResponse(uri, value)))
+            return
+          }
+
           yield* writeRequest(clientId, request)
         }).pipe(
           Effect.catchAllCause(cause =>
@@ -596,7 +812,7 @@ const makeTaskProjectionProtocol = (
           const tag = response._tag === "Exit"
             ? (yield* Ref.get(requestTags)).get(response.requestId)
             : undefined
-          yield* sendToClient(clientId, rewriteResult(tag, response))
+          yield* sendToClient(clientId, rewriteResult(runtime.observations, tag, response))
         }).pipe(Effect.orDie),
     })
   })
@@ -627,9 +843,104 @@ export const makeRuntimeOutputTaskProjectionRuntime = (
     }),
 })
 
+const collectRows = <A>(
+  rows: Stream.Stream<A, unknown>,
+): Effect.Effect<ReadonlyArray<A>, unknown> =>
+  rows.pipe(
+    Stream.runCollect,
+    Effect.map(chunk => Array.from(chunk)),
+  )
+
+const waitForAgentOutputObservation = (
+  output: RuntimeOutputRowsSource,
+  contextId: string,
+  input: SessionAgentOutputWaitInput,
+  predicate: (observation: RuntimeAgentOutputObservation) => boolean = () => true,
+): Effect.Effect<Option.Option<RuntimeAgentOutputObservation>, unknown> => {
+  const run = runtimeEventsForContextView(output.events.rows(), contextId).pipe(
+    Stream.filterMap(runtimeAgentOutputObservationFromRow),
+    Stream.filter(observation =>
+      (input.afterSequence === undefined ||
+        observation.sequence > input.afterSequence) &&
+      predicate(observation)),
+    Stream.runHead,
+  )
+  return input.timeoutMs === undefined
+    ? run
+    : Effect.raceFirst(
+      run,
+      Effect.sleep(Duration.millis(input.timeoutMs)).pipe(
+        Effect.as(Option.none<RuntimeAgentOutputObservation>()),
+      ),
+    )
+}
+
+export const makeRuntimeTaskAndObservationProjectionRuntime = (
+  control: RuntimeControlRowsSource,
+  output: RuntimeOutputRowsSource,
+  permissionRespond: HostPermissionRespondChannel["Type"],
+): McpProjectionRuntime => ({
+  ...makeRuntimeOutputTaskProjectionRuntime(output, permissionRespond),
+  observations: {
+    contexts: Effect.suspend(() =>
+      collectRows(runtimeContextsView(
+        Stream.fromIterable(control.contexts.collection.toArray),
+      ))),
+    snapshot: (contextId: string) =>
+      Effect.gen(function*() {
+        const contexts = yield* collectRows(runtimeContextsView(
+          Stream.fromIterable(control.contexts.collection.toArray),
+        ))
+        const context = contexts.find(row => row.contextId === contextId)
+        const runs = yield* collectRows(runtimeRunsForContextView(
+          Stream.fromIterable(control.runs.collection.toArray),
+          contextId,
+        ))
+        const events = yield* collectRows(runtimeEventsForContextView(
+          Stream.fromIterable(output.events.collection.toArray),
+          contextId,
+        ))
+        const logs = yield* collectRows(runtimeLogsForContextView(
+          Stream.fromIterable(output.logs.collection.toArray),
+          contextId,
+        ))
+        return snapshotFromJournal(contextId, {
+          ...(context === undefined ? {} : { context }),
+          runs,
+          events,
+          logs,
+        })
+      }),
+    waitForAgentOutput: (contextId: string, input: SessionAgentOutputWaitInput) =>
+      waitForAgentOutputObservation(output, contextId, input).pipe(
+        Effect.map(Option.match({
+          onNone: () => ({ matched: false, timedOut: true }) as const,
+          onSome: output => ({ matched: true, output }) as const,
+        })),
+      ),
+    waitForPermissionRequest: (contextId: string, input: SessionPermissionRequestWaitInput) =>
+      waitForAgentOutputObservation(
+        output,
+        contextId,
+        input,
+        observation => Option.isSome(runtimePermissionRequestObservationFromAgentOutput(observation)),
+      ).pipe(
+        Effect.map(Option.match({
+          onNone: () => ({ matched: false, timedOut: true }) as const,
+          onSome: output => {
+            const request = runtimePermissionRequestObservationFromAgentOutput(output)
+            return Option.isSome(request)
+              ? ({ matched: true, request: request.value } as const)
+              : ({ matched: false, timedOut: true } as const)
+          },
+        })),
+      ),
+  },
+})
+
 export const layerProtocolDurableStreamsWithSessionPromptTasks = (
   options: FiregridMcpDurableStreamsWireOptions,
-  runtime: McpTaskProjectionRuntime,
+  runtime: McpProjectionRuntime,
 ): Layer.Layer<RpcServer.Protocol> =>
   Layer.scoped(
     RpcServer.Protocol,

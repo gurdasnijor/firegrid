@@ -33,6 +33,11 @@ import type {
 const gatewayContextId = "session:tiny-firegrid:mcp-production-task-projection-parent"
 const streamId = "mcp-production-task-projection"
 
+interface McpProductionTaskProjectionHostOptions {
+  readonly gatewayContextId: string
+  readonly streamId: string
+}
+
 const ContextResolverFromControlPlaneTableLive = Layer.effect(
   ContextResolverTag,
   Effect.gen(function*() {
@@ -68,46 +73,55 @@ const AcpContextRowsLive = Layer.effect(
   ),
 )
 
-export const mcpProductionTaskProjectionHost = (
+export const makeMcpProductionTaskProjectionHost = (
+  options: McpProductionTaskProjectionHostOptions,
+): ((
   env: TinyFiregridHostEnv,
-): Layer.Layer<FiregridHost, unknown> => {
-  const runtime = FiregridRuntime(
-    {
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
-      namespace: env.namespace,
-    },
-    defaultProductionAdapterLayer(
-      RuntimeEnvResolverPolicy.withPolicy({
-        authorizedBindings: [
-          ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
-        ],
-        lookupEnv: name => env.processEnv[name],
-      }),
-    ),
-  )
+) => Layer.Layer<FiregridHost, unknown>) =>
+  (env: TinyFiregridHostEnv): Layer.Layer<FiregridHost, unknown> => {
+    const runtime = FiregridRuntime(
+      {
+        durableStreamsBaseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
+      },
+      defaultProductionAdapterLayer(
+        RuntimeEnvResolverPolicy.withPolicy({
+          authorizedBindings: [
+            ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
+          ],
+          lookupEnv: name => env.processEnv[name],
+        }),
+      ),
+    )
 
-  const support = Layer.mergeAll(
-    ContextResolverFromControlPlaneTableLive,
-    GlobalSessionAgentOutputChannelLive,
-    AcpContextRowsLive,
-  )
+    const support = Layer.mergeAll(
+      ContextResolverFromControlPlaneTableLive,
+      GlobalSessionAgentOutputChannelLive,
+      AcpContextRowsLive,
+    )
 
-  const mcp = FiregridMcpServerLayer({
-    host: "127.0.0.1",
-    port: 0,
-    path: ensurePathInput("/mcp"),
-    durableStreams: {
-      baseUrl: env.durableStreamsBaseUrl,
-      namespace: env.namespace,
-      streamId,
-      contextId: gatewayContextId,
-    },
-  }).pipe(Layer.discard)
+    const mcp = FiregridMcpServerLayer({
+      host: "127.0.0.1",
+      port: 0,
+      path: ensurePathInput("/mcp"),
+      durableStreams: {
+        baseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
+        streamId: options.streamId,
+        contextId: options.gatewayContextId,
+      },
+    }).pipe(Layer.discard)
 
-  return mcp.pipe(
-    Layer.provideMerge(ToolDispatchLive),
-    Layer.provideMerge(HostPlaneSessionControlRouterLive),
-    Layer.provideMerge(support),
-    Layer.provideMerge(runtime),
-  )
-}
+    return mcp.pipe(
+      Layer.provideMerge(ToolDispatchLive),
+      Layer.provideMerge(HostPlaneSessionControlRouterLive),
+      Layer.provideMerge(support),
+      Layer.provideMerge(runtime),
+    )
+  }
+
+export const mcpProductionTaskProjectionHost =
+  makeMcpProductionTaskProjectionHost({
+    gatewayContextId,
+    streamId,
+  })
