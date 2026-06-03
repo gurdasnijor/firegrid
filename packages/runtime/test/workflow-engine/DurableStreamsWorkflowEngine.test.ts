@@ -122,6 +122,24 @@ const waitForDeferredExitRow = (
     }
   })
 
+const waitForExecutionFinalResult = (executionId: string) =>
+  Effect.gen(function* () {
+    const table = yield* WorkflowEngineTable
+    const deadlineMs = (yield* Clock.currentTimeMillis) + 5_000
+    while (true) {
+      const row = yield* table.executions.get(executionId).pipe(
+        Effect.map(Option.getOrUndefined),
+      )
+      if (row?.finalResult !== undefined) return row.finalResult
+      if ((yield* Clock.currentTimeMillis) >= deadlineMs) {
+        return yield* Effect.fail(
+          new Error(`timed out waiting for finalResult ${executionId}`),
+        )
+      }
+      yield* Effect.sleep(Duration.millis(25))
+    }
+  })
+
 class CodecSessionAliveSupervisor extends Context.Tag("@firegrid/runtime/test/CodecSessionAliveSupervisor")<
   CodecSessionAliveSupervisor,
   {
@@ -552,6 +570,140 @@ describe("durable workflow engine", () => {
     )
 
     expect(result).toBe("registered")
+  }, 20_000)
+
+  // tf-8f6y — kind-aware non-clock DurableDeferred restart-recovery.
+  it("tf-8f6y resumes a workflow suspended on a non-clock DurableDeferred after restart from the persisted result, without a new external write", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/deferred-recovery-${crypto.randomUUID()}`
+
+    const Approval = DurableDeferred.make("recovery-approval", {
+      success: Schema.String,
+    })
+    let token: DurableDeferred.Token | undefined
+    let bodyCompletions = 0
+    const DeferredWorkflow = Workflow.make({
+      name: "deferred-recovery-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.String,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = DeferredWorkflow.toLayer(() =>
+      Effect.gen(function* () {
+        token = yield* DurableDeferred.token(Approval)
+        const decision = yield* DurableDeferred.await(Approval)
+        bodyCompletions += 1
+        return decision
+      }),
+    )
+
+    const executionId = await Effect.runPromise(
+      DeferredWorkflow.executionId({ id: "subject" }),
+    )
+
+    // 1) Body parks on the DurableDeferred (no result yet).
+    await runWith(
+      { streamUrl },
+      workflowLayer,
+      DeferredWorkflow.execute({ id: "subject" }, { discard: true }),
+    )
+    expect(bodyCompletions).toBe(0)
+
+    // 2) Resolve the deferred on an engine WITHOUT the workflow registered:
+    //    `deferredDone` persists the result row, but its trailing `resume`
+    //    no-ops (workflow absent) — i.e. the result was written but the resume
+    //    was LOST (the crash/restart window).
+    await runWith(
+      { streamUrl },
+      Layer.empty,
+      Effect.gen(function* () {
+        if (!token) throw new Error("expected deferred token")
+        yield* DurableDeferred.succeed(Approval, { token, value: "approved" })
+      }),
+    )
+    expect(bodyCompletions).toBe(0) // still parked: resume was dropped
+
+    // 3) Restart WITH the workflow: registration-triggered deferred recovery
+    //    re-arms the suspended execution from the persisted result — no new
+    //    external write, no `execute` call.
+    const finalResult = await runWith(
+      { streamUrl },
+      workflowLayer,
+      waitForExecutionFinalResult(executionId),
+    )
+
+    expect(bodyCompletions).toBe(1)
+    expect(finalResult).toMatchObject({
+      _tag: "Complete",
+      exit: { _tag: "Success", value: "approved" },
+    })
+  }, 20_000)
+
+  it("tf-8f6y does NOT resume an INTERRUPTED execution during deferred recovery (kind-aware guard, not a blanket sweep)", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/deferred-recovery-interrupt-${crypto.randomUUID()}`
+
+    const Approval = DurableDeferred.make("interrupt-approval", {
+      success: Schema.String,
+    })
+    let token: DurableDeferred.Token | undefined
+    let bodyCompletions = 0
+    const InterruptedWorkflow = Workflow.make({
+      name: "deferred-recovery-interrupt-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.String,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = InterruptedWorkflow.toLayer(() =>
+      Effect.gen(function* () {
+        token = yield* DurableDeferred.token(Approval)
+        const decision = yield* DurableDeferred.await(Approval)
+        bodyCompletions += 1
+        return decision
+      }),
+    )
+
+    const executionId = await Effect.runPromise(
+      InterruptedWorkflow.executionId({ id: "subject" }),
+    )
+
+    // 1) Park on the deferred, then INTERRUPT the execution.
+    await runWith(
+      { streamUrl },
+      workflowLayer,
+      Effect.gen(function* () {
+        yield* InterruptedWorkflow.execute({ id: "subject" }, { discard: true })
+        yield* InterruptedWorkflow.interrupt(executionId)
+      }),
+    )
+    expect(
+      await inspectTable(streamUrl, table =>
+        table.executions.get(executionId).pipe(
+          Effect.map(row => Option.getOrUndefined(row)?.interrupted === true),
+        ),
+      ),
+    ).toBe(true)
+
+    // 2) Persist the deferred result with the resume dropped (unregistered).
+    await runWith(
+      { streamUrl },
+      Layer.empty,
+      Effect.gen(function* () {
+        if (!token) throw new Error("expected deferred token")
+        yield* DurableDeferred.succeed(Approval, { token, value: "approved" })
+      }),
+    )
+
+    // 3) Restart WITH the workflow. Deferred recovery runs at registration but
+    //    its kind-aware guard MUST skip the interrupted execution — the body
+    //    must NOT be spuriously re-driven to completion.
+    await runWith(
+      { streamUrl },
+      workflowLayer,
+      Effect.sleep(Duration.millis(400)),
+    )
+
+    expect(bodyCompletions).toBe(0)
   }, 20_000)
 
   it("path-x.Q-2 replays a completed CodecSessionAlive stdin emission activity after engine reconstruction without duplicate supervisor writes", async () => {
