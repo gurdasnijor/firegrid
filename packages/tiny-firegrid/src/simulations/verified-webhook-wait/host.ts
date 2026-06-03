@@ -166,26 +166,19 @@ const routeLayer = (
     resolveRoute = resolve
   })
 
-  const http = Layer.scopedDiscard(
-    Effect.gen(function*() {
-      const table = yield* VerifiedWebhookFactTable
-      yield* HttpServer.serveEffect(
-        handleLinearWebhook.pipe(Effect.provideService(VerifiedWebhookFactTable, table)),
-      )
-      yield* HttpServer.addressWith((address) =>
+  const http = Layer.mergeAll(
+    HttpServer.serve(handleLinearWebhook),
+    Layer.scopedDiscard(
+      HttpServer.addressWith((address) =>
         Effect.sync(() => {
           const port = address._tag === "TcpAddress" ? address.port : 0
-          const url = `http://127.0.0.1:${port}${routePath}`
-          resolveRoute(url)
-        }))
-    }).pipe(
-      Effect.tap(() =>
-        Effect.annotateCurrentSpan({
-          "firegrid.webhook.source": verifiedWebhookWaitSource,
-        })),
-      Effect.withSpan("tiny_firegrid.verified_webhook_wait.route.acquire", {
-        kind: "server",
-      }),
+          resolveRoute(`http://127.0.0.1:${port}${routePath}`)
+        })).pipe(
+          Effect.withSpan("tiny_firegrid.verified_webhook_wait.route.acquire", {
+            kind: "server",
+            attributes: { "firegrid.webhook.source": verifiedWebhookWaitSource },
+          }),
+        ),
     ),
   ).pipe(
     Layer.provide(NodeHttpServer.layer(createServer, { port: 0, host: "127.0.0.1" })),

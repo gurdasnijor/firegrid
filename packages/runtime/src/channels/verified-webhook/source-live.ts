@@ -36,7 +36,7 @@ import { createServer } from "node:http"
 import {
   ingestVerifiedWebhook,
   type VerifiedWebhookIngestConfig,
-  VerifiedWebhookFactTable,
+  type VerifiedWebhookFactTable,
   type VerifiedWebhookFactTableService,
 } from "../../verified-webhook-ingest/index.ts"
 
@@ -207,38 +207,31 @@ export const makeVerifiedWebhookSource = <Fact>(
       stream: project(table),
     })
 
-  // Scoped Layer: mount the per-source HttpApp on its own loopback
-  // `NodeHttpServer` (the server's lifetime is the Layer scope — the platform
-  // layer closes the listener on release), then resolve the kernel-chosen bound
-  // address back into `routeUrl`.
-  const routeLayer: Layer.Layer<never, never, VerifiedWebhookFactTable> = Layer.scopedDiscard(
-    Effect.gen(function*() {
-      const table = yield* VerifiedWebhookFactTable
-      yield* HttpServer.serveEffect(
-        webhookApp(config as MakeVerifiedWebhookSourceConfig<unknown>).pipe(
-          Effect.provideService(VerifiedWebhookFactTable, table),
-        ),
-      )
-      yield* HttpServer.addressWith((address) =>
+  // Serve the per-source HttpApp on its own loopback NodeHttpServer (the
+  // server's lifetime is the Layer scope — the platform layer closes the
+  // listener on release), then resolve the kernel-chosen bound address back
+  // into `routeUrl`. `VerifiedWebhookFactTable` flows through as the layer's
+  // sole requirement (the caller provides it). A bind failure is an
+  // unrecoverable host defect (`Layer.orDie`), as in the previous raw-`node:http`
+  // implementation's `Effect.orDie` on listen.
+  const routeLayer: Layer.Layer<never, never, VerifiedWebhookFactTable> = Layer.mergeAll(
+    HttpServer.serve(webhookApp(config as MakeVerifiedWebhookSourceConfig<unknown>)),
+    Layer.scopedDiscard(
+      HttpServer.addressWith((address) =>
         Effect.sync(() => {
           const port = address._tag === "TcpAddress" ? address.port : config.route.port
-          const bound: VerifiedWebhookRouteBound = {
+          resolveBound({
             host: config.route.host,
             port,
             path: config.route.path,
             url: `http://${config.route.host}:${port}${config.route.path}`,
-          }
-          resolveBound(bound)
-        }))
-    }).pipe(
-      Effect.tap(() =>
-        Effect.annotateCurrentSpan({
-          "firegrid.webhook.source": config.source,
-        })),
-      Effect.withSpan("firegrid.webhook.route.acquire", {
-        kind: "server",
-        attributes: { "firegrid.webhook.source": config.source },
-      }),
+          })
+        })).pipe(
+          Effect.withSpan("firegrid.webhook.route.acquire", {
+            kind: "server",
+            attributes: { "firegrid.webhook.source": config.source },
+          }),
+        ),
     ),
   ).pipe(
     Layer.provide(
@@ -247,8 +240,6 @@ export const makeVerifiedWebhookSource = <Fact>(
         host: config.route.host,
       }),
     ),
-    // A bind failure (port in use, etc.) is an unrecoverable host defect, as in
-    // the previous raw-`node:http` implementation (`Effect.orDie` on listen).
     Layer.orDie,
   )
 

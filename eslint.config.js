@@ -54,6 +54,14 @@ const rawNodeIoImportMessages = {
   "node:path": "Use @effect/platform Path (`yield* Path.Path`) instead of node:path.",
   "node:url": "Use @effect/platform Path (`fromFileUrl` / `toFileUrl`) instead of node:url.",
   "node:child_process": "Use @effect/platform Command (`Command.make` / `Command.string`) instead of node:child_process.",
+  // tf-h1ld: node:net banned in product source — bind via @effect/platform-node
+  // `NodeHttpServer.layer` and read the bound address with `HttpServer.addressWith`.
+  // (`node:http` is NOT banned: `createServer` is the documented NodeHttpServer.layer
+  // factory argument — a legit @effect/platform-node boundary, not raw I/O.)
+  "node:net": "Use @effect/platform HttpServer (`NodeHttpServer.layer` + `HttpServer.addressWith`) instead of node:net.",
+  // node:stream is banned in product source; bin/ stdio bridges (process.stdin/stdout
+  // → WHATWG Web streams for the ACP edge) are scoped out as genuine boundaries.
+  "node:stream": "Use @effect/platform Stream / `@effect/platform-node` NodeStream instead of node:stream (bin/ stdio bridges are exempt).",
 }
 const legacyDurableAgentSubstrateImportPatterns = [
   {
