@@ -1,33 +1,32 @@
 /**
- * tf-ogoj — DurableDeferred + per-key serialization WORKBENCH host.
+ * tf-ogoj — DurableDeferred + per-key serialization WORKBENCH host (v2, isolated).
  *
  * Gathers trace evidence for the §2 "simplifying hypothesis" of
- * docs/sdds/SDD_FIREGRID_RUNTIME_ORG_AND_BODY_SHAPE_2026-06-02.md: that
- * `signal.ts` is a SECOND implementation of capabilities the real
- * `DurableStreamsWorkflowEngine` already provides behind the standard
- * `WorkflowEngine` Tag, and that per-`contextId` serialization is a real OPEN
- * gap NOT given by `Workflow.idempotencyKey + cursor`.
+ * docs/sdds/SDD_FIREGRID_RUNTIME_ORG_AND_BODY_SHAPE_2026-06-02.md.
  *
- * This host composes the REAL `FiregridRuntime` factory and overrides ONLY the
- * inbound session-input channel bindings to route public prompts to two
- * workbench workflows on the real engine. NO fake codec/adapter/sandbox/recorder
- * and NO Tag-swap of the spawn path: the H2 workflow drives a real ACP
- * example-agent spawn through the production `ProductionCodecAdapterLive`. The
- * adapter Tag is consumed via the `@firegrid/runtime/unified` namespace (the
- * host.ts eslint airgap blocks a NAMED `RuntimeContextSessionAdapter` import —
- * intent: block STUB Lives; we consume the REAL Tag, provided by the REAL
- * `defaultProductionAdapterLayer()`). See docs/findings/tf-ogoj-*.md.
+ * v2 ISOLATION (in response to a calibration challenge): the v1 H2 measured a race
+ * in the SIM's own channel seq-assignment (`nextSeq = count(rows)` then
+ * `insertOrGet`), which confounded the production question. v2 removes that
+ * entirely — there is NO input-log and NO count-then-insert. The channel simply
+ * `execute`s the workflow with the input carried in the payload. The ONLY shared
+ * mutable state left is the per-`contextId` **cursor**, so the trace isolates the
+ * production-relevant question: do concurrent same-`contextId` executions
+ * serialize on the cursor (read 0,1,2,… distinct; final = N) or RACE (repeated
+ * reads; final < N, lost updates)?
  *
- *   H1 — `workbench.deferred-gate`: makes a `DurableDeferred`, awaits it (the
- *        engine suspends the body), and a later public input resolves it via the
- *        standard `DurableDeferred.succeed` combinator on the real engine. The
- *        trace shows `firegrid.workflow_engine.deferred.result/.done` spans.
- *   H2 — `workbench.serialization`: a per-event handler keyed `(contextId,
- *        inputKey)` over a durable consume cursor (the c71h shape), DRIVEN BY
- *        CONCURRENT same-`contextId` inputs. The trace shows whether
- *        idempotencyKey+cursor serializes or RACES (lost cursor updates).
- *   H3 — crash-recovery: not reachable from the public client surface; the
- *        finding names the runtime-package engine test + the fix site.
+ * Host composes the REAL `FiregridRuntime` factory + real engine + real ACP
+ * example-agent spawn (no fakes, no Tag-swap of the spawn path). The adapter Tag
+ * is consumed via the `@firegrid/runtime/unified` namespace (host.ts airgap blocks
+ * a NAMED `RuntimeContextSessionAdapter` import; we consume the REAL Tag, provided
+ * by the REAL `defaultProductionAdapterLayer()`).
+ *
+ *   H1 — `workbench.deferred-gate`: standard `DurableDeferred` await-once on the
+ *        real engine (suspend via `engine.deferredResult`, resolve via
+ *        `engine.deferredDone`). Trace shows the `deferred.result/.done` spans.
+ *   H2 — `workbench.serialization`: per-event handler keyed `(contextId,inputKey)`,
+ *        each body reading then advancing the durable cursor, driven by CONCURRENT
+ *        same-`contextId` inputs. Cursor is the only shared state.
+ *   H3 — crash-recovery: not reachable from the public client surface (finding).
  */
 
 import { Prompt } from "@effect/ai"
@@ -48,7 +47,6 @@ import {
   FiregridRuntime,
   HostSessionsStartChannelLive,
   SessionCancelChannelLive,
-  SessionInputPayloadSchema,
   type SessionInputPayload,
 } from "@firegrid/runtime/unified"
 // Namespace access to the REAL `RuntimeContextSessionAdapter` Tag — see docblock.
@@ -68,11 +66,9 @@ const DEFAULT_ATTEMPT = 1
 const H1_OPEN_PREFIX = "h1-open"
 const H1_RESOLVE_PREFIX = "h1-resolve"
 
+const now = (): string => new Date().toISOString()
+
 // ── H1: deferred-gate workflow ──────────────────────────────────────────────
-//
-// Exercises the STANDARD `DurableDeferred` combinator on the REAL engine: the
-// body awaits a deferred (suspends via engine.deferredResult), a later public
-// input resolves it via engine.deferredDone.
 
 const GATE_DEFERRED_NAME = "input-gate"
 const gateDeferred = DurableDeferred.make(GATE_DEFERRED_NAME, {
@@ -102,7 +98,6 @@ const deferredGateBody = (payload: typeof DeferredGatePayloadSchema.Type) =>
       "firegrid.context.id": payload.contextId,
       "firegrid.workbench.h1.phase": "awaiting",
     })
-    // Suspends here: engine.deferredResult returns undefined → Workflow.suspend.
     const resolvedValue = yield* DurableDeferred.await(gateDeferred)
     yield* Effect.annotateCurrentSpan({
       "firegrid.workbench.h1.phase": "resumed",
@@ -116,22 +111,7 @@ const deferredGateBody = (payload: typeof DeferredGatePayloadSchema.Type) =>
     }),
   )
 
-// ── H2: per-event serialization workflow + durable tables ───────────────────
-
-const InputLogRowSchema = Schema.Struct({
-  inputLogKey: Schema.String.pipe(DurableTable.primaryKey),
-  contextId: Schema.String,
-  seq: Schema.Number,
-  inputKey: Schema.String,
-  kind: SessionInputPayloadSchema.fields.kind,
-  payloadJson: Schema.String,
-  recordedAt: Schema.String,
-})
-
-class InputLogTable extends DurableTable(
-  "tiny.firegrid.ddSerialization.inputLog",
-  { rows: InputLogRowSchema },
-) {}
+// ── H2: per-event serialization workflow (cursor is the ONLY shared state) ───
 
 const CursorRowSchema = Schema.Struct({
   contextId: Schema.String.pipe(DurableTable.primaryKey),
@@ -144,22 +124,22 @@ class CursorTable extends DurableTable(
   { rows: CursorRowSchema },
 ) {}
 
+const SerializationKind = Schema.Literal("prompt", "terminal")
+
 const SerializationPayloadSchema = Schema.Struct({
   contextId: Schema.String,
   attempt: Schema.Number,
   inputKey: Schema.String,
-  seq: Schema.Number,
+  kind: SerializationKind,
+  text: Schema.String,
 })
 
 const SerializationResultSchema = Schema.Struct({
   contextId: Schema.String,
   inputKey: Schema.String,
-  seq: Schema.Number,
-  kind: SessionInputPayloadSchema.fields.kind,
-  consumedBefore: Schema.Number,
-  advancedTo: Schema.Number,
-  seqMatchedCursor: Schema.Boolean,
-  reachedTerminal: Schema.Boolean,
+  kind: SerializationKind,
+  cursorAtEntry: Schema.Number,
+  cursorAfter: Schema.Number,
 })
 
 const SerializationWorkflow = Workflow.make({
@@ -169,16 +149,50 @@ const SerializationWorkflow = Workflow.make({
   idempotencyKey: (p) => `${p.contextId}:${p.inputKey}`,
 })
 
-const now = (): string => new Date().toISOString()
+const encodeAgentInputEvent = Schema.encodeSync(AgentInputEventSchema)
+
+const promptInput = (text: string, correlationId: string): SessionInputPayload => {
+  const event: AgentInputEvent = {
+    _tag: "Prompt",
+    prompt: Prompt.userMessage({ content: [Prompt.textPart({ text })] }),
+    correlationId,
+  }
+  return {
+    kind: "prompt",
+    payloadJson: JSON.stringify(encodeAgentInputEvent(event)),
+  }
+}
 
 const serializationBody = (
   payload: typeof SerializationPayloadSchema.Type,
 ) =>
   Effect.gen(function*() {
     const adapter = yield* Unified.RuntimeContextSessionAdapter
-    const inputLog = yield* InputLogTable
     const cursor = yield* CursorTable
     const key = `${payload.contextId}:${payload.attempt}`
+
+    // Read the durable cursor, then advance it — this read-modify-write over a
+    // single per-contextId row is the ONLY shared mutable state. Done FIRST
+    // (before the slow spawn) so concurrent bodies hit the read→write window.
+    const cursorRow = yield* cursor.rows.get(payload.contextId).pipe(Effect.orDie)
+    const cursorAtEntry = Option.match(cursorRow, {
+      onNone: () => 0,
+      onSome: (row) => row.consumed,
+    })
+    const cursorAfter = cursorAtEntry + 1
+    yield* cursor.rows.upsert({
+      contextId: payload.contextId,
+      consumed: cursorAfter,
+      updatedAt: now(),
+    }).pipe(Effect.orDie)
+
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.context.id": payload.contextId,
+      "firegrid.workbench.h2.input_key": payload.inputKey,
+      "firegrid.workbench.h2.kind": payload.kind,
+      "firegrid.workbench.h2.cursor_at_entry": cursorAtEntry,
+      "firegrid.workbench.h2.cursor_after": cursorAfter,
+    })
 
     // Real spawn / no-op reattach (Activity-memoized).
     yield* Activity.make({
@@ -189,83 +203,30 @@ const serializationBody = (
       ),
     })
 
-    // Read durable cursor (the racy read under concurrency — H2).
-    const cursorRow = yield* cursor.rows.get(payload.contextId).pipe(Effect.orDie)
-    const consumedBefore = Option.match(cursorRow, {
-      onNone: () => 0,
-      onSome: (row) => row.consumed,
-    })
-
-    const rowKey = `${payload.contextId}:${payload.seq}`
-    const rowOption = yield* inputLog.rows.get(rowKey).pipe(Effect.orDie)
-    const row = yield* Option.match(rowOption, {
-      onNone: () => Effect.dieMessage(`missing input-log row ${rowKey}`),
-      onSome: (value) => Effect.succeed(value),
-    })
-
-    const seqMatchedCursor = payload.seq === consumedBefore
-    const input: SessionInputPayload = {
-      kind: row.kind,
-      payloadJson: row.payloadJson,
-    }
-
-    yield* Effect.annotateCurrentSpan({
-      "firegrid.context.id": payload.contextId,
-      "firegrid.workbench.h2.input_key": payload.inputKey,
-      "firegrid.workbench.h2.seq": payload.seq,
-      "firegrid.workbench.h2.cursor_consumed": consumedBefore,
-      "firegrid.workbench.h2.seq_matched_cursor": seqMatchedCursor,
-      "firegrid.workbench.h2.kind": row.kind,
-    })
-
-    if (row.kind === "terminal") {
+    if (payload.kind === "terminal") {
       yield* Activity.make({
         name: `workbench.serialization.deregister/${payload.contextId}`,
         success: Schema.Void,
         execute: adapter.deregister(payload.contextId).pipe(Effect.orDie),
       })
-      return {
-        contextId: payload.contextId,
-        inputKey: payload.inputKey,
-        seq: payload.seq,
-        kind: row.kind,
-        consumedBefore,
-        advancedTo: consumedBefore,
-        seqMatchedCursor,
-        reachedTerminal: true,
-      }
+    } else {
+      yield* Activity.make({
+        name: `workbench.serialization.send/${key}/${payload.inputKey}`,
+        success: Schema.Void,
+        execute: adapter.send(
+          payload.contextId,
+          payload.attempt,
+          promptInput(payload.text, payload.inputKey),
+        ).pipe(Effect.orDie),
+      })
     }
-
-    yield* Activity.make({
-      name: `workbench.serialization.send/${key}/${payload.seq}`,
-      success: Schema.Void,
-      execute: adapter.send(payload.contextId, payload.attempt, input).pipe(
-        Effect.orDie,
-      ),
-    })
-
-    // Advance the cursor (blind read-modify-write upsert — last-write-wins; the
-    // H2 race shows here if concurrent executions all read the same consumed).
-    const advancedTo = consumedBefore + 1
-    yield* Activity.make({
-      name: `workbench.serialization.advance_cursor/${payload.contextId}/${payload.seq}`,
-      success: Schema.Void,
-      execute: cursor.rows.upsert({
-        contextId: payload.contextId,
-        consumed: advancedTo,
-        updatedAt: now(),
-      }).pipe(Effect.orDie),
-    })
 
     return {
       contextId: payload.contextId,
       inputKey: payload.inputKey,
-      seq: payload.seq,
-      kind: row.kind,
-      consumedBefore,
-      advancedTo,
-      seqMatchedCursor,
-      reachedTerminal: false,
+      kind: payload.kind,
+      cursorAtEntry,
+      cursorAfter,
     }
   }).pipe(
     Effect.withSpan("workbench.serialization.body", {
@@ -279,17 +240,6 @@ const serializationBody = (
 
 // ── Channel overrides ───────────────────────────────────────────────────────
 
-const encodeAgentInputEvent = Schema.encodeSync(AgentInputEventSchema)
-
-const promptPayloadJson = (text: string, correlationId: string): string => {
-  const event: AgentInputEvent = {
-    _tag: "Prompt",
-    prompt: Prompt.userMessage({ content: [Prompt.textPart({ text })] }),
-    correlationId,
-  }
-  return JSON.stringify(encodeAgentInputEvent(event))
-}
-
 const promptText = (payload: unknown): string =>
   typeof payload === "object"
     && payload !== null
@@ -298,41 +248,23 @@ const promptText = (payload: unknown): string =>
     ? (payload as { readonly text: string }).text
     : JSON.stringify(payload)
 
-const nextSeq = (
-  inputLog: InputLogTable["Type"],
-  contextId: string,
-): Effect.Effect<number> =>
-  inputLog.rows.query((coll) =>
-    coll.toArray.filter((row) => row.contextId === contextId).length,
-  ).pipe(Effect.orDie)
-
-const writeAndExecuteSerialization = (options: {
+const executeSerialization = (options: {
   readonly engine: WorkflowEngine.WorkflowEngine["Type"]
-  readonly inputLog: InputLogTable["Type"]
   readonly contextId: string
   readonly inputKey: string
-  readonly kind: SessionInputPayload["kind"]
-  readonly payloadJson: string
+  readonly kind: "prompt" | "terminal"
+  readonly text: string
   readonly target: string
 }) =>
   Effect.gen(function*() {
-    const seq = yield* nextSeq(options.inputLog, options.contextId)
-    yield* options.inputLog.rows.insertOrGet({
-      inputLogKey: `${options.contextId}:${seq}`,
-      contextId: options.contextId,
-      seq,
-      inputKey: options.inputKey,
-      kind: options.kind,
-      payloadJson: options.payloadJson,
-      recordedAt: now(),
-    }).pipe(Effect.orDie)
     yield* SerializationWorkflow.execute({
       contextId: options.contextId,
       attempt: DEFAULT_ATTEMPT,
       inputKey: options.inputKey,
-      seq,
+      kind: options.kind,
+      text: options.text,
     }, { discard: true })
-    return eventOffset(`${options.target}:${options.contextId}:${seq}`)
+    return eventOffset(`${options.target}:${options.contextId}:${options.inputKey}`)
   }).pipe(
     Effect.provideService(WorkflowEngine.WorkflowEngine, options.engine),
   )
@@ -380,7 +312,6 @@ const SessionPromptChannelWorkbenchLive = Layer.effect(
   SessionPromptChannel,
   Effect.gen(function*() {
     const engine = yield* WorkflowEngine.WorkflowEngine
-    const inputLog = yield* InputLogTable
     return SessionPromptChannel.of({
       forSession: (sessionId) =>
         makeDurableEventChannel({
@@ -399,16 +330,12 @@ const SessionPromptChannelWorkbenchLive = Layer.effect(
                 target,
               })
             }
-            return writeAndExecuteSerialization({
+            return executeSerialization({
               engine,
-              inputLog,
               contextId: sessionId,
               inputKey: request.idempotencyKey,
               kind: "prompt",
-              payloadJson: promptPayloadJson(
-                promptText(request.payload),
-                request.idempotencyKey,
-              ),
+              text: promptText(request.payload),
               target,
             })
           },
@@ -421,21 +348,16 @@ const SessionCloseChannelWorkbenchLive = Layer.effect(
   SessionCloseChannel,
   Effect.gen(function*() {
     const engine = yield* WorkflowEngine.WorkflowEngine
-    const inputLog = yield* InputLogTable
     return makeDurableEventChannel({
       target: SessionCloseChannelTarget,
       schema: SessionCloseToolInputSchema,
       append: (request) =>
-        writeAndExecuteSerialization({
+        executeSerialization({
           engine,
-          inputLog,
           contextId: request.sessionId,
           inputKey: `terminal:${request.sessionId}`,
           kind: "terminal",
-          payloadJson: JSON.stringify({
-            operation: "close",
-            ...(request.reason === undefined ? {} : { reason: request.reason }),
-          }),
+          text: request.reason ?? "",
           target: String(SessionCloseChannelTarget),
         }),
     })
@@ -444,32 +366,21 @@ const SessionCloseChannelWorkbenchLive = Layer.effect(
 
 // ── Host composition ────────────────────────────────────────────────────────
 
-const workbenchTablesLayer = (env: TinyFiregridHostEnv) =>
-  Layer.merge(
-    InputLogTable.layer({
-      streamOptions: {
-        url: durableStreamUrl(
-          env.durableStreamsBaseUrl,
-          `${env.namespace}.workbench.dd-serialization.input-log`,
-        ),
-        contentType: "application/json",
-      },
-    }),
-    CursorTable.layer({
-      streamOptions: {
-        url: durableStreamUrl(
-          env.durableStreamsBaseUrl,
-          `${env.namespace}.workbench.dd-serialization.cursor`,
-        ),
-        contentType: "application/json",
-      },
-    }),
-  )
+const cursorTableLayer = (env: TinyFiregridHostEnv) =>
+  CursorTable.layer({
+    streamOptions: {
+      url: durableStreamUrl(
+        env.durableStreamsBaseUrl,
+        `${env.namespace}.workbench.dd-serialization.cursor`,
+      ),
+      contentType: "application/json",
+    },
+  })
 
 export const durableDeferredAndSerializationHost = (
   env: TinyFiregridHostEnv,
 ): Layer.Layer<FiregridHost, unknown> => {
-  const tables = workbenchTablesLayer(env)
+  const tables = cursorTableLayer(env)
   const adapter = defaultProductionAdapterLayer()
 
   const workflowLayer = Layer.merge(

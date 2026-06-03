@@ -1,124 +1,128 @@
 # tf-ogoj — DurableDeferred + per-key serialization workbench (trace evidence)
 
 - **Date:** 2026-06-02
-- **Kind:** tiny-firegrid WORKBENCH finding (methodology.md "The workbench pattern"). The
-  trace is the deliverable; this prose interprets confirm/reject. The sim emits **no**
-  `claimStatus`/verdict object.
+- **Kind:** tiny-firegrid WORKBENCH finding. The trace is the deliverable; this prose
+  interprets confirm/reject. No `claimStatus`/verdict object in the sim.
 - **Sim:** `packages/tiny-firegrid/src/simulations/durable-deferred-and-serialization/`
-- **Run:** `2026-06-02T23-54-22-805Z__durable-deferred-and-serialization`
-  (`packages/tiny-firegrid/.simulate/runs/<runId>/trace.jsonl`)
-- **Backs:** `docs/sdds/SDD_FIREGRID_RUNTIME_ORG_AND_BODY_SHAPE_2026-06-02.md` §2 (the
+- **Runs:** v1 (confounded) `2026-06-02T23-54-22-805Z`; **v2 (isolated, authoritative)
+  `2026-06-03T00-34-47-402Z`** (`packages/tiny-firegrid/.simulate/runs/<runId>/trace.jsonl`)
+- **Backs:** `docs/sdds/SDD_FIREGRID_RUNTIME_ORG_AND_BODY_SHAPE_2026-06-02.md` §2.1 (the
   "`signal.ts` is a second implementation of the `WorkflowEngine` seam" reframe) and §2.4
-  (per-`contextId` serialization is an OPEN gap, not given by `idempotencyKey + cursor`).
+  (per-`contextId` serialization).
 
-## What the sim does
+## Calibration note — v1 was confounded; this finding is the isolated v2
 
-Host composes the REAL `FiregridRuntime` factory and overrides only the inbound
-session-input channels to route public prompts to two workbench workflows on the real
-`DurableStreamsWorkflowEngine`. No fakes; the H2 workflow drives a real ACP example-agent
-spawn through the production codec adapter (one `open_byte_pipe` span). Driver is
-`@firegrid/client-sdk`-only.
+The **v1** run measured a race in the **sim's own channel seq-assignment**
+(`nextSeq = count(rows)` then `insertOrGet`) — a workbench artifact, not production. It
+made the wrong headline ("`idempotencyKey + cursor` does not serialize → data loss"). v2
+**removes that confounder entirely**: there is no input-log and no count-then-insert; the
+channel just `execute`s the workflow with the input in the payload, so the **only shared
+mutable state is the per-`contextId` cursor**. The conclusion below **reverses** v1's
+cursor claim and isolates the *real* hazard.
 
 ## H1 — `DurableDeferred` await-once rides the real engine — **CONFIRMED**
 
 A `workbench.deferred-gate` workflow makes a `DurableDeferred`, awaits it, and a second
-public prompt resolves it via the standard `DurableDeferred.succeed(token)` combinator. The
-trace shows the round-trip on the **real** engine, in order:
+public prompt resolves it via `DurableDeferred.succeed(token)`. The round-trip runs on the
+**real** `DurableStreamsWorkflowEngine`: `firegrid.workflow_engine.deferred.result`
+(undefined → suspend) → `…deferred.done` (external resolve) → `…deferred.result` (resolved →
+resume) → the body completes with the value (v2: `deferred.result`×2, `deferred.done`×1).
+This makes §2.1 observable: the standard `@effect/workflow` combinator delegates to
+`engine.deferredResult`/`engine.deferredDone` (`DurableDeferred.ts:114,176`), and Firegrid's
+engine **implements that seam** (`engine-runtime.ts:433,458`). `signal.ts`'s
+`awaitSignal`/`sendSignal` are a second implementation of it. **H1 confirms the reframe's
+foundation.**
 
-| trace | span | meaning |
+## H2 — per-`contextId` serialization under CONCURRENT inputs — **two findings, one reversal**
+
+Driver fires **6 concurrent** same-`contextId` prompts (`idempotencyKey` `h2-0..h2-5`,
+`Effect.all({concurrency: "unbounded"})`). The per-event workflow body (keyed
+`(contextId,inputKey)`) reads then advances the durable cursor, then `startOrAttach` +
+`send`. Trace facts (v2):
+
+**(1) The durable cursor SERIALIZES — v1 reversed.** The 5 h2 executions that drove a body
+ran **concurrently** (all `workbench.serialization.body` spans start within ~1 ms and fully
+overlap, ~315 ms each) — yet each read a **distinct, sequential** `cursor_at_entry`:
+
+| body | `cursor_at_entry` | `cursor_after` |
 |---|---|---|
-| L41 | `firegrid.workflow_engine.deferred.result` (`input-gate`) | first read → **undefined** |
-| L42 | `workbench.deferred_gate.body` (`phase=awaiting`) | body **suspends** (`Workflow.suspend`) |
-| L55 | `firegrid.workflow_engine.deferred.done` (`input-gate`) | external resolve → `engine.deferredDone` |
-| L59 | `firegrid.workflow_engine.deferred.result` (`input-gate`) | resume → reads the **stored exit** |
-| L60 | `workbench.deferred_gate.body` (`phase=resumed`, `resolved_value=tf-ogoj-h1-resolved-value`) | body **completes** with the value |
+| h2-1 | 0 | 1 |
+| h2-2 | 1 | 2 |
+| h2-3 | 2 | 3 |
+| h2-4 | 3 | 4 |
+| h2-5 | 4 | 5 |
+| terminal | 5 | 6 |
 
-This is exactly the §2.1 claim made observable: the standard `@effect/workflow`
-`DurableDeferred` combinator delegates to `engine.deferredResult`/`engine.deferredDone`
-(`DurableDeferred.ts:114,176`), and **Firegrid's `DurableStreamsWorkflowEngine` implements
-that seam** (`engine-runtime.ts:433,458`). `signal.ts`'s `awaitSignal`/`sendSignal` duplicate
-this — they are a second implementation beside a seam Firegrid already implements. **H1
-confirms the simplifying hypothesis's foundation.**
+No repeated reads, no lost updates — the cursor advanced cleanly 0→6 under genuine
+concurrency. The durable-table read-modify-write on a **single row** is serialized by the
+durable-streams transactional backend (the `awaitTxId` commit path), so the cursor is **not**
+the per-key hazard v1 claimed. **v1's "cursor doesn't serialize" was an artifact of the
+sim's seq-race, not the cursor.**
 
-## H2 — per-`contextId` serialization under CONCURRENT inputs — **REJECTED** (the load-bearing result)
+**(2) The REAL per-`contextId` race is the adapter `startOrAttach` TOCTOU.** All **6**
+`firegrid.unified.adapter.start_or_attach` spans are for the **one** contextId, but the trace
+shows **5 distinct `open_byte_pipe` spawns and 5 distinct `firegrid.process.id`s** — i.e.
+**five `claude-agent` processes were spawned for one logical session** (four leaked). Cause:
+`ProductionCodecAdapterLive.startOrAttach` does a non-atomic `Ref.get(registry)` → `if
+(existing) return` → *build/spawn* → `Ref.update(registry, set)`
+(`codec-adapter.ts:408-440`). Five concurrent per-event executions all read an empty registry
+before any committed, so all five spawned. **This is exactly the production TOCTOU
+`runtime-context.ts:66` says the parked body's `idempotencyKey` `(contextId, attempt)`
+prevents** — "kills the production TOCTOU that spawned two `claude-agent-acp` processes for
+one logical session." The **single-execution parked body (B) gets a single `startOrAttach`
+for free; the per-event shape (A), with N executions per `contextId`, re-introduces the
+race.**
 
-c71h drove inputs **sequentially** and observed `seq === cursor.consumed` every time. This sim
-fires **6 concurrent** same-`contextId` prompts (`idempotencyKey` `h2-0..h2-5`,
-`Effect.all({concurrency: "unbounded"})`). The trace shows the `idempotencyKey + cursor` shape
-does **NOT** serialize them — it **loses data**:
+**(3) The client (`firegrid.ts`) did NOT serialize the prompts.** All 6
+`session_prompt.append` spans start within ~1 ms; the per-handle `session.prompt` path is
+stateless (no mutex/queue) — so the concurrency was real, not masked upstream. One of the 6
+(`h2-0`) returned its `execute({discard})` in ~4.5 ms without driving a body (the other 5
+joined their body fibers, ~333 ms) — a minor engine artifact under concurrency (5 of 6
+concurrent discard-executes drove a body); it does not affect findings (1) or (2).
 
-- **Channel-level seq race → silent input loss.** Each concurrent append computes its seq as
-  `nextSeq = count(inputLog rows for contextId)` then `insertOrGet`s `${contextId}:${seq}`. All
-  six raced **before any row committed**, so all six read count `0` → all assigned **seq 0** →
-  all wrote key `${contextId}:0`. The trace shows **1 `Inserted` + 5 `Found`** on the input-log
-  table: **five of the six inputs were silently deduplicated away.** (Read-count-then-write is a
-  textbook lost-update race; `insertOrGet`'s dedup turns it into *silent loss*, not an error —
-  there are **zero** error/`die` spans in the run.)
-- **Workflow-level: no ordered serialization.** Seven `workbench.serialization.execute` calls
-  reached the engine (6 h2 + 1 terminal), creating **7 distinct executions** (distinct
-  `idempotencyKey`s) — but only **2 bodies ran** (`workbench.serialization.body` = 2: the one
-  surviving prompt at seq 0, and the terminal at seq 1). The cursor advanced **exactly once**
-  (`advance_cursor` = 1; `consumed` 0→1). So `Workflow.idempotencyKey` did **not** turn six
-  concurrent inputs into an ordered, each-advances-the-cursor sequence; it created six racing
-  executions that collapsed onto the single surviving input row.
+### Net for §2.4 / §0.1 (corrected, decision-grade)
 
-**Interpretation:** `Workflow.idempotencyKey + cursor` is the **execution-identity + state**
-shape, **not** a per-`contextId` serialization guarantee. Under concurrency it neither orders
-nor preserves the inputs. This **rejects** the assumption the v1 SDD promoted to a fact and
-**confirms** SDD §2.4 / the tf-o8zu review finding 4: per-key serialization is a **real open
-capability gap** that needs an explicit per-key **owner / atomic-append** discipline at the
-**engine seam** — and B "gets it free" only by being the canon-banned single parked body, so
-the gap favors **neither** `signal.ts` **nor** B.
-
-> Honest scope note: the channel-level seq race (1 inserted / 5 found, deterministic given the
-> non-atomic read-then-write) is the **solid, reproducible** load-bearing datum. The
-> workflow-level "7 executions created but only 2 drove a body (no errors)" is reported as
-> observed; the precise reason the five collapsed/undriven executions did not each emit a body
-> (lazy `discard` drive vs. teardown timing in the embedded sim) is a secondary detail and is
-> **not** load-bearing — under either reading, **no clean per-key serialization occurred and
-> inputs were lost**. The fix is the same: an explicit per-key owner / atomic append, not a
-> seq-count race.
+The per-`contextId` serialization question splits cleanly:
+- **Cursor / durable state: serializes** (durable-streams single-row tx). The per-event
+  `(state, event)` cursor is **safe** under concurrency. So §2.4's worry was mis-located by
+  v1: `idempotencyKey + cursor` *state* is fine.
+- **Process/session lifecycle: races under the per-event shape.** The adapter
+  `startOrAttach` registry is an **in-memory `Ref` TOCTOU** that the parked body (B) hides
+  behind one execution per `contextId`. **Option A's real cost is making `startOrAttach`
+  idempotent/atomic per `contextId`** (a per-key spawn lock, or an atomic get-or-create on
+  the registry) — a cost B got for free. This is a concrete, nameable §0.1 input that the v1
+  framing missed entirely, and it is *more* useful than the v1 "rejection."
 
 ## H3 — non-clock `DurableDeferred` crash-recovery — **public-surface-blocked (not driven)**
 
-The §2.3 question — does the engine resume a workflow that has an already-written **non-clock**
-deferred row if the producer crashes *after* writing the row but *before* the trailing
-`resume`? — is **not reachable from the airgapped public client surface** (the same class c71h
-marked public-surface-blocked: it needs host generation teardown/recovery controls the client
-SDK does not expose). **No crash was faked.** Source-grounded status:
+Unchanged from v1: not reachable from the airgapped public client surface; no crash faked.
+Source status: deferred-row **persistence is real** (`engine.deferredDone` upserts,
+`engine-runtime.ts:473-482`; `deferredResult` reads, `:433-440`), but **resume-on-recovery
+for non-clock deferreds does NOT exist** — startup recovery runs only
+`recoverPendingClockWakeups` (`:149-159,527`). The proof belongs in a runtime-package engine
+test + the fix (extend `recoverPendingClockWakeups` to the `deferreds` table). SDD §6
+confirm-item.
 
-- **Persistence is real** [read]: `engine.deferredDone` upserts the deferred row
-  (`engine-runtime.ts:473-482`); `deferredResult` reads it on resume (`:433-440`).
-- **Resume-on-recovery for non-clock deferreds does NOT exist today** [read]:
-  `makeWorkflowEngine`'s startup recovery runs **only** `recoverPendingClockWakeups`
-  (`engine-runtime.ts:149-159,527`), which sweeps the `clockWakeups` table. There is no startup
-  sweep over the `deferreds` table.
+## Does the simplifying hypothesis hold?
 
-**Where the proof belongs:** a runtime-package engine test
-(`packages/runtime/test/workflow-engine/`) that writes a non-clock deferred row, drops the
-in-process resume, restarts the engine, and asserts the waiter resumes — paired with the fix
-(extend `recoverPendingClockWakeups` to also re-arm pending `deferreds`, or generalize to a
-`recoverPendingWakeups` over both tables). This is on the SDD §6 confirm-before-building list.
-
-## Net: does the simplifying hypothesis hold?
-
-**Yes for the seam reframe (H1), and the serialization caveat is now data-backed (H2).**
-- H1 **confirms** `DurableDeferred` rides the real engine seam Firegrid implements → `signal.ts`'s
-  await/resolve is a second implementation that **dissolves onto the seam** (SDD §2.1-2.2).
-- H2 **rejects** "`idempotencyKey + cursor` serializes" → the per-`contextId` serialization gap is
-  **real and open**, belongs to the engine seam, and **favors neither option A's cursor nor
-  option B's `signal.ts`** (SDD §2.4). A successful rejection: the SDD no longer rests on an
-  unproven serialization claim.
-- H3 is honestly **deferred** to a runtime-package engine test + the named engine fix (SDD §2.3).
+- **H1 — YES.** `DurableDeferred` rides the real engine seam Firegrid implements → `signal.ts`
+  await/resolve dissolves onto the seam (§2.1-2.2).
+- **H2 — corrected.** The cursor serializes; the per-event shape's real concurrency hazard is
+  the **adapter `startOrAttach` TOCTOU**, which §0.1 option A must close (and B avoids by
+  construction). The SDD no longer rests on the v1 (confounded) "cursor doesn't serialize"
+  claim.
+- **H3 — deferred** to a runtime-package engine test + the named engine fix (§2.3).
 
 ## Sources
 
 `packages/tiny-firegrid/src/simulations/durable-deferred-and-serialization/{host,driver,index}.ts` ·
-trace `runs/2026-06-02T23-54-22-805Z__durable-deferred-and-serialization/trace.jsonl`
-(H1: L41/L42/L55/L59/L60; H2: `serialization.execute`×7, `serialization.body`×2, inputLog
-inserted=2/found=5, `advance_cursor`×1, `open_byte_pipe`×1) ·
-`repos/effect/packages/workflow/src/DurableDeferred.ts:102-122,176,431-458` ·
-`repos/effect/packages/workflow/src/WorkflowEngine.ts:61,140-170` ·
-`packages/runtime/src/engine/internal/engine-runtime.ts:149-159,433-440,458-484,527` ·
-`packages/runtime/src/engine/internal/table.ts:53-77` ·
+v2 trace `runs/2026-06-03T00-34-47-402Z__durable-deferred-and-serialization/trace.jsonl`
+(H1 `deferred.result`×2/`deferred.done`×1; H2 `serialization.body`×6 with `cursor_at_entry`
+0–5 distinct; `adapter.start_or_attach`×6 same contextId; `open_byte_pipe`×5 + 5 distinct
+`firegrid.process.id`; `session_prompt.append`×6 within ~1 ms) ·
+`packages/runtime/src/unified/codec-adapter.ts:408-440` (the `startOrAttach` `Ref` TOCTOU) ·
+`packages/runtime/src/unified/subscribers/runtime-context.ts:66` (idempotencyKey kills the TOCTOU) ·
+`packages/client-sdk/src/firegrid.ts:1340-1351` (stateless per-handle prompt path) ·
+`repos/effect/packages/workflow/src/DurableDeferred.ts:102-122,176` ·
+`packages/runtime/src/engine/internal/engine-runtime.ts:149-159,290-294,433-440,458-484,527` ·
 `docs/sdds/SDD_FIREGRID_RUNTIME_ORG_AND_BODY_SHAPE_2026-06-02.md` §2.1-2.4, §9.
