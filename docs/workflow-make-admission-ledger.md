@@ -4,21 +4,22 @@ The workflow-identity admission guard (`firegrid-workflow-driven-runtime.WORKFLO
 runtime design constraint **C2**) blocks net-new production `Workflow.make` definitions.
 New owner workflows must be SDD-justified.
 
-When Semgrep was retired (static-analysis consolidation, phase 2), this guard moved
-from the Semgrep ERROR baseline (`semgrep-error-baseline.json`,
-`firegrid-no-unclassified-workflow-make`) to the `effect-quality` ts-morph count
-ratchet — `workflowMakeSiteCount` in `scripts/effect-artifacts/quality-metrics.mjs`,
-grandfathered at the count below in `effect-quality-metrics-baseline.json`. The
-ratchet fails CI on any increase (a new `Workflow.make`); to add a genuine owner
-workflow, update the SDD, add the justification here, and re-baseline with
-`pnpm run lint:effect-quality:baseline`.
+This guard has moved twice. Semgrep `firegrid-no-unclassified-workflow-make`
+(ERROR baseline) → the `effect-quality` ts-morph count ratchet
+(`workflowMakeSiteCount`) → **(tf-q6vf)** the AST-precise ESLint rule
+`local/no-unclassified-workflow-make`. The ratchet + its baseline JSON were
+deleted; the guard is now a **per-site annotation gate**: every production
+`Workflow.make(...)` must carry a nearby `// workflow-make-admission` comment.
+A net-new `Workflow.make` without the annotation fails `pnpm run lint`. To add a
+genuine owner workflow: update the SDD, add the justification to the list below,
+and annotate the call site with `// workflow-make-admission`.
 
-> Note on coverage vs. the old Semgrep rule: the count ratchet scopes to
-> `packages/**/src` (production, excluding `bin/`), so it cannot pin a finding to a
-> specific path+line. It preserves the load-bearing "no net-new `Workflow.make`"
-> guarantee; the per-site justifications are recorded here instead.
+> Coverage note: the ESLint rule pins each finding to its exact path+line (an
+> improvement over the count ratchet, which could only scope to `packages/**/src`).
+> The annotation makes the admission decision visible at the call site; this ledger
+> records the per-site justifications.
 
-## Grandfathered owner workflows (7, baseline `workflowMakeSiteCount: 7`)
+## Owner workflows (7, each annotated `// workflow-make-admission`)
 
 - `packages/runtime/src/unified/subscribers/runtime-context.ts:66` — Owned durable runtime-context session workflow: one execution per context attempt, parks on Workflow.suspend while waiting for session input signals, owns adapter lifecycle start/send/deregister.
 - `packages/runtime/src/unified/subscribers/permission-and-tool.ts:90` — Owned durable permission wait workflow: records the permission request, parks on the decision signal, then relays the decision back to the owning runtime-context session workflow.

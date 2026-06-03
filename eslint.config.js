@@ -123,6 +123,10 @@ const processEnvAllowComment = "effect-quality-allow-process-env"
 // Pure value-builders / non-durable metadata / CLI filename stamps may default
 // to wall-clock at a documented boundary; durable Effect code must read Clock.
 const wallClockAllowComment = "effect-quality-allow-wall-clock"
+// C2 / WORKFLOW_ADMISSION: every production `Workflow.make` is an owned durable
+// workflow that must be SDD-justified in docs/workflow-make-admission-ledger.md.
+// The admission comment is the per-site gate (replaces the retired count ratchet).
+const workflowMakeAdmissionComment = "workflow-make-admission"
 
 const getStaticPropertyName = (node) => {
   if (node?.type !== "MemberExpression" || node.computed) {
@@ -940,6 +944,42 @@ const local = {
         }
       },
     },
+    // Re-homed C2 / WORKFLOW_ADMISSION guard from the retired effect-quality
+    // ratchet (`workflowMakeSiteCount`). Was a grandfathered COUNT (fail-on-
+    // increase) — now a per-site annotation gate: every production `Workflow.make`
+    // must carry a nearby `// workflow-make-admission` comment, forcing a net-new
+    // owner workflow to add its ledger justification. Pins the finding to
+    // path+line (which the count ratchet could not). See
+    // docs/workflow-make-admission-ledger.md.
+    "no-unclassified-workflow-make": {
+      meta: {
+        type: "problem",
+        docs: { description: "Require a workflow-make-admission ledger annotation on every production Workflow.make." },
+        schema: [],
+        messages: {
+          noUnclassified:
+            "Net-new `Workflow.make` is an owned durable workflow (C2 / WORKFLOW_ADMISSION). SDD-justify it in docs/workflow-make-admission-ledger.md and annotate this site with `// workflow-make-admission`.",
+        },
+      },
+      create(context) {
+        return {
+          CallExpression(node) {
+            const callee = node.callee
+            if (
+              callee.type === "MemberExpression" &&
+              !callee.computed &&
+              callee.object?.type === "Identifier" &&
+              callee.object.name === "Workflow" &&
+              callee.property?.type === "Identifier" &&
+              callee.property.name === "make" &&
+              !hasNearbyAllowComment(context, node, [workflowMakeAdmissionComment])
+            ) {
+              context.report({ node, messageId: "noUnclassified" })
+            }
+          },
+        }
+      },
+    },
     // firegrid-remediation-hardening.STATIC_QUALITY.14 (relocated from ast-grep)
     "hrtime-number-arithmetic": {
       meta: {
@@ -1243,6 +1283,8 @@ export default tseslint.config(
       "local/no-for-of-in-source": "error",
       "local/no-any-no-context-cast": "error",
       "local/no-detached-promise-in-effect-sync": "error",
+      // re-homed C2 / WORKFLOW_ADMISSION guard (was ratchet workflowMakeSiteCount)
+      "local/no-unclassified-workflow-make": "error",
     },
   },
   {

@@ -252,8 +252,21 @@ Evaluated in Phase 3; none should move to ESLint:
 
 ### Resulting engine set
 ESLint (keystone: type-aware + custom `local/` + ported `local/sg-*`) ·
-`effect-quality` ts-morph ratchet · dependency-cruiser (import graph) · knip
-(reachability) · jscpd (cross-file duplication) · effect-language-service (Effect
-diagnostics) · the irreducible bespoke filesystem/baseline gates. The four
-overlapping pattern engines (ESLint, Semgrep, ast-grep, bespoke substring) are now
-**one** (ESLint) plus the baseline/structure gates ESLint structurally can't host.
+dependency-cruiser (import graph) · knip (reachability) · jscpd (cross-file
+duplication) · effect-language-service (Effect diagnostics) · the irreducible
+bespoke filesystem/structure gates. The four overlapping pattern engines (ESLint,
+Semgrep, ast-grep, bespoke substring) are now **one** (ESLint) plus the structure
+gates ESLint structurally can't host.
+
+### `effect-quality` ts-morph ratchet — RETIRED (tf-q6vf)
+The count ratchet (`scripts/effect-artifacts/quality-metrics.mjs`,
+`effect-quality-metrics-{check,baseline}.mjs`, `effect-quality-metrics-baseline.json`,
+the `lint:effect-quality` gate) was **deleted** — the last baseline-JSON gate and
+the last `.ts`/`.mjs` in `scripts/`. Per-pattern source-verification showed its 20
+metrics were a mix of genuine guards, over-matching heuristics (e.g.
+`manualTaggedError` flagged every `_tag` discriminated union; `mutableStateInEffectGen`
+flagged idiomatic `Ref.update` Map copies + `URLSearchParams.set`), legitimate
+patterns, and already-covered cases. The genuine guards — including the C2
+`Workflow.make` admission gate (`#14` above), now `local/no-unclassified-workflow-make`
+— moved to AST-precise strict-0 `local/*` ESLint rules. Full mapping:
+`docs/contributing/effect-quality-metrics.md`.

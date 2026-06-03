@@ -63,6 +63,7 @@ export const RuntimeContextSessionResultSchema = Schema.Struct({
   reachedTerminal: Schema.Boolean,
 })
 
+// workflow-make-admission: see docs/workflow-make-admission-ledger.md
 export const RuntimeContextSessionWorkflow = Workflow.make({
   name: "unified.runtime-context-session",
   payload: RuntimeContextSessionPayloadSchema,

@@ -90,7 +90,7 @@ primary on its branch stranded decision state and produced recurring
 concurrent-beads-sync races; the convention got forgotten, so it is now
 enforced structurally. Worktrees are siblings in `../firegrid-worktrees/`
 (NOT in-root — keeps the second tree out of pnpm-workspace / jscpd / knip /
-effect-quality / depcruise scanners; sibling = zero carve-outs).
+depcruise scanners; sibling = zero carve-outs).
 
 ```bash
 bash scripts/task-enter.sh <bead-id> <slug> [--class codex|sidecar]
@@ -186,14 +186,17 @@ pnpm preflight
 
 `pnpm preflight` (`tooling/src/preflight.ts`) is the canonical gate: `test`,
 `typecheck`, `effect:diagnostics`, `lint`, `lint:dead`, `lint:dup`, `lint:deps`,
-`lint:effect-quality`, `trace:seams:ukv`, run in parallel with a full summary.
-`pnpm run verify` is an alias of it. CI runs the same gates split across parallel
-jobs (see `docs/TOOLING.md`).
+`trace:seams:ukv`, run in parallel with a full summary. `pnpm run verify` is an
+alias of it. CI runs the same gates split across parallel jobs (see
+`docs/TOOLING.md`).
 
-The Effect-quality metric ratchet (`lint:effect-quality`) refuses regressions
-in counts like `forOfInPackageSourceCount`, `processEnvOutsideBinCount`, and
-`anyNoContextCastCount`. See `docs/contributing/effect-quality-metrics.md` for
-the full list, what each metric counts, and how to fix common regressions.
+Effect-quality enforcement is now AST-precise strict-0 `local/*` ESLint rules
+(run under `lint`): `no-new-date-iso`, `no-node-crypto-import`,
+`no-new-durable-stream`, `no-for-of-in-source`, `no-any-no-context-cast`,
+`no-detached-promise-in-effect-sync`, and the C2 `no-unclassified-workflow-make`
+admission gate. The ts-morph count ratchet + its baseline JSON were deleted
+(tf-q6vf) — see `docs/contributing/effect-quality-metrics.md` for the full
+metric→rule mapping and what was dropped.
 
 ## Coordinator Cadence via cmux
 

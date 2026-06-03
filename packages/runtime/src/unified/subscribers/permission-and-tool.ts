@@ -87,6 +87,7 @@ export const PermissionRoundtripResultSchema = Schema.Struct({
   decision: PermissionDecisionSchema,
 })
 
+// workflow-make-admission: see docs/workflow-make-admission-ledger.md
 export const PermissionRoundtripWorkflow = Workflow.make({
   name: "unified.permission-roundtrip",
   payload: PermissionRoundtripPayloadSchema,
@@ -206,6 +207,7 @@ export const ToolDispatchResultSchema = Schema.Struct({
   resultJson: Schema.String,
 })
 
+// workflow-make-admission: see docs/workflow-make-admission-ledger.md
 export const ToolDispatchWorkflow = Workflow.make({
   name: "unified.tool-dispatch",
   payload: ToolDispatchPayloadSchema,

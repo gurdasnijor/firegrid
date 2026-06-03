@@ -734,6 +734,7 @@ export const makeFiregridAgentToolExecutor = (): Effect.Effect<FiregridAgentTool
 // wraps the arm in one `Activity.make` and returns — NO relay, NO
 // `SignalTable`.
 
+// workflow-make-admission: see docs/workflow-make-admission-ledger.md
 export const McpToolDispatchWorkflow = Workflow.make({
   name: "unified.mcp-tool-dispatch",
   payload: ToolDispatchPayloadSchema,
