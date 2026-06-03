@@ -301,6 +301,59 @@ const makeSourceRegexBanRule = () => ({
 // file matching several scope blocks gets each scope's full pattern list.
 const sourceRegexBanRule = makeSourceRegexBanRule()
 
+// tf-1kuk: AST upgrade of the pure import-path bans (previously source-text regex
+// via sourceRegexBanRule). Matches each `pattern` against the resolved module
+// specifier of import/export declarations only — so it can never false-positive
+// on a path that merely appears in a comment or string literal. Same options
+// shape (per-scope `{ pattern, flags?, message }[]`) and same distinct-id-per-
+// scope registration; the `pattern` is now the module-specifier regex (the
+// `from\s+"…"` wrapper is dropped).
+const makeBannedImportPathRule = () => ({
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Disallow imports whose module specifier matches a banned path pattern (AST, import-source only).",
+    },
+    schema: [
+      {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            pattern: { type: "string" },
+            flags: { type: "string" },
+            message: { type: "string" },
+          },
+          required: ["pattern", "message"],
+          additionalProperties: false,
+        },
+      },
+    ],
+    messages: { banned: "{{message}}" },
+  },
+  create(context) {
+    const entries = (context.options[0] ?? []).map((e) => ({
+      re: new RegExp(e.pattern, e.flags ?? ""),
+      message: e.message,
+    }))
+    const check = (node) => {
+      const source = node?.source?.value
+      if (typeof source !== "string") return
+      for (const { re, message } of entries) {
+        if (re.test(source)) {
+          context.report({ node: node.source, messageId: "banned", data: { message } })
+        }
+      }
+    }
+    return {
+      ImportDeclaration: check,
+      ExportNamedDeclaration: check,
+      ExportAllDeclaration: check,
+    }
+  },
+})
+const bannedImportPathRule = makeBannedImportPathRule()
+
 const hrtimeTupleProperties = new Set(["startTime", "endTime", "duration"])
 const isHrtimeTupleIndexZero = (node) =>
   node?.type === "MemberExpression" &&
@@ -1067,8 +1120,8 @@ const local = {
     "sg-runtime-no-table-service-yield-outside-providers": sourceRegexBanRule,
     "sg-runtime-no-authority-registry-surface": sourceRegexBanRule,
     "sg-runtime-host-no-direct-source-collection-registration": sourceRegexBanRule,
-    "sg-runtime-no-host-internal-imports-outside-host": sourceRegexBanRule,
-    "sg-runtime-no-runtime-errors-imports-outside-runtime": sourceRegexBanRule,
+    "sg-runtime-no-host-internal-imports-outside-host": bannedImportPathRule,
+    "sg-runtime-no-runtime-errors-imports-outside-runtime": bannedImportPathRule,
     "sg-runtime-no-old-singleton-authority-tag-keys": sourceRegexBanRule,
     "sg-runtime-no-table-type-parameters-outside-authorities": sourceRegexBanRule,
     "sg-runtime-no-exported-authority-registry-api": sourceRegexBanRule,
@@ -1085,8 +1138,8 @@ const local = {
     "sg-transforms-purity-import-boundary": sourceRegexBanRule,
     "sg-shape-c-runtime-context-no-workflow-machinery": sourceRegexBanRule,
     "sg-composition-no-legacy-imports": sourceRegexBanRule,
-    "sg-host-sdk-imports": sourceRegexBanRule,
-    "sg-no-numbered-runtime-subpath": sourceRegexBanRule,
+    "sg-host-sdk-imports": bannedImportPathRule,
+    "sg-no-numbered-runtime-subpath": bannedImportPathRule,
   },
 }
 
@@ -2210,12 +2263,12 @@ export default tseslint.config(
       "local/sg-host-sdk-imports": [
         "error",
         [
-          { pattern: 'from\\s+"@firegrid/runtime/kernel"', message: "host-sdk must not import @firegrid/runtime/kernel (runtime-internal mixed barrel). Use a narrow semantic subpath." },
-          { pattern: 'from\\s+"@firegrid/runtime/_archive', message: "host-sdk must not import @firegrid/runtime/_archive/* (time-boxed holding pen pending deletion)." },
-          { pattern: 'from\\s+"@firegrid/runtime/workflow-engine[/"]', message: "host-sdk must not import @firegrid/runtime/workflow-engine (Wave D legacy bridge root). Use a Shape D subscriber subpath." },
-          { pattern: 'from\\s+"@firegrid/runtime/streams[/"]', message: "host-sdk must not import @firegrid/runtime/streams (Wave D-D legacy bridge root). Use route-based observation." },
-          { pattern: 'from\\s+"@effect/workflow', message: "host-sdk must not import @effect/workflow; workflow machinery is owned by runtime Shape D layers." },
-          { pattern: 'from\\s+"@firegrid/runtime"', message: "host-sdk must not import the @firegrid/runtime root barrel; use narrow semantic subpaths." },
+          { pattern: '^@firegrid/runtime/kernel$', message: "host-sdk must not import @firegrid/runtime/kernel (runtime-internal mixed barrel). Use a narrow semantic subpath." },
+          { pattern: '^@firegrid/runtime/_archive', message: "host-sdk must not import @firegrid/runtime/_archive/* (time-boxed holding pen pending deletion)." },
+          { pattern: '^@firegrid/runtime/workflow-engine(?:/|$)', message: "host-sdk must not import @firegrid/runtime/workflow-engine (Wave D legacy bridge root). Use a Shape D subscriber subpath." },
+          { pattern: '^@firegrid/runtime/streams(?:/|$)', message: "host-sdk must not import @firegrid/runtime/streams (Wave D-D legacy bridge root). Use route-based observation." },
+          { pattern: '^@effect/workflow', message: "host-sdk must not import @effect/workflow; workflow machinery is owned by runtime Shape D layers." },
+          { pattern: '^@firegrid/runtime$', message: "host-sdk must not import the @firegrid/runtime root barrel; use narrow semantic subpaths." },
         ],
       ],
     },
@@ -2228,7 +2281,7 @@ export default tseslint.config(
     rules: {
       "local/sg-no-numbered-runtime-subpath": [
         "error",
-        [{ pattern: 'from\\s+"@firegrid/runtime/[1-7]-', message: "Numbered runtime subpaths are not part of the target tree; use semantic subpaths (@firegrid/runtime/tables/..., /subscribers/..., etc.)." }],
+        [{ pattern: '^@firegrid/runtime/[1-7]-', message: "Numbered runtime subpaths are not part of the target tree; use semantic subpaths (@firegrid/runtime/tables/..., /subscribers/..., etc.)." }],
       ],
     },
   },
@@ -2525,7 +2578,7 @@ export default tseslint.config(
     rules: {
       "local/sg-runtime-no-host-internal-imports-outside-host": [
         "error",
-        [{ pattern: '^\\s*(?:import|export)(?:\\s+type)?[^\\n]*\\sfrom\\s*["\'][^"\']*(?:^|/|\\.{1,2}/)host/(?:agent-tool-host-live|commands|config|config-live|host-owned-durable-tools|internal/[^"\']*|layers|raw-process-runtime|runtime-context-workflow|runtime-substrate|sync-run|types)(?:\\.ts)?["\']', flags: "m", message: "Direct import from a runtime host implementation file; use the host barrel (host/index.ts) or the public runtime-host subpath." }],
+        [{ pattern: '(?:^|/)host/(?:agent-tool-host-live|commands|config|config-live|host-owned-durable-tools|internal/.+|layers|raw-process-runtime|runtime-context-workflow|runtime-substrate|sync-run|types)(?:\\.ts)?$', message: "Direct import from a runtime host implementation file; use the host barrel (host/index.ts) or the public runtime-host subpath." }],
       ],
     },
   },
@@ -2537,7 +2590,7 @@ export default tseslint.config(
     rules: {
       "local/sg-runtime-no-runtime-errors-imports-outside-runtime": [
         "error",
-        [{ pattern: '^\\s*(?:import|export)(?:\\s+type)?[^\\n]*\\sfrom\\s*["\'](?:[^"\']*/runtime-errors(?:\\.ts)?|packages/runtime/src/runtime-errors(?:\\.ts)?|@firegrid/runtime/[^"\']*runtime-errors(?:\\.ts)?)["\']', flags: "m", message: "runtime-errors.ts is runtime-internal; external packages must use public @firegrid/runtime exports." }],
+        [{ pattern: '(?:^|/)runtime-errors(?:\\.ts)?$', message: "runtime-errors.ts is runtime-internal; external packages must use public @firegrid/runtime exports." }],
       ],
     },
   },
