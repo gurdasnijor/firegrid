@@ -2,6 +2,10 @@
 
 - **Date:** 2026-06-02
 - **Bead:** tf-ogoj (design doc only — no runtime/src edits)
+- **Revision:** **v2** — folds the §2.1 sharper frame (`signal.ts` is a *second implementation* of the
+  `WorkflowEngine` seam Firegrid already implements, not "reinvention + a thin helper to keep") and the
+  tf-o8zu AMEND review (`docs/reviews/2026-06-02-tf-ogoj-sdd-review.md`); adds §9 (the confirming
+  tf-ogoj workbench sim, H1/H2/H3).
 - **Status:** DESIGN. Successor to `docs/sdds/Firegrid Composition-Type-Driven-Greenfield-SDD.md`
   (the "Composition SDD"). It **extends** that doc — it does not replace it. It writes
   the section the Composition SDD deliberately omits: (A) the RuntimeContext **body
@@ -172,6 +176,19 @@ reviews; restated honestly in the finding]:
   slice that exercises the permission/tool **relay** in the per-event shape (and a
   single-adapter production wiring) would close it — this is the natural next dispatch.
 
+**Re-marked cost accounting (per the §2.1 sharper frame — these correct two costs v1 mis-assigned to A):**
+- **(a) Recovery is NOT a cost of option A.** v1 implied A inherits a recovery burden. It does not:
+  `recoverPendingSignals` is **deleted**, and the residual non-clock-deferred recovery is a **small,
+  one-time extension of the engine sweep Firegrid already owns** (`recoverPendingClockWakeups`,
+  §2.3) that benefits **every** `DurableDeferred` user. It is engine-seam work, not RuntimeContext
+  body-shape work, and is the same cost under any shape that uses `DurableDeferred` for waits.
+- **(b) Per-`contextId` serialization favors NEITHER A nor B-via-`signal.ts`.** It is a real,
+  still-open engine-seam capability gap (§2.4). `signal.ts` does **not** provide it (its mailbox is
+  read by the single parked body, so "serialization" there is just "one consumer"); A's
+  `idempotencyKey + cursor` does **not** provide it either (§2.4). B "gets it free" **only** by being
+  the canon-banned single parked body. So this gap is **orthogonal** to the A-vs-B call and must not
+  be scored as a point for B or for keeping `signal.ts`. The sim's **H2** (§9) gathers the data.
+
 **This is a recommendation, not a decision.** The PO owns §0.1 because the alternative (B) is a
 canon amendment. This doc's organization model (§3) is written **A-shaped** but flags exactly
 which placements would change under B (the parked body + `signal.ts` mailbox would survive as a
@@ -232,60 +249,122 @@ The primitives, at source:
 | | per-event (A) | parked (B/C, today) |
 |---|---|---|
 | Body | `Workflow.make({ idempotencyKey: contextId:inputKey }).toLayer((p) => …)` — fresh execution per input, **returns** | `Workflow.make({ idempotencyKey: contextId:attempt })` one execution, `while(!terminal) { …; Workflow.suspend }` |
-| Keyed serialization | `idempotencyKey` ⇒ at-most-one execution per `(contextId,inputKey)` + a durable **consume cursor** row read O(1) | the single parked execution serializes by being the only consumer |
-| External input | a durable input fact row + an **arm** (`engine.execute({discard})` if missing else `engine.resume`) | `awaitSignal`/`readSignalsFor` over a bespoke `SignalTable` mailbox + `Workflow.suspend` |
-| Await-one (permission) | `DurableDeferred.await` / `succeed(token)` | `awaitSignal` / `sendSignal` (no arm) |
+| Execution identity + state | `idempotencyKey` ⇒ at-most-one execution per `(contextId,inputKey)` + a durable **consume cursor** row read O(1). **NOTE [read]:** this is the *execution-identity + state* shape, **NOT** a per-`contextId` serialization guarantee — `idempotencyKey` dedupes a chosen execution key, a cursor *observes/records* consume position; neither gives **atomic per-key append/owner** ordering under racing inputs (see caveat (c), §1, and §6 confirm-item; H2 of the tf-ogoj sim, §9, gathers the data) | the single parked execution serializes by being the only consumer of one mailbox |
+| Per-key serialization (the real gap) | **unproven** — needs an explicit per-`contextId` owner / atomic-append discipline (an engine-seam capability, §2.1), independent of A's body shape | "free" **only** by being the canon-banned single parked body |
+| External input | a durable input fact row + an **arm** — `engine.execute({discard})` if the keyed execution is missing, else the resolve rides `DurableDeferred.done` (both standard engine ops, §2.2) | `awaitSignal`/`readSignalsFor` over a bespoke `SignalTable` mailbox + `Workflow.suspend` |
+| Await-one (permission) | `DurableDeferred.await` / `succeed(token)` on the engine seam | `awaitSignal` / `sendSignal` (no arm) — the bespoke parallel impl |
 | Cleanup | terminal input ⇒ one execution that deregisters and returns | the parked body's final `deregister` after the loop ends |
 
-### THE VERDICT — is `signal.ts` reinventing `DurableDeferred` / is the per-key mailbox `DurableQueue`?
+### §2.1 The sharper frame — `WorkflowEngine` is a customization SEAM Firegrid already implements
 
-`signal.ts` bundles **five** things [read, `packages/runtime/src/unified/signal.ts`, verified in
-the tf-c71h work]. Decomposed against the vendored primitives:
+The earlier v1 framing ("`signal.ts` is mostly reinvention; keep the thin arm") **understated** the
+finding. The accurate frame is structural, and it changes the §0.1 cost accounting (below). It rests
+on three source facts:
 
-1. **`awaitSignal({ name })`** — point-read `SignalTable` for `${executionId}|${name}`, `Workflow.suspend`
-   if absent [read, `signal.ts:229-245`]. **≈ `DurableDeferred.await`** [read, `DurableDeferred.ts:102-122`]:
-   both park on a named durable completion keyed by `(executionId, name)` ≈ deferred token
-   `(workflowName, executionId, deferredName)`. **REINVENTION.** Canon even *names* `DurableDeferred`
-   as the admissible within-one-event await primitive [read·2, C4 `:349-351`].
-2. **`sendSignal({ workflow, executionId, name, value })` (no `arm`)** — write a signal row, then
-   `workflow.resume(executionId)` [read, `signal.ts:193-216`]. **≈ `DurableDeferred.succeed(token,
-   value)`** → `engine.deferredDone` → resume waiter [read, `DurableDeferred.ts:431-458`,
-   `WorkflowEngine.ts:151-153`]. **REINVENTION** of the resolve-and-resume half.
-3. **`armSession` — create-or-resume** [read, `signal.ts:140-164`]: `if finalResult set: return;
-   if execution missing: workflow.execute(payload, { discard:true }); else: workflow.resume`. This is
-   the **input-before-start arm** — the one thing `DurableDeferred` **cannot** do: `deferredDone`
-   resumes an **existing** waiter and `engine.resume` **no-ops a missing execution** [read,
-   `engine-runtime.ts:184-185`]. So arm is a **genuine, thin composition over engine
-   `execute({discard})`/`resume` + `Workflow.idempotencyKey`** — NOT a reinvented substrate.
-   **KEEP as a small named helper; do NOT keep the `SignalTable` it sits on.**
-4. **`readSignalsFor(executionId)` — read ALL rows for an execution, sorted by `recordedAt`**
-   [read, `signal.ts:220-227`]. This is the **many-events ordered mailbox** the parked body drains.
-   It is **neither** `DurableDeferred` (await-once) **nor** `DurableQueue` — it **IS** the
-   C2/C5-forbidden "durable deferred mailbox / replay cursor" the canon bans [read·2,
-   `runtime-design-constraints.md:290-293`, C4 `:349-351`]. Under A it **dissolves**: replaced by
-   `Workflow.idempotencyKey` (one execution per key) + a durable cursor row read O(1). **DELETE.**
-5. **`recoverPendingSignals` — startup sweep re-arming pending executions** [read,
-   `signal.ts:266-309`]. Needed **only because** wake-state lives in a bespoke `SignalTable` the
-   engine doesn't own. If awaits move to `DurableDeferred`, the engine's own deferred persistence +
-   resume-on-recovery covers it; the residual is a thin arm-recovery for the input-before-start case
-   (facts that arrived before the keyed execution existed). **SHRINKS to near-nothing.**
+1. **`WorkflowEngine` is a `Context.Tag` — a dependency-injection seam, not a fixed implementation**
+   [read, `WorkflowEngine.ts:189` is its sibling `WorkflowInstance` Tag; the engine Tag itself is the
+   `Context.Tag` consumed by every combinator]. Its interface **declares** the full durable-execution
+   vocabulary: `execute`/`poll`/`interrupt`/`resume`/`activityExecute`/`deferredResult`/`deferredDone`/
+   `scheduleClock` [read, `WorkflowEngine.ts:61, 88, 105, 113, 121, 140, 155, 175`].
+2. **The combinators are thin and DELEGATE to the Tag.** `DurableDeferred.await` →
+   `engine.deferredResult` then `Workflow.suspend` [read, `DurableDeferred.ts:112-119`];
+   `DurableDeferred.done` → `engine.deferredDone` [read, `DurableDeferred.ts:176` in `into`, `:418`
+   in `done`]; `DurableQueue` is itself built from `DurableDeferred` + a `PersistedQueueFactory`
+   [read, `DurableQueue.ts:121-125, 188-217`]. There is no behavior in the combinators that the
+   engine Tag does not back.
+3. **Firegrid ALREADY implements the entire seam.** `makeWorkflowEngine` [read,
+   `engine-runtime.ts:44`] returns an object providing `execute` [`:270`], `resume` [`:350`],
+   `deferredResult` [`:433`] (reads its **own** `deferreds` table, key `${executionId}/${deferredName}`,
+   schema `table.ts:53-77`), `deferredDone` [`:458`] (upserts that deferred row, then `resume`), and
+   `scheduleClock` [`:491`]. `DurableStreamsWorkflowEngine` **IS** the custom implementation bound
+   behind the standard `WorkflowEngine` Tag — the in-tree precedent for "inject **our** impl, use
+   **their** interfaces." Its `deferredResult`/`deferredDone` spans even self-label
+   `firegrid.seam.kind: "durability"` [read, `engine-runtime.ts:453, 486`].
 
-**Is the per-key mailbox already `DurableQueue`? NO** [read, `DurableQueue.ts`]. `DurableQueue` is
-**offer-a-job-to-a-worker-pool-and-park** (work distribution with offer-dedup + *unordered*
-concurrency) over `@effect/experimental/PersistedQueue` — a backend Firegrid does not currently
-wire. It does **not** provide per-`contextId` **ordered** serialization. The C1 "all mutations for
-the same key are serialized" guarantee comes from `Workflow.idempotencyKey` (one execution per key)
-+ the keyed cursor — exactly the tf-c71h shape — **not** from `DurableQueue`. (`DurableQueue` *would*
-fit a different concept: the **host-executed tool-dispatch** worker pool — many tool jobs drained by
-N workers, offer-deduped by `toolUseId`. That is an orthogonal, optional adoption, §3.)
+**Therefore `signal.ts` is not "reinvention with a thin helper worth keeping" — it is a SECOND
+implementation, built BESIDE the seam, of capabilities the engine interface already declares and
+`DurableStreamsWorkflowEngine` already implements.** Decomposed (each part dissolves):
 
-**Net verdict:** `signal.ts` is **mostly reinvention** of `DurableDeferred` (items 1, 2) wrapped
-around **one banned shape** (item 4) plus **one genuine thin helper** (item 3, the explicit arm)
-and **one consequence of the reinvention** (item 5). This **agrees with** the canon's
-explicit-arm-over-`DurableDeferred`-mailbox conclusion [read·2, reconcile §3, runtime-design-constraints
-F3 / tf-e5rf]: keep the *thin arm*, reject the *bespoke await/mailbox substrate*. The Composition SDD
-did not examine `signal.ts`; this is the one place this successor **adds a verdict** rather than
-extending an existing one.
+| `signal.ts` part [read] | What it duplicates | Fate |
+|---|---|---|
+| `awaitSignal({name})` (`:229-245`) | `DurableDeferred.await` → `engine.deferredResult`+suspend | **FOLD** — use the combinator on the seam |
+| `sendSignal` no-arm (`:193-216`) | `DurableDeferred.done/succeed` → `engine.deferredDone` | **FOLD** — use the combinator on the seam |
+| `armSession` create-or-resume (`:140-164`) | `engine.execute({discard})` (the create) + (for a known waiter) `DurableDeferred.done` (the resolve) | **FOLD to two standard engine ops** — see §2.2 |
+| `readSignalsFor` ordered mailbox (`:220-227`) | nothing in the seam (it is the C2/C5-banned cross-event mailbox) | **DELETE** — per-event execution + cursor (§3) |
+| `recoverPendingSignals` sweep (`:266-309`) | the engine's own recovery, which today sweeps only clock wakeups | **FOLD by extending the engine sweep** — see §2.3 |
+
+### §2.2 The "input-before-start arm" is two standard engine ops, not a bespoke helper
+
+v1 called the arm "a genuine thin helper to keep." Refined: the arm is the **call-site composition of
+two standard engine operations**, owning no substrate:
+- **Create-if-missing:** `Workflow.execute(payload, { discard:true })` — `discard:true` returns the
+  executionId and fire-and-forgets the body [read, `WorkflowEngine.ts:61-83`]. This is required
+  because **`DurableDeferred.done` can pre-store a completion row before the waiter exists but cannot
+  *arm/create* the workflow body** — its trailing `resume` no-ops against a missing execution [read,
+  `engine-runtime.ts:184-185`; review tf-o8zu finding 2]. So input-before-start genuinely needs the
+  `execute({discard})` create — but that is a **standard op**, not Firegrid substrate.
+- **Resolve-if-waiting:** `DurableDeferred.done(token, exit)` for the await-once case.
+
+Whether those two lines sit inline or behind a 5-line `arm()` helper is a triviality; **either way no
+`SignalTable` and no bespoke await/resolve code survive.** This is the precise, source-grounded form
+of the reconcile-proposal §3 / runtime-design-constraints F3 "explicit-arm-over-DurableDeferred-mailbox"
+conclusion [read·2].
+
+> **Keying nuance [read; review tf-o8zu finding 1]:** `signal.ts`'s `signalKey` is `${executionId}|${name}`
+> (`signal.ts:54, 83`); the `DurableDeferred` token + engine row carry `(workflowName, executionId,
+> deferredName)` (`DurableDeferred.ts:264`, `engine-runtime.ts:473`). The keyings are **semantically
+> equivalent within one workflow's execution namespace**, **not identical** — the deferred token also
+> carries `workflowName`. The v1 prose "same keying" is corrected to "semantically equivalent, not
+> identical."
+
+### §2.3 Recovery — persistence is proven, resume-on-recovery for non-clock deferreds is NOT (and is the engine fix site)
+
+v1 claimed the engine's "deferred persistence + resume-on-recovery covers" the dropped
+`recoverPendingSignals`. **Half is source-verified; half is not** [read; review tf-o8zu finding 3]:
+- **Persistence is real:** `deferredDone` upserts the deferred row [read, `engine-runtime.ts:473-482`]
+  and `deferredResult` reads it on resume [read, `:433-440`].
+- **Generic resume-on-recovery is NOT yet implemented:** `makeWorkflowEngine`'s startup recovery runs
+  **only** `recoverPendingClockWakeups` [read, `engine-runtime.ts:149-159, 527`], which sweeps the
+  `clockWakeups` table. There is **no** startup sweep that resumes executions with an already-written
+  **non-clock** deferred row. So a producer that crashes *after* writing the deferred row but *before*
+  the trailing `resume` is **not** recovered by the engine today (only by producer retry).
+
+**Conclusion:** moving awaits to `DurableDeferred` does **not** get recovery "for free." It names a
+**small, well-scoped engine-seam fix**: extend `recoverPendingClockWakeups` to also re-arm pending
+non-clock `deferreds` rows (or generalize it to a `recoverPendingWakeups` over both tables). That fix
+lives in the engine Firegrid **owns** [`engine-runtime.ts:149`], benefits **every** `DurableDeferred`
+user (not just RuntimeContext), and is strictly smaller than maintaining the parallel
+`recoverPendingSignals` over a bespoke table. It is added to the §6 confirm-before-building list.
+
+### §2.4 Is the per-key mailbox `DurableQueue`? NO
+
+[read, `DurableQueue.ts:42-330`] `DurableQueue` is **offer-a-job-to-a-worker-pool-and-park** (a
+`process` offers an item and awaits a per-item `DurableDeferred`; a `worker(…, {concurrency})` drains
+with *unordered* concurrency) over `@effect/experimental/PersistedQueue` — a backend Firegrid does not
+wire. It provides **no** per-`contextId` ordered serialization; `idempotencyKey` there dedupes the
+**offer**. (`DurableQueue` *would* fit the orthogonal **host tool-dispatch** worker pool, §3.)
+
+**And critically — neither does `Workflow.idempotencyKey + cursor`** [read; review tf-o8zu finding 4].
+`idempotencyKey` computes a deterministic executionId (dedupes a chosen execution key) [read,
+`Workflow.ts:263-307`]; a cursor *records* consume position. **Neither gives atomic per-`contextId`
+append ordering under racing inputs.** So §2 must **not** promote "idempotencyKey + cursor = C1
+serialization" to a fact (v1 did). Per-key serialization is a **real, still-open capability gap**
+whose home is the **engine seam** (a per-key owner / atomic-append discipline), independent of A's
+body shape — and B "gets it free" **only** by being the canon-banned single parked body. So the
+serialization gap favors **neither** `signal.ts` **nor** B. The tf-ogoj sim's **H2** (§9) drives
+**concurrent** same-`contextId` inputs to gather the data — it may **reject** the cursor-serializes
+assumption, which is the load-bearing fact for this gap.
+
+### §2.5 Net verdict (v2)
+
+`signal.ts` is a **second implementation of the WorkflowEngine seam** — a capability set the engine
+interface declares and `DurableStreamsWorkflowEngine` already implements — built beside the seam
+instead of on it. It **dissolves entirely**: await/resolve → `DurableDeferred` on the seam; the
+input-before-start arm → two standard ops (`execute({discard})` + `done`); the ordered mailbox →
+DELETE (per-event + cursor); the recovery sweep → a small engine-seam extension (§2.3). The remaining
+**genuine open gap** is per-`contextId` serialization, which belongs to the engine seam and which the
+sim's H2 probes. This **strengthens** the reconcile §3 / F3 conclusion and is the one place this
+successor **adds** a verdict (the Composition SDD did not examine `signal.ts`).
 
 ---
 
@@ -329,7 +408,7 @@ leaves keep their existing domain-neutral tier names (`engine/`, `tables/`, `eve
 | 2 | Durable workflow engine | `engine/durable-streams-workflow-engine.ts` | `engine/` (unchanged) | floor (substrate) | provided once, consumed upward; the engine owns deferred persistence + resume |
 | 3 | Keyed **consume cursor** (RuntimeContext state) | (new; today implicit in the parked body) | `tables/runtime-context-cursor.ts` | floor (state-of-record) | a durable row; tables band; read O(1) by the handler |
 | 4 | RuntimeContext **per-event session handler** `(state,event)->(state,emit)` | `subscribers/runtime-context.ts` (parked loop) | `runtime-context/session/handler.ts` | top | a keyed handler that reads floor state + cursor and returns; drives nothing below it |
-| 5 | **Input-before-start arm** (create-or-resume) | `signal.ts` `armSession` | `runtime-context/session/arm.ts` (thin fn over `engine.execute{discard}`/`resume`) | top (dispatch) | thin composition over floor engine ops; the §2 "genuine helper" |
+| 5 | **Input-before-start arm** (create-or-resume) | `signal.ts` `armSession` | inline at the delivery call site (or a 5-line `runtime-context/session/arm.ts`) — `engine.execute({discard})` create + `DurableDeferred.done` resolve | top (dispatch) | two **standard engine ops**, not bespoke substrate (§2.2); owns no table |
 | 6 | **Input delivery** (prompt/close/cancel → keyed handler) | `channel-bindings.ts` | `runtime-context/session/delivery.ts` (input-delivery views) | top (reads-as-views) | a derivation over the engine + cursor; a function, not a per-channel Tag (Composition SDD:801-816) |
 | 7 | **Output-journal dispatch** (fork permission/tool per observed output) | `observers.ts` (flat) | `runtime-context/dispatch/` (journal reader + per-kind routes) | top (reads-as-views) | reads the output-journal **view**, forks siblings; pure derivation over a resolved `Stream` |
 | 8 | **Permission roundtrip** handler (await-once) | `subscribers/permission-and-tool.ts` (`PermissionRoundtripWorkflow`) | `runtime-context/permission/handler.ts` (uses `DurableDeferred.await`) | top | per-event handler awaiting one durable completion (C4) |
@@ -347,6 +426,13 @@ leaves keep their existing domain-neutral tier names (`engine/`, `tables/`, `eve
 `awaitSignal`/`readSignalsFor`), row 4's handler is the parked loop, and row 14's recovery stays
 full-size. Everything else (the domain-named re-tiering) is shape-agnostic and lands either way. This
 is why the org model can be written now and the §0.1 PO call can land after.
+
+**Guardrail on the shape-agnostic rows [designed; review tf-o8zu finding 6]:** rows 6, 8, 9 keep the
+**same domain home** under either outcome, but their *internals* are not fully shape-agnostic — under
+B, row 6 delivery still targets the parked mailbox/arm, and the rows 8/9 `DurableDeferred` replacement
+for permission/tool waits is contingent on the §2.3 non-clock-deferred recovery question closing. So:
+**the homes are stable now; the row 6/8/9 internals may remain mailbox/`signal`-shaped until §0.1 lands
+and the recovery extension is confirmed.** Only rows 1, 4, 5, 14 are the *formal* shape-dependent rows.
 
 ### Why this is "domain-named in the DAG", concretely
 
@@ -396,28 +482,43 @@ The target tree already specifies CI checks that read **types**, not just import
 `WorkflowInstance`"; "no `transforms/` export whose type includes `Effect.Effect`". Generalize these
 to the domain homes — the folder's **position dictates a constraint on its files' exported types**:
 
-| Home | Exported-type rule (CI, ts-morph / effect-language-service) | Rationale |
-|---|---|---|
-| `tables/runtime-context-cursor.ts` | exports a `DurableTable` class + row schema; **no** `Effect` in the public surface beyond table ops | state-of-record is data, not behavior |
-| `runtime-context/**/handler.ts` (per-event, A) | the handler's `R` **must not** include `WorkflowEngine`/`WorkflowInstance` *as a leaked outward requirement* — it is `toLayer`-internal; the **exported** Layer is `Layer<never, never, AdapterTag \| floor>` | a per-event keyed handler must not surface engine machinery (C2/C5 boundary, made a type) |
-| `runtime-context/dispatch/route-*.ts` | exports a **pure function** `Stream<OutputRow> -> Stream<Fork>` — **no** `Context.Tag`, **no** `Layer` | reads-as-views: "a derivation over one resolved service is a plain function" (Composition SDD:811-816) |
-| `runtime-context/session/delivery.ts` | input-delivery **view** functions take a resolved `Stream`/engine, return `EventOffset`; **no** per-channel `Tag`+`Live` | dissolve the `*ChannelLive` boilerplate (Composition SDD:789-816) |
-| `agent-session/adapter.ts` | exports `Layer<RuntimeContextSessionAdapter, never, SubstrateDeps \| McpEndpoint>` — `R` is **floor only**, never a top-band Tag | Seam 2: the adapter is the interior positioned argument; if its `R` named a handler you'd have the cycle the rule forbids (Composition SDD:950-968) |
+Each rule names its **enforcement host** explicitly [review tf-o8zu finding 5: do not imply
+effect-language-service enforces bespoke topology]. The hosts: **dep-cruiser** (import-path graph);
+**ESLint regex** (`no-restricted-syntax`/`no-restricted-imports` over a token pattern — catches direct
+mentions, NOT aliases/re-exports/inferred types); **custom ESLint-AST** (a `local/` rule walking the
+AST); **ts-morph type-surface** (a script resolving exported *types*, like the effect-quality counter);
+**els-diagnostic** (effect-language-service — used for its existing Effect diagnostics, **not** a host
+for custom topology assertions, which it cannot express today [read; `docs/static-analysis-catalog.md`
+els is diagnostics-only]).
 
-Under **A**, add the **strict-zero** rule that closes the loop the tf-c71h finding asked for: a
-`local/` ESLint rule (or effect-quality counter) forbidding `Workflow.suspend` **inside any
-`runtime-context/**/handler.ts`** (a per-event handler never parks for the entity lifetime). That is
-the type/lint encoding of C5 — the payoff the c71h finding named ("designing the Tag is what *lets*
-the airgap forbid the parked primitive"). Under **B**, this rule is NOT added (the parked body needs
-`suspend`), and instead the parked mailbox gets a bead-owned grandfather entry.
+| Home | Exported-type rule | **Enforcement host** | Rationale |
+|---|---|---|---|
+| `tables/runtime-context-cursor.ts` | exports a `DurableTable` class + row schema; **no** `Effect` in the public surface beyond table ops | **ts-morph type-surface** (regex ESLint can pre-screen `Effect.Effect` text, as transforms/ does today) | state-of-record is data, not behavior |
+| `runtime-context/**/handler.ts` (per-event, A) | the handler's exported Layer `R` **must not** leak `WorkflowEngine`/`WorkflowInstance` outward — exported `Layer<never, never, AdapterTag \| floor>` | **ts-morph type-surface** (resolves inferred `R`; regex can only catch a literal `WorkflowEngine` token, missing aliases/inferred R) | a per-event keyed handler must not surface engine machinery (C2/C5 boundary, made a type) |
+| `runtime-context/dispatch/route-*.ts` | exports a **pure function** `Stream<OutputRow> -> Stream<Fork>` — **no** `Context.Tag`, **no** `Layer` | **custom ESLint-AST** (assert exported decls are functions; ban `Context.Tag`/`Layer` in the module) | reads-as-views: "a derivation over one resolved service is a plain function" (Composition SDD:811-816) |
+| `runtime-context/session/delivery.ts` | input-delivery **view** functions take a resolved `Stream`/engine, return `EventOffset`; **no** per-channel `Tag`+`Live` | **custom ESLint-AST** | dissolve the `*ChannelLive` boilerplate (Composition SDD:789-816) |
+| `agent-session/adapter.ts` | exports `Layer<RuntimeContextSessionAdapter, never, SubstrateDeps \| McpEndpoint>` — `R` is **floor only**, never a top-band Tag | **ts-morph type-surface** (the cycle-forbidding rule needs resolved `R`, not a token scan) | Seam 2: the adapter is the interior positioned argument; if its `R` named a handler you'd have the cycle the rule forbids (Composition SDD:950-968) |
 
-### D.3 Net: the same discipline as today, extended
+Under **A**, add the **strict-zero** rule that closes the loop the tf-c71h finding asked for —
+**enforcement host: custom ESLint-AST or ts-morph counter** — forbidding `Workflow.suspend` **inside
+any `runtime-context/**/handler.ts`** (a per-event handler never parks for the entity lifetime). That
+is the type/lint encoding of C5 (the precedent exists today: `Workflow.suspend`/`WorkflowEngine` are
+already regex-banned under the old Shape-C subscriber folders, `eslint.config.js` ~`:2316-2342` [read·2,
+review finding 5]). Under **B**, this rule is NOT added (the parked body needs `suspend`); the parked
+mailbox gets a bead-owned grandfather entry instead.
+
+### D.3 Net: D.1 is mechanical today; D.2 is mechanizable but needs new custom rule code
 
 dep-cruiser already enforces the tier DAG and the `host-factory-lock` + tiny-firegrid airgap
-[read·2, `.dependency-cruiser.cjs:532-604`, and the host.ts factory-lock]. The above are **the same
-rule shapes** pointed at the new domain homes — "directory tree IS the data flow," mechanically
-enforced, plus the R-channel-shape Topology Checks promoted from the target tree. No new enforcement
-*mechanism* is invented; the rule set is extended to the re-tiered homes.
+[read·2, `.dependency-cruiser.cjs:532-604`, and the host.ts factory-lock]. **D.1's** import-direction
+rules are **the same rule shapes** pointed at the new domain homes — mechanical today, no new mechanism.
+**D.2 is different and must not be oversold** [review tf-o8zu finding 5]: the existing checks do **not**
+already express the R-channel-shape assertions (today's `WorkflowEngine`/`Effect.Effect` bans are
+**regex** over old folder paths, which catch a literal token but not aliases, re-exports, inferred `R`,
+or a `Layer` behind a type alias). D.2 is **mechanizable with the existing tool stacks** (ts-morph,
+custom ESLint-AST) but requires **new custom rule code** — it is *designed*, assigned a host per row
+above, and should be treated as enforceable only once that code lands. "Directory tree IS the data flow"
+holds for D.1 now and for D.2 after the custom analyzers are written.
 
 ---
 
@@ -427,10 +528,10 @@ enforced, plus the R-channel-shape Topology Checks promoted from the target tree
 
 | `unified/` file today | Domain home | Fate |
 |---|---|---|
-| `signal.ts` `awaitSignal`/`sendSignal`(no-arm) | `engine` (`DurableDeferred`) | **fold into engine** (reinvention, §2.1-2.2) |
-| `signal.ts` `armSession` | `runtime-context/session/arm.ts` | **keep** as thin engine helper (§2.3) |
+| `signal.ts` `awaitSignal`/`sendSignal`(no-arm) | the `engine` seam (`DurableDeferred` over `WorkflowEngine`) | **fold onto the seam** — second-impl of `deferredResult`/`deferredDone` (§2.1) |
+| `signal.ts` `armSession` | inline / 5-line helper | **fold to two standard ops** — `execute({discard})` + `DurableDeferred.done` (§2.2); no `SignalTable` survives |
 | `signal.ts` `readSignalsFor` + `SignalTable` | — | **delete** under A (the banned mailbox); **keep** as `runtime-context/session/mailbox.ts` under B |
-| `signal.ts` `recoverPendingSignals` | `runtime-context/recovery.ts` | **shrink** to arm-recovery (§2.5) |
+| `signal.ts` `recoverPendingSignals` | `engine/` (extend `recoverPendingClockWakeups`) | **fold into the engine sweep** — extend the existing clock-only startup sweep to non-clock `deferreds` (§2.3); benefits all `DurableDeferred` users, not a RuntimeContext-specific cost |
 | `observers.ts` (`JournalObserverLive`) | `runtime-context/dispatch/` | **split** into journal reader + per-kind route files (incl. the §3.2 provenance gate) |
 | `subscribers/runtime-context.ts` | `runtime-context/session/handler.ts` | **rewrite** to per-event (A) / keep parked (B) |
 | `subscribers/permission-and-tool.ts` | `runtime-context/permission/handler.ts` + `runtime-context/tool-dispatch/handler.ts` | **split** by domain; permission uses `DurableDeferred.await` |
@@ -473,56 +574,117 @@ designed *on top of* read primitives.
 **Read against code / vendored sources:** the `@effect/workflow` primitive behaviors (§2:
 `DurableDeferred` await-once + token + external resolve; `DurableQueue` = PersistedQueue worker-pool;
 `Workflow.make`/`toLayer`/`suspend`/`execute{discard}`/`idempotencyKey`; engine `resume` no-ops a
-missing execution; `deferredDone` resumes the existing waiter) are **[read]** at the cited
-`repos/effect/` + `packages/runtime/` lines. The tf-c71h trace facts (§1) are **[read]** at the cited
-run. The Composition SDD §12 bands/rules, the canon constraints, the proposal §0.1-§3, the c71h review
-caveats, and the dep-cruiser tier rules are **[read·2]** via delegated readers at the cited lines.
+missing execution; `deferredDone` upserts the deferred row then resumes the existing waiter; the
+`WorkflowEngine` Tag interface and that `makeWorkflowEngine`/`DurableStreamsWorkflowEngine` implements
+the whole seam incl. a `deferreds` table; startup recovery sweeps **only** `clockWakeups`) are
+**[read]** at the cited `repos/effect/` + `packages/runtime/` lines (§2.1-2.4, verified at source this
+revision). The tf-c71h trace facts (§1) and the tf-ogoj sim facts (§9) are **[read]** at the cited
+runs. The Composition SDD §12 bands/rules, the canon constraints, the proposal §0.1-§3, and the
+dep-cruiser tier rules are **[read·2]** via delegated readers; the tf-o8zu review punch-list is folded
+(§2.1-2.4, §3 guardrail, §4 enforcement hosts).
 
 **Confirm before building** (priority): (1) **The §0.1 PO decision** — A vs B/C — gates §3 rows
-(1,4,5,14) and D.2. (2) **The relay+single-adapter sim slice** (caveats b,d) — confirm the per-event
-shape carries the permission/tool relay and a production single-adapter wiring before deleting the
-parked body. (3) **Per-key serialization under contention** (caveat c) — confirm `Workflow.idempotencyKey`
-+ cursor serialize racing same-`contextId` appends. (4) **`DurableDeferred` provider context** — confirm
-the production resolve sites can reach `WorkflowEngine` to call `deferredDone` where today they call
-`sendSignal` (they already provide the engine, but verify at each call site). (5) **`McpEndpoint` as
-`Effect.cached` floor hole** — confirm the late-bind shape the Composition SDD sketches.
+(1,4,5,14) and the D.2 strict-zero rule. (2) **The relay+single-adapter sim slice** (caveats b,d) —
+confirm the per-event shape carries the permission/tool relay and a production single-adapter wiring
+before deleting the parked body. (3) **Per-`contextId` serialization is an OPEN gap** (caveat c, §2.4)
+— `Workflow.idempotencyKey + cursor` is **NOT** the serialization guarantee; an explicit per-key
+owner / atomic-append discipline at the engine seam is needed. The sim's **H2 (§9) gathers whether the
+cursor serializes or races under concurrency** — read that result before designing the owner. (4)
+**Non-clock `DurableDeferred` crash-recovery** (§2.3) — the engine persists deferred rows but has **no**
+startup resume-sweep for non-clock deferreds; confirm/implement the extension to
+`recoverPendingClockWakeups` (`engine-runtime.ts:149`) before relying on `DurableDeferred` for
+crash-durable waits. The sim's **H3 (§9) is public-surface-blocked**; the proof belongs in a
+runtime-package engine test. (5) **`DurableDeferred` provider context** — confirm the production resolve
+sites can reach `WorkflowEngine` to call `deferredDone` (they already provide the engine; verify per
+site). (6) **`McpEndpoint` as `Effect.cached` floor hole** — confirm the late-bind shape.
 
 ---
 
 ## §7. Constraint Check (the SDD-Gate section the unified SDD skipped)
 
 Per `runtime-design-constraints.md:558` every new runtime SDD must mark each constraint. This is a
-**design** doc (no code), but it proposes the per-event target, so:
+**design** doc (no code), but it proposes the per-event target. Re-run for v2 (the §2.1 sharper frame
+strengthens the C4 line — awaits ride the **real engine seam**, not a parallel impl):
 
 - **C1 (keyed durable state container):** **complies (A)** — RuntimeContext keyed by `contextId`;
-  state = the durable cursor row + engine execution/activity records. Under B: complies (the parked
-  body's state is in the replay history — admissible only via bridge exception).
+  state = the durable cursor row + engine execution/activity records. **Caveat [v2, §2.4]:** C1 also
+  asserts "all mutations for the same key are *serialized by the runtime owner*"; A's
+  `idempotencyKey + cursor` gives execution-identity + state but **not** that serialization — it is an
+  **open engine-seam gap** (confirm-item 3, sim H2), not satisfied by the body shape alone. Under B:
+  the parked body satisfies serialization by being the single owner — but only by violating C2/C5.
 - **C2 (per-event handlers, not long-lived bodies):** **complies (A)** — one fresh execution per
   input, returns. **Violates (B)** — the entity-lifetime parked loop is the forbidden shape; B
   requires an explicit canon amendment (the §0.1 decision).
-- **C4 (async waits are durable completions):** **complies (A)** — permission/tool handlers await a
-  single `DurableDeferred` and return; `readSignalsFor` (the cross-event mailbox C4 forbids) is
-  deleted.
+- **C4 (async waits are durable completions):** **complies (A), strengthened by v2** — permission/tool
+  handlers await a single `DurableDeferred` **on the real `WorkflowEngine` seam Firegrid implements**
+  (§2.1), exactly the primitive C4 names as admissible (`:349-351`); the bespoke parallel impl
+  (`awaitSignal`) and the cross-event mailbox (`readSignalsFor`) C4 forbids are **deleted**. **Caveat
+  [v2, §2.3]:** crash-durable await across a producer crash needs the non-clock-deferred recovery
+  extension (confirm-item 4) — a named engine fix, not a shape problem.
 - **C5 (no parked entity bodies between events):** **complies (A)** — no entity-lifetime parked body;
-  the D.2 strict-zero `suspend`-in-handler rule encodes it as lint. **Violates (B).**
+  the D.2 strict-zero `suspend`-in-handler rule (custom ESLint-AST / ts-morph, §4) encodes it as lint.
+  **Violates (B).**
 
-A is **dispatchable** as written. B is a **bridge exception or canon amendment** — not this doc's
-to grant (PO, §0.1).
+A is **dispatchable** as written (with the C1-serialization gap named as a tracked confirm-item, not a
+hidden assumption). B is a **bridge exception or canon amendment** — not this doc's to grant (PO, §0.1).
 
 ---
 
 ## §8. Sources
 
 Vendored `@effect/workflow` [read]: `repos/effect/packages/workflow/README.md:26-119` ·
-`src/DurableDeferred.ts:62-122,264-458` · `src/DurableQueue.ts:42-330` · `src/Workflow.ts:110,148,263-290,680` ·
-`src/WorkflowEngine.ts:61-83,113-116,140-170` · `src/Activity.ts` · `src/DurableClock.ts`.
-Firegrid runtime [read]: `packages/runtime/src/unified/signal.ts:140-309` ·
-`engine/internal/engine-runtime.ts:184-185,458-484` · the tf-c71h sim + finding (PR #850) + trace run
-`2026-06-02T21-54-42-508Z`.
+`src/DurableDeferred.ts:62-122,176,264-458` · `src/DurableQueue.ts:42-330` · `src/Workflow.ts:110,148,263-290,680` ·
+`src/WorkflowEngine.ts:61,88,105,113,121,140,155,175,189` · `src/Activity.ts` · `src/DurableClock.ts`.
+Firegrid runtime [read]: `packages/runtime/src/unified/signal.ts:54,83,140-309` ·
+`engine/internal/engine-runtime.ts:44,149-159,182-185,270,350,433-440,458-484,491,527` ·
+`engine/internal/table.ts:53-77` (the engine's own `deferreds` table) · the tf-c71h sim + finding
+(PR #850) + trace run `2026-06-02T21-54-42-508Z` · the tf-ogoj confirming sim (§9, this PR).
 Docs [read·2]: `docs/sdds/Firegrid Composition-Type-Driven-Greenfield-SDD.md` §12 (`:654-676,789-816,950-987,1032-1073,1118-1133`) ·
 `docs/proposals/PROPOSAL_RUNTIME_CONTEXT_KEYED_SUBSCRIBER_RECONCILE_2026-06-02.md` §0.1-§5,§9 ·
 `docs/analysis/2026-06-02-runtime-shape-blast-radius-and-prior-art.md` §2-§4 ·
 `docs/cannon/architecture/runtime-design-constraints.md` C1/C2/C4/C5 (`:234-385,558-596`) ·
-the three c71h reviews · `docs/architecture/2026-05-22-runtime-physical-target-tree.md:16-18,346-359` ·
+the tf-o8zu review `docs/reviews/2026-06-02-tf-ogoj-sdd-review.md` (folded) + the three c71h reviews ·
+`docs/architecture/2026-05-22-runtime-physical-target-tree.md:16-18,346-359` ·
 `docs/sdds/SDD_FIREGRID_UNIFIED_PRODUCTION_WIRING.md:146` · `.dependency-cruiser.cjs:115-237,532-604` ·
 `docs/static-analysis-catalog.md`.
+
+---
+
+## §9. The confirming tf-ogoj workbench sim (H1/H2/H3)
+
+A tiny-firegrid WORKBENCH sim (`packages/tiny-firegrid/src/simulations/durable-deferred-and-serialization/`)
+drives the §2 simplifying hypothesis on the **real** `DurableStreamsWorkflowEngine` + production codec
+adapter (client-SDK-only driver, no fakes, real ACP example-agent spawn). The trace is the deliverable;
+the prose finding (`docs/findings/tf-ogoj-durable-deferred-and-serialization.md`) interprets confirm/reject.
+
+- **H1 — `DurableDeferred` await-once rides the real engine.** A workbench workflow makes a
+  `DurableDeferred`, awaits it (suspends), and a second public input resolves it via
+  `DurableDeferred.succeed(token)`. Expectation: the trace shows
+  `firegrid.workflow_engine.deferred.result` (undefined → suspend) then `…deferred.done` (resolve →
+  resume) on the real engine — confirming the seam Firegrid implements backs the standard combinator.
+- **H2 — per-`contextId` serialization under CONCURRENT inputs** (the c71h gap; c71h drove only
+  sequentially). N **concurrent** same-`contextId` prompts; the trace shows whether `idempotencyKey +
+  cursor` serializes or **races** (lost cursor updates / duplicate seq). **This may REJECT** the
+  "cursor serializes" assumption — a valid, valuable result that confirms §2.4.
+- **H3 — non-clock `DurableDeferred` crash-recovery** (deferred row written, crash before resume). If
+  unreachable from the public client surface (likely — c71h marked crash-recovery public-surface-blocked),
+  the finding says so honestly and names the runtime-package engine test + the fix site (extend
+  `recoverPendingClockWakeups`, `engine-runtime.ts:149`). No faked crash.
+
+**Per-H verdicts (run `2026-06-02T23-54-22-805Z`; finding
+`docs/findings/tf-ogoj-durable-deferred-and-serialization.md`):**
+- **H1 — CONFIRMED.** The standard `DurableDeferred` round-trip ran on the real engine: trace
+  `firegrid.workflow_engine.deferred.result` (undefined → suspend, L41/L42) → `…deferred.done`
+  (external resolve, L55) → `…deferred.result` (resolved → resume, L59) → body completes with the
+  value (L60). `signal.ts`'s await/resolve is a second implementation of this seam (§2.1).
+- **H2 — REJECTED (the load-bearing result).** 6 **concurrent** same-`contextId` prompts → the
+  channel's `nextSeq` (count-then-`insertOrGet`) raced: **1 `Inserted` + 5 `Found`** on the input-log
+  (five inputs **silently dropped**, zero error spans); 7 distinct executions created but the cursor
+  advanced **once** (0→1). `Workflow.idempotencyKey + cursor` does **NOT** serialize concurrent
+  inputs — it loses them. This **confirms §2.4**: per-`contextId` serialization is a real open
+  engine-seam gap, favoring neither A's cursor nor B's `signal.ts`. (A *successful* rejection — the
+  SDD no longer rests on an unproven serialization claim.)
+- **H3 — public-surface-blocked (not driven, no faked crash).** Deferred-row persistence is real
+  (`engine-runtime.ts:473`) but there is **no** startup resume-sweep for non-clock deferreds
+  (recovery sweeps only `clockWakeups`, `:149-159`). The proof belongs in a runtime-package engine
+  test + the named fix (extend `recoverPendingClockWakeups`); confirm-item 4.

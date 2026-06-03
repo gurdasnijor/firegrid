@@ -18,6 +18,12 @@ workflow, update the SDD, add the justification here, and re-baseline with
 > specific path+line. It preserves the load-bearing "no net-new `Workflow.make`"
 > guarantee; the per-site justifications are recorded here instead.
 
+## Admitted workbench workflows (tiny-firegrid sims, not shipped production)
+
+- `packages/tiny-firegrid/src/simulations/durable-deferred-and-serialization/host.ts:92` — tf-ogoj WORKBENCH workflow `workbench.deferred-gate` (H1). Awaits a standard `DurableDeferred` on the REAL `DurableStreamsWorkflowEngine` and is resolved externally, to gather trace evidence that `signal.ts`'s await/resolve is a second implementation of the engine seam (SDD §2.1). Lives only in the sim's host composition; the trace is the deliverable (`docs/findings/tf-ogoj-durable-deferred-and-serialization.md`).
+- `packages/tiny-firegrid/src/simulations/durable-deferred-and-serialization/host.ts:165` — tf-ogoj WORKBENCH workflow `workbench.serialization` (H2). Per-event handler keyed `(contextId,inputKey)` over a durable cursor, driven by CONCURRENT same-`contextId` inputs to probe whether `idempotencyKey + cursor` serializes (it does not — the sim REJECTS that assumption). Sim-only.
+- NOTE for owners: the `workflowMakeSiteCount` ratchet scopes to `packages/**/src`, which includes tiny-firegrid sims. Same admission posture as the tf-c71h workbench (PR #850): whether sim/workbench workflows should count against the production C2 ledger vs. an excluded sim scope is a standing tooling question — admitted conservatively so the gate stays intact.
+
 ## Grandfathered owner workflows (7, baseline `workflowMakeSiteCount: 7`)
 
 - `packages/runtime/src/unified/subscribers/runtime-context.ts:66` — Owned durable runtime-context session workflow: one execution per context attempt, parks on Workflow.suspend while waiting for session input signals, owns adapter lifecycle start/send/deregister.
