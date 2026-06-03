@@ -413,9 +413,9 @@ lives in the existing protocols and is not re-specified here.
 
 For the architectural contracts the factory and the toy depend on:
 
-- `docs/sdds/SDD_FIREGRID_DARK_FACTORY_APP.md` — the factory's product
+- `docs/sdds/_archive/SDD_FIREGRID_DARK_FACTORY_APP.md` — the factory's product
   contract
-- `docs/sdds/SDD_FIREGRID_FACTORY_ALIGNED_AGENT_TOOL_WORKSTREAM.md` —
+- `docs/sdds/_archive/SDD_FIREGRID_FACTORY_ALIGNED_AGENT_TOOL_WORKSTREAM.md` —
   the tool surface the factory needs
 - `vault/canon/concepts/choreography-vs-orchestration.md` — the
   philosophical grounding

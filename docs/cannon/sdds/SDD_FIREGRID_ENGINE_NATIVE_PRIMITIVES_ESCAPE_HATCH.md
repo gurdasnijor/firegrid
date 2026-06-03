@@ -7,7 +7,7 @@ Related:
 
 - `docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
 - `docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
-- `docs/sdds/SDD_FIREGRID_AGGRESSIVE_ONE_SUBSTRATE_SWAPOVER.md`
+- `docs/sdds/_archive/SDD_FIREGRID_AGGRESSIVE_ONE_SUBSTRATE_SWAPOVER.md`
 - PR #469 / `tf-ovzr` — Phase-1 Lane 6 new-shape replay smoke
 - `packages/runtime/src/workflow-engine/internal/engine-runtime.ts`
 - `repos/effect/packages/cluster/src/ClusterWorkflowEngine.ts`

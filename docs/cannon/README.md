@@ -198,7 +198,7 @@ Read in this order:
 
 ## Explicitly Non-Canonical Or Historical
 
-- `docs/sdds/SDD_FIREGRID_AGGRESSIVE_ONE_SUBSTRATE_SWAPOVER.md` is historical:
+- `docs/sdds/_archive/SDD_FIREGRID_AGGRESSIVE_ONE_SUBSTRATE_SWAPOVER.md` is historical:
   useful as the cutover plan, but superseded by the landed state and current
   convergence assessment.
 - `docs/research/canonical-convergence-assessment-2026-05-20.md` is historical:

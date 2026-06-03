@@ -467,7 +467,7 @@ const runAction = (
         // here; awaits isPersisted). Invariant declared by SDD §"What
         // DurableTable Actually Provides" — WRITES + schema-checked writes.
         "firegrid.seam.kind": "storage-commit",
-        "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
+        "firegrid.contract.id": "docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md",
         "firegrid.durable_table.name": tableName,
         "firegrid.durable_table.collection": collection.collectionKey,
         "firegrid.durable_table.durable_type": collection.durableType,
@@ -547,7 +547,7 @@ const appendInsertWithPrimaryKeyFence = (options: {
         // DurableTable Actually Provides" — primary-key fencing for
         // idempotent producers.
         "firegrid.seam.kind": "durable-append",
-        "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
+        "firegrid.contract.id": "docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md",
         "firegrid.durable_table.collection": collection.collectionKey,
         "firegrid.durable_table.durable_type": collection.durableType,
         "firegrid.durable_table.primary_key": collection.primaryKey,
@@ -857,7 +857,7 @@ const makeFacade = <Row extends object, Key>(options: {
             // Provides" — primary-key fencing for idempotent producers
             // (insertOrGet).
             "firegrid.seam.kind": "claim-idempotency",
-            "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
+            "firegrid.contract.id": "docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md",
             "firegrid.durable_table.name": tableName,
             "firegrid.durable_table.collection": collection.collectionKey,
             "firegrid.durable_table.durable_type": collection.durableType,
@@ -903,7 +903,7 @@ const makeFacade = <Row extends object, Key>(options: {
             // view (Option<Row>). Invariant declared by SDD §"What
             // DurableTable Actually Provides" — READS / query current state.
             "firegrid.seam.kind": "storage-read",
-            "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
+            "firegrid.contract.id": "docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md",
             "firegrid.durable_table.name": tableName,
             "firegrid.durable_table.collection": collection.collectionKey,
             "firegrid.durable_table.durable_type": collection.durableType,
@@ -931,7 +931,7 @@ const makeFacade = <Row extends object, Key>(options: {
             // Invariant declared by SDD §"What DurableTable Actually
             // Provides" — READS / query current state.
             "firegrid.seam.kind": "storage-read",
-            "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
+            "firegrid.contract.id": "docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md",
             "firegrid.durable_table.name": tableName,
             "firegrid.durable_table.collection": collection.collectionKey,
             "firegrid.durable_table.durable_type": collection.durableType,
@@ -1090,7 +1090,7 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
         // Invariant declared by SDD §"What DurableTable Actually Provides" —
         // scope-managed acquire/release with preload on acquire.
         "firegrid.seam.kind": "resource-acquire",
-        "firegrid.contract.id": "docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md",
+        "firegrid.contract.id": "docs/cannon/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md",
         "firegrid.durable_table.namespace": table.namespace,
         "firegrid.durable_table.collection_count": table.collections.length,
       },
