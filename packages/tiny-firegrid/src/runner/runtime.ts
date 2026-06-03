@@ -18,10 +18,10 @@ import {
 // Accepted bin-only local simulation escape hatch.
 // eslint-disable-next-line no-restricted-imports
 import { DurableStreamTestServer } from "@durable-streams/server"
-import type {
-  FiregridHost,
-  TinyFiregridHostEnv,
-  TinyFiregridSimulation,
+import {
+  type FiregridHost,
+  type TinyFiregridHostEnv,
+  type TinyFiregridSimulation,
 } from "../types.ts"
 import { makeHeartbeat } from "./heartbeat.ts"
 import { annotateSide } from "./side.ts"
@@ -229,6 +229,13 @@ export const runSimulation = (
         yield* Layer.launch(hostLayer).pipe(Effect.forkScoped)
       }
 
+      const clientConfig = {
+        durableStreamsBaseUrl: baseUrl,
+        namespace,
+        ...(simulation.channels === undefined
+          ? {}
+          : { channels: simulation.channels(hostEnv) }),
+      }
       const outcome = yield* Effect.raceWith(
         simulation.driver.pipe(
           Effect.provide(firegridClientLayer(
@@ -238,6 +245,7 @@ export const runSimulation = (
             simulation,
             hostEnv,
           )),
+          Effect.provideService(FiregridConfig, clientConfig),
           annotateSide("driver"),
         ),
         Deferred.await(stopSignal),
