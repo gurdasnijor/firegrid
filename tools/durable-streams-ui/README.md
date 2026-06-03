@@ -15,17 +15,13 @@ A web interface for testing the Durable Streams protocol. Create, monitor, and i
 
 ## Quick Start
 
-1. **Start the development server** (in a separate terminal):
-
-   ```bash
-   cd packages/cli
-   pnpm start:dev
-   ```
+1. **Start a Durable Streams server** on `http://localhost:4437` (for example,
+   a Firegrid host or a local `DurableStreamTestServer`).
 
 2. **Run the test UI**:
 
    ```bash
-   cd examples/test-ui
+   cd tools/durable-streams-ui
    pnpm dev
    ```
 
@@ -102,7 +98,7 @@ examples/test-ui/
 
 ## Server Setup
 
-The example server (`packages/cli/example-server.ts`) is configured with registry hooks:
+A local test server can be configured with registry hooks:
 
 ```typescript
 import {

@@ -347,18 +347,18 @@ module.exports = {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.2
       // firegrid-package-migration.COMPATIBILITY.4
       // firegrid-host-sdk.PACKAGE_GRAPH.2
-      // Lane 1 owns the client-sdk/cli targets here; Lane 2 adds the
+      // Lane 1 owns the client-sdk target here; Lane 2 adds the
       // matching host-sdk target (runtime-no-host-sdk) without editing
       // this rule.
-      name: "runtime-no-client-sdk-or-cli",
+      name: "runtime-no-client-sdk",
       severity: "error",
       comment:
-        "The runtime package must not import the browser/app-facing client-sdk package or the CLI package. Carve-out: `runtime/src/bin/**` is the runtime-owned process composition tier introduced by the Shape C cutover (formerly @firegrid/cli's responsibility). It sits above runtime substrate AND above client-sdk, composing both into the firegrid run/start/acp binaries; the thin @firegrid/cli launcher subprocesses into it. This is a binary boundary, not a substrate-import.",
+        "The runtime package must not import the browser/app-facing client-sdk package. Carve-out: `runtime/src/bin/**` is the runtime-owned process composition tier introduced by the Shape C cutover. It sits above runtime substrate AND above client-sdk, composing both into the firegrid run/start/acp binaries. This is a binary boundary, not a substrate-import.",
       from: {
         path: "^packages/runtime/src",
         pathNot: "^packages/runtime/src/bin/",
       },
-      to: { path: "^packages/(client-sdk|cli)/src" },
+      to: { path: "^packages/client-sdk/src" },
     },
     {
       // firegrid-host-sdk.PACKAGE_GRAPH.2
@@ -450,9 +450,9 @@ module.exports = {
       name: "protocol-no-client-or-runtime",
       severity: "error",
       comment:
-        "Protocol must remain the shared browser-safe base; it cannot depend upward on client-sdk, host-sdk, cli, or runtime.",
+        "Protocol must remain the shared browser-safe base; it cannot depend upward on client-sdk, host-sdk, or runtime.",
       from: { path: "^packages/protocol/src" },
-      to: { path: "^packages/(client-sdk|host-sdk|cli|runtime)/src" },
+      to: { path: "^packages/(client-sdk|host-sdk|runtime)/src" },
     },
     {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.7
@@ -515,25 +515,16 @@ module.exports = {
       },
     },
     {
-      // === Host SDK plane split — Lane 1 owned (client-sdk/cli) ===
+      // === Host SDK plane split — Lane 1 owned (client-sdk) ===
       // Lane 2 adds host-sdk-source rules separately; do not edit this
       // block from Lane 2 to avoid integration-branch conflicts.
       // firegrid-host-sdk.PACKAGE_GRAPH.3
-      name: "client-sdk-no-host-sdk-or-cli",
+      name: "client-sdk-no-host-sdk",
       severity: "error",
       comment:
-        "@firegrid/client-sdk is a browser/edge-safe sibling projection; it must not import host-sdk or cli.",
+        "@firegrid/client-sdk is a browser/edge-safe sibling projection; it must not import host-sdk.",
       from: { path: "^packages/client-sdk/src" },
-      to: { path: "^packages/(host-sdk|cli)/src" },
-    },
-    {
-      // firegrid-host-sdk.PACKAGE_GRAPH.5
-      name: "no-package-imports-cli",
-      severity: "error",
-      comment:
-        "No package may import @firegrid/cli; the CLI is a terminal binding over host-sdk and client-sdk.",
-      from: { path: "^packages/(?!cli/)[^/]+/src", pathNot: "^packages/cli/src" },
-      to: { path: "^packages/cli/src" },
+      to: { path: "^packages/host-sdk/src" },
     },
     {
       name: "tiny-firegrid-sim-no-fake-substitutes",
