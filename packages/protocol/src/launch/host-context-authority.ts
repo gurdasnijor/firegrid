@@ -60,12 +60,6 @@ const runtimeControlPlaneTable: Effect.Effect<
   RuntimeControlPlaneTable
 > = RuntimeControlPlaneTable
 
-const currentHostSession: Effect.Effect<
-  HostSessionRow,
-  never,
-  CurrentHostSession
-> = CurrentHostSession
-
 /**
  * Context authority errors.
  *
@@ -188,49 +182,6 @@ export const insertLocalRuntimeContext = (
     yield* table.contexts.upsert(context)
     return context
   })
-
-/**
- * Resolve a RuntimeContext and require its host binding to name the
- * `CurrentHostSession`. Fails with `ContextNotLocal` before any local
- * host services are exposed when the context belongs to another host.
- *
- * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
- */
-export const requireLocalContext = (
-  contextId: string,
-): Effect.Effect<
-  RuntimeContext,
-  ContextNotFound | ContextNotLocal | DurableTableError,
-  RuntimeControlPlaneTable | CurrentHostSession
-> =>
-  Effect.gen(function* () {
-    const session = yield* currentHostSession
-    const context = yield* findRuntimeContext(contextId)
-    if (context.host.hostId !== session.hostId) {
-      return yield* new ContextNotLocal({
-          contextId,
-          hostId: context.host.hostId,
-          currentHostId: session.hostId,
-        })
-    }
-    return context
-  })
-
-/**
- * Provide a resolved RuntimeContext through `CurrentRuntimeContext`
- * for the rest of the fiber. Callers compose:
- *
- *   yield* program.pipe(provideRuntimeContext(runtimeContext))
- *
- * rather than threading the context value through every host-owned
- * layer constructor.
- *
- * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.3
- */
-export const provideRuntimeContext =
-  (runtimeContext: RuntimeContext) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    effect.pipe(Effect.provideService(CurrentRuntimeContext, runtimeContext))
 
 // Durable stream URL composition (`durableStreamUrl`,
 // `runtimeControlPlaneStreamUrl`, `hostOwnedStreamUrl`) lives in

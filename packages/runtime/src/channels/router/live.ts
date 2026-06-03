@@ -21,13 +21,7 @@ import type {
 import {
   UnknownChannelTarget,
 } from "@firegrid/protocol/channels/router"
-import {
-  RuntimeChannelRouter,
-  RuntimeChannelRouterLive,
-  makeRuntimeChannelRouter,
-  runtimeRoutesFromChannels,
-  type RuntimeChannelRouterService,
-} from "../index.ts"
+import { RuntimeChannelRouter, makeRuntimeChannelRouter, runtimeRoutesFromChannels, type RuntimeChannelRouterService } from "../index.ts"
 import { Context, Layer, Option, type Schema } from "effect"
 
 export { UnknownChannelTarget }
@@ -82,11 +76,6 @@ export const makeRuntimeContextChannelRouter = (
 ): RuntimeChannelRouterService =>
   makeRuntimeChannelRouter(runtimeRoutesFromChannels(channels))
 
-export const RuntimeContextChannelRouterLive = (
-  channels: Iterable<ChannelRegistration> = [],
-): Layer.Layer<RuntimeChannelRouter> =>
-  RuntimeChannelRouterLive(runtimeRoutesFromChannels(channels))
-
 /** @deprecated Use RuntimeChannelRouter.route. */
 export const findRuntimeContextMcpChannel = (
   catalog: RuntimeContextMcpChannelCatalogService,
@@ -128,40 +117,3 @@ export type ChannelMetadata =
     readonly requestSchema: Schema.Schema.Any
     readonly responseSchema: Schema.Schema.Any
   }
-
-export const channelMetadata = (
-  registration: ChannelRegistration,
-): ChannelMetadata => {
-  switch (registration.direction) {
-    case "ingress":
-      return {
-        target: registration.target,
-        direction: registration.direction,
-        schema: registration.schema,
-        ...(registration.sourceClass === undefined
-          ? {}
-          : { sourceClass: registration.sourceClass }),
-      }
-    case "egress":
-      return {
-        target: registration.target,
-        direction: registration.direction,
-        schema: registration.schema,
-      }
-    case "bidirectional":
-      return {
-        target: registration.target,
-        direction: registration.direction,
-        directions: registration.directions,
-        schema: registration.schema,
-        sourceClasses: registration.sourceClasses,
-      }
-    case "call":
-      return {
-        target: registration.target,
-        direction: registration.direction,
-        requestSchema: registration.requestSchema,
-        responseSchema: registration.responseSchema,
-      }
-  }
-}

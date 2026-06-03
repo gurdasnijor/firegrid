@@ -571,14 +571,6 @@ export const runtimePermissionRequestObservationFromAgentOutput = (
   })
 }
 
-export const runtimePermissionRequestObservationFromRow = (
-  row: RuntimeEventRow,
-): Option.Option<RuntimePermissionRequestObservation> =>
-  Option.flatMap(
-    runtimeAgentOutputObservationFromRow(row),
-    runtimePermissionRequestObservationFromAgentOutput,
-  )
-
 const base64UrlAlphabet =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 

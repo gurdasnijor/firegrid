@@ -12,7 +12,6 @@ export {
 } from "./field-equals.ts"
 export {
   RuntimeIngressAgentInputTransformError,
-  agentInputEventFromRuntimeIngressRow,
 } from "./decode-ingress-row.ts"
 export {
   runtimeAgentOutputObservationFromRow,

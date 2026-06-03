@@ -195,11 +195,6 @@ export const RuntimeChannelRouterLive = (
 ): Layer.Layer<RuntimeChannelRouter> =>
   Layer.succeed(RuntimeChannelRouter, makeRuntimeChannelRouter(routes))
 
-export const HostPlaneChannelRouterLive = (
-  routes: ReadonlyArray<RuntimeChannelRoute> = [],
-): Layer.Layer<HostPlaneChannelRouter> =>
-  Layer.succeed(HostPlaneChannelRouter, makeRuntimeChannelRouter(routes))
-
 const appendEgressPayload = <S extends Schema.Schema.Any>(
   channel: EgressChannel<S> | BidirectionalChannel<S>,
   payload: Schema.Schema.Type<S>,

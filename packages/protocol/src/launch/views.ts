@@ -41,6 +41,3 @@ export const runtimeLogsForContextView = (
   contextId: string,
 ): Stream.Stream<RuntimeLogLineRow, unknown> =>
   logs.pipe(Stream.filter(byContextId(contextId)))
-
-export const filterRuntimeRowsForContext = (contextId: string) =>
-  byContextId(contextId)

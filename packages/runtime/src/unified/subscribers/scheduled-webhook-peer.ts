@@ -22,12 +22,7 @@ import {
   type WorkflowEngine,
 } from "@effect/workflow"
 import { Clock, Data, Duration, Effect, Option, Schema } from "effect"
-import {
-  peerEventKey,
-  scheduleKey,
-  UnifiedTable,
-  type UnifiedTableService,
-} from "../tables.ts"
+import { peerEventKey, scheduleKey, UnifiedTable } from "../tables.ts"
 
 // ── 1. ScheduledPromptWorkflow ──────────────────────────────────────────────
 
@@ -113,64 +108,6 @@ export interface ObserverSignalTarget {
   readonly workflow: Workflow.Any
   readonly executionId: string
 }
-
-const lookupExisting = <A>(
-  get: Effect.Effect<Option.Option<A>, unknown>,
-) =>
-  get.pipe(
-    Effect.map(Option.getOrUndefined),
-    Effect.orDie,
-  )
-
-const signalFact = (options: {
-  readonly deferred: DurableDeferred.DurableDeferred<typeof Schema.Void>
-  readonly signalOptions: ObserverSignalTarget | undefined
-}) =>
-  options.signalOptions === undefined
-    ? Effect.void
-    : DurableDeferred.succeed(options.deferred, {
-      token: DurableDeferred.tokenFromExecutionId(options.deferred, {
-        workflow: options.signalOptions.workflow,
-        executionId: options.signalOptions.executionId,
-      }),
-      value: void 0,
-    }).pipe(Effect.orDie)
-
-// ── 3. Peer event emit (host-side) ──────────────────────────────────────────
-
-export const emitPeerEvent = (options: {
-  readonly unified: UnifiedTableService
-  readonly name: string
-  readonly eventId: string
-  readonly emitterContextId: string
-  readonly payloadJson: string
-  readonly signalOptions?: ObserverSignalTarget
-}): Effect.Effect<
-  { readonly _tag: "Inserted" | "Duplicate"; readonly factKey: string },
-  unknown,
-  WorkflowEngine.WorkflowEngine
-> =>
-  Effect.gen(function*() {
-    const factKey = peerEventKey(options.name, options.eventId)
-    const existing = yield* lookupExisting(options.unified.peerEvents.get(factKey))
-    if (existing !== undefined) {
-      return { _tag: "Duplicate" as const, factKey }
-    }
-    const emittedAtMs = yield* Clock.currentTimeMillis
-    yield* options.unified.peerEvents.insertOrGet({
-      eventKey: factKey,
-      name: options.name,
-      eventId: options.eventId,
-      emitterContextId: options.emitterContextId,
-      payloadJson: options.payloadJson,
-      emittedAt: new Date(emittedAtMs).toISOString(),
-    }).pipe(Effect.orDie)
-    yield* signalFact({
-      deferred: peerEventDeferred,
-      signalOptions: options.signalOptions,
-    })
-    return { _tag: "Inserted" as const, factKey }
-  })
 
 // ── 4. PeerEventObserverWorkflow ────────────────────────────────────────────
 

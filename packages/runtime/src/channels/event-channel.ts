@@ -4,10 +4,7 @@
 // relocation; per dispatch: `event-channel.ts -> runtime/channels/`
 // since it uses `effect-durable-operators` projection types).
 
-import type {
-  DurableTableCollectionFacade,
-  ProjectionStream,
-} from "effect-durable-operators"
+import type { ProjectionStream } from "effect-durable-operators"
 import type { DurableTableError } from "effect-durable-operators"
 import { Stream, type Effect, type Schema } from "effect"
 import {
@@ -35,14 +32,6 @@ interface EventChannelOptions<S extends Schema.Schema.Any>
   ) => Effect.Effect<void, unknown, never>
 }
 
-interface EventChannelFromCollectionOptions<S extends Schema.Schema.Any>
-  extends EventChannelBaseOptions<S> {
-  readonly collection: Pick<
-    DurableTableCollectionFacade<Schema.Schema.Type<S> & object, unknown>,
-    "rows" | "insert"
-  >
-}
-
 const rowMatchesEventName = (row: object, name: string): boolean =>
   Object.hasOwn(row, "name")
   && (row as { readonly name?: unknown }).name === name
@@ -67,13 +56,3 @@ export const eventChannel = <S extends Schema.Schema.Any>(
     callerFactStream: options.callerFactStream,
   }
 }
-
-export const eventChannelFromCollection = <S extends Schema.Schema.Any>(
-  options: EventChannelFromCollectionOptions<S>,
-): EventChannel<S> =>
-  eventChannel({
-    ...options,
-    rows: options.collection.rows,
-    append: payload =>
-      options.collection.insert(payload as Schema.Schema.Type<S> & object),
-  })
