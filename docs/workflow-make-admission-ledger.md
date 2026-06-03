@@ -19,12 +19,11 @@ and annotate the call site with `// workflow-make-admission`.
 > The annotation makes the admission decision visible at the call site; this ledger
 > records the per-site justifications.
 
-## Owner workflows (7, each annotated `// workflow-make-admission`)
+## Owner workflows (6, each annotated `// workflow-make-admission`)
 
 - `packages/runtime/src/unified/subscribers/runtime-context.ts:66` — Owned durable runtime-context session workflow: one execution per context attempt, parks on Workflow.suspend while waiting for session input signals, owns adapter lifecycle start/send/deregister.
 - `packages/runtime/src/unified/subscribers/permission-and-tool.ts:90` — Owned durable permission wait workflow: records the permission request, parks on the decision signal, then relays the decision back to the owning runtime-context session workflow.
 - `packages/runtime/src/unified/subscribers/permission-and-tool.ts:203` — Tool dispatch is operation-shaped but intentionally owns at-most-once durable tool execution via Workflow idempotency + Activity memoization, then relays through the ToolExecutor/session signal seam.
 - `packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts:62` — Owned durable scheduled-prompt workflow: records a schedule commitment and parks on DurableClock.sleep until the owned wake time.
-- `packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts:313` — Owned durable webhook-fact observer workflow: parks on the webhook-fact signal and then reads the corresponding owned fact row written before signal delivery.
-- `packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts:368` — Owned durable peer-event observer workflow: parks on the peer-event signal and then reads the corresponding owned peer-event row written before signal delivery.
+- `packages/runtime/src/unified/subscribers/scheduled-webhook-peer.ts` — Owned durable peer-event observer workflow: parks on the peer-event signal and then reads the corresponding owned peer-event row written before signal delivery. (The webhook-fact observer that used to sit alongside it was a dead duplicate of `verified-webhook-ingest` and was deleted in tf-0awo.37.)
 - `packages/runtime/src/unified/mcp-host/tool-dispatch.ts:384` — Reviewed MCP-entry Shape D tool-dispatch owner workflow: one execution per toolUseId, uses Workflow idempotency and Activity memoization for at-most-once tool execution, then returns the synchronous MCP tools/call result without a relay.

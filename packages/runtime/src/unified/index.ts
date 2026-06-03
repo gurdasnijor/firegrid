@@ -8,9 +8,9 @@
  *     Temporal Signals, Restate Awakeables, AWS SFN task tokens,
  *     Cadence Signals).
  *
- *   - The unified table (`tables.ts`) — the four row families that
+ *   - The unified table (`tables.ts`) — the row families that
  *     hold data the engine doesn't already track (permissions,
- *     schedules, webhookFacts, peerEvents). NO `inputIntents` /
+ *     schedules, peerEvents). NO `inputIntents` /
  *     `startRequests` / lifecycle status columns; those collapse into
  *     signal events.
  *
