@@ -466,6 +466,7 @@ const runSessionNew = (
         },
         runtime,
         createdBy: `mcp:${contextId}`,
+        parentContextId: contextId,
       },
     ) as Effect.Effect<
       { readonly sessionId: string; readonly contextId: string },

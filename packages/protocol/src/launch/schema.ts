@@ -476,6 +476,7 @@ export const RuntimeContextSchema = Schema.Struct({
   contextId: Schema.String,
   createdAt: Schema.String,
   createdBy: Schema.optional(Schema.String),
+  parentContextId: Schema.optional(Schema.String),
   runtime: RuntimeContextIntentSchema,
   host: RuntimeContextHostBindingSchema,
 })
@@ -491,12 +492,14 @@ export const makeRuntimeContext = (input: {
   readonly contextId: string
   readonly createdAtMs: number
   readonly createdBy?: string
+  readonly parentContextId?: string
   readonly runtime: RuntimeContextIntent
   readonly host: RuntimeContextHostBinding
 }): RuntimeContext => ({
   contextId: input.contextId,
   createdAt: new Date(input.createdAtMs).toISOString(),
   ...(input.createdBy === undefined ? {} : { createdBy: input.createdBy }),
+  ...(input.parentContextId === undefined ? {} : { parentContextId: input.parentContextId }),
   runtime: input.runtime,
   host: input.host,
 })

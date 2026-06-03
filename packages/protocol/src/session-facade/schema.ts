@@ -55,6 +55,7 @@ export const SessionCreateOrLoadInputSchema = Schema.Struct({
   externalKey: SessionExternalKeySchema,
   runtime: PublicLaunchRuntimeIntentSchema,
   createdBy: Schema.optional(Schema.String),
+  parentContextId: Schema.optional(Schema.String),
 }).annotations({
   identifier: "firegrid.operation.session.createOrLoad.input",
   title: "Session create-or-load input",

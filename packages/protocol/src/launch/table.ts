@@ -152,6 +152,7 @@ const RuntimeContextRowSchema = Schema.Struct({
   contextId: Schema.String.pipe(DurableTable.primaryKey),
   createdAt: Schema.String,
   createdBy: Schema.optional(Schema.String),
+  parentContextId: Schema.optional(Schema.String),
   runtime: RuntimeContextIntentSchema,
   host: RuntimeContextHostBindingSchema,
 })
