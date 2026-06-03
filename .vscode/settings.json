@@ -1,6 +1,11 @@
 {
   "typescript.enablePromptUseWorkspaceTsdk": true,
   "typescript.tsdk": "node_modules/typescript/lib",
+  // The @effect/language-service refactors (Effect.gen cleanup, async→Effect,
+  // Layer Magic, Service→Tag) are served via a TS-server *plugin* (declared in
+  // each package tsconfig). Plugins load only in the full semantic server, not
+  // the fast syntax-only one — so refactors/quickfixes must be routed there.
+  "typescript.tsserver.useSyntaxServer": "never",
   "typescript.preferences.autoImportFileExcludePatterns": ["repos/**"],
   "javascript.preferences.autoImportFileExcludePatterns": ["repos/**"],
   "files.exclude": {
