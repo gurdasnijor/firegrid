@@ -1,5 +1,0 @@
-digraph services {
-  rankdir=LR; node [shape=box,fontsize=10];
-  "AgentToolHost" -> "RuntimeContextEngineRegistry";
-  "RuntimeContextEngineRegistry" -> "RuntimeHostConfig";
-}

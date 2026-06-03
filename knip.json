@@ -79,18 +79,13 @@
       ]
     },
     "tooling": {
-      "entry": [
-        "analysis/**/*.ts"
-      ],
       "project": [
-        "src/**/*.ts",
-        "analysis/**/*.ts"
+        "src/**/*.ts"
       ]
     }
   },
   "ignore": [
-    "repos/**",
-    "docs/**"
+    "repos/**"
   ],
   "ignoreWorkspaces": [
     "tools/durable-streams-ui"
