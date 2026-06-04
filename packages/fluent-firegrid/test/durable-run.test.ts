@@ -17,6 +17,8 @@ import {
   sleep,
   state,
   workflow,
+  type Handler,
+  type Operation,
 } from "../src/index.ts"
 
 type Reqs = FetchHttpClient.Fetch | HttpClient.HttpClient | Scope.Scope
@@ -99,6 +101,10 @@ const runtimeWith = <A, E>(
     ),
   )
 
+const operationHandler = <Input, Output>(
+  operation: (input: Input) => Operation<Output>,
+): Handler<Input, Output> => (ctx, input) => execute(ctx, operation(input))
+
 describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
   it("fluent-firegrid-keystone.PACKAGE.4 fluent-firegrid-keystone.DURABLE_RUN.1 fluent-firegrid-keystone.DURABLE_RUN.3 replays a journaled run Future after restart", async () => {
     const fakeFetch = makeMemoryDurableStreamsFetch()
@@ -144,7 +150,7 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
     const calculator = service({
       name: "calculator",
       handlers: {
-        addPair: (base: number) =>
+        addPair: operationHandler((base: number) =>
           gen(function* () {
             const left = run(() => {
               executions.count += 1
@@ -156,7 +162,7 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
             }, { name: "right" })
             const [leftValue, rightValue] = yield* all([left, right])
             return leftValue + rightValue
-          }),
+          })),
       },
     })
     const invocation = {
@@ -181,7 +187,7 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
     const memo = service({
       name: "memo",
       handlers: {
-        duplicate: (base: number) =>
+        duplicate: operationHandler((base: number) =>
           gen(function* () {
             const once = run(() => {
               executions.count += 1
@@ -190,7 +196,7 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
             const [left, right] = yield* all([once, once])
             const again = yield* once
             return `${left}:${right}:${again}`
-          }),
+          })),
       },
     })
     const invocation = {
@@ -212,11 +218,11 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
     const timer = service({
       name: "timer",
       handlers: {
-        pause: (label: string) =>
+        pause: operationHandler((label: string) =>
           gen(function* () {
             yield* sleep(500, "settle")
             return `paused:${label}`
-          }),
+          })),
       },
     })
     const invocation = {
@@ -250,36 +256,36 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
     const counter = object({
       name: "counter",
       handlers: {
-        add: (amount: number) =>
+        add: operationHandler((amount: number) =>
           gen(function* () {
             const s = state<CounterState>()
             const current = (yield* s.get("count")) ?? 0
             const next = current + amount
             s.set("count", next)
             return next
-          }),
-        current: (_: void) =>
+          })),
+        current: operationHandler((_: void) =>
           gen(function* () {
             return (yield* sharedState<CounterState>().get("count")) ?? 0
-          }),
-        keys: (_: void) =>
+          })),
+        keys: operationHandler((_: void) =>
           gen(function* () {
             return yield* sharedState<CounterState>().keys()
-          }),
-        setSecondary: (value: string) =>
+          })),
+        setSecondary: operationHandler((value: string) =>
           gen(function* () {
             const s = state<CounterState>()
             s.set("secondary", value)
             return (yield* s.get("secondary")) ?? "missing"
-          }),
-        clearSecondary: (_: void) =>
+          })),
+        clearSecondary: operationHandler((_: void) =>
           gen(function* () {
             state<CounterState>().clear("secondary")
-          }),
-        reset: (_: void) =>
+          })),
+        reset: operationHandler((_: void) =>
           gen(function* () {
             state<CounterState>().clearAll()
-          }),
+          })),
       },
     })
     const statefulInvocation = (invocationId: string, key: string) => ({
@@ -344,18 +350,18 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
     const patchWorkflow = workflow({
       name: "patchWorkflow",
       handlers: {
-        run: (title: string) =>
+        run: operationHandler((title: string) =>
           gen(function* () {
             return yield* run(() => `opened:${title}`, {
               name: "open-patch",
             })
-          }),
-        status: (id: string) =>
+          })),
+        status: operationHandler((id: string) =>
           gen(function* () {
             return yield* run(() => `status:${id}:modeled`, {
               name: "read-status",
             })
-          }),
+          })),
       },
     })
     const invocation = {

@@ -1,7 +1,5 @@
 import { Effect } from "effect"
 import { FluentFiregridError } from "./error.ts"
-import { execute } from "./execute.ts"
-import type { Operation } from "./operation.ts"
 import type { ExecutionContext, FluentRequirements } from "./schema.ts"
 
 export type Handler<Input, Output> = (
@@ -10,25 +8,6 @@ export type Handler<Input, Output> = (
 ) => Effect.Effect<Output, unknown, FluentRequirements>
 
 type AnyHandler = Handler<never, unknown>
-type AnyOperationHandler = (input: never) => Operation<unknown>
-type HandlerEntry = AnyHandler | AnyOperationHandler
-
-type HandlerEntryInput<Entry> =
-  Entry extends Handler<infer Input, unknown> ? Input
-    : Entry extends (input: infer Input) => Operation<unknown> ? Input
-    : never
-
-type HandlerEntryOutput<Entry> =
-  Entry extends Handler<never, infer Output> ? Output
-    : Entry extends (input: never) => Operation<infer Output> ? Output
-    : never
-
-type NormalizeHandlers<Entries extends Record<string, HandlerEntry>> = {
-  readonly [Key in keyof Entries]: Handler<
-    HandlerEntryInput<Entries[Key]>,
-    HandlerEntryOutput<Entries[Key]>
-  >
-}
 
 export type DefinitionKind = "service" | "object" | "workflow"
 
@@ -66,64 +45,42 @@ type ServiceClient<Handlers extends Record<string, AnyHandler>> = {
   ) => Effect.Effect<OutputOf<Handlers[Key]>, unknown, FluentRequirements>
 }
 
-
-const isExecutionHandler = (entry: HandlerEntry): entry is AnyHandler =>
-  entry.length >= 2
-
-const normalizeHandlers = <const Entries extends Record<string, HandlerEntry>>(
-  entries: Entries,
-): NormalizeHandlers<Entries> => {
-  const normalized: Record<string, AnyHandler> = {}
-  const keys = Object.keys(entries)
-  for (let index = 0; index < keys.length; index += 1) {
-    const key = keys[index]
-    if (key === undefined) continue
-    const entry = entries[key]
-    if (entry === undefined) continue
-    normalized[key] = ((ctx: ExecutionContext, input: never) => {
-      if (isExecutionHandler(entry)) return entry(ctx, input)
-      return execute(ctx, entry(input))
-    })
-  }
-  return normalized as NormalizeHandlers<Entries>
-}
-
 // fluent-firegrid-keystone.PACKAGE.2
 export const service = <
   const Name extends string,
-  const Handlers extends Record<string, HandlerEntry>,
+  const Handlers extends Record<string, AnyHandler>,
 >(definition: {
   readonly name: Name
   readonly handlers: Handlers
-}): ServiceDefinition<Name, NormalizeHandlers<Handlers>> => ({
+}): ServiceDefinition<Name, Handlers> => ({
   name: definition.name,
   _kind: "service",
-  handlers: normalizeHandlers(definition.handlers),
+  handlers: definition.handlers,
 })
 
 export const object = <
   const Name extends string,
-  const Handlers extends Record<string, HandlerEntry>,
+  const Handlers extends Record<string, AnyHandler>,
 >(definition: {
   readonly name: Name
   readonly handlers: Handlers
-}): ObjectDefinition<Name, NormalizeHandlers<Handlers>> => ({
+}): ObjectDefinition<Name, Handlers> => ({
   name: definition.name,
   _kind: "object",
-  handlers: normalizeHandlers(definition.handlers),
+  handlers: definition.handlers,
 })
 
 export const workflow = <
   const Name extends string,
-  const Handlers extends Record<string, HandlerEntry>,
+  const Handlers extends Record<string, AnyHandler>,
 >(definition: {
   readonly name: Name
   readonly handlers: Handlers
-}): WorkflowDefinition<Name, NormalizeHandlers<Handlers>> => ({
+}): WorkflowDefinition<Name, Handlers> => ({
   // fluent-firegrid-keystone.DEFINITIONS.3
   name: definition.name,
   _kind: "workflow",
-  handlers: normalizeHandlers(definition.handlers),
+  handlers: definition.handlers,
 })
 
 export const invoke = <

@@ -9,6 +9,7 @@ import {
   allSettled,
   any,
   client,
+  execute,
   gen,
   race,
   run,
@@ -110,18 +111,21 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
     const svc = service({
       name: "raceSvc",
       handlers: {
-        runRace: (_: void) =>
-          gen(function* () {
-            const slow = run(
-              () => Effect.as(Effect.sleep(20), "slow"),
-              { name: "slow" },
-            )
-            const fast = run(
-              () => Effect.as(Effect.sleep(1), "fast"),
-              { name: "fast" },
-            )
-            return yield* race([slow, fast])
-          }),
+        runRace: (ctx, _: void) =>
+          execute(
+            ctx,
+            gen(function* () {
+              const slow = run(
+                () => Effect.as(Effect.sleep(20), "slow"),
+                { name: "slow" },
+              )
+              const fast = run(
+                () => Effect.as(Effect.sleep(1), "fast"),
+                { name: "fast" },
+              )
+              return yield* race([slow, fast])
+            }),
+          ),
       },
     })
 
@@ -135,26 +139,29 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
     const svc = service({
       name: "raceReplaySvc",
       handlers: {
-        hedge: (_: void) =>
-          gen(function* () {
-            const slow = run(
-              () => {
-                executions.slow += 1
-                return Effect.as(Effect.sleep(5), "slow")
-              },
-              { name: "slow" },
-            )
-            const fast = run(
-              () => {
-                executions.fast += 1
-                return Effect.as(Effect.sleep(1), "fast")
-              },
-              { name: "fast" },
-            )
-            const winner = yield* race([slow, fast])
-            yield* sleep(10, "let-loser-finish")
-            return winner
-          }),
+        hedge: (ctx, _: void) =>
+          execute(
+            ctx,
+            gen(function* () {
+              const slow = run(
+                () => {
+                  executions.slow += 1
+                  return Effect.as(Effect.sleep(5), "slow")
+                },
+                { name: "slow" },
+              )
+              const fast = run(
+                () => {
+                  executions.fast += 1
+                  return Effect.as(Effect.sleep(1), "fast")
+                },
+                { name: "fast" },
+              )
+              const winner = yield* race([slow, fast])
+              yield* sleep(10, "let-loser-finish")
+              return winner
+            }),
+          ),
       },
     })
 
@@ -173,34 +180,40 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
     const svc = service({
       name: "anySvc",
       handlers: {
-        firstSuccess: (_: void) =>
-          gen(function* () {
-            const failed = run(
-              () => Effect.fail(new TestFailure({ message: "nope" })),
-              { name: "failed" },
-            )
-            const ok = run(() => "ok", { name: "ok" })
-            return yield* any([failed, ok])
-          }),
-        allFail: (_: void) =>
-          gen(function* () {
-            const a = run(
-              () => Effect.fail(new TestFailure({ message: "a" })),
-              { name: "a" },
-            )
-            const b = run(
-              () => Effect.fail(new TestFailure({ message: "b" })),
-              { name: "b" },
-            )
-            try {
-              yield* any([a, b])
-              return "unexpected"
-            } catch (error) {
-              return error instanceof AggregateError
-                ? error.errors.map((item) => (item as Error).message).join(",")
-                : "wrong"
-            }
-          }),
+        firstSuccess: (ctx, _: void) =>
+          execute(
+            ctx,
+            gen(function* () {
+              const failed = run(
+                () => Effect.fail(new TestFailure({ message: "nope" })),
+                { name: "failed" },
+              )
+              const ok = run(() => "ok", { name: "ok" })
+              return yield* any([failed, ok])
+            }),
+          ),
+        allFail: (ctx, _: void) =>
+          execute(
+            ctx,
+            gen(function* () {
+              const a = run(
+                () => Effect.fail(new TestFailure({ message: "a" })),
+                { name: "a" },
+              )
+              const b = run(
+                () => Effect.fail(new TestFailure({ message: "b" })),
+                { name: "b" },
+              )
+              try {
+                yield* any([a, b])
+                return "unexpected"
+              } catch (error) {
+                return error instanceof AggregateError
+                  ? error.errors.map((item) => (item as Error).message).join(",")
+                  : "wrong"
+              }
+            }),
+          ),
       },
     })
 
@@ -215,20 +228,23 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
     const svc = service({
       name: "settledSvc",
       handlers: {
-        settle: (_: void) =>
-          gen(function* () {
-            const out = yield* allSettled([
-              run(() => "a", { name: "a" }),
-              run(
-                () => Effect.fail(new TestFailure({ message: "middle" })),
-                { name: "middle" },
-              ),
-              run(() => "c", { name: "c" }),
-            ])
-            return out.map((item) =>
-              item.status === "fulfilled" ? item.value : (item.reason as Error).message,
-            ).join("|")
-          }),
+        settle: (ctx, _: void) =>
+          execute(
+            ctx,
+            gen(function* () {
+              const out = yield* allSettled([
+                run(() => "a", { name: "a" }),
+                run(
+                  () => Effect.fail(new TestFailure({ message: "middle" })),
+                  { name: "middle" },
+                ),
+                run(() => "c", { name: "c" }),
+              ])
+              return out.map((item) =>
+                item.status === "fulfilled" ? item.value : (item.reason as Error).message,
+              ).join("|")
+            }),
+          ),
       },
     })
 
@@ -241,15 +257,18 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
     const svc = service({
       name: "selectSvc",
       handlers: {
-        choose: (_: void) =>
-          gen(function* () {
-            const selected = yield* select({
-              slow: run(() => Effect.as(Effect.sleep(20), "slow"), { name: "slow" }),
-              fast: run(() => Effect.as(Effect.sleep(1), "fast"), { name: "fast" }),
-            })
-            const value = yield* selected.future
-            return `${String(selected.tag)}:${value}`
-          }),
+        choose: (ctx, _: void) =>
+          execute(
+            ctx,
+            gen(function* () {
+              const selected = yield* select({
+                slow: run(() => Effect.as(Effect.sleep(20), "slow"), { name: "slow" }),
+                fast: run(() => Effect.as(Effect.sleep(1), "fast"), { name: "fast" }),
+              })
+              const value = yield* selected.future
+              return `${String(selected.tag)}:${value}`
+            }),
+          ),
       },
     })
 
@@ -262,17 +281,20 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
     const svc = service({
       name: "spawnSvc",
       handlers: {
-        nested: (input: number) =>
-          gen(function* () {
-            const child = spawn(gen(function* () {
-              const [left, right] = yield* all([
-                run(() => input + 1, { name: "left" }),
-                run(() => input + 2, { name: "right" }),
-              ])
-              return left + right
-            }))
-            return (yield* child) + 1
-          }),
+        nested: (ctx, input: number) =>
+          execute(
+            ctx,
+            gen(function* () {
+              const child = spawn(gen(function* () {
+                const [left, right] = yield* all([
+                  run(() => input + 1, { name: "left" }),
+                  run(() => input + 2, { name: "right" }),
+                ])
+                return left + right
+              }))
+              return (yield* child) + 1
+            }),
+          ),
       },
     })
 
