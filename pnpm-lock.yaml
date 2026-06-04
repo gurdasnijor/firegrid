@@ -246,9 +246,6 @@ importers:
       '@agentclientprotocol/claude-agent-acp':
         specifier: 0.36.1
         version: 0.36.1(@anthropic-ai/sdk@0.97.1(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
-      '@firegrid/client-sdk':
-        specifier: workspace:*
-        version: link:../client-sdk
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
@@ -279,6 +276,9 @@ importers:
       '@effect/workflow':
         specifier: 0.18.1
         version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@firegrid/host-sdk':
+        specifier: workspace:*
+        version: link:../host-sdk
       '@firegrid/observability':
         specifier: workspace:*
         version: link:../observability
@@ -294,9 +294,6 @@ importers:
       effect-durable-operators:
         specifier: workspace:*
         version: link:../effect-durable-operators
-      effect-durable-streams:
-        specifier: workspace:*
-        version: link:../effect-durable-streams
     devDependencies:
       '@agentclientprotocol/sdk':
         specifier: 0.21.0

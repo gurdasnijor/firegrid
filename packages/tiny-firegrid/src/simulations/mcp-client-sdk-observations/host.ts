@@ -1,24 +1,25 @@
 /**
- * mcp-task-projection-gateway host — composes through the single Firegrid host
- * composition root (tf-ll90.8.4). The custom task-projection MCP protocol that
- * this sim originally hand-wired (`protocol.ts` / `wire.ts` — the SEP-2663-shaped
- * Tasks projection over its own durable-streams wire) has been PROMOTED into the
- * production MCP ingress (`runtime/unified/mcp-host/task-projection.ts`): the
- * standard durable-streams MCP ingress now natively projects MCP Tasks for
- * `session_prompt` from RuntimeContext output, with the same task-id encoding,
- * `tasks/get` / `tasks/result` / `tasks/update` permission round-trip, and
- * stateless rehydration. The sim-local copy therefore DUPLICATED firegridHost's
- * ingress and is dropped; this sim now composes the bare `firegridHost(options)`
- * and drives the task projection over `@firegrid/client-sdk/mcp`.
+ * mcp-client-sdk-observations host — composes through the single Firegrid host
+ * composition root (tf-ll90.8.4). `firegridHost(options)` provides the MCP
+ * ingress (server + tool-dispatch + host-plane router + context-resolver +
+ * agent-output/contexts views) and the `FiregridRuntime`; the gateway carries
+ * the production claude-acp agent so `session_new` children inherit it. There is
+ * no per-sim layer assembly — prod == sim, differing only by the options data.
  *
- * The gateway carries the claude-acp agent (host-resolved `ANTHROPIC_API_KEY`)
- * so `session_new` children inherit it for the real prompt + permission probe.
+ * This sim is now self-contained (previously it reused
+ * mcp-production-task-projection/host.ts and seeded its parent gateway via the
+ * legacy firegrid.ts client surface). The gateway is now firegridHost-seeded.
+ *
+ * Imports: firegridHost from "@firegrid/host-sdk", DurableStreamsLive + local
+ * from "@firegrid/protocol/launch", defaultProductionAdapterLayer from
+ * "@firegrid/runtime/unified", RuntimeEnvResolverPolicy from
+ * "@firegrid/runtime/sources/sandbox".
  */
 
 import { firegridHost } from "@firegrid/host-sdk"
 import { DurableStreamsLive, local } from "@firegrid/protocol/launch"
-import { defaultProductionAdapterLayer } from "@firegrid/runtime/unified"
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
+import { defaultProductionAdapterLayer } from "@firegrid/runtime/unified"
 import type { Layer } from "effect"
 import type {
   FiregridHost,
@@ -31,7 +32,7 @@ const claudeAcpArgv = [
   "@agentclientprotocol/claude-agent-acp@0.36.1",
 ] as const
 
-export const mcpTaskProjectionGatewayHost = (
+export const host = (
   env: TinyFiregridHostEnv,
 ): Layer.Layer<FiregridHost, unknown> =>
   firegridHost({
@@ -50,10 +51,10 @@ export const mcpTaskProjectionGatewayHost = (
       transport: "durable-streams",
       baseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
-      streamId: "mcp-task-projection-gateway",
+      streamId: "mcp-client-sdk-observations",
       gatewayExternalKey: {
         source: "tiny-firegrid",
-        id: "mcp-task-projection-gateway-gateway",
+        id: "mcp-client-sdk-observations-gateway",
       },
       gatewayRuntime: local.jsonl({
         argv: [...claudeAcpArgv],
@@ -63,6 +64,7 @@ export const mcpTaskProjectionGatewayHost = (
         envBindings: [
           { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
         ],
+        runtimeContextMcp: { enabled: true },
       }),
     },
   })

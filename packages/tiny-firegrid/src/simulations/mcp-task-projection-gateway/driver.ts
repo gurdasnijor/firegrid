@@ -1,9 +1,35 @@
-import {
-  Firegrid,
-  FiregridConfig,
-  local,
-} from "@firegrid/client-sdk/firegrid"
+/**
+ * mcp-task-projection-gateway driver — drives the MCP Tasks projection for
+ * `session_prompt` PURELY over `@firegrid/client-sdk/mcp` (tf-ll90.8.4). No
+ * firegrid.ts client and no sim-local task-projection protocol: the host owns
+ * the gateway RuntimeContext (see ./host.ts) carrying the claude-acp agent, and
+ * the PRODUCTION MCP ingress now projects the task state from RuntimeContext
+ * output (the projection this sim originally hand-wired has been promoted into
+ * `runtime/unified/mcp-host/task-projection.ts`).
+ *
+ * Flow: wait for the host-seeded gateway context over MCP, provision one child
+ * via `session_new` (= mcp.sessions.createOrLoad, inheriting the gateway's
+ * claude-acp runtime), prompt it as an MCP Task (session.promptTask), follow the
+ * task lifecycle (session.taskStates) answering the input_required permission
+ * gate (session.respondToPermission), and read the terminal result
+ * (session.taskResult). Creds-gated on ANTHROPIC_API_KEY (claude-acp).
+ *
+ * Airgapped imports: `@firegrid/client-sdk/mcp`, `@firegrid/client-sdk/config`,
+ * and `effect` only. `FiregridConfig` is the sole config Tag (R = FiregridConfig).
+ */
+
+import { FiregridConfig } from "@firegrid/client-sdk/config"
+import { makeFiregridMcpClient } from "@firegrid/client-sdk/mcp"
 import { Config, Duration, Effect, Option, Stream } from "effect"
+
+// Airgapped driver — MIRRORS ./host.ts literals (kept in sync).
+const gatewayContextId = "session:tiny-firegrid:mcp-task-projection-gateway-gateway"
+const streamId = "mcp-task-projection-gateway"
+const marker = "MCP_TASK_PROJECTION_DONE"
+
+const anthropicKeyConfig = Config.redacted("ANTHROPIC_API_KEY").pipe(
+  Config.option,
+)
 
 const claudeAcpArgv = [
   "npx",
@@ -11,23 +37,7 @@ const claudeAcpArgv = [
   "@agentclientprotocol/claude-agent-acp@0.36.1",
 ] as const
 
-const anthropicKeyConfig = Config.redacted("ANTHROPIC_API_KEY").pipe(
-  Config.option,
-)
-
-const sessionExternalKey = {
-  source: "tiny-firegrid",
-  id: "mcp-task-projection-session",
-} as const
-
-const gatewayExternalKey = {
-  source: "tiny-firegrid",
-  id: "mcp-task-projection-parent",
-} as const
-
-const streamId = "mcp-task-projection-gateway"
-
-const marker = "MCP_TASK_PROJECTION_DONE"
+const terminalStatuses = new Set(["completed", "failed", "cancelled"])
 
 const promptText = (permissionProbePath: string) => [
   "Use your available local tooling to create or update this file:",
@@ -39,27 +49,6 @@ const promptText = (permissionProbePath: string) => [
   "If the environment asks for permission, request it and wait.",
   `After the file operation succeeds, reply with exactly: ${marker}`,
 ].join("\n")
-
-interface TaskResponse {
-  readonly taskId: string
-}
-
-interface McpTaskProjectionWireOptions {
-  readonly baseUrl: string
-  readonly namespace: string
-  readonly streamId: string
-}
-
-interface ProjectedTaskSnapshot {
-  readonly taskId: string
-  readonly status: string
-  readonly inputRequest?: unknown
-}
-
-interface StreamReadResult {
-  readonly items: ReadonlyArray<unknown>
-  readonly nextOffset: string
-}
 
 interface ScenarioResult {
   readonly sessionPromptTaskId: string
@@ -73,247 +62,7 @@ interface ScenarioResult {
   readonly restartRehydrationGetWorked: boolean
 }
 
-const nextRequestId = (() => {
-  let next = 0
-  return () => String(++next)
-})()
-
-const exitValue = (response: unknown): unknown => {
-  if (typeof response !== "object" || response === null) return undefined
-  const record = response as Record<string, unknown>
-  if (record._tag !== "Exit") return undefined
-  const exit = record.exit
-  if (typeof exit !== "object" || exit === null) return undefined
-  const encoded = exit as Record<string, unknown>
-  return encoded._tag === "Success" ? encoded.value : undefined
-}
-
-const streamUrl = (wire: McpTaskProjectionWireOptions, suffix: string) => {
-  const trimmed = wire.baseUrl.replace(/\/+$/, "")
-  const separator = trimmed.includes("/v1/stream/") ? "/" : "/v1/stream/"
-  const streamName = `${wire.namespace}.tiny-firegrid.${wire.streamId}.mcp-task-projection.${suffix}`
-  return `${trimmed}${separator}${encodeURIComponent(streamName)}`
-}
-
-const createStream = (wire: McpTaskProjectionWireOptions, suffix: string): Effect.Effect<void, unknown> =>
-  Effect.tryPromise({
-    try: signal =>
-      globalThis.fetch(streamUrl(wire, suffix), {
-        method: "PUT",
-        headers: { "content-type": "application/json", connection: "close" },
-        signal,
-      }).then(async response => {
-        await response.arrayBuffer()
-        return response
-      }),
-    catch: cause => cause,
-  }).pipe(Effect.asVoid, Effect.catchAll(() => Effect.void))
-
-const createWireStreams = (wire: McpTaskProjectionWireOptions): Effect.Effect<void, unknown> =>
-  Effect.all([
-    createStream(wire, "requests"),
-    createStream(wire, "responses"),
-  ], { discard: true })
-
-const appendWire = (
-  wire: McpTaskProjectionWireOptions,
-  suffix: string,
-  value: unknown,
-): Effect.Effect<void, unknown> =>
-  Effect.tryPromise({
-    try: async signal => {
-      const response = await globalThis.fetch(streamUrl(wire, suffix), {
-        method: "POST",
-        headers: { "content-type": "application/json", connection: "close" },
-        body: JSON.stringify(value),
-        signal,
-      })
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(`append ${suffix} failed with status ${response.status}`)
-      }
-      await response.arrayBuffer()
-    },
-    catch: cause => cause,
-  })
-
-const appendRequest = (
-  wire: McpTaskProjectionWireOptions,
-  message: unknown,
-): Effect.Effect<void, unknown> =>
-  appendWire(wire, "requests", { clientId: 1, message })
-
-const readWire = (
-  wire: McpTaskProjectionWireOptions,
-  suffix: string,
-  offset: string,
-): Effect.Effect<StreamReadResult, unknown> =>
-  Effect.tryPromise({
-    try: async signal => {
-      const url = new URL(streamUrl(wire, suffix))
-      url.searchParams.set("offset", offset)
-      url.searchParams.set("live", "long-poll")
-      const response = await globalThis.fetch(url, {
-        headers: { connection: "close" },
-        signal,
-      })
-      if (response.status !== 200 && response.status !== 204) {
-        throw new Error(`read ${suffix} failed with status ${response.status}`)
-      }
-      const nextOffset = response.headers.get("stream-next-offset") ?? offset
-      if (response.status === 204) return { items: [], nextOffset }
-      const body = await response.text()
-      const parsed: unknown = body.trim() === "" ? [] : JSON.parse(body)
-      return { items: Array.isArray(parsed) ? parsed : [parsed], nextOffset }
-    },
-    catch: cause => cause,
-  })
-
-const readStream = (wire: McpTaskProjectionWireOptions, suffix: string): Stream.Stream<unknown, unknown> =>
-  Stream.unfoldEffect("-1", offset =>
-    readWire(wire, suffix, offset).pipe(
-      Effect.map(result => Option.some([result.items, result.nextOffset] as const)),
-    )).pipe(Stream.flatMap(items => Stream.fromIterable(items)))
-
-const readResponses = (wire: McpTaskProjectionWireOptions): Stream.Stream<unknown, unknown> =>
-  readStream(wire, "responses").pipe(
-    Stream.filter((event): event is { readonly clientId: number; readonly message: unknown } =>
-      typeof event === "object" &&
-      event !== null &&
-      "clientId" in event &&
-      event.clientId === 1 &&
-      "message" in event),
-    Stream.map(event => event.message),
-  )
-
-const rpc = (
-  wire: McpTaskProjectionWireOptions,
-  tag: string,
-  payload: unknown,
-): Effect.Effect<unknown, unknown> =>
-  Effect.gen(function*() {
-    const id = nextRequestId()
-    yield* appendRequest(wire, {
-      _tag: "Request",
-      id,
-      tag,
-      payload,
-      headers: [],
-    })
-    const response = yield* readResponses(wire).pipe(
-      Stream.filter(message =>
-        typeof message === "object" &&
-        message !== null &&
-        "_tag" in message &&
-        message._tag === "Exit" &&
-        "requestId" in message &&
-        message.requestId === id),
-      Stream.runHead,
-      Effect.timeoutFail({
-        duration: Duration.seconds(90),
-        onTimeout: () => new Error(`timed out waiting for ${tag}`),
-      }),
-      Effect.flatMap(Option.match({
-        onNone: () => Effect.fail(new Error(`no response for ${tag}`)),
-        onSome: Effect.succeed,
-      })),
-    )
-    return exitValue(response)
-  }).pipe(
-    Effect.withSpan(`tiny_firegrid.mcp_task_projection.rpc.${tag}`, {
-      attributes: {
-        "firegrid.mcp.method": tag,
-      },
-    }),
-  )
-
-const createTask = (
-  wire: McpTaskProjectionWireOptions,
-  name: string,
-  args: Record<string, unknown>,
-): Effect.Effect<TaskResponse, unknown> =>
-  Effect.gen(function*() {
-    const value = yield* rpc(wire, "tools/call", {
-      name,
-      arguments: args,
-      task: {
-        ttl: 120_000,
-      },
-    })
-    const record = typeof value === "object" && value !== null
-      ? value as Record<string, unknown>
-      : {}
-    const task = typeof record.task === "object" && record.task !== null
-      ? record.task as Record<string, unknown>
-      : {}
-    const taskId = typeof task.taskId === "string" ? task.taskId : ""
-    return { taskId }
-  })
-
-const taskGet = (
-  wire: McpTaskProjectionWireOptions,
-  taskId: string,
-): Effect.Effect<ProjectedTaskSnapshot, unknown> =>
-  Effect.gen(function*() {
-    const value = yield* rpc(wire, "tasks/get", { taskId })
-    const record = typeof value === "object" && value !== null
-      ? value as Record<string, unknown>
-      : {}
-    return {
-      taskId: typeof record.taskId === "string" ? record.taskId : taskId,
-      status: typeof record.status === "string" ? record.status : "unknown",
-      ...(record.inputRequest === undefined ? {} : { inputRequest: record.inputRequest }),
-    }
-  })
-
-const taskResult = (
-  wire: McpTaskProjectionWireOptions,
-  taskId: string,
-): Effect.Effect<unknown, unknown> =>
-  rpc(wire, "tasks/result", { taskId })
-
-const pollPromptTask = (
-  wire: McpTaskProjectionWireOptions,
-  taskId: string,
-): Effect.Effect<{
-  readonly statuses: ReadonlyArray<string>
-  readonly sentUpdate: boolean
-  readonly restartRehydrationGetWorked: boolean
-}, unknown> =>
-  Effect.gen(function*() {
-    const statuses: Array<string> = []
-    let sentUpdate = false
-    let restartRehydrationGetWorked = false
-    while (true) {
-      const snapshot = yield* taskGet(wire, taskId)
-      restartRehydrationGetWorked = restartRehydrationGetWorked || snapshot.status === "working"
-      statuses.push(snapshot.status)
-      if (snapshot.status === "input_required" && !sentUpdate) {
-        sentUpdate = true
-        yield* rpc(wire, "tasks/update", {
-          taskId,
-          input: {
-            decision: { _tag: "Allow" },
-          },
-        })
-      }
-      if (
-        snapshot.status === "completed" ||
-        snapshot.status === "failed" ||
-        snapshot.status === "cancelled"
-      ) {
-        return { statuses, sentUpdate, restartRehydrationGetWorked }
-      }
-      // eslint-disable-next-line local/no-fixed-polling -- MCP Tasks clients poll tasks/get; this sim validates that contract.
-      yield* Effect.sleep(Duration.millis(500))
-    }
-  }).pipe(
-    Effect.timeoutFail({
-      duration: Duration.minutes(5),
-      onTimeout: () => new Error("projected prompt task did not reach terminal status"),
-    }),
-  )
-
-export const mcpTaskProjectionGatewayDriver: Effect.Effect<void, unknown, Firegrid | FiregridConfig> =
+export const mcpTaskProjectionGatewayDriver: Effect.Effect<void, unknown, FiregridConfig> =
   Effect.scoped(Effect.gen(function*() {
     const anthropicKey = yield* anthropicKeyConfig
     if (Option.isNone(anthropicKey)) {
@@ -325,64 +74,80 @@ export const mcpTaskProjectionGatewayDriver: Effect.Effect<void, unknown, Firegr
       return
     }
 
-    const firegrid = yield* Firegrid
     const config = yield* FiregridConfig
     if (config.durableStreamsBaseUrl === undefined || config.namespace === undefined) {
-      return yield* Effect.fail(new Error("mcp task projection requires durableStreamsBaseUrl and namespace"))
+      return yield* Effect.fail(
+        new Error("mcp task projection requires durableStreamsBaseUrl and namespace"),
+      )
     }
 
-    yield* firegrid.sessions.createOrLoad({
-      externalKey: gatewayExternalKey,
-      runtime: local.jsonl({
-        argv: [...claudeAcpArgv],
-        agent: "claude-acp",
-        agentProtocol: "acp",
-        cwd: globalThis.process.cwd(),
-        envBindings: [
-          { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
-        ],
-      }),
-      createdBy: "tiny-firegrid-simulation",
-    })
-
-    const session = yield* firegrid.sessions.createOrLoad({
-      externalKey: sessionExternalKey,
-      runtime: local.jsonl({
-        argv: [...claudeAcpArgv],
-        agent: "claude-acp",
-        agentProtocol: "acp",
-        cwd: globalThis.process.cwd(),
-        envBindings: [
-          { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
-        ],
-      }),
-      createdBy: "tiny-firegrid-simulation",
-    })
-
-    const wire: McpTaskProjectionWireOptions = {
-      baseUrl: config.durableStreamsBaseUrl,
+    const mcp = yield* makeFiregridMcpClient({
+      durableStreamsBaseUrl: config.durableStreamsBaseUrl,
       namespace: config.namespace,
       streamId,
-    }
-    yield* createWireStreams(wire)
-
-    yield* rpc(wire, "initialize", {
-      protocolVersion: "2025-06-18",
-      capabilities: {},
-      clientInfo: { name: "tiny-firegrid-mcp-task-projection", version: "0.0.0" },
+      clientId: 2,
+      pollIntervalMs: 250,
     })
-    yield* rpc(wire, "tools/list", {})
 
-    const sessionPromptTask = yield* createTask(wire, "session_prompt", {
-      sessionId: session.sessionId,
+    yield* mcp.initialize
+    yield* mcp.toolsList
+
+    // Wait for the host-seeded gateway context before provisioning off it.
+    yield* mcp.observations.watchContexts(
+      context => context.contextId === gatewayContextId,
+    ).pipe(
+      Stream.runHead,
+      Effect.timeoutFail({
+        duration: Duration.seconds(30),
+        onTimeout: () => new Error("host gateway context did not appear over MCP"),
+      }),
+    )
+
+    // Provision a child session over MCP — session_new inherits the gateway's
+    // claude-acp runtime.
+    const session = yield* mcp.sessions.createOrLoad({
+      agentKind: "claude-acp",
+      prompt: "Stand by for a task-projection probe.",
+    })
+
+    // Prompt the child as an MCP Task; the production ingress projects the task
+    // state from the RuntimeContext output emitted after this prompt's cursor.
+    const promptTask = yield* session.promptTask({
       prompt: promptText(
         `packages/tiny-firegrid/.simulate/mcp-task-projection-permission-probe-${globalThis.crypto.randomUUID()}.txt`,
       ),
       inputId: "tiny-firegrid-mcp-task-projection-prompt-1",
+      taskTtlMs: 120_000,
     })
 
-    const watched = yield* pollPromptTask(wire, sessionPromptTask.taskId)
-    const promptResult = yield* taskResult(wire, sessionPromptTask.taskId)
+    const statuses: Array<string> = []
+    let sentTaskUpdate = false
+    let restartRehydrationGetWorked = false
+    const terminal = yield* session.taskStates(promptTask.taskId).pipe(
+      Stream.tap(task =>
+        Effect.gen(function*() {
+          statuses.push(task.status)
+          // A `working` status read back from `tasks/get` proves the stateless
+          // task id rehydrates against runtime output (no spike-local store).
+          restartRehydrationGetWorked = restartRehydrationGetWorked || task.status === "working"
+          if (task.status === "input_required" && !sentTaskUpdate) {
+            sentTaskUpdate = true
+            yield* session.respondToPermission(task.taskId, { _tag: "Allow" })
+          }
+        })),
+      Stream.filter(task => terminalStatuses.has(task.status)),
+      Stream.runHead,
+      Effect.timeoutFail({
+        duration: Duration.minutes(5),
+        onTimeout: () => new Error("projected prompt task did not reach terminal status"),
+      }),
+      Effect.flatMap(Option.match({
+        onNone: () => Effect.fail(new Error("projected prompt task produced no terminal status")),
+        onSome: Effect.succeed,
+      })),
+    )
+
+    const promptResult = yield* session.taskResult(promptTask.taskId)
     const promptRecord = typeof promptResult === "object" && promptResult !== null
       ? promptResult as Record<string, unknown>
       : {}
@@ -391,27 +156,29 @@ export const mcpTaskProjectionGatewayDriver: Effect.Effect<void, unknown, Firegr
         promptRecord.structuredContent !== null
       ? promptRecord.structuredContent as Record<string, unknown>
       : {}
-    const permissionRoundtripCompleted =
-      promptStructured.permissionRoundtripCompleted === true
-    const projectedFromRuntimeOutput =
-      promptStructured.projectedFrom === "runtime-output"
+
     const result: ScenarioResult = {
-      sessionPromptTaskId: sessionPromptTask.taskId,
+      sessionPromptTaskId: promptTask.taskId,
       sessionId: session.sessionId,
-      taskStatuses: watched.statuses.join(","),
-      sawInputRequired: watched.statuses.includes("input_required"),
-      sentTaskUpdate: watched.sentUpdate,
+      taskStatuses: statuses.join(","),
+      sawInputRequired: statuses.includes("input_required"),
+      sentTaskUpdate,
       resultHadMarker: promptContent.includes(marker),
-      permissionRoundtripCompleted,
-      projectedFromRuntimeOutput,
-      restartRehydrationGetWorked: watched.restartRehydrationGetWorked,
+      permissionRoundtripCompleted:
+        promptStructured.permissionRoundtripCompleted === true,
+      projectedFromRuntimeOutput: promptStructured.projectedFrom === "runtime-output",
+      restartRehydrationGetWorked,
     }
 
     yield* Effect.annotateCurrentSpan({
-      "firegrid.mcp_task_projection.status": "completed",
+      "firegrid.mcp_task_projection.status": terminal.status === "completed"
+        ? "completed"
+        : terminal.status,
       "firegrid.mcp_task_projection.anthropic_api_key_present": true,
+      "firegrid.mcp_task_projection.gateway_context_id": gatewayContextId,
       "firegrid.mcp_task_projection.session_prompt_task_id": result.sessionPromptTaskId,
       "firegrid.mcp_task_projection.session_id": result.sessionId,
+      "firegrid.mcp_task_projection.child_context_id": session.contextId,
       "firegrid.mcp_task_projection.task_statuses": result.taskStatuses,
       "firegrid.mcp_task_projection.saw_input_required": result.sawInputRequired,
       "firegrid.mcp_task_projection.sent_task_update": result.sentTaskUpdate,
@@ -419,6 +186,7 @@ export const mcpTaskProjectionGatewayDriver: Effect.Effect<void, unknown, Firegr
       "firegrid.mcp_task_projection.permission_roundtrip_completed": result.permissionRoundtripCompleted,
       "firegrid.mcp_task_projection.projected_from_runtime_output": result.projectedFromRuntimeOutput,
       "firegrid.mcp_task_projection.restart_rehydration_get_worked": result.restartRehydrationGetWorked,
+      "firegrid.mcp_task_projection.transport": "mcp",
       "firegrid.mcp_task_projection.spawn_target": claudeAcpArgv.join(" "),
     })
   })).pipe(

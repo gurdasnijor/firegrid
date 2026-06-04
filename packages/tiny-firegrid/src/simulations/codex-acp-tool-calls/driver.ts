@@ -1,19 +1,34 @@
-import {
-  Firegrid,
-  local,
-} from "@firegrid/client-sdk/firegrid"
-import { Cause, Config, Effect, Exit, Option } from "effect"
+/**
+ * codex-acp-tool-calls driver — drives a REAL `@zed-industries/codex-acp` agent
+ * PURELY over `@firegrid/client-sdk/mcp` (tf-ll90.8.4). No firegrid.ts client:
+ * the host owns the gateway RuntimeContext carrying the codex runtime (ACP +
+ * host-owned runtime-context MCP, see ./host.ts). The driver provisions a child
+ * session via `session_new` (which inherits the gateway runtime, prompts it, and
+ * starts it), then waits on the agent-output journal until codex emits the
+ * `FIREGRID_TOOL_RESULT sleep slept=true` marker proving it called the Firegrid
+ * `sleep` MCP tool. Creds-gated: needs OPENAI_API_KEY to actually run.
+ *
+ * `FiregridConfig` is the only client-sdk import (read-only config Tag); the
+ * effect `Config` read of OPENAI_API_KEY is the creds gate, not a host handle.
+ *
+ * GAP (tf-ll90.8.4): the legacy sim ran TWO scenarios distinguished by a
+ * per-launch `mcpServers` URL override (`explicit_mcp_url`). `session_new`
+ * options carry only { cwd, metadata } — a per-session client-owned MCP URL
+ * override is NOT on the mcp.ts surface; that runtime config is gateway-owned
+ * now (host.ts sets `runtimeContextMcp.enabled`). So the migrated driver runs
+ * the single host-owned runtime-context-MCP path; the explicit-URL variant is
+ * dropped. See final report.
+ */
 
-const codexAcpArgv = [
-  "npx",
-  "-y",
-  "@zed-industries/codex-acp@0.14.0",
-] as const
+import { FiregridConfig } from "@firegrid/client-sdk/config"
+import { makeFiregridMcpClient } from "@firegrid/client-sdk/mcp"
+import { Config, Duration, Effect, Option, Stream } from "effect"
 
-const mcpHost = "127.0.0.1"
-const mcpPort = 43791
-const mcpPath = "/mcp"
-const mcpServerName = "firegrid-runtime-context"
+// Airgapped driver — MIRRORS ./host.ts literals (kept in sync).
+const gatewayContextId = "session:tiny-firegrid:codex-acp-tool-calls-gateway"
+const streamId = "codex-acp-tool-calls"
+
+const codexSpawnTarget = "npx -y @zed-industries/codex-acp@0.14.0"
 
 const promptForToolCall = [
   "Use the MCP server available in this ACP session.",
@@ -27,80 +42,54 @@ const toolResultMarker = "FIREGRID_TOOL_RESULT sleep slept=true"
 
 const openAiKeyConfig = Config.redacted("OPENAI_API_KEY").pipe(Config.option)
 
-interface ExternalKey {
-  readonly source: string
-  readonly id: string
-}
-
-interface ScenarioResult {
-  readonly id: string
-  readonly contextId: string
-  readonly startOffset: string
-  readonly promptOffset: string
-  readonly markerObserved: boolean
-  readonly textLength: number
-  readonly outputCount: number
-  readonly outputTags: string
-  readonly lastSequence: number
-  readonly timedOut: boolean
-}
-
-interface ScenarioFailure {
-  readonly id: string
-  readonly contextId: string
-  readonly failure: string
-}
-
-const sessionContextIdForExternalKey = (externalKey: ExternalKey): string => {
-  // Mirrors the currently merged host.sessions.createOrLoad binding; this is
-  // config data over the public launch seam, not a host handle import.
-  return `session:${externalKey.source}:${externalKey.id}`
-}
-
-const mcpUrlForContext = (contextId: string): string =>
-  `http://${mcpHost}:${mcpPort}${mcpPath}/runtime-context/${contextId}`
-
-const runCodexScenario = (
-  scenario: {
-    readonly id: string
-    readonly externalKey: ExternalKey
-    readonly explicitMcpUrl: boolean
-  },
-): Effect.Effect<ScenarioResult, unknown, Firegrid> =>
+export const codexAcpToolCallDriver: Effect.Effect<void, unknown, FiregridConfig> =
   Effect.gen(function*() {
-    const firegrid = yield* Firegrid
-    const contextId = sessionContextIdForExternalKey(scenario.externalKey)
-    const session = yield* firegrid.sessions.createOrLoad({
-      externalKey: scenario.externalKey,
-      runtime: local.jsonl({
-        argv: [...codexAcpArgv],
-        agent: "codex-acp",
-        agentProtocol: "acp",
-        cwd: globalThis.process.cwd(),
-        envBindings: [
-          { name: "OPENAI_API_KEY", ref: "env:OPENAI_API_KEY" },
-        ],
-        runtimeContextMcp: { enabled: true },
-        ...(scenario.explicitMcpUrl
-          ? {
-            mcpServers: [{
-              name: mcpServerName,
-              server: {
-                type: "url" as const,
-                url: mcpUrlForContext(contextId),
-              },
-            }],
-          }
-          : {}),
-      }),
-      createdBy: "tiny-firegrid-simulation",
+    const openAiKey = yield* openAiKeyConfig
+    if (Option.isNone(openAiKey)) {
+      yield* Effect.annotateCurrentSpan({
+        "firegrid.codex_acp.status": "blocked",
+        "firegrid.codex_acp.blocked_reason": "OPENAI_API_KEY is absent",
+        "firegrid.codex_acp.openai_api_key_present": false,
+      })
+      return
+    }
+
+    const config = yield* FiregridConfig
+    if (config.durableStreamsBaseUrl === undefined || config.namespace === undefined) {
+      return yield* Effect.fail(
+        new Error("codex-acp-tool-calls requires durableStreamsBaseUrl and namespace"),
+      )
+    }
+
+    const mcp = yield* makeFiregridMcpClient({
+      durableStreamsBaseUrl: config.durableStreamsBaseUrl,
+      namespace: config.namespace,
+      streamId,
+      clientId: 2,
+      pollIntervalMs: 250,
     })
 
-    const promptOffset = yield* session.prompt({
-      payload: promptForToolCall,
-      idempotencyKey: `codex-acp-tool-calls:${scenario.id}:turn-1`,
+    yield* mcp.initialize
+
+    // Wait for the host-seeded gateway context before provisioning off it.
+    yield* mcp.observations.watchContexts(
+      context => context.contextId === gatewayContextId,
+    ).pipe(
+      Stream.runHead,
+      Effect.timeoutFail({
+        duration: Duration.seconds(30),
+        onTimeout: () => new Error("host gateway context did not appear over MCP"),
+      }),
+    )
+
+    // Provision a child session over MCP — session_new inherits the gateway
+    // codex runtime (host-owned runtime-context MCP enabled), sends the initial
+    // prompt, and starts it. The agent's turn should call the Firegrid `sleep`
+    // tool then emit the marker line.
+    const session = yield* mcp.sessions.createOrLoad({
+      agentKind: "codex-acp",
+      prompt: promptForToolCall,
     })
-    const startOffset = yield* session.start()
 
     let afterSequence: number | undefined
     let resultText = ""
@@ -128,144 +117,22 @@ const runCodexScenario = (
       }
     }
 
-    return {
-      id: scenario.id,
-      contextId: session.contextId,
-      startOffset: startOffset.offset,
-      promptOffset: promptOffset.offset,
-      markerObserved: resultText.includes(toolResultMarker),
-      textLength: resultText.length,
-      outputCount,
-      outputTags: outputTags.join(","),
-      lastSequence: afterSequence ?? -1,
-      timedOut,
-    }
-  }).pipe(
-    Effect.withSpan(`firegrid.codex_acp_tool_calls.${scenario.id}`, {
-      kind: "client",
-      attributes: {
-        "firegrid.codex_acp.scenario": scenario.id,
-        "firegrid.codex_acp.explicit_mcp_url": scenario.explicitMcpUrl,
-      },
-    }),
-  )
-
-const annotateScenario = (
-  result: ScenarioResult,
-): Effect.Effect<void> =>
-  Effect.annotateCurrentSpan({
-    [`firegrid.codex_acp.${result.id}.context_id`]: result.contextId,
-    [`firegrid.codex_acp.${result.id}.start_offset`]: result.startOffset,
-    [`firegrid.codex_acp.${result.id}.prompt_offset`]: result.promptOffset,
-    [`firegrid.codex_acp.${result.id}.marker_observed`]: result.markerObserved,
-    [`firegrid.codex_acp.${result.id}.text_length`]: result.textLength,
-    [`firegrid.codex_acp.${result.id}.output_count`]: result.outputCount,
-    [`firegrid.codex_acp.${result.id}.output_tags`]: result.outputTags,
-    [`firegrid.codex_acp.${result.id}.last_sequence`]: result.lastSequence,
-    [`firegrid.codex_acp.${result.id}.timed_out`]: result.timedOut,
-  })
-
-const summarizeCause = (cause: Cause.Cause<unknown>): string => {
-  const failure = Cause.failureOption(cause)
-  if (Option.isSome(failure)) {
-    const value = failure.value
-    return value instanceof Error ? value.message : String(value)
-  }
-  return Cause.pretty(cause)
-}
-
-const captureScenario = (
-  scenario: {
-    readonly id: string
-    readonly externalKey: ExternalKey
-    readonly explicitMcpUrl: boolean
-  },
-): Effect.Effect<Exit.Exit<ScenarioResult, ScenarioFailure>, never, Firegrid> =>
-  runCodexScenario(scenario).pipe(
-    Effect.mapError((cause): ScenarioFailure => ({
-      id: scenario.id,
-      contextId: sessionContextIdForExternalKey(scenario.externalKey),
-      failure: String(cause),
-    })),
-    Effect.exit,
-  )
-
-const annotateScenarioExit = (
-  exit: Exit.Exit<ScenarioResult, ScenarioFailure>,
-): Effect.Effect<void> => {
-  if (Exit.isSuccess(exit)) {
-    return annotateScenario(exit.value).pipe(
-      Effect.zipRight(Effect.annotateCurrentSpan({
-        [`firegrid.codex_acp.${exit.value.id}.status`]: "completed",
-      })),
-    )
-  }
-  const failure = Cause.failureOption(exit.cause)
-  const id = Option.isSome(failure) ? failure.value.id : "unknown"
-  const contextId = Option.isSome(failure) ? failure.value.contextId : ""
-  const message = Option.isSome(failure)
-    ? failure.value.failure
-    : summarizeCause(exit.cause)
-  return Effect.annotateCurrentSpan({
-    [`firegrid.codex_acp.${id}.status`]: "failed",
-    [`firegrid.codex_acp.${id}.context_id`]: contextId,
-    [`firegrid.codex_acp.${id}.failure`]: message,
-  })
-}
-
-export const codexAcpToolCallDriver: Effect.Effect<void, unknown, Firegrid> =
-  Effect.gen(function*() {
-    const openAiKey = yield* openAiKeyConfig
-    if (Option.isNone(openAiKey)) {
-      yield* Effect.annotateCurrentSpan({
-        "firegrid.codex_acp.status": "blocked",
-        "firegrid.codex_acp.blocked_reason": "OPENAI_API_KEY is absent",
-        "firegrid.codex_acp.openai_api_key_present": false,
-      })
-      return
-    }
-
-    const markerOnly = yield* captureScenario({
-      id: "marker_only",
-      externalKey: {
-        source: "tiny-firegrid",
-        id: "codex-acp-tool-calls-marker-only",
-      },
-      explicitMcpUrl: false,
-    })
-    yield* annotateScenarioExit(markerOnly)
-
-    const explicitMcp = yield* captureScenario({
-      id: "explicit_mcp_url",
-      externalKey: {
-        source: "tiny-firegrid",
-        id: "codex-acp-tool-calls-explicit-mcp-url",
-      },
-      explicitMcpUrl: true,
-    })
-    yield* annotateScenarioExit(explicitMcp)
-
-    const markerOnlyObserved = Exit.isSuccess(markerOnly)
-      ? markerOnly.value.markerObserved
-      : false
-    const explicitObserved = Exit.isSuccess(explicitMcp)
-      ? explicitMcp.value.markerObserved
-      : false
-    const explicitContextId = Exit.isSuccess(explicitMcp)
-      ? explicitMcp.value.contextId
-      : sessionContextIdForExternalKey({
-        source: "tiny-firegrid",
-        id: "codex-acp-tool-calls-explicit-mcp-url",
-      })
+    const markerObserved = resultText.includes(toolResultMarker)
 
     yield* Effect.annotateCurrentSpan({
       "firegrid.codex_acp.status": "captured",
       "firegrid.codex_acp.openai_api_key_present": true,
-      "firegrid.codex_acp.marker_only_expected_gap": true,
-      "firegrid.codex_acp.marker_only_marker_observed": markerOnlyObserved,
-      "firegrid.codex_acp.explicit_mcp_url_marker_observed": explicitObserved,
-      "firegrid.codex_acp.explicit_mcp_url": mcpUrlForContext(explicitContextId),
-      "firegrid.codex_acp.spawn_target": codexAcpArgv.join(" "),
+      "firegrid.codex_acp.context_id": session.contextId,
+      "firegrid.codex_acp.session_id": session.sessionId,
+      "firegrid.codex_acp.marker_observed": markerObserved,
+      "firegrid.codex_acp.text_length": resultText.length,
+      "firegrid.codex_acp.output_count": outputCount,
+      "firegrid.codex_acp.output_tags": outputTags.join(","),
+      "firegrid.codex_acp.last_sequence": afterSequence ?? -1,
+      "firegrid.codex_acp.timed_out": timedOut,
+      "firegrid.codex_acp.transport": "mcp",
+      "firegrid.codex_acp.runtime_context_mcp": "host-owned",
+      "firegrid.codex_acp.spawn_target": codexSpawnTarget,
     })
   }).pipe(
     Effect.withSpan("firegrid.codex_acp_tool_calls.driver", {

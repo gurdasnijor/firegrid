@@ -1,29 +1,29 @@
-import {
-  defaultProductionAdapterLayer,
-  DurableStreamsLive,
-  FiregridRuntime,
-  RuntimeOutputTable,
-} from "@firegrid/runtime/unified"
+/**
+ * comp-derisk-ordering host — composes through the single Firegrid host
+ * composition root (tf-ll90.8.4), plus the tf-0awo.20 §3.1/§12-Seam-1b
+ * output-ordering probe.
+ *
+ * The host is `firegridHost(options)` (prod == sim); the only sim-specific
+ * addition is the harness-private `outputOrderProbe`, which subscribes to the
+ * HOST-WIDE `RuntimeOutputTable.events` projection (resolved from the composed
+ * host) and emits one span per row in append order (appendIndex,
+ * activityAttempt, sequence, contextId). The trace is the deliverable; this
+ * layer computes no verdict. The probe is an observer over the canonical host —
+ * NOT host-composition wiring.
+ */
+
+import { firegridHost } from "@firegrid/host-sdk"
+import { DurableStreamsLive, local } from "@firegrid/protocol/launch"
+import { defaultProductionAdapterLayer, RuntimeOutputTable } from "@firegrid/runtime/unified"
 import { Effect, Layer, Stream } from "effect"
 import type {
   FiregridHost,
   TinyFiregridHostEnv,
 } from "../../types.ts"
 
-// tf-0awo.20 — §3.1 / §12 Seam 1b output-ordering de-risk.
-//
-// Host-scoped, harness-private instrumentation (methodology: observers for
-// conditions not visible on the public client surface, composed from ordinary
-// Stream ops, local to the sim). It subscribes to the HOST-WIDE
-// `RuntimeOutputTable.events` projection — the exact append-ordered read the
-// §12 cutover relies on to deliver order intrinsically once the client-sdk
-// `compareJournalRows` (activityAttempt, sequence) sort is deleted — and emits
-// one span per row in arrival/append order carrying (appendIndex,
-// activityAttempt, sequence, contextId).
-//
-// The trace is the deliverable: whether `rows()` append order equals
-// (activityAttempt, sequence) order, and whether any sequence is dropped or
-// duplicated, is READ OFF these spans. This layer computes no verdict.
+const pathFromHere = (relative: string): string =>
+  decodeURIComponent(new URL(relative, import.meta.url).pathname)
+
 const outputOrderProbe = Layer.scopedDiscard(
   Effect.gen(function*() {
     const output = yield* RuntimeOutputTable
@@ -42,9 +42,6 @@ const outputOrderProbe = Layer.scopedDiscard(
           }),
         ),
       ),
-      // The projection is an infinite live stream; run it as a background
-      // daemon tied to the host scope. Swallow teardown interruption so it
-      // never turns the host build red.
       Effect.catchAllCause(() => Effect.void),
       Effect.forkScoped,
     )
@@ -56,18 +53,32 @@ export const host = (
 ): Layer.Layer<FiregridHost, unknown> =>
   outputOrderProbe.pipe(
     Layer.provideMerge(
-      FiregridRuntime(
-        {
+      firegridHost({
+        spec: { namespace: env.namespace },
+        adapter: defaultProductionAdapterLayer(),
+        backend: DurableStreamsLive.configuredWith({
+          baseUrl: env.durableStreamsBaseUrl,
           namespace: env.namespace,
-        },
-        defaultProductionAdapterLayer(),
-      ).pipe(
-        Layer.provide(
-          DurableStreamsLive.configuredWith({
-            baseUrl: env.durableStreamsBaseUrl,
-            namespace: env.namespace,
+        }),
+        ingress: {
+          transport: "durable-streams",
+          baseUrl: env.durableStreamsBaseUrl,
+          namespace: env.namespace,
+          streamId: "comp-derisk-ordering",
+          gatewayExternalKey: {
+            source: "tiny-firegrid",
+            id: "comp-derisk-ordering-gateway",
+          },
+          gatewayRuntime: local.jsonl({
+            agent: "official-acp-typescript-sdk-example",
+            argv: [
+              process.execPath,
+              pathFromHere("../../../../../node_modules/tsx/dist/cli.mjs"),
+              pathFromHere("../../bin/fake-acp-agent-process.ts"),
+            ],
+            agentProtocol: "acp",
           }),
-        ),
-      ),
+        },
+      }),
     ),
   )

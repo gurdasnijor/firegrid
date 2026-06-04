@@ -1,7 +1,4 @@
-import {
-  FiregridConfig,
-  FiregridLive,
-} from "@firegrid/client-sdk/firegrid"
+import { FiregridConfig } from "@firegrid/client-sdk/config"
 import { FileSystem, Path } from "@effect/platform"
 import {
   Console,
@@ -19,7 +16,6 @@ import {
 // eslint-disable-next-line no-restricted-imports
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
-  type FiregridHost,
   type TinyFiregridHostEnv,
   type TinyFiregridSimulation,
 } from "../types.ts"
@@ -75,25 +71,6 @@ const newRunId = (simulationId: string): string =>
 // the script may be invoked from anywhere in the monorepo via `pnpm --filter`.
 const simulateRootUrl = new URL("../../.simulate/", import.meta.url)
 
-const firegridClientLayer = (
-  durableStreamsBaseUrl: string,
-  namespace: string,
-  hostLayer: Layer.Layer<FiregridHost, unknown>,
-  simulation: TinyFiregridSimulation<unknown>,
-  hostEnv: TinyFiregridHostEnv,
-) => {
-  const configLayer = Layer.succeed(FiregridConfig, {
-    durableStreamsBaseUrl,
-    namespace,
-    ...(simulation.channels === undefined
-      ? {}
-      : { channels: simulation.channels(hostEnv) }),
-  })
-  return FiregridLive.pipe(
-    Layer.provideMerge(hostLayer),
-    Layer.provide(configLayer),
-  )
-}
 
 interface RunOptions {
   readonly timeoutMs: number
@@ -225,9 +202,11 @@ export const runSimulation = (
           baseUrl,
         }),
       )
-      if (simulation.launchHost === true) {
-        yield* Layer.launch(hostLayer).pipe(Effect.forkScoped)
-      }
+      // The host owns its RuntimeContext(s) + the MCP server transport; launch
+      // it as a background daemon for the driver's scope. The driver talks to it
+      // over `@firegrid/client-sdk/mcp` (durable-streams), never via in-process
+      // host services — so it needs only `FiregridConfig`.
+      yield* Layer.launch(hostLayer).pipe(Effect.forkScoped)
 
       const clientConfig = {
         durableStreamsBaseUrl: baseUrl,
@@ -238,13 +217,6 @@ export const runSimulation = (
       }
       const outcome = yield* Effect.raceWith(
         simulation.driver.pipe(
-          Effect.provide(firegridClientLayer(
-            baseUrl,
-            namespace,
-            hostLayer,
-            simulation,
-            hostEnv,
-          )),
           Effect.provideService(FiregridConfig, clientConfig),
           annotateSide("driver"),
         ),

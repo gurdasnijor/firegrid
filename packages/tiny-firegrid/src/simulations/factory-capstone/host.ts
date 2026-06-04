@@ -1,38 +1,39 @@
+/**
+ * factory-capstone host — composes through the single Firegrid host composition
+ * root (tf-ll90.8.4). The `firegridHost(options)` core provides the MCP ingress
+ * (server + tool-dispatch + host-plane router + agent-output/contexts views) and
+ * the `FiregridRuntime`; the gateway carries the claude-acp factory-loop agent
+ * (host-resolved runtime-context MCP) so `session_new` children inherit it.
+ *
+ * The SIM-SPECIFIC layers are composed OVER firegridHost (model:
+ * comp-derisk-ordering/host.ts) and supply the dark-factory fact substrate the
+ * ingress's `wait_for` tool reads via `serviceOption(RuntimeChannelRouter)`:
+ *   - the `DarkFactoryFactTable` durable fact store + the seeded trigger fact,
+ *   - the caller-owned `darkFactory.facts` stream (`CallerOwnedFactStreams`),
+ *   - the `RuntimeChannelRouter` route for `darkFactory.facts`.
+ * The MCP server / tool-dispatch / host-plane router are NOT re-bound here —
+ * firegridHost owns them.
+ */
+
 import {
   makeIngressChannel,
-  SessionAgentOutputChannel,
-  SessionAgentOutputChannelTarget,
 } from "@firegrid/protocol/channels"
 import {
   durableStreamUrl,
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
-  runtimeEventsForContextView,
-  runtimeContextsView,
+  local,
 } from "@firegrid/protocol/launch"
-import {
-  RuntimeAgentOutputObservationSchema,
-  runtimeAgentOutputObservationFromRow,
-} from "@firegrid/protocol/session-facade"
+import { firegridHost } from "@firegrid/host-sdk"
 import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import {
-  ContextResolverTag,
   defaultProductionAdapterLayer,
   DurableStreamsLive,
-  ensurePathInput,
-  FiregridMcpServerLayer,
-  FiregridRuntime,
-  ToolDispatchLive,
 } from "@firegrid/runtime/unified"
 import {
-  HostPlaneSessionControlRouterLive,
   makeRuntimeChannelRouter,
   RuntimeChannelRouter,
   runtimeRouteFromChannel,
-  sessionAgentOutputObservationRoute,
 } from "@firegrid/runtime/channels"
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
-import { AcpContextRows } from "@firegrid/runtime/sources/codecs/acp/stdio-edge"
 import { DurableTable } from "effect-durable-operators"
 import { Effect, Layer, Schema, Stream } from "effect"
 import type {
@@ -40,9 +41,12 @@ import type {
   TinyFiregridHostEnv,
 } from "../../types.ts"
 
-const mcpHost = "127.0.0.1"
-const mcpPort = 43792
-const mcpPath = "/mcp"
+const claudeAcpArgv = [
+  "npx",
+  "-y",
+  "@agentclientprotocol/claude-agent-acp@0.36.1",
+] as const
+
 const darkFactoryFactChannel = "darkFactory.facts"
 const source = "linear.oauth"
 const repoHint = "gurdasnijor/firegrid"
@@ -137,11 +141,13 @@ const DarkFactoryCallerOwnedFactStreamsLive = Layer.effect(
   }),
 )
 
+// Sim-specific channel route for the dark-factory fact channel. The ingress's
+// `wait_for` tool resolves this via `serviceOption(RuntimeChannelRouter)`; the
+// agent-output observation route is provided by firegridHost's MCP ingress.
 const RuntimeChannelRouterLive = Layer.effect(
   RuntimeChannelRouter,
   Effect.gen(function*() {
     const table = yield* DarkFactoryFactTable
-    const sessionAgentOutput = yield* SessionAgentOutputChannel
     return makeRuntimeChannelRouter([
       runtimeRouteFromChannel(
         makeIngressChannel({
@@ -151,43 +157,7 @@ const RuntimeChannelRouterLive = Layer.effect(
           stream: darkFactoryFactRows(table),
         }),
       ),
-      sessionAgentOutputObservationRoute(sessionAgentOutput),
     ])
-  }),
-)
-
-const GlobalSessionAgentOutputChannelLive = Layer.effect(
-  SessionAgentOutputChannel,
-  RuntimeOutputTable.pipe(
-    Effect.map(output =>
-      SessionAgentOutputChannel.of({
-        forContext: contextId =>
-          makeIngressChannel({
-            target: SessionAgentOutputChannelTarget,
-            schema: RuntimeAgentOutputObservationSchema,
-            sourceClass: "static-source",
-            stream: runtimeEventsForContextView(output.events.rows(), contextId).pipe(
-              Stream.filterMap(runtimeAgentOutputObservationFromRow),
-            ),
-          }),
-      })),
-  ),
-)
-
-const GlobalAcpContextRowsLive = Layer.effect(
-  AcpContextRows,
-  RuntimeControlPlaneTable.pipe(
-    Effect.map(control => runtimeContextsView(control.contexts.rows())),
-  ),
-)
-
-const contextResolverFromControlPlaneTable = Layer.effect(
-  ContextResolverTag,
-  Effect.gen(function*() {
-    const control = yield* RuntimeControlPlaneTable
-    return {
-      resolve: (contextId: string) => control.contexts.get(contextId),
-    }
   }),
 )
 
@@ -212,50 +182,51 @@ const seedTriggerFactLayer = (env: TinyFiregridHostEnv) =>
 export const factoryCapstoneHost = (
   env: TinyFiregridHostEnv,
 ): Layer.Layer<FiregridHost, unknown> => {
-  const host = FiregridRuntime(
-    {
-      namespace: env.namespace,
-    },
-    defaultProductionAdapterLayer(
-      RuntimeEnvResolverPolicy.withPolicy({
-        authorizedBindings: [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
-        lookupEnv: name => env.processEnv[name],
+  const factTable = darkFactoryFactTableLayer(env)
+  // Sim layers: fact table + caller-owned fact stream + the dark-factory channel
+  // route + the seeded trigger fact. Composed OVER firegridHost so the ingress's
+  // tool-dispatch sees the RuntimeChannelRouter / CallerOwnedFactStreams.
+  const simLayers = Layer.mergeAll(
+    DarkFactoryCallerOwnedFactStreamsLive,
+    RuntimeChannelRouterLive,
+    seedTriggerFactLayer(env),
+  ).pipe(Layer.provideMerge(factTable))
+
+  return simLayers.pipe(
+    Layer.provideMerge(
+      firegridHost({
+        spec: { namespace: env.namespace },
+        adapter: defaultProductionAdapterLayer(
+          RuntimeEnvResolverPolicy.withPolicy({
+            authorizedBindings: [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+            lookupEnv: name => env.processEnv[name],
+          }),
+        ),
+        backend: DurableStreamsLive.configuredWith({
+          baseUrl: env.durableStreamsBaseUrl,
+          namespace: env.namespace,
+        }),
+        ingress: {
+          transport: "durable-streams",
+          baseUrl: env.durableStreamsBaseUrl,
+          namespace: env.namespace,
+          streamId: "factory-capstone",
+          gatewayExternalKey: {
+            source: "tiny-firegrid",
+            id: "factory-capstone-gateway",
+          },
+          gatewayRuntime: local.jsonl({
+            argv: [...claudeAcpArgv],
+            agent: "claude-acp",
+            agentProtocol: "acp",
+            cwd: globalThis.process.cwd(),
+            envBindings: [
+              { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
+            ],
+            runtimeContextMcp: { enabled: true },
+          }),
+        },
       }),
     ),
-  ).pipe(
-    Layer.provide(
-      DurableStreamsLive.configuredWith({
-        baseUrl: env.durableStreamsBaseUrl,
-        namespace: env.namespace,
-      }),
-    ),
   )
-  const appFactTable = darkFactoryFactTableLayer(env)
-  const appRuntimeRoutes = RuntimeChannelRouterLive.pipe(
-    Layer.provideMerge(GlobalSessionAgentOutputChannelLive),
-  )
-  const appFacts = DarkFactoryCallerOwnedFactStreamsLive.pipe(
-    Layer.merge(appRuntimeRoutes),
-    Layer.merge(seedTriggerFactLayer(env)),
-    Layer.provideMerge(appFactTable),
-  )
-  const toolDispatch = ToolDispatchLive.pipe(
-    Layer.provideMerge(appFacts),
-    Layer.provideMerge(contextResolverFromControlPlaneTable),
-    Layer.provideMerge(HostPlaneSessionControlRouterLive),
-  )
-  const mcp = FiregridMcpServerLayer({
-    host: mcpHost,
-    port: mcpPort,
-    path: ensurePathInput(mcpPath),
-  }).pipe(
-    Layer.provideMerge(contextResolverFromControlPlaneTable),
-    Layer.provideMerge(toolDispatch),
-    Layer.discard,
-  )
-  const services = mcp.pipe(
-    Layer.merge(GlobalAcpContextRowsLive),
-    Layer.provideMerge(host),
-  )
-  return services
 }

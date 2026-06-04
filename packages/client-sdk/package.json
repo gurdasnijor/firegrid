@@ -9,9 +9,9 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./firegrid": {
-      "types": "./src/firegrid.ts",
-      "default": "./src/firegrid.ts"
+    "./config": {
+      "types": "./src/config.ts",
+      "default": "./src/config.ts"
     },
     "./mcp": {
       "types": "./src/mcp.ts",
