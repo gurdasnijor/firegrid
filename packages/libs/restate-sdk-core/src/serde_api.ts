@@ -1,0 +1,306 @@
+/*
+ * Copyright (c) 2023-2024 - Restate Software, Inc., Restate GmbH
+ *
+ * This file is part of the Restate SDK for Node.js/TypeScript,
+ * which is released under the MIT license.
+ *
+ * You can find a copy of the license in file LICENSE in the root
+ * directory of this repository or package, or at
+ * https://github.com/restatedev/sdk-typescript/blob/main/LICENSE
+ */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-namespace */
+
+import type {
+  StandardJSONSchemaV1,
+  StandardSchemaV1,
+} from "./standard_schema.js";
+
+/**
+ * Serializer/deserializer pair for any Restate-managed value of type `T` —
+ * handler inputs and outputs, service state, side-effect results,
+ * awakeables, durable promises, and so on.
+ *
+ * A `Serde<T>` is responsible for two conversions:
+ *
+ * - **Wire format**: `serialize` / `deserialize` convert a value `T` to and
+ *   from the raw bytes that flow over the network and get stored in the
+ *   journal.
+ * - **JSON preview (optional)**: `preview.toJsonString` /
+ *   `preview.fromJsonString` convert a value `T` to and from a JSON string,
+ *   used by tooling to render and edit values that humans can read.
+ *
+ * It also advertises metadata (`contentType`, `jsonSchema`) that surfaces in
+ * service discovery.
+ */
+export interface Serde<T> {
+  /**
+   * MIME type of the bytes produced by `serialize` (and accepted by
+   * `deserialize`).
+   */
+  contentType?: string;
+
+  /**
+   * Optional JSON Schema describing the logical shape of `T`. Surfaced in
+   * discovery so that tooling can generate forms, auto-complete payloads,
+   * etc. Has no effect on serialization at runtime.
+   */
+  jsonSchema?: object;
+
+  /**
+   * Optional bridge between the serde's wire format and a JSON
+   * representation that humans (and tooling like the Restate UI) can read
+   * and edit.
+   *
+   * Only useful for serdes whose wire format isn't already plain JSON —
+   * protobuf, MessagePack, length-prefixed binary, JSON variants that need
+   * post-processing for bigints/dates, etc. Both methods may be async if the
+   * conversion needs I/O.
+   *
+   * ### Preview flow
+   *
+   * Together with `serialize` / `deserialize`, the four functions chain in
+   * both directions between a JSON string and on-the-wire bytes:
+   *
+   * ```text
+   * JSON string  ──fromJsonString──►  T  ──serialize──►  wire bytes
+   * wire bytes   ──deserialize────►  T  ──toJsonString──►  JSON string
+   * ```
+   *
+   * The split keeps `serialize` / `deserialize` responsible for the full
+   * on-the-wire format; `preview` only handles the JSON ↔ `T` bridge.
+   *
+   * @example
+   * ```ts
+   * // Wire format is protobuf; the protobuf-es runtime already ships
+   * // `toJsonString` / `fromJsonString`, so preview is a direct pass-through.
+   * import {
+   *   fromBinary,
+   *   fromJsonString,
+   *   toBinary,
+   *   toJsonString,
+   * } from "@bufbuild/protobuf";
+   * import { PersonSchema, type Person } from "./person_pb.js";
+   *
+   * const personSerde: Serde<Person> = {
+   *   contentType: "application/protobuf",
+   *   serialize(message) { return toBinary(PersonSchema, message); },
+   *   deserialize(bytes) { return fromBinary(PersonSchema, bytes); },
+   *   preview: {
+   *     toJsonString: (v) => toJsonString(PersonSchema, v),
+   *     fromJsonString: (j) => fromJsonString(PersonSchema, j),
+   *   },
+   * };
+   * ```
+   */
+  preview?: {
+    /**
+     * Convert a value into a JSON string for display or editing by humans.
+     * The returned string must round-trip through `fromJsonString` back to
+     * the same logical value.
+     */
+    toJsonString(value: T): Promise<string> | string;
+
+    /**
+     * Parse a human-supplied JSON string back into a value of type `T`.
+     * Should throw (or reject) if `json` is invalid for this serde.
+     */
+    fromJsonString(json: string): Promise<T> | T;
+  };
+
+  /**
+   * Convert a value of type `T` into its on-the-wire bytes. This is the
+   * format Restate sends between services and persists in the journal.
+   *
+   * Must be the inverse of `deserialize` — `deserialize(serialize(v))`
+   * should produce a value equivalent to `v`.
+   */
+  serialize(value: T): Uint8Array;
+
+  /**
+   * Convert on-the-wire bytes back into a value of type `T`. Must be the
+   * inverse of `serialize`.
+   *
+   * May throw if `data` doesn't conform to the expected wire format.
+   */
+  deserialize(data: Uint8Array): T;
+}
+
+class BinarySerde implements Serde<Uint8Array> {
+  contentType = "application/octet-stream";
+
+  serialize(value: Uint8Array): Uint8Array {
+    return value;
+  }
+
+  deserialize(data: Uint8Array): Uint8Array {
+    return data;
+  }
+}
+
+class VoidSerde implements Serde<void> {
+  serialize(value: any): Uint8Array {
+    if (value !== undefined) {
+      throw new Error("Expected undefined value");
+    }
+    return new Uint8Array(0);
+  }
+
+  deserialize(data: Uint8Array): void {
+    if (data.length !== 0) {
+      throw new Error("Expected empty data");
+    }
+  }
+}
+
+class StandardSchemaSerde<
+  T extends { "~standard": StandardSchemaV1.Props },
+> implements Serde<StandardSchemaV1.InferOutput<T>> {
+  contentType? = "application/json";
+  jsonSchema?: object | undefined;
+
+  constructor(
+    private readonly schema: T,
+    private readonly validateOptions?: Record<string, unknown>,
+    jsonSchemaOptions?: Record<string, unknown>
+  ) {
+    // Extract JSON schema if available
+    const standard = schema["~standard"];
+    if (isStandardJSONSchemaV1(standard)) {
+      try {
+        this.jsonSchema = (
+          standard as unknown as StandardJSONSchemaV1.Props
+        ).jsonSchema.output({
+          target: "draft-2020-12",
+          libraryOptions: jsonSchemaOptions,
+        });
+      } catch {
+        // If JSON schema generation fails, leave it undefined
+        this.jsonSchema = undefined;
+      }
+    }
+
+    // Check if schema is for void/undefined type
+    // Standard Schema doesn't have a direct way to detect void types,
+    // so we serialize undefined and check if validation succeeds
+    const testResult = standard.validate(undefined);
+    // Handle both sync and async validation results
+    if (testResult && typeof testResult === "object" && "then" in testResult) {
+      // If it's a Promise, we can't determine contentType synchronously
+      // Keep contentType as "application/json"
+    } else if (!testResult.issues) {
+      this.contentType = undefined;
+    }
+  }
+
+  serialize(value: StandardSchemaV1.InferOutput<T>): Uint8Array {
+    if (value === undefined) {
+      return new Uint8Array(0);
+    }
+    return new TextEncoder().encode(JSON.stringify(value));
+  }
+
+  deserialize(data: Uint8Array): StandardSchemaV1.InferOutput<T> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const js =
+      data.length === 0
+        ? undefined
+        : JSON.parse(new TextDecoder().decode(data));
+
+    const result = this.schema["~standard"].validate(js, this.validateOptions);
+
+    // Standard Schema validate can return a Promise, but Serde must be synchronous
+    if (result && typeof result === "object" && "then" in result) {
+      throw new TypeError(
+        "Async validation is not supported in Serde. Restate SDK supports only synchronous validation."
+      );
+    }
+
+    if (result.issues) {
+      const errorMessages = result.issues
+        .map(formatStandardSchemaIssue)
+        .join("\n");
+      throw new TypeError(
+        `Standard schema validation failed:\n${errorMessages}`
+      );
+    }
+
+    return result.value as StandardSchemaV1.InferOutput<T>;
+  }
+}
+
+function formatStandardSchemaIssue(issue: StandardSchemaV1.Issue): string {
+  if (issue.path && issue.path.length > 0) {
+    const jsonPointer =
+      "/" +
+      issue.path
+        .map((p) => {
+          // Handle both PathSegment objects and primitive PropertyKey values
+          if (typeof p === "object" && p !== null && "key" in p) {
+            return String(p.key);
+          }
+          return String(p);
+        })
+        .join("/");
+    return `* (at ${jsonPointer}) ${issue.message}`;
+  }
+  return `* ${issue.message}`;
+}
+
+function isStandardJSONSchemaV1(standard: StandardSchemaV1.Props): boolean {
+  return (
+    standard != undefined &&
+    "jsonSchema" in standard &&
+    typeof standard.jsonSchema === "object" &&
+    standard.jsonSchema !== null &&
+    "output" in standard.jsonSchema &&
+    typeof standard.jsonSchema.output === "function"
+  );
+}
+
+export namespace serde {
+  export class JsonSerde<T> implements Serde<T | undefined> {
+    contentType = "application/json";
+
+    constructor(readonly jsonSchema?: object) {}
+
+    serialize(value: T): Uint8Array {
+      if (value === undefined) {
+        return new Uint8Array(0);
+      }
+      return new TextEncoder().encode(JSON.stringify(value));
+    }
+
+    deserialize(data: Uint8Array): T | undefined {
+      if (data.length === 0) {
+        return undefined;
+      }
+      return JSON.parse(new TextDecoder().decode(data)) as T;
+    }
+
+    schema<U>(schema: object): Serde<U> {
+      return new JsonSerde<U>(schema) as Serde<U>;
+    }
+  }
+
+  export const json: JsonSerde<any> = new JsonSerde<any>();
+  export const binary: Serde<Uint8Array> = new BinarySerde();
+  export const empty: Serde<void> = new VoidSerde();
+
+  /**
+   * A Standard Schema-based serde.
+   *
+   * @param schema the standard schema
+   * @param validateOptions options passed to `StandardSchemaV1.Options.libraryOptions` when validating
+   * @param jsonSchemaOptions options passed to `StandardJsonSchemaV1.Options.libraryOptions` for code generation
+   * @returns a serde that will validate the data with the standard schema
+   */
+  export const schema = <T extends { "~standard": StandardSchemaV1.Props }>(
+    schema: T,
+    validateOptions?: Record<string, unknown>,
+    jsonSchemaOptions?: Record<string, unknown>
+  ): Serde<StandardSchemaV1.InferOutput<T>> => {
+    return new StandardSchemaSerde(schema, validateOptions, jsonSchemaOptions);
+  };
+}
