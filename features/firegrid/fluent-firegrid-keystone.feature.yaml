@@ -59,6 +59,12 @@ components:
       2: "The scheduler implementation lives in its own module and remains the single owner of generator driving, combinator dispatch, and current operation execution."
       3: "The synchronous active scheduler slot lives in its own module and is only set for the synchronous generator advance span."
 
+  AWAITABLE:
+    requirements:
+      1: "The package defines an `Awaitable<T>` seam for the substrate work that backs journal Futures."
+      2: "`Future<T>` wraps an `Awaitable<T>` instead of directly owning a raw Effect."
+      3: "Durable journal replay and append logic lives in operation producer code, not in the scheduler module."
+
 constraints:
   SUBSTRATE:
     requirements:
