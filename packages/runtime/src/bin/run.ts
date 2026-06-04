@@ -7,7 +7,8 @@ import {
 import { respondPermissionDecision } from "../unified/channel-bindings.ts"
 import { Effect, Stream } from "effect"
 import { pathToFileURL } from "node:url"
-import { FiregridCliCompositionLive } from "./_compose.ts"
+import { firegridNodeHost } from "../node.ts"
+import { resolveNodeHostOptions } from "./_resolve.ts"
 import {
   compositionOptionsFromAgentOptions,
   decodeAgentSecretEnv,
@@ -17,7 +18,7 @@ import {
 } from "./_agent-cli.ts"
 import { runFiregridBinMain } from "./_main.ts"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
-import type { FiregridCliUsageError } from "./_compose.ts"
+import type { FiregridCliUsageError } from "./_resolve.ts"
 
 export interface RunCliOptions extends AgentProcessCliOptions {
   readonly prompt?: string
@@ -150,7 +151,7 @@ export const runProgramFromOptions = (
       }
     }).pipe(
       Effect.provide(
-        FiregridCliCompositionLive(compositionOptionsFromAgentOptions(options, bindings)),
+        firegridNodeHost(resolveNodeHostOptions(compositionOptionsFromAgentOptions(options, bindings))),
       ),
       Effect.scoped,
     )

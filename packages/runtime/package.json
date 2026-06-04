@@ -25,6 +25,10 @@
       "types": "./src/unified/index.ts",
       "default": "./src/unified/index.ts"
     },
+    "./node": {
+      "types": "./src/node.ts",
+      "default": "./src/node.ts"
+    },
     "./events": {
       "types": "./src/events/index.ts",
       "default": "./src/events/index.ts"

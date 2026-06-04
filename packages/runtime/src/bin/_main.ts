@@ -1,6 +1,6 @@
 import { NodeRuntime } from "@effect/platform-node"
 import { Effect } from "effect"
-import { programExitCode, renderError } from "./_compose.ts"
+import { programExitCode, renderError } from "./_resolve.ts"
 
 export const runFiregridBinMain = (
   program: Effect.Effect<void, unknown, never>,

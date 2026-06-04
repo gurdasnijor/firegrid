@@ -6,8 +6,8 @@
  * launchability instead of proving it. This corpus proves it by construction,
  * enforced by `tsc` (`pnpm typecheck`), NOT by vitest assertions:
  *
- *   POSITIVE — the un-cast composition (edge ← CLI composition, OTel error
- *   orDie'd at its boundary in `_compose.ts`) MUST inhabit
+ *   POSITIVE — the un-cast composition (edge ← `firegridNodeHost`, OTel error
+ *   orDie'd at its boundary in `@firegrid/runtime/node`) MUST inhabit
  *   `Layer.Layer<AcpStdioEdge, never, never>`. If a residual requirement or a
  *   typed error ever reappears, the `expectTypeOf` below stops matching and
  *   typecheck FAILS — the cast can never silently return.
@@ -27,7 +27,8 @@
 import type { PublicLaunchRuntimeIntent } from "@firegrid/protocol/launch"
 import { Layer } from "effect"
 import { describe, expect, expectTypeOf, it } from "vitest"
-import { FiregridCliCompositionLive } from "../src/bin/_compose.ts"
+import { firegridNodeHost } from "../src/node.ts"
+import { resolveNodeHostOptions } from "../src/bin/_resolve.ts"
 import { type AcpStdioEdge, AcpStdioEdgeLive } from "../src/sources/codecs/acp/stdio-edge.ts"
 
 // Type-only operands: building the Layer values is lazy (no I/O), and the
@@ -48,7 +49,7 @@ const _launchabilityGate = () => {
     runtime: () => runtimeIntent,
     permissionPolicy: "deny",
   }).pipe(
-    Layer.provide(FiregridCliCompositionLive({})),
+    Layer.provide(firegridNodeHost(resolveNodeHostOptions({}))),
   )
   expectTypeOf(composition).toEqualTypeOf<
     Layer.Layer<AcpStdioEdge, never, never>
@@ -77,6 +78,6 @@ void _launchabilityGate
 describe("acp stdio-edge launchability (enforced by tsc)", () => {
   it("the un-cast edge composition is Layer<AcpStdioEdge, never, never> (real gate is `pnpm typecheck`)", () => {
     expect(typeof AcpStdioEdgeLive).toBe("function")
-    expect(typeof FiregridCliCompositionLive).toBe("function")
+    expect(typeof firegridNodeHost).toBe("function")
   })
 })

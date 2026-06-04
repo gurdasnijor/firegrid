@@ -9,7 +9,7 @@
  * channel bindings DIRECTLY (tf-s9uj — no host-plane router). Two transport
  * variants, the dual of `DurableStreamsLive`:
  *
- *   - `http(cfg)` — the agent-facing HTTP listener (what `bin/_compose.ts` uses);
+ *   - `http(cfg)` — the agent-facing HTTP listener (what `@firegrid/runtime/node` uses);
  *     the connecting agent's contextId rides the request URL, so no gateway.
  *   - `durableStreams(cfg)` — the durable-streams transport `@firegrid/client-sdk/mcp`
  *     connects to. It is bound to ONE gateway contextId, so — as the dual of the
