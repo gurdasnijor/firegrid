@@ -20,6 +20,11 @@ The driver only receives the `Firegrid` client service. Host configuration stays
 behind the `host(env)` layer so simulations exercise the same network-separated
 client boundary as production callers.
 
+Experimental substrate workbenches may set `launchHost: false` and omit
+`host(env)` when their finding explicitly does not validate the Firegrid
+client/host seam. Keep those exceptions bead-scoped and documented in the
+finding.
+
 ## Experiment Ergonomics
 
 Experiment authors can import `@firegrid/tiny-firegrid/experiment` for two

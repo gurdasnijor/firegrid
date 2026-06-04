@@ -111,6 +111,11 @@ Existing pre-airgap violators are grandfathered through explicit,
 **bead-owned** excludes (never anonymous) that shrink over time — same
 discipline as the Semgrep baseline ledger. New code gets no exemption.
 
+Greenfield substrate spikes are the exception only when the finding itself is
+about the substrate rather than the Firegrid client/host seam. Such sims must
+declare `launchHost: false`, keep the carve-out bead-scoped, and state in the
+finding that the trace is not public-seam evidence.
+
 `host.ts` is still the simulation trust boundary: eslint can prove that the
 real host factory is present and called, but it cannot prove every Layer
 composed around that call is semantically honest. Reviewers must still inspect

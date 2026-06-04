@@ -166,7 +166,6 @@ export const runSimulation = (
         ),
       },
     }
-    const hostLayer = simulation.host(hostEnv)
     yield* Effect.acquireRelease(
       Effect.sync(() => {
         const onSigint = Ref.updateAndGet(sigintCount, n => n + 1).pipe(
@@ -202,11 +201,19 @@ export const runSimulation = (
           baseUrl,
         }),
       )
-      // The host owns its RuntimeContext(s) + the MCP server transport; launch
-      // it as a background daemon for the driver's scope. The driver talks to it
-      // over `@firegrid/client-sdk/mcp` (durable-streams), never via in-process
-      // host services — so it needs only `FiregridConfig`.
-      yield* Layer.launch(hostLayer).pipe(Effect.forkScoped)
+      if (simulation.launchHost !== false) {
+        const hostLayer = simulation.host?.(hostEnv)
+        if (hostLayer === undefined) {
+          return yield* Effect.fail(
+            new Error(`simulation ${simulation.id} must define host(env) unless launchHost is false`),
+          )
+        }
+        // The host owns its RuntimeContext(s) + the MCP server transport; launch
+        // it as a background daemon for the driver's scope. The driver talks to it
+        // over `@firegrid/client-sdk/mcp` (durable-streams), never via in-process
+        // host services — so it needs only `FiregridConfig`.
+        yield* Layer.launch(hostLayer).pipe(Effect.forkScoped)
+      }
 
       const clientConfig = {
         durableStreamsBaseUrl: baseUrl,

@@ -28,7 +28,7 @@ const isSimulation = (
   const candidate = value as Record<string, unknown>
   return typeof candidate["id"] === "string" &&
     typeof candidate["description"] === "string" &&
-    typeof candidate["host"] === "function" &&
+    (typeof candidate["host"] === "function" || candidate["launchHost"] === false) &&
     candidate["driver"] !== undefined
 }
 

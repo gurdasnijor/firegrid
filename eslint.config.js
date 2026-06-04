@@ -1809,6 +1809,27 @@ export default tseslint.config(
     },
   },
   {
+    files: ["packages/tiny-firegrid/src/simulations/restate-primitive-compat/driver.ts"],
+    rules: {
+      "local/no-unclassified-workflow-make": "off",
+      "no-restricted-imports": "off",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
+          message:
+            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+        },
+        {
+          selector: "MemberExpression[object.name='process'][property.name='exit']",
+          message:
+            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+        },
+      ],
+    },
+  },
+  {
     files: ["packages/substrate/src/**/*.ts"],
     rules: {
       "no-restricted-imports": [

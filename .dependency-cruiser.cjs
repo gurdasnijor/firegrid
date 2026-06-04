@@ -551,13 +551,18 @@ module.exports = {
       // seam; only host(env) composes the substrate. Anything else reaching into
       // runtime/host-sdk internals, protocol internals, or durable tables is
       // exercising a private seam — write it as a test in the owning package.
+      // tf-bp2t intentionally carves out one hostless greenfield substrate spike:
+      // it does not claim to validate the Firegrid client/host seam.
       name: "tiny-firegrid-sim-airgap-whole-sim",
       severity: "error",
       comment:
         "tiny-firegrid sims drive the public client/host seam; only host.ts composes the substrate. No runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports from a non-host.ts sim file.",
       from: {
         path: "^packages/tiny-firegrid/src/simulations/",
-        pathNot: "/host\\.ts$",
+        pathNot: [
+          "/host\\.ts$",
+          "^packages/tiny-firegrid/src/simulations/restate-primitive-compat/",
+        ],
       },
       to: {
         path: [

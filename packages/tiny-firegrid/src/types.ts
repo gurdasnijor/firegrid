@@ -25,7 +25,7 @@ export interface TinyFiregridHostEnv {
 export interface TinyFiregridSimulationDefinition<A, E = unknown> {
   readonly id: string
   readonly description: string
-  readonly host: (
+  readonly host?: (
     env: TinyFiregridHostEnv,
   ) => Layer.Layer<FiregridHost, E>
   readonly channels?: (
