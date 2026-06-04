@@ -1,0 +1,2374 @@
+import { DurableStream, IdempotentProducer } from '@durable-streams/client'
+import { createStreamDB, queryOnce } from '@durable-streams/state/db'
+import { getEntityType } from './define-entity'
+import { createEntityStreamDB } from './entity-stream-db'
+import { entityStateSchema, isManagementEvent } from './entity-schema'
+import { normalizeObservationSchema } from './observation-schema'
+import { createWakeSession } from './wake-session'
+import { createHandlerContext } from './context-factory'
+import { createSetupContext } from './setup-context'
+import { createEntityLogPrefix, runtimeLog } from './log'
+import { createRuntimeServerClient } from './runtime-server-client'
+import { unrestrictedSandbox } from './sandbox/unrestricted'
+import { resolveSandboxIdentity } from './sandbox/identity'
+import { appendPathToUrl } from './url'
+import { manifestChildKey } from './manifest-helpers'
+import {
+  buildHydratedEventSourceWake,
+  eventSourceWakeInfoFromManifests,
+} from './event-sources'
+import { webhookObservationCollections } from './observation-sources'
+import type { HydratedEventSourceWake } from './event-sources'
+import { SandboxError } from './sandbox/types'
+import type { Sandbox } from './sandbox/types'
+import type {
+  CronObservationSource,
+  EntitiesObservationSource,
+  EntityObservationSource,
+  WebhookEventRow,
+} from './observation-sources'
+import type {
+  CollectionDefinition,
+  ClaimTokenHeader,
+  EntityHandle,
+  EntityStreamDBWithActions,
+  ManifestEntry,
+  ObservationHandle,
+  ObservationSource,
+  ProcessWakeConfig,
+  SendResult,
+  SharedStateSchemaMap,
+  SpawnSandboxOption,
+  Wake,
+  WakeEvent,
+  WakeMessage,
+  WakeSession,
+  WebhookNotification,
+} from './types'
+import type { Signal } from './entity-schema'
+import type { JsonBatch } from '@durable-streams/client'
+import type { ChangeEvent, StateEvent } from '@durable-streams/state'
+
+interface WakeResult {
+  manifest: Array<ManifestEntry>
+  wakeSession: WakeSession
+  sourceHandleCache: Map<string, EntityHandle>
+}
+
+interface WakeDeltaWindow {
+  wakeEvent: WakeEvent
+  wakeOffset: string
+  ackOffset: string
+  events: Array<ChangeEvent>
+}
+
+type FreshKind = `inbox` | `wake`
+
+interface ClaimCallbackResponse {
+  ok: boolean
+  claimToken?: string
+  token?: string
+  writeToken?: string
+  error?: { code?: string; message?: string }
+}
+
+interface RawClaimCallbackResponse extends Omit<ClaimCallbackResponse, `ok`> {
+  ok?: boolean
+}
+
+const DEFAULT_IDLE_TIMEOUT = 20_000
+const DEFAULT_HEARTBEAT_INTERVAL = 10_000
+type EntityStreamOptions = NonNullable<
+  Parameters<typeof createEntityStreamDB>[3]
+>
+type ClaimHeaderConfig = Pick<
+  ProcessWakeConfig,
+  `claimHeaders` | `claimTokenHeader`
+>
+type EntityStreamHandle = NonNullable<EntityStreamOptions[`stream`]>
+
+function isInboxEvent(event: ChangeEvent): boolean {
+  return event.type === `inbox`
+}
+
+function isInboxCancellationEvent(event: ChangeEvent): boolean {
+  if (!isInboxEvent(event)) {
+    return false
+  }
+  if (event.headers.operation === `delete`) {
+    return true
+  }
+  const value = event.value as { status?: string } | undefined
+  return value?.status === `cancelled`
+}
+
+function inboxEventKey(event: ChangeEvent): string {
+  return String(event.key)
+}
+
+function toError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err))
+}
+
+async function resolveHeadersProvider(
+  provider: ProcessWakeConfig[`claimHeaders`]
+): Promise<Record<string, string> | undefined> {
+  const init = typeof provider === `function` ? await provider() : provider
+  const headers = Object.fromEntries(new Headers(init).entries())
+  return Object.keys(headers).length > 0 ? headers : undefined
+}
+
+async function createClaimCallbackHeaders(
+  config: ClaimHeaderConfig,
+  token: string
+): Promise<Headers> {
+  const extraHeaders =
+    typeof config.claimHeaders === `function`
+      ? await config.claimHeaders()
+      : config.claimHeaders
+  const headers = new Headers(extraHeaders)
+
+  if (!headers.has(`content-type`)) {
+    headers.set(`content-type`, `application/json`)
+  }
+
+  applyClaimTokenHeader(
+    headers,
+    config.claimTokenHeader ?? `authorization`,
+    token
+  )
+
+  return headers
+}
+
+function applyClaimTokenHeader(
+  headers: Headers,
+  claimTokenHeader: ClaimTokenHeader,
+  token: string
+): void {
+  if (
+    claimTokenHeader === `authorization` ||
+    (claimTokenHeader === `both` && !headers.has(`authorization`))
+  ) {
+    headers.set(`authorization`, `Bearer ${token}`)
+  }
+
+  if (
+    claimTokenHeader === `electric-claim-token` ||
+    claimTokenHeader === `both`
+  ) {
+    headers.set(`electric-claim-token`, token)
+  }
+}
+
+function parseClaimCallbackResponseBody(
+  body: string
+): RawClaimCallbackResponse {
+  if (!body) return {}
+  try {
+    return JSON.parse(body) as RawClaimCallbackResponse
+  } catch {
+    return { error: { message: `Non-JSON claim callback response` } }
+  }
+}
+
+function constructWakeEvent(
+  notification: WebhookNotification,
+  catchUpEvents?: Array<ChangeEvent>
+): WakeEvent {
+  const fallbackSource = notification.entity?.url ?? notification.streamPath
+  if (notification.wakeEvent) {
+    return notification.wakeEvent
+  }
+  if (catchUpEvents) {
+    const cancelledInboxKeys = new Set<string>()
+    for (let i = catchUpEvents.length - 1; i >= 0; i--) {
+      const event = catchUpEvents[i]!
+      if (isInboxCancellationEvent(event)) {
+        cancelledInboxKeys.add(inboxEventKey(event))
+        continue
+      }
+      if (isInboxEvent(event) && cancelledInboxKeys.has(inboxEventKey(event))) {
+        continue
+      }
+      const wakeEvent = changeEventToWakeEvent(event, fallbackSource)
+      if (wakeEvent) {
+        return wakeEvent
+      }
+    }
+  }
+  return {
+    source: fallbackSource,
+    type: notification.triggerEvent ?? `message`,
+    fromOffset: 0,
+    toOffset: 0,
+    eventCount: 0,
+    payload: undefined,
+  }
+}
+
+function changeEventToWakeEvent(
+  event: ChangeEvent,
+  fallbackSource: string
+): WakeEvent | null {
+  if (event.type === `wake`) {
+    const payload = event.value as WakeMessage | undefined
+    return {
+      source: payload?.source ?? fallbackSource,
+      type: `wake`,
+      fromOffset: 0,
+      toOffset: 0,
+      eventCount: 0,
+      payload,
+    }
+  }
+
+  if (isInboxEvent(event)) {
+    if (event.headers.operation === `delete`) {
+      return null
+    }
+    const value = event.value as
+      | {
+          from?: string
+          payload?: unknown
+          mode?: `immediate` | `queued` | `paused` | `steer`
+          message_type?: string
+          status?: `pending` | `processed` | `cancelled`
+        }
+      | undefined
+    if (value?.status === `cancelled`) {
+      return null
+    }
+    if (
+      value?.payload === undefined &&
+      value?.mode !== `queued` &&
+      value?.mode !== `steer`
+    ) {
+      return null
+    }
+    return {
+      source: value?.from ?? fallbackSource,
+      type: `inbox`,
+      fromOffset: 0,
+      toOffset: 0,
+      eventCount: 0,
+      payload: value?.payload,
+      summary: value?.message_type,
+    }
+  }
+
+  return null
+}
+
+function selectWakeFromEvents(
+  events: Array<ChangeEvent>,
+  fallbackSource: string,
+  preferredKind?: FreshKind
+): { wakeEvent: WakeEvent; offset: string | null } | null {
+  const cancelledInboxKeys = new Set<string>()
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!
+    if (isInboxCancellationEvent(event)) {
+      cancelledInboxKeys.add(inboxEventKey(event))
+      continue
+    }
+    if (isInboxEvent(event) && cancelledInboxKeys.has(inboxEventKey(event))) {
+      continue
+    }
+    const eventKind = isInboxEvent(event)
+      ? `inbox`
+      : event.type === `wake`
+        ? `wake`
+        : null
+    if (preferredKind && eventKind !== preferredKind) {
+      continue
+    }
+
+    const wakeEvent = changeEventToWakeEvent(event, fallbackSource)
+    if (wakeEvent) {
+      return {
+        wakeEvent,
+        offset: event.headers.offset ?? null,
+      }
+    }
+  }
+
+  return null
+}
+
+function createInFlightTracker() {
+  let count = 0
+  let resolve: (() => void) | null = null
+
+  return {
+    track<T>(promise: Promise<T>): Promise<T> {
+      count++
+      return promise.finally(() => {
+        count--
+        if (count === 0 && resolve) {
+          resolve()
+          resolve = null
+        }
+      })
+    },
+    async drain(): Promise<void> {
+      if (count === 0) return
+      return new Promise<void>((r) => {
+        resolve = r
+      })
+    },
+    get pending() {
+      return count
+    },
+  }
+}
+
+export async function processWake(
+  notification: WebhookNotification,
+  config: ProcessWakeConfig
+): Promise<WakeResult | null> {
+  const {
+    baseUrl,
+    registry,
+    shutdownSignal,
+    idleTimeout = DEFAULT_IDLE_TIMEOUT,
+    heartbeatInterval = DEFAULT_HEARTBEAT_INTERVAL,
+  } = config
+  const { callback, claimToken, epoch, wakeId } = notification
+  const entityUrl = notification.entity?.url ?? notification.streamPath
+  const typeName = notification.entity?.type
+  const streamPath = notification.streamPath
+  const logPrefix = createEntityLogPrefix(entityUrl)
+  const log = {
+    info: (message: string, ...args: Array<unknown>) =>
+      runtimeLog.info(logPrefix, message, ...args),
+    warn: (message: string, ...args: Array<unknown>) =>
+      runtimeLog.warn(logPrefix, message, ...args),
+    error: (message: string, ...args: Array<unknown>) =>
+      runtimeLog.error(logPrefix, message, ...args),
+  }
+  const claimHeaderConfig: ClaimHeaderConfig = {
+    claimHeaders: config.claimHeaders,
+    claimTokenHeader: config.claimTokenHeader,
+  }
+  const serverHeaders = await resolveHeadersProvider(config.claimHeaders)
+  const debugWakeTypes = process.env.ELECTRIC_AGENTS_DEBUG_WAKE_TYPES === `1`
+  let claimCallbackStatus: number | null = null
+  let claimCallbackResponseBody = ``
+
+  if (!typeName) {
+    // Don't ack — let the server's own timeout reclaim the wake.
+    // This runtime shouldn't be receiving wakes for types it doesn't handle.
+    log.warn(`missing entity type, ignoring wake`)
+    return null
+  }
+
+  const entry = registry ? registry.get(typeName) : getEntityType(typeName)
+  if (!entry) {
+    log.warn(`unknown entity type, ignoring wake`)
+    return null
+  }
+
+  const streamUrl = appendPathToUrl(baseUrl, streamPath)
+  const notificationOffset =
+    notification.streams.find((streamEntry) => streamEntry.path === streamPath)
+      ?.offset ?? `-1`
+  const io = createInFlightTracker()
+  let serverHttpMs = 0
+  let serverHttpCount = 0
+  const serverClient = createRuntimeServerClient({
+    baseUrl,
+    headers: serverHeaders,
+    writeTokenHeader: config.claimTokenHeader,
+    principalKey: notification.principal?.key ?? undefined,
+    track: <T>(promise: Promise<T>) => {
+      const httpT0 = performance.now()
+      const tracked = io.track(promise)
+      tracked.then(
+        () => {
+          serverHttpMs += performance.now() - httpT0
+          serverHttpCount++
+        },
+        () => {
+          serverHttpMs += performance.now() - httpT0
+          serverHttpCount++
+        }
+      )
+      return tracked
+    },
+  })
+  log.info(`wake received (epoch=${epoch})`)
+  const wakeStartMs = performance.now()
+  let claimMs = 0
+  let preloadMs = 0
+  let handlerMs = 0
+
+  // 1. Single DurableStream shared by StreamDB, IdempotentProducer, and SSE tail.
+  // StreamDB opens one SSE connection on preload(); all consumers share it.
+  const catchUpEvents: Array<ChangeEvent> = []
+  const pendingLiveBatches: Array<JsonBatch<StateEvent>> = []
+  let preloaded = false
+  let lastCatchUpOffset = notificationOffset
+  let safeAckOffset = notificationOffset
+  let currentWakeEvent = constructWakeEvent(notification)
+  let currentWakeOffset = notificationOffset
+  let currentWakeAckOffset = notificationOffset
+  let currentWakeEvents: Array<ChangeEvent> = []
+  let resolveCurrentWakeReady: (() => void) | null = null
+  let queuedNextWake: WakeDeltaWindow | null = null
+
+  let writeToken = ``
+  const stream = new DurableStream({
+    url: streamUrl,
+    headers: serverHeaders,
+    contentType: `application/json`,
+  })
+
+  // Create producer BEFORE the StreamDB so state actions can write through it.
+  const producer = new IdempotentProducer(stream, `entity-${entityUrl}`, {
+    epoch,
+    autoClaim: true,
+    fetch: (input, init) => {
+      const headers = new Headers(init?.headers)
+      if (writeToken) {
+        applyClaimTokenHeader(
+          headers,
+          config.claimTokenHeader ?? `authorization`,
+          writeToken
+        )
+      }
+      return globalThis.fetch(input, { ...init, headers })
+    },
+    onError: (error) => {
+      failBackgroundWake(error, `WRITE_FAILED`)
+    },
+  })
+  const writeEvent = (event: ChangeEvent): void => {
+    producer.append(JSON.stringify(event))
+  }
+
+  const db = createEntityStreamDB(
+    streamUrl,
+    entry.definition.state,
+    entry.definition.actions,
+    {
+      stream: stream as unknown as EntityStreamHandle,
+      actorFrom: entityUrl,
+      onEvent: (event) => {
+        if (preloaded) {
+          handleRuntimeSideEffectEvent(event)
+        }
+      },
+      onBatch: handleLiveBatch,
+      writeEvent,
+      flushWrites: () => producer.flush(),
+    }
+  )
+
+  let activeClaimToken = claimToken
+  let claimData: ClaimCallbackResponse | null = null
+  let heartbeat: ReturnType<typeof setInterval> | null = null
+  let claimedWake = false
+  let result: WakeResult | null = null
+  let primaryError: unknown = null
+  let finalError: Error | AggregateError | null = null
+  let shutdownRequested = shutdownSignal?.aborted ?? false
+  let ackCurrentWakeOnFailure = false
+  // Sandbox is acquired once per wake-session (after entityArgs is known)
+  // and released/disposed in the outer finally. Lives at function scope so
+  // both the try and finally can see it.
+  let sandbox: Sandbox | null = null
+  // The sandbox identity this wake resolved to (profile + resolved key +
+  // persistent), captured so the spawn glue can propagate it to an `inherit`
+  // child as explicit values — a per-wake parent's live key is never stored on
+  // the entity, so only the running wake can hand it down.
+  let resolvedSandboxSelection:
+    | { profile: string; key: string; persistent: boolean }
+    | undefined
+
+  // Live event handler — wired after preload, processes child_status + inbox
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+  let idleController: AbortController | null = null
+  let runAbortController: AbortController | null = null
+  let activeSignalHandler:
+    | ((
+        signal: Pick<Signal, `signal` | `reason` | `payload`>
+      ) => void | Promise<void>)
+    | null = null
+  let pendingRunAbortRequested = false
+  let signalAbortRequested = false
+  let pauseRequested = false
+  let resumeRequested = false
+  // Set when this wake observes its entity transition to a terminal status
+  // (SIGKILL ⇒ killed, SIGTERM ⇒ stopped): the entity is gone for good, so its
+  // sandbox should be reclaimed (wiped) on dispose rather than preserved. A
+  // mere runner shutdown (the entity lives on) must NOT set this. Seeded from
+  // the incoming status in case the wake is delivered already-terminal.
+  let entityTerminated =
+    notification.entity?.status === `killed` ||
+    notification.entity?.status === `stopped`
+  const pendingSignalHandlers: Array<Promise<void>> = []
+  const secondaryDbs: Array<{
+    drainPendingWrites?: () => Promise<void>
+    flushWrites?: () => Promise<void>
+    detachWrites?: () => Promise<void>
+    close: () => void
+  }> = []
+  let liveProcessError: Error | null = null
+  let acceptLiveInputs = false
+  const handledSignalKeys = new Set<string>()
+
+  const compareOffsets = (left: string, right: string): number => {
+    if (left === right) return 0
+    if (left === `-1`) return -1
+    if (right === `-1`) return 1
+    return left < right ? -1 : 1
+  }
+
+  const setSafeAckOffset = (offset: string): void => {
+    if (compareOffsets(offset, safeAckOffset) > 0) {
+      safeAckOffset = offset
+    }
+  }
+
+  const notifyCurrentWakeReady = (): void => {
+    if (currentWakeOffset === `-1`) {
+      return
+    }
+    resolveCurrentWakeReady?.()
+    resolveCurrentWakeReady = null
+  }
+
+  const toChangeEvents = (batch: JsonBatch<StateEvent>): Array<ChangeEvent> => {
+    return batch.items.filter(
+      (event): event is ChangeEvent => `operation` in event.headers
+    )
+  }
+
+  const clearIdleTimer = (): void => {
+    if (idleTimer) {
+      clearTimeout(idleTimer)
+      idleTimer = null
+    }
+  }
+
+  const requestShutdown = (): void => {
+    shutdownRequested = true
+    clearIdleTimer()
+    idleController?.abort()
+  }
+
+  shutdownSignal?.addEventListener(`abort`, requestShutdown)
+
+  const armIdleTimer = (): void => {
+    if (!acceptLiveInputs || !idleController) return
+
+    clearIdleTimer()
+    idleTimer = setTimeout(() => {
+      idleController?.abort()
+    }, idleTimeout)
+  }
+
+  const flushProducedWrites = async (): Promise<void> => {
+    await producer.flush()
+    if (producer.lastSuccessfulOffset) {
+      setSafeAckOffset(producer.lastSuccessfulOffset)
+    }
+    drainNonFreshPendingBatches()
+  }
+
+  function failBackgroundWake(err: unknown, errorCode: string): void {
+    if (liveProcessError) return
+
+    liveProcessError = toError(err)
+    log.error(`wake background task failed for ${entityUrl}:`, liveProcessError)
+    writeEvent(
+      entityStateSchema.errors.insert({
+        key: `error-${epoch}-${crypto.randomUUID()}`,
+        value: {
+          error_code: errorCode,
+          message: liveProcessError.message,
+        } as never,
+      }) as ChangeEvent
+    )
+    clearIdleTimer()
+    idleController?.abort()
+  }
+
+  function handleRuntimeSideEffectEvent(event: ChangeEvent): void {
+    if (event.type === `signal`) {
+      handleSignalEvent(event)
+      return
+    }
+    if (event.type === `child_status` && result) {
+      const spawnHandles = result.wakeSession.getSpawnHandles()
+      const val = event.value as
+        | { entity_url?: string; status?: string }
+        | undefined
+      if (val?.entity_url && spawnHandles.size > 0) {
+        if (
+          val.status === `idle` ||
+          val.status === `completed` ||
+          val.status === `stopped`
+        ) {
+          for (const [, spawnHandle] of spawnHandles) {
+            spawnHandle.resolveRun()
+          }
+        }
+      }
+    }
+  }
+
+  function handleLatestSignalEvents(events: Array<ChangeEvent>): void {
+    const latestSignalEvents = new Map<string, ChangeEvent>()
+    for (const event of events) {
+      if (event.type === `signal`) {
+        latestSignalEvents.set(String(event.key), event)
+      }
+    }
+
+    for (const event of events) {
+      if (event.type === `signal`) {
+        if (latestSignalEvents.get(String(event.key)) === event) {
+          handleSignalEvent(event)
+        }
+      }
+    }
+  }
+
+  function handleRuntimeSideEffectEvents(events: Array<ChangeEvent>): void {
+    handleLatestSignalEvents(events)
+    for (const event of events) {
+      if (event.type !== `signal`) {
+        handleRuntimeSideEffectEvent(event)
+      }
+    }
+  }
+
+  const getFreshKind = (events: Array<ChangeEvent>): FreshKind | null => {
+    let hasWake = false
+    const cancelledInboxKeys = new Set<string>()
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = events[i]!
+      if (isInboxCancellationEvent(event)) {
+        cancelledInboxKeys.add(inboxEventKey(event))
+        continue
+      }
+      if (isInboxEvent(event)) {
+        if (cancelledInboxKeys.has(inboxEventKey(event))) {
+          continue
+        }
+        const value = event.value as
+          | {
+              payload?: unknown
+              mode?: `immediate` | `queued` | `paused` | `steer`
+              status?: `pending` | `processed` | `cancelled`
+            }
+          | undefined
+        if (
+          value?.status !== `cancelled` &&
+          (value?.payload !== undefined ||
+            value?.mode === `queued` ||
+            value?.mode === `steer`)
+        ) {
+          return `inbox`
+        }
+      }
+      if (event.type === `wake`) {
+        hasWake = true
+      }
+    }
+    return hasWake ? `wake` : null
+  }
+
+  const isFreshEvent = (event: ChangeEvent): boolean => {
+    return event.type === `inbox` || event.type === `wake`
+  }
+
+  const shouldHandleSignalEvent = (event: ChangeEvent): boolean => {
+    if (event.type !== `signal`) return false
+    const value = event.value as Partial<Signal> | undefined
+    if (value?.status === `unhandled`) return true
+
+    // The server handles SIGKILL because it is terminal and closes streams, but
+    // an active runtime still needs to observe the signal and abort in-flight
+    // model/tool work. Do not try to rewrite the already-closed stream.
+    return value?.signal === `SIGKILL` && value.status === `handled`
+  }
+
+  const markSignalHandled = (
+    event: ChangeEvent,
+    outcome:
+      | `aborted`
+      | `ignored`
+      | `shutdown_requested`
+      | `transitioned`
+      | `delivered`
+      | `failed`,
+    newState?: string
+  ): void => {
+    const value = event.value as Partial<Signal> | undefined
+    const key = String(event.key)
+    writeEvent(
+      entityStateSchema.signals.update({
+        key,
+        value: {
+          ...value,
+          status: `handled`,
+          handled_at: new Date().toISOString(),
+          handled_by: entityUrl,
+          outcome,
+          previous_state: notification.entity?.status,
+          ...(newState ? { new_state: newState } : {}),
+        } as never,
+      }) as ChangeEvent
+    )
+  }
+
+  const invokeSignalHandler = (
+    value: Partial<Signal>,
+    onSettled: (outcome: `delivered` | `failed`) => void
+  ): void => {
+    if (!activeSignalHandler || !value.signal) {
+      onSettled(`delivered`)
+      return
+    }
+
+    const task = Promise.resolve(
+      activeSignalHandler({
+        signal: value.signal,
+        reason: value.reason,
+        payload: value.payload,
+      })
+    ).then(
+      () => onSettled(`delivered`),
+      (err) => {
+        failBackgroundWake(err, `SIGNAL_HANDLER_FAILED`)
+        onSettled(`failed`)
+      }
+    )
+    pendingSignalHandlers.push(task)
+    void task.finally(() => {
+      const index = pendingSignalHandlers.indexOf(task)
+      if (index >= 0) pendingSignalHandlers.splice(index, 1)
+    })
+  }
+
+  const handleSignalEvent = (event: ChangeEvent): void => {
+    if (!shouldHandleSignalEvent(event)) return
+    const key = String(event.key)
+    if (handledSignalKeys.has(key)) return
+    handledSignalKeys.add(key)
+
+    const value = event.value as Partial<Signal>
+    const alreadyHandled = value.status === `handled`
+    switch (value.signal) {
+      case `SIGINT`:
+        if (runAbortController) {
+          log.info(`SIGINT received, aborting active handler invocation`)
+          runAbortController.abort()
+        } else if (notification.entity?.status === `running`) {
+          // SIGINT may arrive in the small window before the handler invocation
+          // controller exists. Only carry it forward for running entities; idle
+          // SIGINT is an ignored no-op and must not poison the next invocation.
+          log.info(
+            `SIGINT received before active run controller, queuing abort`
+          )
+          pendingRunAbortRequested = true
+        } else {
+          log.info(`SIGINT received with no active run, ignoring`)
+          markSignalHandled(event, `ignored`, notification.entity?.status)
+          void flushProducedWrites().catch((err) =>
+            failBackgroundWake(err, `SIGNAL_HANDLE_FAILED`)
+          )
+          return
+        }
+        markSignalHandled(event, `aborted`, notification.entity?.status)
+        void flushProducedWrites().catch((err) =>
+          failBackgroundWake(err, `SIGNAL_HANDLE_FAILED`)
+        )
+        return
+      case `SIGKILL`:
+        log.info(`SIGKILL received, aborting active run and closing wake`)
+        signalAbortRequested = true
+        entityTerminated = true
+        runAbortController?.abort()
+        requestShutdown()
+        if (!alreadyHandled) {
+          markSignalHandled(event, `shutdown_requested`, `killed`)
+          void flushProducedWrites().catch((err) =>
+            failBackgroundWake(err, `SIGNAL_HANDLE_FAILED`)
+          )
+        }
+        return
+      case `SIGHUP`:
+        log.info(`SIGHUP received, closing wake after current checkpoint`)
+        requestShutdown()
+        invokeSignalHandler(value, () => {
+          markSignalHandled(
+            event,
+            `shutdown_requested`,
+            notification.entity?.status
+          )
+          void flushProducedWrites().catch((err) =>
+            failBackgroundWake(err, `SIGNAL_HANDLE_FAILED`)
+          )
+        })
+        return
+      case `SIGTERM`:
+        log.info(`SIGTERM received, closing wake after cleanup`)
+        requestShutdown()
+        entityTerminated = true
+        invokeSignalHandler(value, (outcome) => {
+          markSignalHandled(
+            event,
+            outcome === `failed` ? `failed` : `shutdown_requested`,
+            `stopped`
+          )
+          void flushProducedWrites().catch((err) =>
+            failBackgroundWake(err, `SIGNAL_HANDLE_FAILED`)
+          )
+        })
+        return
+      case `SIGSTOP`:
+        log.info(`SIGSTOP received, pausing after current checkpoint`)
+        clearIdleTimer()
+        idleController?.abort()
+        pauseRequested = true
+        markSignalHandled(event, `transitioned`, `paused`)
+        void flushProducedWrites().catch((err) =>
+          failBackgroundWake(err, `SIGNAL_HANDLE_FAILED`)
+        )
+        return
+      case `SIGCONT`:
+        log.info(`SIGCONT received, resuming queued work`)
+        resumeRequested = true
+        clearIdleTimer()
+        idleController?.abort()
+        markSignalHandled(event, `transitioned`, `idle`)
+        void flushProducedWrites().catch((err) =>
+          failBackgroundWake(err, `SIGNAL_HANDLE_FAILED`)
+        )
+        return
+      case `SIGUSR`:
+        invokeSignalHandler(value, (outcome) => {
+          markSignalHandled(event, outcome, notification.entity?.status)
+          void flushProducedWrites().catch((err) =>
+            failBackgroundWake(err, `SIGNAL_HANDLE_FAILED`)
+          )
+        })
+        return
+    }
+  }
+
+  const filterAcceptedLiveEvents = (
+    batch: JsonBatch<StateEvent>
+  ): Array<ChangeEvent> => {
+    const changeEvents = toChangeEvents(batch)
+    return changeEvents.filter((event) => {
+      if (!isFreshEvent(event)) {
+        return true
+      }
+
+      const eventOffset = event.headers.offset ?? batch.offset
+      return compareOffsets(eventOffset, currentWakeOffset) > 0
+    })
+  }
+
+  const adoptCurrentWakeOffsetFromLiveBatch = (
+    batch: JsonBatch<StateEvent>
+  ): void => {
+    if (currentWakeOffset !== `-1`) {
+      return
+    }
+
+    const changeEvents = toChangeEvents(batch)
+    for (const event of changeEvents) {
+      if (event.type !== currentWakeEvent.type) {
+        continue
+      }
+
+      currentWakeEvent =
+        changeEventToWakeEvent(event, entityUrl) ?? currentWakeEvent
+      currentWakeOffset = event.headers.offset ?? batch.offset
+      notifyCurrentWakeReady()
+      if (debugWakeTypes) {
+        log.info(
+          `adopted live wake offset=${currentWakeOffset} for type=${currentWakeEvent.type}`
+        )
+      }
+      return
+    }
+  }
+
+  const waitForCurrentWakeInput = async (): Promise<void> => {
+    if (currentWakeEvent.type !== `inbox`) {
+      return
+    }
+
+    const hasConcreteMessageInput =
+      currentWakeEvent.payload !== undefined ||
+      catchUpEvents.some(
+        (event) =>
+          event.type === `inbox` &&
+          (currentWakeOffset === `-1` ||
+            event.headers.offset === currentWakeOffset)
+      )
+
+    if (hasConcreteMessageInput) {
+      return
+    }
+
+    await new Promise<void>((resolve) => {
+      let settled = false
+      resolveCurrentWakeReady = () => {
+        if (settled) return
+        settled = true
+        resolveCurrentWakeReady = null
+        resolve()
+      }
+      setTimeout(() => {
+        if (settled) return
+        settled = true
+        resolveCurrentWakeReady = null
+        log.warn(
+          `timed out waiting 100ms for concrete wake input; continuing with current wake payload`
+        )
+        resolve()
+      }, 100)
+    })
+  }
+
+  function drainNonFreshPendingBatches(): void {
+    while (pendingLiveBatches.length > 0) {
+      const batch = pendingLiveBatches[0]!
+      const changeEvents = toChangeEvents(batch)
+      if (getFreshKind(changeEvents) !== null) {
+        return
+      }
+      pendingLiveBatches.shift()
+      handleRuntimeSideEffectEvents(changeEvents)
+      setSafeAckOffset(batch.offset)
+    }
+  }
+
+  function dequeueNextWakeFromPending(): WakeDeltaWindow | null {
+    drainNonFreshPendingBatches()
+    if (pendingLiveBatches.length === 0) return null
+
+    const batches: Array<JsonBatch<StateEvent>> = []
+    const deltaEvents: Array<ChangeEvent> = []
+    let selectedKind: FreshKind | null = null
+
+    while (pendingLiveBatches.length > 0) {
+      const batch = pendingLiveBatches[0]!
+      const changeEvents = toChangeEvents(batch)
+      const freshKind = getFreshKind(changeEvents)
+
+      // Keep wake-only work together, but let a later inbox message start its own
+      // handler pass so message-triggered runs are not hidden behind older wakes.
+      if (selectedKind === `wake` && freshKind === `inbox`) {
+        break
+      }
+
+      pendingLiveBatches.shift()
+      batches.push(batch)
+      deltaEvents.push(...changeEvents)
+
+      if (freshKind === `inbox`) {
+        selectedKind = `inbox`
+      } else if (freshKind === `wake` && selectedKind === null) {
+        selectedKind = `wake`
+      }
+    }
+
+    if (deltaEvents.length === 0) {
+      return null
+    }
+
+    if (selectedKind === null) {
+      handleRuntimeSideEffectEvents(deltaEvents)
+      setSafeAckOffset(batches[batches.length - 1]!.offset)
+      return null
+    }
+
+    const selectedWake = selectWakeFromEvents(
+      deltaEvents,
+      entityUrl,
+      selectedKind
+    )
+    if (!selectedWake) {
+      log.warn(
+        `fresh ${selectedKind} batch did not contain runnable wake input; acking as no-op`
+      )
+      handleRuntimeSideEffectEvents(deltaEvents)
+      setSafeAckOffset(batches[batches.length - 1]!.offset)
+      return null
+    }
+
+    return {
+      wakeEvent: selectedWake.wakeEvent,
+      wakeOffset: selectedWake.offset ?? batches[batches.length - 1]!.offset,
+      ackOffset: batches[batches.length - 1]!.offset,
+      events: deltaEvents,
+    }
+  }
+
+  function queueNextWakeIfReady(): void {
+    if (queuedNextWake || !acceptLiveInputs) return
+    queuedNextWake = dequeueNextWakeFromPending()
+    if (queuedNextWake) {
+      clearIdleTimer()
+      idleController?.abort()
+    }
+  }
+
+  function handleLiveBatch(batch: JsonBatch<StateEvent>): void {
+    if (!preloaded) {
+      const changeEvents = toChangeEvents(batch)
+      if (changeEvents.length > 0) {
+        catchUpEvents.push(...changeEvents)
+      }
+      lastCatchUpOffset = batch.offset
+      return
+    }
+
+    const changeEvents = filterAcceptedLiveEvents(batch)
+    adoptCurrentWakeOffsetFromLiveBatch(batch)
+    if (changeEvents.length === 0) {
+      setSafeAckOffset(batch.offset)
+      return
+    }
+
+    handleLatestSignalEvents(changeEvents)
+
+    catchUpEvents.push(...changeEvents)
+
+    if (
+      resolveCurrentWakeReady !== null &&
+      getFreshKind(changeEvents) !== null
+    ) {
+      notifyCurrentWakeReady()
+    }
+
+    pendingLiveBatches.push({
+      ...batch,
+      items: changeEvents as Array<StateEvent>,
+    })
+    queueNextWakeIfReady()
+  }
+
+  try {
+    // 2. Claim epoch + preload StreamDB (in parallel).
+    // preload() opens ONE SSE connection, reads until up-to-date, and stays connected.
+    // The onEvent callback collects raw events into catchUpEvents during preload.
+    const claimT0 = performance.now()
+    const claimPromise = createClaimCallbackHeaders(
+      claimHeaderConfig,
+      claimToken
+    )
+      .then((headers) =>
+        fetch(callback, {
+          method: `POST`,
+          headers,
+          body: JSON.stringify({ epoch, wakeId }),
+        })
+      )
+      .then(async (response) => {
+        claimCallbackStatus = response.status
+        claimCallbackResponseBody = await response.text()
+        const rawClaimData = parseClaimCallbackResponseBody(
+          claimCallbackResponseBody
+        )
+        claimData = {
+          ...rawClaimData,
+          ok:
+            rawClaimData.ok === undefined
+              ? response.ok && rawClaimData.error === undefined
+              : rawClaimData.ok,
+        }
+        if (claimData.claimToken) activeClaimToken = claimData.claimToken
+        if (claimData.token) activeClaimToken = claimData.token
+        claimMs = +(performance.now() - claimT0).toFixed(2)
+        if (!claimData.ok) {
+          const logClaimCallbackReturned =
+            response.status === 401 ? log.error : log.warn
+          logClaimCallbackReturned(
+            `claim callback returned status=${response.status} ok=false claimMs=${claimMs} hasWriteToken=${Boolean(claimData.writeToken)} errorCode=${claimData.error?.code ?? `(none)`} errorMessage=${claimData.error?.message ?? `(none)`} callback=${callback} responseBody=${claimCallbackResponseBody || `(empty)`}`
+          )
+        }
+        return claimData
+      })
+
+    const preloadT0 = performance.now()
+    const preloadPromise = db.preload().then(() => {
+      preloadMs = +(performance.now() - preloadT0).toFixed(2)
+    })
+    const [claimed] = await Promise.all([claimPromise, preloadPromise])
+    preloaded = true
+    if (compareOffsets(db.offset, lastCatchUpOffset) > 0) {
+      lastCatchUpOffset = db.offset
+    }
+
+    if (!claimed.ok) {
+      const logClaimCallbackRejected =
+        claimCallbackStatus === 401 ? log.error : log.warn
+      logClaimCallbackRejected(
+        `claim callback rejected wake status=${claimCallbackStatus ?? `(unknown)`} errorCode=${claimed.error?.code ?? `(none)`} errorMessage=${claimed.error?.message ?? `(none)`} callback=${callback} responseBody=${claimCallbackResponseBody || `(empty)`}`
+      )
+      return null
+    }
+    claimedWake = true
+    writeToken = claimed.writeToken ?? ``
+
+    handleRuntimeSideEffectEvents(catchUpEvents)
+
+    // 3b. Start heartbeat once this worker owns the wake
+    heartbeat = setInterval(() => {
+      createClaimCallbackHeaders(claimHeaderConfig, activeClaimToken)
+        .then((headers) =>
+          fetch(callback, {
+            method: `POST`,
+            headers,
+            body: JSON.stringify({ epoch }),
+          })
+        )
+        .then(async (r) => {
+          if (!r.ok) {
+            failBackgroundWake(
+              new Error(`heartbeat rejected (${r.status})`),
+              `HEARTBEAT_FAILED`
+            )
+            return
+          }
+          const data = (await r.json()) as {
+            ok: boolean
+            claimToken?: string
+            token?: string
+          }
+          if (!data.ok) {
+            failBackgroundWake(
+              new Error(`heartbeat rejected: server returned ok=false`),
+              `HEARTBEAT_FAILED`
+            )
+            return
+          }
+          if (data.claimToken) activeClaimToken = data.claimToken
+          if (data.token) activeClaimToken = data.token
+        })
+        .catch((err: unknown) => {
+          failBackgroundWake(err, `HEARTBEAT_FAILED`)
+        })
+    }, heartbeatInterval)
+
+    const entityArgs = Object.freeze(notification.entity?.spawnArgs ?? {})
+
+    // Sandbox is a per-runner concern: profiles live on the runner's
+    // advertisement (validated server-side at spawn time). The
+    // wake-time job is just to look up the chosen profile by name.
+    // When no profile was picked at spawn we fall back to an
+    // in-process unrestricted sandbox at the host's cwd — matches the
+    // pre-profiles default and keeps tests/dev simple.
+    const sandboxConfig = notification.entity?.sandbox
+    const requestedProfileName = sandboxConfig?.profile
+    if (requestedProfileName) {
+      const profile = config.sandboxProfiles?.get(requestedProfileName)
+      if (!profile) {
+        // Validated against the runner's advertisement at spawn time, so this
+        // is normally a transient mismatch — the runner re-registered (dropping
+        // the profile) between spawn and this wake. The wake is rejected before
+        // it's acked, so the server reclaims it on timeout and redrives onto a
+        // runner that still advertises the profile; failure is isolated to this
+        // one wake (see dispatchWake) and does not take the runner down.
+        throw new SandboxError(
+          `unavailable`,
+          `[agent-runtime] sandbox profile "${requestedProfileName}" requested for entity "${entityUrl}" is not currently registered on this runtime (likely a transient runner re-registration race; the wake will be redriven). Available profiles: ${[...(config.sandboxProfiles?.keys() ?? [])].join(`, `) || `(none)`}.`
+        )
+      }
+      // Resolve identity (explicit / per-entity / per-wake key), durability
+      // (`persistent`), and ownership (`owner`) here, upstream of the provider.
+      // The provider only ever sees a resolved key + persistent + owner —
+      // "full isolation" is purely a unique per-wake key, never a separate path.
+      const resolved = resolveSandboxIdentity(
+        {
+          key: sandboxConfig.key,
+          scope: sandboxConfig.scope,
+          persistent: sandboxConfig.persistent,
+          owner: sandboxConfig.owner,
+        },
+        { entityUrl, wakeId }
+      )
+      resolvedSandboxSelection = {
+        profile: requestedProfileName,
+        key: resolved.sandboxKey,
+        persistent: resolved.persistent,
+      }
+      sandbox = await profile.factory({
+        sandboxKey: resolved.sandboxKey,
+        persistent: resolved.persistent,
+        owner: resolved.owner,
+        entityUrl,
+        entityType: typeName,
+        args: entityArgs,
+      })
+    } else {
+      sandbox = await unrestrictedSandbox({ workingDirectory: process.cwd() })
+    }
+    // Record which sandbox each wake actually resolved to — the isolation
+    // boundary is security-relevant, so keep it legible in the runtime log.
+    log.info(
+      `[sandbox] entity=${entityUrl} requested=${requestedProfileName ?? `(none)`} resolved=${sandbox.name} cwd=${sandbox.workingDirectory}`
+    )
+
+    // ---- Send executor — ctx.send() calls this directly (no queue) ----
+    const executeSend = (send: {
+      targetUrl: string
+      payload: unknown
+      type?: string
+      afterMs?: number
+    }): Promise<SendResult> => {
+      if (
+        send.afterMs !== undefined &&
+        (!Number.isFinite(send.afterMs) || send.afterMs < 0)
+      ) {
+        const promise = Promise.reject<SendResult>(
+          new Error(`afterMs must be a non-negative finite number`)
+        )
+        void promise.catch(() => undefined)
+        return promise
+      }
+
+      const promise = serverClient
+        .sendEntityMessage({
+          targetUrl: send.targetUrl,
+          payload: send.payload,
+          type: send.type,
+          afterMs: send.afterMs,
+          fromAgent: entityUrl,
+        })
+        .then(() => ({ sent: true as const, targetUrl: send.targetUrl }))
+
+      // Handlers may intentionally fire-and-forget sends. Keep awaited sends
+      // rejectable, but mark ignored send failures as handled so they don't
+      // surface as process/Vitest unhandled rejections.
+      void promise.catch(() => undefined)
+
+      return promise
+    }
+
+    // ---- Wiring helpers for inline spawn/observe ----
+    const wiringConfig = {
+      createOrGetChild: async (
+        childType: string,
+        childId: string,
+        spawnArgs: Record<string, unknown>,
+        parentUrl: string,
+        opts?: {
+          initialMessage?: unknown
+          wake?: Wake
+          tags?: Record<string, string>
+          sandbox?: SpawnSandboxOption
+        }
+      ): Promise<{ entityUrl: string; streamPath: string }> => {
+        const wakeOpt = opts?.wake
+          ? {
+              subscriberUrl: entityUrl,
+              condition:
+                typeof opts.wake === `object` && opts.wake.on === `runFinished`
+                  ? (`runFinished` as const)
+                  : opts.wake === `runFinished`
+                    ? (`runFinished` as const)
+                    : opts.wake,
+              debounceMs:
+                typeof opts.wake === `object` && opts.wake.on === `change`
+                  ? opts.wake.debounceMs
+                  : undefined,
+              timeoutMs:
+                typeof opts.wake === `object` && opts.wake.on === `change`
+                  ? opts.wake.timeoutMs
+                  : undefined,
+              includeResponse:
+                typeof opts.wake === `object` && opts.wake.on === `runFinished`
+                  ? opts.wake.includeResponse
+                  : undefined,
+              manifestKey: manifestChildKey(childType, childId),
+            }
+          : undefined
+        // `inherit` means "adopt this wake's RESOLVED sandbox" (profile +
+        // resolved key + persistent). We send them as EXPLICIT values rather
+        // than `inherit: true` so a per-wake parent's live key — which is never
+        // stored on the entity — propagates to the child; the child then shares
+        // this wake's exact container/workspace. If this wake has no sandbox,
+        // inherit gracefully yields none.
+        const requestedInherit =
+          opts?.sandbox === `inherit` ||
+          (typeof opts?.sandbox === `object` && opts.sandbox.inherit === true)
+        const sandbox = requestedInherit
+          ? resolvedSandboxSelection
+            ? {
+                profile: resolvedSandboxSelection.profile,
+                key: resolvedSandboxSelection.key,
+                persistent: resolvedSandboxSelection.persistent,
+                // The child ATTACHES to this wake's sandbox — it never owns or
+                // tears down the owner's container/workspace.
+                owner: false,
+              }
+            : undefined
+          : opts?.sandbox === `inherit`
+            ? undefined
+            : opts?.sandbox
+        return serverClient.spawnEntity({
+          type: childType,
+          id: childId,
+          args: spawnArgs,
+          parentUrl,
+          initialMessage: opts?.initialMessage,
+          tags: opts?.tags,
+          sandbox,
+          wake: wakeOpt,
+        })
+      },
+
+      createChildDb: async (
+        childStreamUrl: string,
+        childTypeName?: string,
+        onEvent?: (event: ChangeEvent) => void,
+        opts?: { preload?: boolean }
+      ): Promise<EntityStreamDBWithActions> => {
+        const childEntry = childTypeName
+          ? registry
+            ? registry.get(childTypeName)
+            : getEntityType(childTypeName)
+          : undefined
+        const childDb = createEntityStreamDB(
+          childStreamUrl,
+          childEntry?.definition.state,
+          childEntry?.definition.actions,
+          {
+            ...(onEvent ? { onEvent } : {}),
+            streamOptions: { headers: serverHeaders },
+          }
+        )
+        secondaryDbs.push({
+          drainPendingWrites: () => childDb.utils.drainPendingWrites(),
+          close: () => childDb.close(),
+        })
+        if (opts?.preload !== false) {
+          await childDb.preload()
+        }
+        return childDb
+      },
+
+      createSourceDb: async (
+        sourceStreamUrl: string,
+        sourceSchema: NonNullable<ObservationSource[`schema`]>,
+        onEvent?: (event: ChangeEvent) => void,
+        opts?: { preload?: boolean }
+      ) => {
+        const sourceDb = createStreamDB({
+          streamOptions: {
+            url: sourceStreamUrl,
+            contentType: `application/json`,
+            headers: serverHeaders,
+          },
+          ...(onEvent ? { onEvent } : {}),
+          state: normalizeObservationSchema(sourceSchema),
+        })
+        secondaryDbs.push({
+          close: () => sourceDb.close(),
+        })
+        if (opts?.preload !== false) {
+          await sourceDb.preload()
+        }
+        return sourceDb
+      },
+
+      ensureSourceStream: async (
+        sourceStreamUrl: string,
+        contentType: string
+      ): Promise<void> => {
+        await serverClient.ensureStream(sourceStreamUrl, contentType)
+      },
+
+      createSharedStateDb: async (
+        ssId: string,
+        mode: `create` | `connect`,
+        ssSchema: SharedStateSchemaMap
+      ): Promise<EntityStreamDBWithActions> => {
+        const ssStreamPath = serverClient.getSharedStateStreamPath(ssId)
+        if (mode === `create`) {
+          await serverClient.ensureSharedStateStream(ssId, entityUrl)
+        }
+        const ssStreamUrl = appendPathToUrl(baseUrl, ssStreamPath)
+        const ssCollections: Record<string, CollectionDefinition> = {}
+        for (const [collName, collSchema] of Object.entries(ssSchema)) {
+          ssCollections[collName] = {
+            type: collSchema.type,
+            primaryKey: collSchema.primaryKey,
+          }
+        }
+        const sharedStream = new DurableStream({
+          url: ssStreamUrl,
+          headers: serverHeaders,
+          contentType: `application/json`,
+        })
+        const sharedProducer = new IdempotentProducer(
+          sharedStream,
+          `shared-state-${entityUrl}-${ssId}`,
+          {
+            epoch,
+            autoClaim: true,
+            onError: (error) => {
+              failBackgroundWake(error, `WRITE_FAILED`)
+            },
+          }
+        )
+        const sharedDb = createEntityStreamDB(
+          ssStreamUrl,
+          ssCollections,
+          undefined,
+          {
+            stream: sharedStream as unknown as EntityStreamHandle,
+            actorFrom: entityUrl,
+            writeEvent: (event) => {
+              sharedProducer.append(JSON.stringify(event))
+            },
+            flushWrites: () => sharedProducer.flush(),
+          }
+        )
+        secondaryDbs.push({
+          drainPendingWrites: () => sharedDb.utils.drainPendingWrites(),
+          flushWrites: async () => {
+            await sharedProducer.flush()
+          },
+          detachWrites: () => sharedProducer.detach(),
+          close: () => sharedDb.close(),
+        })
+        await sharedDb.preload()
+        return sharedDb
+      },
+    }
+
+    const wakeSession = createWakeSession(db, {
+      writeEvent,
+      flushWrites: flushProducedWrites,
+    })
+    const pendingWakeRegistrations: Array<Promise<void>> = []
+
+    const filterEventsAtOrAboveOffset = (
+      offsetBound: string
+    ): Array<ChangeEvent> =>
+      offsetBound === `-1`
+        ? [...catchUpEvents]
+        : catchUpEvents.filter((event) => {
+            const offset = event.headers.offset
+            if (typeof offset !== `string`) {
+              return true
+            }
+            return compareOffsets(offset, offsetBound) >= 0
+          })
+    const eventOffset = (event: ChangeEvent): string | null => {
+      const offset = event.headers.offset
+      return typeof offset === `string` ? offset : null
+    }
+    const latestForkReconciliationOffset = (
+      events: Array<ChangeEvent>
+    ): string | null => {
+      let latest: string | null = null
+      for (const event of events) {
+        const headers = event.headers as Record<string, unknown>
+        if (typeof headers.forkedFrom !== `string`) {
+          continue
+        }
+        const offset = eventOffset(event)
+        if (!offset) {
+          continue
+        }
+        if (latest === null || compareOffsets(offset, latest) > 0) {
+          latest = offset
+        }
+      }
+      return latest
+    }
+    const filterEventsAfterOffset = (
+      events: Array<ChangeEvent>,
+      offsetBound: string | null
+    ): Array<ChangeEvent> => {
+      if (offsetBound === null) {
+        return events
+      }
+      return events.filter((event) => {
+        const offset = eventOffset(event)
+        if (offset === null) {
+          return true
+        }
+        return compareOffsets(offset, offsetBound) > 0
+      })
+    }
+    const eventsAtOrAfterNotification =
+      filterEventsAtOrAboveOffset(notificationOffset)
+    const forkReconciliationOffset = latestForkReconciliationOffset(
+      eventsAtOrAfterNotification
+    )
+    const actionableEventsAtOrAfterNotification = filterEventsAfterOffset(
+      eventsAtOrAfterNotification,
+      forkReconciliationOffset
+    )
+    const initialFromCatchUp = notification.wakeEvent
+      ? null
+      : selectWakeFromEvents(actionableEventsAtOrAfterNotification, entityUrl)
+    if (initialFromCatchUp) {
+      currentWakeEvent = initialFromCatchUp.wakeEvent
+      currentWakeOffset = initialFromCatchUp.offset ?? notificationOffset
+    } else {
+      currentWakeEvent = constructWakeEvent(notification)
+      currentWakeOffset = notificationOffset
+    }
+    currentWakeAckOffset = lastCatchUpOffset
+    notifyCurrentWakeReady()
+
+    const computeCurrentNotificationEvents = (): Array<ChangeEvent> =>
+      filterEventsAfterOffset(
+        filterEventsAtOrAboveOffset(currentWakeOffset),
+        forkReconciliationOffset
+      )
+
+    const currentNotificationEvents = computeCurrentNotificationEvents()
+
+    const definition = entry.definition
+
+    const hasFreshCatchUpInput =
+      getFreshKind(currentNotificationEvents) !== null
+    const hasOnlyManagementCatchUp =
+      currentNotificationEvents.length > 0 &&
+      currentNotificationEvents.every(isManagementEvent)
+    const shouldSkipInitialHandlerPass =
+      !notification.wakeEvent &&
+      ((currentNotificationEvents.length > 0 &&
+        (!hasFreshCatchUpInput || hasOnlyManagementCatchUp)) ||
+        (forkReconciliationOffset !== null &&
+          currentNotificationEvents.length === 0))
+    if (debugWakeTypes) {
+      log.info(
+        `wake input type=${currentWakeEvent.type} offset=${currentWakeOffset}`
+      )
+    }
+    const initialFirstWake =
+      (await queryOnce((q) => q.from({ manifests: db.collections.manifests })))
+        .length === 0
+    const wiredSharedStateIds = new Set<string>()
+
+    const setupCtx = createSetupContext({
+      entityUrl,
+      entityType: typeName,
+      args: entityArgs,
+      db,
+      events: catchUpEvents,
+      writeEvent,
+      serverBaseUrl: baseUrl,
+      effectScope: { disposeAll: async () => {} } as never,
+      customStateNames: Object.keys(definition.state ?? {}),
+      wakeSession,
+      definition,
+      wiring: wiringConfig,
+      executeSend,
+    })
+    setupCtx.restorePersistedSharedStateHandles()
+
+    const hydrateCurrentEventSourceWake =
+      async (): Promise<HydratedEventSourceWake | null> => {
+        const info = eventSourceWakeInfoFromManifests({
+          wakeEvent: currentWakeEvent,
+          manifests: db.collections.manifests.toArray,
+        })
+        if (!info) return null
+
+        try {
+          const sourceStreamUrl = info.sourceUrl.startsWith(`/`)
+            ? appendPathToUrl(baseUrl, info.sourceUrl)
+            : info.sourceUrl
+          const sourceDb = await wiringConfig.createSourceDb(
+            sourceStreamUrl,
+            webhookObservationCollections,
+            undefined,
+            { preload: true }
+          )
+          const rows = (sourceDb.collections.events?.toArray ??
+            []) as unknown as Array<WebhookEventRow>
+          return buildHydratedEventSourceWake(info, rows)
+        } catch (error) {
+          log.warn(
+            `failed to hydrate event source wake source=${info.sourceUrl}: ${error instanceof Error ? error.message : String(error)}`
+          )
+          return null
+        }
+      }
+
+    const doObserve = async (
+      source: ObservationSource,
+      wake?: Wake
+    ): Promise<ObservationHandle> => {
+      let observedSource = source
+      // Self-observation
+      if (
+        source.sourceType === `entity` &&
+        (source as EntityObservationSource).entityUrl === entityUrl
+      ) {
+        const manifestEntry = source.toManifestEntry()
+        wakeSession.registerManifestEntry({
+          ...manifestEntry,
+          ...(wake ? { wake } : {}),
+        })
+        return {
+          sourceType: `entity`,
+          sourceRef: entityUrl,
+          entityUrl,
+          db,
+          events: catchUpEvents,
+          run: Promise.resolve(),
+          text() {
+            return Promise.resolve([])
+          },
+          send: (msg: unknown) => {
+            return executeSend({ targetUrl: entityUrl, payload: msg })
+          },
+          status: () => undefined,
+        } as EntityHandle
+      }
+
+      // When the source has a built-in wake() (e.g. cron), auto-register it
+      // even if the caller didn't pass explicit wake opts.
+      const sourceWakeConfig = source.wake ? source.wake() : undefined
+      const effectiveWake = wake ?? sourceWakeConfig?.condition
+
+      if (source.sourceType === `cron`) {
+        await serverClient.ensureCronStream(
+          (source as CronObservationSource).expression,
+          (source as CronObservationSource).timezone
+        )
+      }
+
+      if (source.sourceType === `entities`) {
+        const ensured = await serverClient.ensureEntitiesMembershipStream(
+          (source as EntitiesObservationSource).tags
+        )
+        const originalEntry = source.toManifestEntry() as Record<
+          string,
+          unknown
+        >
+        observedSource = {
+          ...source,
+          sourceRef: ensured.sourceRef,
+          streamUrl: ensured.streamUrl,
+          toManifestEntry() {
+            return {
+              ...originalEntry,
+              key: `source:entities:${ensured.sourceRef}`,
+              sourceRef: ensured.sourceRef,
+              config: {
+                ...((originalEntry.config as Record<string, unknown>) ?? {}),
+                streamUrl: ensured.streamUrl,
+              },
+            } as unknown as ReturnType<ObservationSource[`toManifestEntry`]>
+          },
+        }
+      }
+
+      if (effectiveWake) {
+        const observeHandle = await setupCtx.observe(observedSource, {
+          wake: effectiveWake,
+        })
+
+        const sourceUrl =
+          sourceWakeConfig?.sourceUrl ??
+          (observedSource.sourceType === `entity`
+            ? (observedSource as EntityObservationSource).entityUrl
+            : observedSource.streamUrl)
+        if (!sourceUrl) {
+          throw new Error(
+            `[agent-runtime] Cannot register wake for source '${observedSource.sourceType}:${observedSource.sourceRef}' without a source URL`
+          )
+        }
+
+        const condition = wake
+          ? typeof wake === `object` && wake.on === `runFinished`
+            ? (`runFinished` as const)
+            : wake === `runFinished`
+              ? (`runFinished` as const)
+              : wake
+          : sourceWakeConfig!.condition
+
+        await serverClient.registerWake({
+          subscriberUrl: entityUrl,
+          sourceUrl,
+          condition,
+          debounceMs: wake
+            ? typeof wake === `object` && wake.on === `change`
+              ? wake.debounceMs
+              : undefined
+            : sourceWakeConfig?.debounceMs,
+          timeoutMs: wake
+            ? typeof wake === `object` && wake.on === `change`
+              ? wake.timeoutMs
+              : undefined
+            : sourceWakeConfig?.timeoutMs,
+          includeResponse: wake
+            ? typeof wake === `object` && wake.on === `runFinished`
+              ? wake.includeResponse
+              : undefined
+            : sourceWakeConfig?.includeResponse,
+          manifestKey: observedSource.toManifestEntry().key,
+        })
+
+        if (source.sourceType === `db`) {
+          scheduleSharedStateWiring()
+          await waitForSharedStateWiring()
+        }
+
+        return observeHandle
+      }
+
+      const observeHandle = await setupCtx.observe(observedSource)
+      if (source.sourceType === `db`) {
+        scheduleSharedStateWiring()
+        await waitForSharedStateWiring()
+      }
+      return observeHandle
+    }
+
+    const doSpawn = (
+      type: string,
+      id: string,
+      spawnArgs?: Record<string, unknown>,
+      opts?: {
+        initialMessage?: unknown
+        wake?: Wake
+        tags?: Record<string, string>
+        observe?: boolean
+      }
+    ): Promise<EntityHandle> => {
+      return setupCtx.spawn(type, id, spawnArgs, opts)
+    }
+
+    const doMkdb = <TSchema extends SharedStateSchemaMap>(
+      id: string,
+      schema: TSchema
+    ) => {
+      const handle = setupCtx.mkdb(id, schema)
+      scheduleSharedStateWiring()
+      return handle
+    }
+
+    const wirePendingSharedStates = async (): Promise<void> => {
+      for (const [ssId, ssHandle] of wakeSession.getSharedStateHandles()) {
+        if (wiredSharedStateIds.has(ssId)) continue
+        const ssDb = await wiringConfig.createSharedStateDb(
+          ssId,
+          ssHandle.mode,
+          ssHandle.schema
+        )
+        await ssHandle.wireDb(ssDb)
+        wiredSharedStateIds.add(ssId)
+      }
+    }
+
+    let pendingSharedStateWiring: Promise<void> = Promise.resolve()
+    const scheduleSharedStateWiring = (): void => {
+      pendingSharedStateWiring = pendingSharedStateWiring
+        .then(() => wirePendingSharedStates())
+        .catch((err) => {
+          failBackgroundWake(err, `SHARED_STATE_WIRING_FAILED`)
+        })
+    }
+    const waitForSharedStateWiring = async (): Promise<void> => {
+      await pendingSharedStateWiring
+    }
+    const waitForSignalHandlers = async (): Promise<void> => {
+      if (pendingSignalHandlers.length === 0) return
+      await Promise.allSettled([...pendingSignalHandlers])
+    }
+    const drainAllPendingWrites = async (): Promise<void> => {
+      await db.utils.drainPendingWrites()
+      for (const sdb of secondaryDbs) {
+        await sdb.drainPendingWrites?.()
+      }
+    }
+    let currentWakeIsPromotedQueueMessage = false
+    let queueHeadPaused = false
+    const promotedQueuedMessageKeys = new Set<string>()
+    const promoteNextPendingInboxMessage = async (): Promise<boolean> => {
+      queueHeadPaused = false
+      const rows = [...db.collections.inbox.toArray].filter((row) => {
+        const status = row.status ?? `processed`
+        const mode = row.mode ?? `immediate`
+        return (
+          status === `pending` &&
+          (mode === `queued` || mode === `paused`) &&
+          !promotedQueuedMessageKeys.has(String(row.key))
+        )
+      })
+      if (rows.length === 0) {
+        return false
+      }
+
+      rows.sort((left, right) => {
+        const leftPosition = left.position
+        const rightPosition = right.position
+        if (leftPosition && rightPosition && leftPosition !== rightPosition) {
+          return leftPosition < rightPosition ? -1 : 1
+        }
+        if (leftPosition && !rightPosition) return -1
+        if (!leftPosition && rightPosition) return 1
+        const leftSeq = left._seq ?? Number.MAX_SAFE_INTEGER
+        const rightSeq = right._seq ?? Number.MAX_SAFE_INTEGER
+        if (leftSeq !== rightSeq) return leftSeq - rightSeq
+        return String(left.key).localeCompare(String(right.key))
+      })
+
+      const next = rows[0]!
+      if ((next.mode ?? `immediate`) === `paused`) {
+        queueHeadPaused = true
+        log.info(`queued inbox message paused, closing wake`)
+        return false
+      }
+      promotedQueuedMessageKeys.add(String(next.key))
+      const processedAt = new Date().toISOString()
+      writeEvent(
+        entityStateSchema.inbox.update({
+          key: next.key,
+          value: {
+            status: `processed`,
+            processed_at: processedAt,
+          } as never,
+          headers: { from: entityUrl },
+        }) as ChangeEvent
+      )
+      currentWakeEvent = {
+        source: next.from ?? entityUrl,
+        type: `inbox`,
+        fromOffset: 0,
+        toOffset: 0,
+        eventCount: 0,
+        payload: next.payload,
+        summary: next.message_type,
+      }
+      currentWakeIsPromotedQueueMessage = true
+      await flushProducedWrites()
+      return true
+    }
+    setSafeAckOffset(lastCatchUpOffset)
+
+    let setupComplete = false
+    let skipInitialHandlerPass = shouldSkipInitialHandlerPass
+
+    if (!skipInitialHandlerPass) {
+      await waitForCurrentWakeInput()
+      currentWakeEvents = computeCurrentNotificationEvents()
+      const initialWake = selectWakeFromEvents(
+        currentWakeEvents,
+        entityUrl,
+        getFreshKind(currentWakeEvents) ?? undefined
+      )
+      if (initialWake) {
+        currentWakeEvent = initialWake.wakeEvent
+        currentWakeOffset = initialWake.offset ?? currentWakeOffset
+      }
+      currentWakeAckOffset = lastCatchUpOffset
+
+      const initialPendingWake = dequeueNextWakeFromPending()
+      if (
+        initialPendingWake &&
+        initialPendingWake.wakeEvent.type === currentWakeEvent.type &&
+        compareOffsets(initialPendingWake.wakeOffset, currentWakeOffset) === 0
+      ) {
+        currentWakeAckOffset = initialPendingWake.ackOffset
+      } else if (initialPendingWake) {
+        queuedNextWake = initialPendingWake
+      }
+    }
+
+    const awaitIdleForFreshWork = async (message: string): Promise<boolean> => {
+      if (idleTimeout <= 0) {
+        return false
+      }
+
+      log.info(message)
+      acceptLiveInputs = true
+      idleController = new AbortController()
+      const idleSignal = idleController.signal
+      const idleWait = new Promise<void>((resolve) => {
+        if (idleSignal.aborted) {
+          resolve()
+          return
+        }
+        idleSignal.addEventListener(`abort`, () => resolve(), { once: true })
+      })
+      armIdleTimer()
+      queueNextWakeIfReady()
+      await idleWait
+
+      acceptLiveInputs = false
+      clearIdleTimer()
+
+      if (liveProcessError) {
+        throw liveProcessError
+      }
+
+      if (shutdownRequested || queuedNextWake === null) {
+        return false
+      }
+
+      log.info(`fresh work arrived during idle, continuing in-process`)
+      const resumedWake = queuedNextWake
+      currentWakeEvent = resumedWake.wakeEvent
+      currentWakeOffset = resumedWake.wakeOffset
+      currentWakeAckOffset = resumedWake.ackOffset
+      currentWakeEvents = resumedWake.events
+      queuedNextWake = null
+      if (debugWakeTypes) {
+        log.info(
+          `resumed wake type=${currentWakeEvent.type} offset=${currentWakeOffset} ack=${currentWakeAckOffset}`
+        )
+      }
+      return true
+    }
+
+    for (;;) {
+      if (skipInitialHandlerPass) {
+        skipInitialHandlerPass = false
+        if (signalAbortRequested) {
+          signalAbortRequested = false
+          drainNonFreshPendingBatches()
+          log.info(`signal abort completed, closing wake`)
+          break
+        }
+        if (pauseRequested) {
+          pauseRequested = false
+          drainNonFreshPendingBatches()
+          log.info(`pause requested, closing wake`)
+          break
+        }
+        if (resumeRequested) {
+          resumeRequested = false
+          if (await promoteNextPendingInboxMessage()) {
+            currentWakeEvents = []
+            continue
+          }
+        }
+        const resumed = await awaitIdleForFreshWork(
+          `skipping initial handler pass: no fresh wake input in catch-up; entering idle (${idleTimeout / 1000}s timeout)`
+        )
+        if (resumed) {
+          continue
+        }
+        break
+      }
+
+      const electricTools = config.createElectricTools
+        ? await config.createElectricTools({
+            entityUrl,
+            entityType: typeName,
+            args: entityArgs,
+            db,
+            events: currentWakeEvents,
+            upsertCronSchedule: (opts) =>
+              serverClient.upsertCronSchedule({
+                entityUrl,
+                ...opts,
+              }),
+            upsertFutureSendSchedule: (opts) =>
+              serverClient.upsertFutureSendSchedule({
+                entityUrl,
+                ...opts,
+              }),
+            deleteSchedule: (opts) =>
+              serverClient.deleteSchedule({
+                entityUrl,
+                ...opts,
+              }),
+            listEventSources: () => serverClient.listEventSources(),
+            subscribeToEventSource: (opts) =>
+              serverClient.subscribeToEventSource({
+                entityUrl,
+                ...opts,
+              }),
+            unsubscribeFromEventSource: (opts) =>
+              serverClient.unsubscribeFromEventSource({
+                entityUrl,
+                ...opts,
+              }),
+          })
+        : []
+
+      if (!currentWakeIsPromotedQueueMessage) {
+        await promoteNextPendingInboxMessage()
+      }
+
+      runAbortController = new AbortController()
+      if (pendingRunAbortRequested) {
+        pendingRunAbortRequested = false
+        runAbortController.abort()
+      }
+      const { ctx: handlerCtx, getSleepRequested } = createHandlerContext({
+        entityUrl,
+        entityType: typeName,
+        epoch,
+        wakeOffset: currentWakeOffset,
+        firstWake: initialFirstWake && !setupComplete,
+        tags: Object.freeze(
+          (notification.entity as { tags?: Record<string, string> } | undefined)
+            ?.tags ?? {}
+        ),
+        principal: notification.principal,
+        args: entityArgs,
+        db,
+        state: setupCtx.state,
+        events: currentWakeEvents,
+        actions: setupCtx.actions,
+        electricTools,
+        // Non-null at this point: the sandbox was acquired earlier in
+        // this try block (after entityArgs); TS narrowing doesn't survive
+        // the surrounding for-loop, so assert.
+        sandbox: sandbox!,
+        writeEvent,
+        wakeSession,
+        wakeEvent: currentWakeEvent,
+        runSignal: runAbortController.signal,
+        registerSignalHandler: (handler) => {
+          activeSignalHandler = handler
+        },
+        hydratedEventSourceWake: await hydrateCurrentEventSourceWake(),
+        doObserve,
+        doSpawn,
+        doMkdb,
+        doCreateAttachment: (attachment) =>
+          serverClient
+            .createAttachment({ entityUrl, attachment })
+            .then((result) => result.attachment),
+        doReadAttachment: (id) =>
+          serverClient.readAttachment({ entityUrl, id }),
+        prepareAgentRun: waitForSharedStateWiring,
+        executeSend: (send) => executeSend(send),
+        doSetTag: (key, value) =>
+          serverClient.setTag(entityUrl, key, value, writeToken),
+        doDeleteTag: (key) =>
+          serverClient.deleteTag(entityUrl, key, writeToken),
+      })
+
+      let sleepRequested = false
+
+      try {
+        await wirePendingSharedStates()
+        if (!setupComplete) {
+          setupCtx.setInSetup(false)
+          setupComplete = true
+        }
+
+        log.info(
+          `invoking handler wakeType=${currentWakeEvent.type} ` +
+            `wakeOffset=${currentWakeOffset} ackOffset=${currentWakeAckOffset} ` +
+            `events=${currentWakeEvents.length} ` +
+            `payloadType=${typeof currentWakeEvent.payload} ` +
+            `firstWake=${initialFirstWake && !setupComplete}`
+        )
+        const handlerT0 = performance.now()
+        await definition.handler(handlerCtx, currentWakeEvent)
+        handlerMs += +(performance.now() - handlerT0).toFixed(2)
+        log.info(`handler returned`)
+        await waitForSignalHandlers()
+        activeSignalHandler = null
+        await waitForSharedStateWiring()
+        await drainAllPendingWrites()
+        await Promise.all(pendingWakeRegistrations)
+        pendingWakeRegistrations.length = 0
+        await wakeSession.commitManifestEntries()
+        await flushProducedWrites()
+        if (result) {
+          result.manifest = await queryOnce((q) =>
+            q.from({ manifests: db.collections.manifests })
+          )
+        }
+
+        sleepRequested = getSleepRequested()
+
+        if (liveProcessError) {
+          throw liveProcessError
+        }
+      } catch (setupErr) {
+        runAbortController = null
+        await waitForSignalHandlers()
+        activeSignalHandler = null
+        wakeSession.rollbackManifestEntries()
+        const errMsg = toError(setupErr).message
+        log.error(`handler failed for ${entityUrl}:`, errMsg)
+        writeEvent(
+          entityStateSchema.errors.insert({
+            key: `error-${epoch}-${crypto.randomUUID()}`,
+            value: {
+              error_code: `HANDLER_FAILED`,
+              message: errMsg,
+            } as never,
+          }) as ChangeEvent
+        )
+        ackCurrentWakeOnFailure = true
+
+        const manifest = wakeSession.getManifest()
+        const spawnedChildren = manifest.filter(
+          (e): e is typeof e & { kind: `child` } => e.kind === `child`
+        )
+        if (spawnedChildren.length > 0) {
+          log.warn(
+            `handler failed — attempting to close ${spawnedChildren.length} child(ren) spawned before the failure`
+          )
+          const cleanupErrors: Array<Error> = []
+          for (const childEntry of spawnedChildren) {
+            try {
+              await serverClient.deleteEntity(childEntry.entity_url)
+            } catch (err) {
+              cleanupErrors.push(toError(err))
+            }
+          }
+          if (cleanupErrors.length > 0) {
+            throw new AggregateError(
+              [toError(setupErr), ...cleanupErrors],
+              `Wake handler failed and child cleanup also failed`
+            )
+          }
+        }
+        throw setupErr
+      }
+      runAbortController = null
+      activeSignalHandler = null
+
+      if (!result) {
+        result = {
+          manifest: wakeSession.getManifest(),
+          wakeSession,
+          sourceHandleCache: setupCtx.getSourceHandleCache(),
+        }
+      }
+
+      setSafeAckOffset(currentWakeAckOffset)
+
+      if (shutdownRequested) {
+        log.info(`shutdown requested, closing wake`)
+        break
+      }
+
+      if (signalAbortRequested) {
+        signalAbortRequested = false
+        drainNonFreshPendingBatches()
+        log.info(`signal abort completed, closing wake`)
+        break
+      }
+
+      if (sleepRequested) {
+        drainNonFreshPendingBatches()
+        log.info(`handler returned with sleep(), closing immediately`)
+        break
+      }
+
+      if (pauseRequested) {
+        pauseRequested = false
+        drainNonFreshPendingBatches()
+        log.info(`pause requested, closing wake`)
+        break
+      }
+
+      const nextWake = dequeueNextWakeFromPending()
+      if (nextWake) {
+        log.info(
+          debugWakeTypes
+            ? `fresh work already pending, continuing in-process (type=${nextWake.wakeEvent.type}, offset=${nextWake.wakeOffset}, ack=${nextWake.ackOffset})`
+            : `fresh work already pending, continuing in-process`
+        )
+        currentWakeEvent = nextWake.wakeEvent
+        currentWakeOffset = nextWake.wakeOffset
+        currentWakeAckOffset = nextWake.ackOffset
+        currentWakeEvents = nextWake.events
+        currentWakeIsPromotedQueueMessage = false
+        continue
+      }
+
+      currentWakeIsPromotedQueueMessage = false
+      if (await promoteNextPendingInboxMessage()) {
+        log.info(`queued inbox message pending, continuing in-process`)
+        currentWakeEvents = []
+        continue
+      }
+      if (queueHeadPaused) {
+        break
+      }
+
+      const resumed = await awaitIdleForFreshWork(
+        `handler returned, entering idle (${idleTimeout / 1000}s timeout)`
+      )
+      if (resumed) {
+        continue
+      }
+      break
+    }
+  } catch (err) {
+    primaryError = err
+    throw err
+  } finally {
+    shutdownSignal?.removeEventListener(`abort`, requestShutdown)
+    // 6. Clean up: flush producer, dispose effects, close StreamDB, cancel heartbeat, signal done
+    const cleanupErrors: Array<Error> = []
+    if (heartbeat) {
+      clearInterval(heartbeat)
+    }
+    try {
+      await io.drain()
+    } catch (err) {
+      cleanupErrors.push(toError(err))
+    }
+    try {
+      await db.utils.drainPendingWrites()
+    } catch (err) {
+      cleanupErrors.push(toError(err))
+    }
+    for (const sdb of secondaryDbs) {
+      try {
+        await sdb.drainPendingWrites?.()
+      } catch (err) {
+        cleanupErrors.push(toError(err))
+      }
+    }
+    try {
+      await flushProducedWrites()
+    } catch (err) {
+      cleanupErrors.push(toError(err))
+    }
+    // Updated by the handler-error path before control reaches this async cleanup.
+
+    if (ackCurrentWakeOnFailure && cleanupErrors.length === 0) {
+      setSafeAckOffset(currentWakeAckOffset)
+    }
+    if (result) {
+      try {
+        await result.wakeSession.close()
+      } catch (err) {
+        cleanupErrors.push(toError(err))
+      }
+    }
+    const doneOffset = safeAckOffset
+    for (const sdb of secondaryDbs) {
+      try {
+        await sdb.flushWrites?.()
+      } catch (err) {
+        cleanupErrors.push(toError(err))
+      }
+    }
+    for (const sdb of secondaryDbs) {
+      try {
+        await sdb.detachWrites?.()
+      } catch (err) {
+        cleanupErrors.push(toError(err))
+      }
+    }
+    try {
+      await producer.detach()
+    } catch (err) {
+      cleanupErrors.push(toError(err))
+    }
+    for (const sdb of secondaryDbs) {
+      try {
+        sdb.close()
+      } catch (err: unknown) {
+        cleanupErrors.push(toError(err))
+      }
+    }
+    db.close()
+    if (sandbox) {
+      try {
+        // When the entity reached a terminal status this wake, reclaim (wipe)
+        // its sandbox; otherwise release the lease and let the owner's idle
+        // policy (stop/remove) apply. Attacher leases ignore `reclaim`.
+        await sandbox.dispose({ reclaim: entityTerminated })
+      } catch (err) {
+        cleanupErrors.push(toError(err))
+      }
+    }
+    if (claimedWake) {
+      log.info(
+        doneOffset === `-1`
+          ? `done without ack (no consumed offset)`
+          : `done acking ${streamPath} at ${doneOffset}`
+      )
+      if (shutdownRequested) {
+        log.info(`shutdown requested, sending done callback at checkpoint`)
+      }
+      try {
+        await sendDone(
+          callback,
+          activeClaimToken,
+          claimHeaderConfig,
+          epoch,
+          streamPath,
+          doneOffset === `-1` ? null : doneOffset
+        )
+      } catch (err) {
+        cleanupErrors.push(toError(err))
+      }
+    }
+    if (primaryError != null || cleanupErrors.length > 0) {
+      const errors = [
+        ...(primaryError != null ? [toError(primaryError)] : []),
+        ...cleanupErrors,
+      ]
+      finalError =
+        errors.length === 1
+          ? errors[0]!
+          : new AggregateError(
+              errors,
+              `Wake failed during processing or cleanup`
+            )
+    }
+  }
+
+  const totalMs = +(performance.now() - wakeStartMs).toFixed(2)
+  const httpMs = +serverHttpMs.toFixed(2)
+  log.info(
+    `wake done claimMs=${claimMs} preloadMs=${preloadMs} ` +
+      `handlerMs=${handlerMs} httpMs=${httpMs} httpCount=${serverHttpCount} ` +
+      `totalMs=${totalMs}`
+  )
+
+  if (finalError) {
+    throw finalError
+  }
+
+  return result
+}
+
+async function sendDone(
+  callback: string,
+  token: string,
+  claimHeaderConfig: ClaimHeaderConfig,
+  epoch: number,
+  streamPath: string,
+  offset: string | null
+): Promise<void> {
+  const response = await fetch(callback, {
+    method: `POST`,
+    headers: await createClaimCallbackHeaders(claimHeaderConfig, token),
+    body: JSON.stringify({
+      epoch,
+      acks: offset ? [{ path: streamPath, offset }] : [],
+      done: true,
+    }),
+  })
+
+  if (!response.ok) {
+    let body = ``
+    try {
+      body = await response.text()
+    } catch {
+      body = `<body unreadable>`
+    }
+    throw new Error(
+      `Done callback failed (${response.status}): ${body || response.statusText}`
+    )
+  }
+}

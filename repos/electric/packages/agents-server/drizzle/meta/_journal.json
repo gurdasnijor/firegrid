@@ -1,0 +1,104 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1776187036654,
+      "tag": "0000_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776219000000,
+      "tag": "0001_entity_tags_and_bridges",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776233400000,
+      "tag": "0002_tag_outbox_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776240000000,
+      "tag": "0003_entity_manifest_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776261600000,
+      "tag": "0004_tenant_scoping",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776265200000,
+      "tag": "0005_pull_wake_control_plane",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776268800000,
+      "tag": "0006_principals",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778899200000,
+      "tag": "0007_runner_diagnostics_and_principal",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778976000000,
+      "tag": "0008_runner_runtime_diagnostics",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778540000000,
+      "tag": "0009_entity_signal_statuses",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779062400000,
+      "tag": "0010_sandbox_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779050000000,
+      "tag": "0011_entity_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780584581000,
+      "tag": "0012_horton_user_manage_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780588695000,
+      "tag": "0013_worker_user_manage_permission",
+      "breakpoints": true
+    }
+  ]
+}
