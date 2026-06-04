@@ -341,8 +341,13 @@ describe("firegrid acp CLI", () => {
       expect(`${stderr}\n${traceText}`).not.toContain(marker)
     }
 
+    // tf-s9uj: the edge's session-control ops (newSession create-or-load,
+    // prompt) now call the host-control channel bindings DIRECTLY — there is no
+    // host-plane router, so the old `firegrid.channel.dispatch` router span is
+    // gone. The direct create-or-load materializes the participant row, surfaced
+    // by the durable-table insert span.
     const traceNames = readTraceNamesFromRows(traceRows)
-    expect(traceNames).toContain("firegrid.channel.dispatch")
+    expect(traceNames).toContain("firegrid.durable_table.insert_or_get")
   }, 60_000)
 
   it("firegrid-zed-acp-stdio-external-agent.VALIDATION.6 runs a creds-free ACP agent turn through firegrid run", async () => {

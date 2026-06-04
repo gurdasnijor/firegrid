@@ -25,10 +25,6 @@ import {
   HostPromptChannel,
   HostPromptChannelTarget,
   HostPermissionRespondChannelTarget,
-  HostSessionsCreateOrLoadChannel,
-  HostSessionsCreateOrLoadChannelTarget,
-  HostSessionsCreateOrLoadRequestSchema,
-  HostSessionsCreateOrLoadResponseSchema,
   HostSessionsStartChannel,
   HostSessionsStartChannelTarget,
   HostSessionsStartRequestSchema,
@@ -58,8 +54,6 @@ import { Effect, Exit, Layer, Option, Ref, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   HostControlChannelBindingsLive,
-  HostPlaneChannelRouter,
-  HostPlaneSessionControlRouterLive,
   RuntimeChannelRouter,
   makeRuntimeChannelRouter,
   runtimeRouteFromChannel,
@@ -180,29 +174,11 @@ const hostPlaneNoopEventChannelsLayer = Layer.mergeAll(
   ),
 )
 
-const sessionNewHostPlaneLayer = HostPlaneSessionControlRouterLive.pipe(
-  Layer.provideMerge(HostControlChannelBindingsLive),
-  Layer.provideMerge(hostPlaneNoopEventChannelsLayer),
-)
-
-const hostSessionsCreateOrLoadStubLayer = Layer.succeed(
-  HostSessionsCreateOrLoadChannel,
-  makeCallableChannel({
-    target: HostSessionsCreateOrLoadChannelTarget,
-    requestSchema: HostSessionsCreateOrLoadRequestSchema,
-    responseSchema: HostSessionsCreateOrLoadResponseSchema,
-    call: request =>
-      Effect.succeed(
-        Schema.decodeSync(HostSessionsCreateOrLoadResponseSchema)({
-          sessionId: `session:${request.externalKey.source}:${request.externalKey.id}`,
-          contextId: `session:${request.externalKey.source}:${request.externalKey.id}`,
-        }),
-      ),
-  }),
-)
-
-const hostPlanePermissionRouterLayer = HostPlaneSessionControlRouterLive.pipe(
-  Layer.provideMerge(hostSessionsCreateOrLoadStubLayer),
+// The fixed-target session-control arms resolve the host-control channel
+// bindings DIRECTLY (tf-s9uj — no host-plane router): the real create-or-load
+// binding (HostControlChannelBindingsLive, requires the control plane + host
+// session provided alongside) plus the stub session-control event channels.
+const sessionControlChannelsLayer = HostControlChannelBindingsLive.pipe(
   Layer.provideMerge(hostPlaneNoopEventChannelsLayer),
 )
 
@@ -366,29 +342,6 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
     expect(result.sentPayloads).toEqual([])
   })
 
-  it("tf-nors: dedicated permission.respond dispatches through HostPlaneChannelRouter", async () => {
-    const result = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const router = yield* HostPlaneChannelRouter
-          return yield* router.dispatch({
-            target: String(HostPermissionRespondChannelTarget),
-            verb: "call",
-            payload: {
-              contextId: "ctx-permission-respond",
-              permissionRequestId: "permission-1",
-              decision: { _tag: "Allow", optionId: "allow_once" },
-            },
-          })
-        }).pipe(Effect.provide(hostPlanePermissionRouterLayer)),
-      ),
-    )
-
-    expect(result).toEqual({
-      offset: "host.permissions.respond:ctx-permission-respond:permission-1",
-    })
-  })
-
   it("D. execute remains PO-owned and fails on the typed ToolError channel", async () => {
     const exit = await runWith(
       streamUrlFor("unported"),
@@ -417,7 +370,7 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
       streamUrlFor("session-new-parent-fk"),
       ToolDispatchLive.pipe(
         Layer.provideMerge(contextResolverFromControlPlaneTable),
-        Layer.provideMerge(sessionNewHostPlaneLayer),
+        Layer.provideMerge(sessionControlChannelsLayer),
         Layer.provideMerge(controlPlaneLayer(namespace)),
         Layer.provideMerge(currentHostSessionLayer(namespace)),
       ),

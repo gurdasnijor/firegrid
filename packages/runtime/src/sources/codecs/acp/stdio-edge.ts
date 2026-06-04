@@ -1,11 +1,9 @@
 import * as acp from "@agentclientprotocol/sdk"
 import {
-  HostPermissionRespondChannelTarget,
-  HostSessionsCreateOrLoadChannelTarget,
-  HostSessionsCreateOrLoadResponseSchema,
-  HostSessionsStartChannelTarget,
+  HostPermissionRespondChannel,
+  HostSessionsCreateOrLoadChannel,
   SessionAgentOutputChannel,
-  SessionPromptChannelTarget,
+  SessionPromptChannel,
 } from "@firegrid/protocol/channels"
 import {
   type PublicLaunchRuntimeIntent,
@@ -13,8 +11,7 @@ import {
 } from "@firegrid/protocol/launch"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
-import { HostPlaneChannelRouter } from "../../../channels/index.ts"
-import { Clock, Context, Duration, Effect, Layer, Option, Runtime, Schema, Stream } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Runtime, Stream } from "effect"
 
 type RunEffect = <A, E>(effect: Effect.Effect<A, E, never>) => Promise<A>
 
@@ -167,7 +164,6 @@ export class AcpStdioEdge extends Context.Tag(
 interface EdgeSession {
   readonly acpSessionId: string
   readonly contextId: string
-  started: boolean
   lastSequence?: number
 }
 
@@ -227,7 +223,9 @@ class FiregridAcpStdioAgent implements acp.Agent {
 
   constructor(
     private readonly connection: acp.AgentSideConnection,
-    private readonly router: HostPlaneChannelRouter["Type"],
+    private readonly createOrLoad: HostSessionsCreateOrLoadChannel["Type"],
+    private readonly sessionPrompt: SessionPromptChannel["Type"],
+    private readonly permissionRespond: HostPermissionRespondChannel["Type"],
     private readonly contexts: AcpContextRows["Type"],
     private readonly sessionAgentOutput: SessionAgentOutputChannel["Type"],
     private readonly run: RunEffect,
@@ -265,7 +263,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
   }
 
   async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
-    const router = this.router
+    const createOrLoad = this.createOrLoad
     const options = this.options
     const sessions = this.sessions
     const waitForContext = (contextId: string) => this.waitForContext(contextId)
@@ -278,26 +276,18 @@ class FiregridAcpStdioAgent implements acp.Agent {
     return this.run(
       Effect.gen(function*() {
         // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.2
-        // tf-r6br: decode the immediate call receipt against the route's
-        // protocol-owned response schema (the `acknowledgement` completion
-        // contract) instead of an unchecked `as` cast. Terminal prompt
-        // completion is NOT modeled here — see the prompt() path / tf-r6br
+        // tf-s9uj: call the host create-or-load channel binding DIRECTLY (no
+        // host-plane router); the typed call returns the session handle. Terminal
+        // prompt completion is NOT modeled here — see the prompt() path / tf-r6br
         // STOP report (gated on the durable output cursor, tf-aseo).
-        const createdRaw = yield* router.dispatch({
-          target: HostSessionsCreateOrLoadChannelTarget,
-          verb: "call",
-          payload: {
-            externalKey: {
-              source: options.externalKeySource ?? defaultExternalKeySource,
-              id: acpSessionId,
-            },
-            runtime,
-            createdBy: options.createdBy ?? defaultCreatedBy,
+        const created = yield* createOrLoad.binding.call({
+          externalKey: {
+            source: options.externalKeySource ?? defaultExternalKeySource,
+            id: acpSessionId,
           },
+          runtime,
+          createdBy: options.createdBy ?? defaultCreatedBy,
         })
-        const created = yield* Schema.decodeUnknown(
-          HostSessionsCreateOrLoadResponseSchema,
-        )(createdRaw)
         yield* Effect.annotateCurrentSpan({
           "firegrid.context.id": created.contextId,
           "firegrid.session.id": created.sessionId,
@@ -306,7 +296,6 @@ class FiregridAcpStdioAgent implements acp.Agent {
         sessions.set(acpSessionId, {
           acpSessionId,
           contextId: created.contextId,
-          started: false,
         })
         return { sessionId: acpSessionId }
       }).pipe(
@@ -324,7 +313,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
   }
 
   async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
-    const router = this.router
+    const sessionPrompt = this.sessionPrompt
     const waitForTurnComplete = (session: EdgeSession) => this.waitForTurnCompleteEffect(session)
     const session = this.sessions.get(params.sessionId)
     if (session === undefined) {
@@ -343,26 +332,14 @@ class FiregridAcpStdioAgent implements acp.Agent {
           "firegrid.input.correlation_id": turnId,
         })
         // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.3
-        yield* router.dispatch({
-          target: SessionPromptChannelTarget,
-          verb: "send",
-          payload: {
-            sessionId: session.contextId,
-            prompt: {
-              payload: promptText(params),
-              idempotencyKey: clientPromptId,
-            },
-          },
+        // tf-s9uj: append to the per-session prompt channel binding DIRECTLY.
+        // The session.start ack was vestigial — the real spawn happens when this
+        // prompt drives the RuntimeContext workflow body (startOrAttach on first
+        // input), so no separate start dispatch is needed.
+        yield* sessionPrompt.forSession(session.contextId).binding.append({
+          payload: promptText(params),
+          idempotencyKey: clientPromptId,
         })
-
-        if (!session.started) {
-          yield* router.dispatch({
-            target: HostSessionsStartChannelTarget,
-            verb: "call",
-            payload: { sessionId: session.contextId },
-          })
-          session.started = true
-        }
 
         const turnComplete = yield* waitForTurnComplete(session)
         return {
@@ -568,14 +545,10 @@ class FiregridAcpStdioAgent implements acp.Agent {
         ? { _tag: "Deny" }
         : await this.requestPermissionFromClient(acpSessionId, output)
     await this.run(
-      this.router.dispatch({
-        target: HostPermissionRespondChannelTarget,
-        verb: "call",
-        payload: {
-          contextId: output.contextId,
-          permissionRequestId: output.permissionRequestId,
-          decision,
-        },
+      this.permissionRespond.binding.append({
+        contextId: output.contextId,
+        permissionRequestId: output.event.permissionRequestId,
+        decision,
       }),
     )
   }
@@ -622,12 +595,18 @@ export const AcpStdioEdgeLive = (
 ): Layer.Layer<
   AcpStdioEdge,
   never,
-  HostPlaneChannelRouter | AcpContextRows | SessionAgentOutputChannel
+  | HostSessionsCreateOrLoadChannel
+  | SessionPromptChannel
+  | HostPermissionRespondChannel
+  | AcpContextRows
+  | SessionAgentOutputChannel
 > =>
   Layer.scoped(
     AcpStdioEdge,
     Effect.gen(function*() {
-      const router = yield* HostPlaneChannelRouter
+      const createOrLoad = yield* HostSessionsCreateOrLoadChannel
+      const sessionPrompt = yield* SessionPromptChannel
+      const permissionRespond = yield* HostPermissionRespondChannel
       const contexts = yield* AcpContextRows
       const sessionAgentOutput = yield* SessionAgentOutputChannel
       const runtime = yield* Effect.runtime<never>()
@@ -638,7 +617,9 @@ export const AcpStdioEdgeLive = (
           return new acp.AgentSideConnection(
             client => new FiregridAcpStdioAgent(
               client,
-              router,
+              createOrLoad,
+              sessionPrompt,
+              permissionRespond,
               contexts,
               sessionAgentOutput,
               runPromise,

@@ -7,8 +7,9 @@
  * per-context runtime MCP server enabled (`runtimeContextMcp.enabled: true`) so
  * the spawned planner can reach the Firegrid `session_new` tool and delegate to
  * a CHILD agent. `firegridHost` now provides ALL of the MCP host internals
- * (FiregridMcpServerLayer + ToolDispatchLive + HostPlaneSessionControlRouterLive
- * + ContextResolver) — the old host hand-bound those; that wiring is DROPPED.
+ * (FiregridMcpServerLayer + ToolDispatchLive + ContextResolver) — the dispatch
+ * arms call the host-control channel bindings directly (tf-s9uj, no host-plane
+ * router); the old host hand-bound those; that wiring is DROPPED.
  *
  * Creds-gated: the gateway runtime binds ANTHROPIC_API_KEY from the host env
  * policy; without the key the spawned claude-acp agent halts `blocked` (the
