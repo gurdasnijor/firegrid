@@ -79,13 +79,16 @@ const runCommand = Command.make(
             watch,
           }),
           report =>
-            // Gate the process exit code on the computed verdict. Setting
-            // exitCode (not process.exit) lets the runtime finish gracefully.
-            report !== undefined && report.gatingFailing > 0
-              ? Effect.sync(() => {
-                process.exitCode = 1
-              })
-              : Effect.void,
+            // Gate the exit code on the computed verdict, then force-exit. By
+            // here the sim is logically done (verdict printed, trace + latest
+            // pointer flushed, scope closed). The host made dozens of
+            // durable-streams HTTP calls through Node's global fetch (undici),
+            // which leaves keep-alive sockets + their timers pooled; Node would
+            // otherwise keep the event loop alive ~30s until they idle-time-out.
+            // A CLI should exit when its work is done, so exit explicitly.
+            Effect.sync(() => {
+              process.exit(report !== undefined && report.gatingFailing > 0 ? 1 : 0)
+            }),
         ),
     ),
 )
