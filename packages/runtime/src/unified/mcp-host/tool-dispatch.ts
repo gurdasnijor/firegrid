@@ -44,10 +44,9 @@ import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
   HostPromptChannel,
   HostSessionsCreateOrLoadChannel,
-  SessionCancelChannel,
-  SessionCloseChannel,
   SessionPromptChannel,
 } from "@firegrid/protocol/channels"
+import { emitSessionTerminalSignal } from "../channel-bindings.ts"
 import {
   firegridRuntimeContextMcpName,
   type PublicLaunchRuntimeIntent,
@@ -532,14 +531,37 @@ const runSessionPrompt = (
   )
 }
 
+/**
+ * Emit a terminal (cancel/close) session signal by calling the durable op
+ * DIRECTLY — `emitSessionTerminalSignal` over the host `WorkflowEngine` (tf-vqv5:
+ * no SessionCancel/SessionCloseChannel Tag indirection; the bindings were a thin
+ * wrapper around this exact op).
+ */
+const runSessionTerminal = (
+  toolUseId: string,
+  toolName: "session_cancel" | "session_close",
+  operation: "cancel" | "close",
+  input: { readonly sessionId: string; readonly reason?: string | undefined },
+): Effect.Effect<void, ToolError> =>
+  requireHostChannel(WorkflowEngine.WorkflowEngine, toolUseId, toolName).pipe(
+    Effect.flatMap(engine =>
+      emitSessionTerminalSignal({
+        engine,
+        contextId: input.sessionId,
+        idempotencyKey: `session.${operation}:${input.sessionId}`,
+        payloadJson: JSON.stringify({
+          operation,
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+        }),
+      }).pipe(Effect.mapError(mapChannelError(toolUseId, toolName)))),
+    Effect.asVoid,
+  )
+
 const runSessionCancel = (
   toolUseId: string,
   input: AgentToolSchemas.SessionCancelToolInput,
 ): Effect.Effect<AgentToolSchemas.SessionCancelToolOutput, ToolError> =>
-  requireHostChannel(SessionCancelChannel, toolUseId, "session_cancel").pipe(
-    Effect.flatMap(cancel =>
-      cancel.binding.append(input).pipe(
-        Effect.mapError(mapChannelError(toolUseId, "session_cancel")))),
+  runSessionTerminal(toolUseId, "session_cancel", "cancel", input).pipe(
     Effect.as({
       cancelled: true,
       sessionId: input.sessionId,
@@ -550,10 +572,7 @@ const runSessionClose = (
   toolUseId: string,
   input: AgentToolSchemas.SessionCloseToolInput,
 ): Effect.Effect<AgentToolSchemas.SessionCloseToolOutput, ToolError> =>
-  requireHostChannel(SessionCloseChannel, toolUseId, "session_close").pipe(
-    Effect.flatMap(close =>
-      close.binding.append(input).pipe(
-        Effect.mapError(mapChannelError(toolUseId, "session_close")))),
+  runSessionTerminal(toolUseId, "session_close", "close", input).pipe(
     Effect.as({
       closed: true,
       sessionId: input.sessionId,

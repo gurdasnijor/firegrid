@@ -7,14 +7,12 @@
  * upstream; the bindings here are the canonical default for
  * standalone consumers.
  *
- * Per SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION phase 2: the four
- * input-delivery channels (`host.prompt`, `session.prompt`,
- * `host.sessions.start`, `host.permissions.respond`) are
- * `DurableEventChannel<P>` returning `EventOffset`. The
- * derivation/snapshot/ingress channels (`host.contexts.create`,
- * `host.sessions.create_or_load`, `host.contexts`,
- * `host.context.snapshot`, `host.session.snapshot`,
- * `session.lifecycle`) keep their semantic shapes.
+ * Per SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION phase 2: the input-delivery
+ * channels (`host.prompt`, `session.prompt`, `host.permissions.respond`) are
+ * `DurableEventChannel<P>` returning `EventOffset`. tf-vqv5: the terminal
+ * (`session.cancel`/`session.close`) and `host.sessions.start` Tags were
+ * collapsed — their bindings were thin wrappers over `emitSessionTerminalSignal`
+ * / a no-op ack, so consumers now call the durable op directly.
  */
 
 import {
@@ -25,13 +23,6 @@ import {
   HostPromptChannel,
   HostPromptChannelTarget,
   HostSessionsCreateOrLoadRequestSchema,
-  HostSessionsStartChannel,
-  HostSessionsStartChannelTarget,
-  HostSessionsStartRequestSchema,
-  SessionCancelChannel,
-  SessionCancelChannelTarget,
-  SessionCloseChannel,
-  SessionCloseChannelTarget,
   SessionPromptChannel,
   SessionPromptChannelTarget,
   eventOffset,
@@ -40,12 +31,6 @@ import {
 import { Prompt } from "@effect/ai"
 import { DurableDeferred, WorkflowEngine } from "@effect/workflow"
 import { Clock, Effect, Layer, Schema } from "effect"
-import {
-  SessionCancelToolInputSchema,
-  SessionCloseToolInputSchema,
-  type SessionCancelToolInput,
-  type SessionCloseToolInput,
-} from "@firegrid/protocol/agent-tools"
 import {
   AgentInputEventSchema,
   type AgentInputEvent,
@@ -58,9 +43,6 @@ import {
   PermissionRoundtripWorkflow,
   permissionDecisionDeferred,
 } from "./subscribers/permission-and-tool.ts"
-
-const stableOffset = (target: string, key: string) =>
-  Effect.succeed(eventOffset(`${target}:${key}`))
 
 const encodeAgentInputEvent = Schema.encodeSync(AgentInputEventSchema)
 
@@ -119,21 +101,6 @@ const executeSessionInput = (options: {
     Effect.provideService(WorkflowEngine.WorkflowEngine, options.engine),
   )
 
-/**
- * `session.start` is an idempotent acknowledgement channel. Per-event prompt,
- * terminal, and permission delivery happen through the signaling bindings
- * below; start has no parked body to arm under the per-event model.
- */
-export const HostSessionsStartChannelLive = Layer.succeed(
-  HostSessionsStartChannel,
-  makeDurableEventChannel({
-    target: HostSessionsStartChannelTarget,
-    schema: HostSessionsStartRequestSchema,
-    append: (request) =>
-      stableOffset(String(HostSessionsStartChannelTarget), request.sessionId),
-  }),
-)
-
 // ── Production signaling overrides ─────────────────────────────────────────
 //
 // These Lives require `WorkflowEngine` (provided by FiregridHost's substrate)
@@ -179,39 +146,6 @@ export const emitSessionTerminalSignal = (options: {
       attributes: {
         "firegrid.context.id": options.contextId,
         "firegrid.input.idempotency_key": options.idempotencyKey,
-      },
-    }),
-  )
-
-const terminalPayloadJson = (
-  operation: "cancel" | "close",
-  reason: string | undefined,
-): string => JSON.stringify({
-  operation,
-  ...(reason === undefined ? {} : { reason }),
-})
-
-const signalSessionTerminal = (options: {
-  readonly engine: WorkflowEngine.WorkflowEngine["Type"]
-  readonly operation: "cancel" | "close"
-  readonly request: SessionCancelToolInput | SessionCloseToolInput
-  readonly target: string
-}) =>
-  Effect.gen(function*() {
-    const executionId = yield* emitSessionTerminalSignal({
-      engine: options.engine,
-      contextId: options.request.sessionId,
-      idempotencyKey: `session.${options.operation}:${options.request.sessionId}`,
-      payloadJson: terminalPayloadJson(options.operation, options.request.reason),
-    })
-    return eventOffset(`${options.target}:${executionId}`)
-  }).pipe(
-    Effect.withSpan(`firegrid.unified.session.${options.operation}`, {
-      kind: "producer",
-      attributes: {
-        "firegrid.channel.target": options.target,
-        "firegrid.context.id": options.request.sessionId,
-        "firegrid.session.id": options.request.sessionId,
       },
     }),
   )
@@ -270,44 +204,6 @@ export const SessionPromptChannelSignalingLive = Layer.effect(
   }),
 )
 
-/** Production SessionCancelChannel — executes a terminal per-event handler. */
-export const SessionCancelChannelSignalingLive = Layer.effect(
-  SessionCancelChannel,
-  Effect.gen(function*() {
-    const engine = yield* WorkflowEngine.WorkflowEngine
-    return makeDurableEventChannel({
-      target: SessionCancelChannelTarget,
-      schema: SessionCancelToolInputSchema,
-      append: (request) =>
-        signalSessionTerminal({
-          engine,
-          operation: "cancel",
-          request,
-          target: String(SessionCancelChannelTarget),
-        }),
-    })
-  }),
-)
-
-/** Production SessionCloseChannel — executes a terminal per-event handler. */
-export const SessionCloseChannelSignalingLive = Layer.effect(
-  SessionCloseChannel,
-  Effect.gen(function*() {
-    const engine = yield* WorkflowEngine.WorkflowEngine
-    return makeDurableEventChannel({
-      target: SessionCloseChannelTarget,
-      schema: SessionCloseToolInputSchema,
-      append: (request) =>
-        signalSessionTerminal({
-          engine,
-          operation: "close",
-          request,
-          target: String(SessionCloseChannelTarget),
-        }),
-    })
-  }),
-)
-
 /**
  * Production HostPermissionRespondChannel — resolves the
  * PermissionRoundtripWorkflow's decision `DurableDeferred` for the matching
@@ -361,8 +257,5 @@ export const HostPermissionRespondChannelSignalingLive = Layer.effect(
  */
 export const UnifiedSignalingChannelBindingsLive = HostPromptChannelSignalingLive.pipe(
   Layer.provideMerge(SessionPromptChannelSignalingLive),
-  Layer.provideMerge(HostSessionsStartChannelLive),
-  Layer.provideMerge(SessionCancelChannelSignalingLive),
-  Layer.provideMerge(SessionCloseChannelSignalingLive),
   Layer.provideMerge(HostPermissionRespondChannelSignalingLive),
 )
