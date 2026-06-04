@@ -22,10 +22,9 @@ export const run = <T>(
 
 export const all = <const T extends readonly Future<unknown>[] | []>(
   futures: T,
-): Future<FutureValues<T>> => {
+): Future<FutureValues<T>> =>
   // fluent-firegrid-keystone.FREE.2
-  return requireScheduler("all").all(futures)
-}
+  requireScheduler("all").all(futures)
 
 export const state = <
   TState extends TypedState = UntypedState,
