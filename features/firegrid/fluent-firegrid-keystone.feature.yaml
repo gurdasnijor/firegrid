@@ -28,6 +28,13 @@ components:
       6: "The package exports tagged `select(branches)` that returns the winning tag and Future."
       7: "The package exports `spawn(op)` for routine-backed Futures that compose with the same combinators."
 
+  STATE:
+    requirements:
+      1: "The package exports free-standing `state<T>()` and `sharedState<T>()` accessors that read the active scheduler slot."
+      2: "`state<T>().get(key)` and `sharedState<T>().get(key)` return yieldable Futures that resolve to the current value or null."
+      3: "`state<T>().set`, `clear`, and `clearAll` mutate a durable append-only state log and are visible to later invocations sharing the same state substrate."
+      4: "`sharedState<T>()` exposes only the read methods `get` and `keys` at the type level."
+
   DEFINITIONS:
     requirements:
       1: "The package can define service, object, and workflow surfaces with a shared `_kind`, `name`, and handler map shape."

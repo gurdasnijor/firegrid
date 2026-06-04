@@ -57,6 +57,8 @@ Public surface in this slice:
 - `execute(ctx, operation)`
 - `run(action, options?)`
 - `sleep(durationMs, name?)`
+- `state<T>()`
+- `sharedState<T>()`
 - `all(futures)`
 - `race(futures)`
 - `any(futures)`
@@ -107,6 +109,16 @@ type JournalEvent =
 The keystone writes `StepSucceeded`, `SleepCompleted`, and `RaceCompleted`.
 `StepFailed` remains a read shape for a future retry/failure-policy slice.
 
+State uses a separate append-only state stream when the execution substrate
+provides one:
+
+```ts
+type StateEvent =
+  | { readonly type: "StateSet"; readonly name: string; readonly value: unknown }
+  | { readonly type: "StateCleared"; readonly name: string }
+  | { readonly type: "StateClearedAll" }
+```
+
 ## Raw Log Algorithm
 
 Each handler invocation gets one durable journal endpoint.
@@ -145,7 +157,7 @@ table materialization is required for the keystone replay behavior.
 | Client invoke | `client(service, ctx).handler(input)` calls `invoke` | Implemented minimal wrapper |
 | `sleep(duration)` | Effect timer then `SleepCompleted`; replay skips waiting | Implemented keystone timer |
 | `awakeable<T>()` / `workflowPromise(name)` | Promise-created / promise-resolved events plus waiter keys | Not implemented |
-| `state<T>()` / `sharedState<T>()` | State log events folded by key; optional snapshots later | Not implemented |
+| `state<T>()` / `sharedState<T>()` | Free accessors over a folded state log; writes flush from scheduler boundaries | Implemented keystone state |
 | `all` | Concurrent wait over Futures with ordered tuple results | Implemented |
 | `race` | First-settled Future wins; `RaceCompleted` fixes replay winner; losers continue in daemon fibers | Implemented keystone combinator |
 | `any` | First successful Future wins; all failures throw `AggregateError` through the generator boundary | Implemented keystone combinator |
@@ -161,15 +173,13 @@ table materialization is required for the keystone replay behavior.
    retried by policy, or excluded until retry semantics are designed.
 2. **Future lifecycle.** Persist Future ids separately from step keys so
    combinators can wait on already-created handles.
-3. **State.** Add `state<T>()` / `sharedState<T>()` as folded log events, not
-   DurableTable rows.
-4. **Durable timers.** Split the current in-process `sleep` into scheduled/fired
+3. **Durable timers.** Split the current in-process `sleep` into scheduled/fired
    rows plus wake delivery for long parks.
-5. **Awakeables / workflow promises.** Add promise ids, creation events, and
+4. **Awakeables / workflow promises.** Add promise ids, creation events, and
    resolver events. External resolver ingress is a separate API.
-6. **Routine-backed spawn durability.** The current spawn composes in-process;
+5. **Routine-backed spawn durability.** The current spawn composes in-process;
    restart safety needs routine-start/result rows plus worker claim/reclaim.
-7. **Service/object/workflow clients.** Layer typed descriptors on top after
+6. **Service/object/workflow clients.** Layer typed descriptors on top after
    the durable journal and future semantics are stable.
 
 ## Known Gaps
@@ -177,6 +187,8 @@ table materialization is required for the keystone replay behavior.
 - `spawn(op)` is routine-backed and composable, but not restart-safe yet.
 - `sleep` is journaled for replay but still uses an in-process Effect timer for
   the first run; it is not a parked durable wake worker.
+- `state<T>()` and `sharedState<T>()` are free DSL functions, but the current
+  state substrate is an explicit execution adapter, not a product key router.
 - The current client uses one caller-supplied journal endpoint. A product API
   needs an invocation id to stream URL mapping.
 - `run` values are stored as `unknown`; typed result decoding should be added
@@ -204,7 +216,8 @@ branches continue far enough to journal.
 Later e2e suites line up with missing primitives:
 
 - polling requires durable channel or external wake delivery;
-- state requires `state<T>()` / `sharedState<T>()` log folding;
+- state e2e can now use `state<T>()` / `sharedState<T>()` over a shared state
+  log, but product object/workflow key routing is still adapter work;
 - terminal/transient errors require the step failure/retry policy;
 - signal sharing and cancellation require cancellation rows plus AbortSignal
   fanout.
@@ -230,6 +243,9 @@ The keystone tests:
   from the journal and does not increment the side-effect counter;
 - combinators: `race`, `any`, `allSettled`, `select`, and `spawn` match the
   Restate-shaped local semantics covered by the vendored unit/e2e examples.
+- state: free `state<T>()` / `sharedState<T>()` match the upstream counter
+  shape and persist through a folded append-only state log across separate
+  invocation journals.
 
 ## Source References
 

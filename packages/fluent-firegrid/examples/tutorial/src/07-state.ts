@@ -1,4 +1,47 @@
+import {
+  gen,
+  object,
+  sharedState,
+  state,
+} from "@firegrid/fluent-firegrid"
+
+type IncidentCounterState = {
+  readonly escalations: number
+  readonly lastSignal: string
+}
+
+export const incidentCounter = object({
+  name: "incidentCounter",
+  handlers: {
+    // fluent-firegrid-keystone.EXAMPLES.1
+    current: (_: void) =>
+      gen(function* () {
+        return (yield* sharedState<IncidentCounterState>().get("escalations")) ?? 0
+      }),
+
+    // fluent-firegrid-keystone.EXAMPLES.1
+    recordEscalation: (signal: string) =>
+      gen(function* () {
+        const s = state<IncidentCounterState>()
+        const current = (yield* s.get("escalations")) ?? 0
+        const next = current + 1
+        s.set("escalations", next)
+        s.set("lastSignal", signal)
+        return {
+          escalations: next,
+          lastSignal: signal,
+        }
+      }),
+
+    // fluent-firegrid-keystone.EXAMPLES.1
+    reset: (_: void) =>
+      gen(function* () {
+        state<IncidentCounterState>().clearAll()
+      }),
+  },
+})
+
 export const stateTutorial = {
   tier: "07-state",
-  status: "deferred: state primitive unavailable",
+  status: "implemented: state/sharedState over a durable state log",
 } as const

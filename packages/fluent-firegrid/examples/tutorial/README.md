@@ -15,6 +15,8 @@ Implemented:
   `all`, `race`, and `select`.
 - `src/03-timeout.ts` — timeout branching with
   `select({ done, timeout: sleep(...) })`.
+- `src/07-state.ts` — object-shaped state with free
+  `state<T>()` and `sharedState<T>()`.
 - `src/09-workflows.ts` — a workflow-shaped surface using
   `workflow({ name, handlers })`.
 
@@ -25,7 +27,6 @@ Deferred until the package exposes the matching primitives:
 | retry | journaled retry policy and attempt classification |
 | saga | durable compensation steps and compensation ordering helpers |
 | cancellation | durable cancellation events and AbortSignal fanout |
-| state | state/sharedState log fold and keyed workflow/object routing |
 | clients | typed service/object/workflow call and send descriptors |
 | workflow promises | workflowPromise, attach, key, and shared workflow handler semantics |
 | interfaces | descriptor-only contracts and codegen/client projection |

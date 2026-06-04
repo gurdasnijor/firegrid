@@ -10,9 +10,12 @@ import {
   client,
   execute,
   gen,
+  object,
   run,
   service,
+  sharedState,
   sleep,
+  state,
   workflow,
 } from "../src/index.ts"
 
@@ -235,6 +238,105 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
     expect(replayed).toBe("paused:first")
     expect(firstElapsedMs).toBeGreaterThanOrEqual(250)
     expect(replayElapsedMs).toBeLessThan(firstElapsedMs / 2)
+  })
+
+  it("fluent-firegrid-keystone.STATE.1 fluent-firegrid-keystone.STATE.2 fluent-firegrid-keystone.STATE.3 fluent-firegrid-keystone.STATE.4 persists free state access across invocation journals", async () => {
+    type CounterState = {
+      readonly count: number
+      readonly secondary: string
+    }
+
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+    const counter = object({
+      name: "counter",
+      handlers: {
+        add: (amount: number) =>
+          gen(function* () {
+            const s = state<CounterState>()
+            const current = (yield* s.get("count")) ?? 0
+            const next = current + amount
+            s.set("count", next)
+            return next
+          }),
+        current: (_: void) =>
+          gen(function* () {
+            return (yield* sharedState<CounterState>().get("count")) ?? 0
+          }),
+        keys: (_: void) =>
+          gen(function* () {
+            return yield* sharedState<CounterState>().keys()
+          }),
+        setSecondary: (value: string) =>
+          gen(function* () {
+            const s = state<CounterState>()
+            s.set("secondary", value)
+            return (yield* s.get("secondary")) ?? "missing"
+          }),
+        clearSecondary: (_: void) =>
+          gen(function* () {
+            state<CounterState>().clear("secondary")
+          }),
+        reset: (_: void) =>
+          gen(function* () {
+            state<CounterState>().clearAll()
+          }),
+      },
+    })
+    const statefulInvocation = (invocationId: string, key: string) => ({
+      journal: {
+        endpoint: {
+          url: `https://journal.example/v1/stream/counter/invocation/${invocationId}`,
+        },
+      },
+      state: {
+        endpoint: {
+          url: `https://journal.example/v1/stream/counter/state/${key}`,
+        },
+      },
+    })
+
+    await expect(runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("add-1", "alpha")).add(1),
+    )).resolves.toBe(1)
+    await expect(runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("add-2", "alpha")).add(2),
+    )).resolves.toBe(3)
+    await expect(runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("current", "alpha")).current(undefined),
+    )).resolves.toBe(3)
+    await expect(runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("other-current", "beta")).current(undefined),
+    )).resolves.toBe(0)
+    await expect(runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("secondary", "alpha")).setSecondary("hello"),
+    )).resolves.toBe("hello")
+    await expect(runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("keys", "alpha")).keys(undefined).pipe(
+        Effect.map((keys) => keys.sort()),
+      ),
+    )).resolves.toEqual(["count", "secondary"])
+    await runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("clear-secondary", "alpha")).clearSecondary(undefined),
+    )
+    await expect(runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("keys-after-clear", "alpha")).keys(undefined),
+    )).resolves.toEqual(["count"])
+    await runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("reset", "alpha")).reset(undefined),
+    )
+    await expect(runtimeWith(
+      fakeFetch,
+      client(counter, statefulInvocation("keys-after-reset", "alpha")).keys(undefined),
+    )).resolves.toEqual([])
   })
 
   it("fluent-firegrid-keystone.DEFINITIONS.1 fluent-firegrid-keystone.DEFINITIONS.2 fluent-firegrid-keystone.DEFINITIONS.3 invokes a direct workflow definition", async () => {
