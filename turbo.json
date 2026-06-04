@@ -28,7 +28,7 @@
       "dependsOn": ["build"],
       "outputs": []
     },
-    "trace:seams:ukv": {
+    "coverage:gate": {
       "outputs": [],
       "cache": false
     },
