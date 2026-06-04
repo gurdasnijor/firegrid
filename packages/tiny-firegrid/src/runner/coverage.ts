@@ -7,6 +7,7 @@
  * fixed vocabulary:
  *
  *   named(s, "x")          — the span is named "x"            (host-substrate name)
+ *   namedPrefix(s, "x/")   — the span's name starts with "x/" (dynamic-suffix host span)
  *   hasChild(s, "x")       — s has a direct child named "x"   (structural, forge-proof)
  *   hasDescendant(s, "x")  — s has any descendant named "x"
  *   errored(s)             — the span ended in error (status.code === 2)
@@ -80,6 +81,9 @@ export const HOST_SUBSTRATE_NAMES: ReadonlySet<string> = new Set([
   "firegrid.unified.journal_observer.daemon",
   "firegrid.runtime_output.journal.events",
   "firegrid.runtime_output.journal.agent_output",
+  // session + tool dispatch (fixed-name entrypoints; bodies are prefixed)
+  "unified.runtime-context-session.execute",
+  "unified.mcp-tool-dispatch.execute",
   // workflow engine
   "firegrid.workflow_engine.execution.execute",
   "firegrid.workflow_engine.execution.resume.body",
@@ -91,6 +95,8 @@ export const HOST_SUBSTRATE_NAMES: ReadonlySet<string> = new Set([
   "firegrid.workflow_engine.clock.fire",
   "firegrid.workflow_engine.deferred.done",
   "firegrid.workflow_engine.deferred.result",
+  "firegrid.workflow_engine.recover_pending_deferreds",
+  "firegrid.workflow_engine.workflow.register",
   // ACP codec
   "firegrid.agent_event_pipeline.acp.initialize",
   "firegrid.agent_event_pipeline.acp.prompt",
@@ -100,28 +106,47 @@ export const HOST_SUBSTRATE_NAMES: ReadonlySet<string> = new Set([
   "firegrid.agent_event_pipeline.acp.permission_request",
   "firegrid.agent_event_pipeline.acp.permission_response",
   "firegrid.agent_event_pipeline.acp.tool_result",
+  "firegrid.agent_event_pipeline.acp.output_queue",
   "firegrid.codec.sdk.call",
-  // local-process sandbox (real subprocess)
+  // local-process sandbox (real subprocess + its byte pipes)
   "firegrid.agent_event_pipeline.source.local_process.open_byte_pipe",
   "firegrid.agent_event_pipeline.source.local_process.execute",
   "firegrid.agent_event_pipeline.source.local_process.exit",
-  // durable table
+  "firegrid.agent_event_pipeline.source.local_process.byte_stream",
+  "firegrid.agent_event_pipeline.source.local_process.stdout_bytes",
+  "firegrid.agent_event_pipeline.source.local_process.stdin_bytes",
+  "firegrid.agent_event_pipeline.source.local_process.stderr_bytes",
+  // durable table + streams transport (host-initiated, driver cannot forge)
   "firegrid.durable_table.action",
   "firegrid.durable_table.producer_append",
   "firegrid.durable_table.insert_or_get",
   "firegrid.durable_table.get",
   "firegrid.durable_table.query",
   "firegrid.durable_table.subscribe",
+  "firegrid.durable_table.layer.acquire",
+  "firegrid.durable_streams.http.request",
+  // host-side MCP surfacing
+  "firegrid.mcp.durable_streams_context.resolve",
+  "firegrid.mcp.register_toolkit",
 ])
 
 // Dynamic-suffix host spans: `unified.tool.execute/<contextId>` etc. A gate that
 // names the stable prefix-form is host-substrate; the run emits the suffixed name.
 export const HOST_SUBSTRATE_PREFIXES: ReadonlyArray<string> = [
   "firegrid.workflow_engine.execution.resume",
+  // sim host-side probe spans (emitted by a sim's host composition; forge-proof
+  // because they fire host-side, side != "driver"). Lets a sim gate on a
+  // behavior-specific probe without polluting the global production allowlist.
+  "firegrid.sim.",
+  // dynamic-suffix host spans: <verb>/<sessionId|contextId>
   "unified.permission.request/",
   "unified.permission.relay/",
   "unified.tool.execute/",
   "unified.tool.relay/",
+  "unified.mcp-tool.execute/",
+  "unified.session.spawn/",
+  "unified.session.send/",
+  "unified.session.deregister/",
 ]
 
 export const isHostSubstrate = (name: string): boolean =>
@@ -147,7 +172,14 @@ export const sessionBodyDidNotError: ClaimDef = {
 }
 
 // the ONLY functions that name a span — so the lint/witness is capture-complete.
-const NAME_FNS: ReadonlySet<string> = new Set(["named", "hasChild", "hasDescendant"])
+// `namedPrefix` matches dynamic-suffix host spans (`unified.session.spawn/<id>`)
+// by their stable prefix; the prefix string is still a NAME the lint captures.
+const NAME_FNS: ReadonlySet<string> = new Set([
+  "named",
+  "namedPrefix",
+  "hasChild",
+  "hasDescendant",
+])
 
 // ── the CEL environment over a run's spans (parent index built once; the spans
 //    themselves are never mutated) ──────────────────────────────────────────
@@ -170,6 +202,10 @@ const buildEnv = (spans: ReadonlyArray<SpanRecord>): Environment => {
 
   return new Environment({ unlistedVariablesAreDyn: true })
     .registerFunction("named(dyn, string): bool", (s: unknown, n: unknown) => nameOf(s) === n)
+    .registerFunction("namedPrefix(dyn, string): bool", (s: unknown, p: unknown) => {
+      const name = nameOf(s)
+      return typeof name === "string" && typeof p === "string" && name.startsWith(p)
+    })
     .registerFunction("hasChild(dyn, string): bool", (s: unknown, n: unknown) =>
       kids(spanId(s)).some((c) => c.name === n),
     )
@@ -319,8 +355,11 @@ const judge = (
     const passed = illegal.length === 0 && env.evaluate(c.claim, { spans }) === true
     // Forge-proof only if a span the gate NAMES actually fired HOST-SIDE; a
     // passing gate whose referenced spans are all absent (or only driver-side)
-    // is vacuously true and proves nothing.
-    const vacuous = gating && passed && !refs.some((r) => (hostCounts.get(r) ?? 0) > 0)
+    // is vacuously true and proves nothing. A ref may be an exact name or a
+    // namedPrefix — both satisfied by a host span whose name starts with it.
+    const firedHostSide = (r: string): boolean =>
+      [...hostCounts.entries()].some(([name, count]) => count > 0 && name.startsWith(r))
+    const vacuous = gating && passed && !refs.some(firedHostSide)
     return {
       id: c.id,
       description: c.description,
