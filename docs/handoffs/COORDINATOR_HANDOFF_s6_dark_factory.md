@@ -22,7 +22,7 @@ Inference is a *hypothesis to be instrumented*, never a conclusion to act on.
 "It probably works this way / it's an ACP limitation / accept the demo" are
 all assumptions; each one in this arc was made where the instrumentation to
 settle it was *available and not done*. This is the entire reason
-`tiny-firegrid` exists: generate trace data to drive an experiment. Every
+`firelab` exists: generate trace data to drive an experiment. Every
 failure here (the §6 over-declaration; "no ACP path forces tool-choice,
 terminal"; the codec's claude-agent-acp merge behavior asserted as fact in
 comments; "accept the substrate-complete demo") was the same violation:
@@ -286,7 +286,7 @@ the ACP-force-tool shim (`src/bin/acp-force-tool-shim.mjs`, #424 — it proved a
 *protocol-layer* shim can't force model tool-choice; that is itself a data
 point, not a dead end for instrumentation).
 
-Once a planner advances steps: run `pnpm --filter @firegrid/tiny-firegrid
+Once a planner advances steps: run `pnpm --filter @firegrid/firelab
 demo:s6` and the harness will objectively report which §6 steps are now
 `proven:true`. That — not a doc — is "done".
 
@@ -317,13 +317,13 @@ these; build on them.
 
 Investigation/finding docs: `docs/investigations/2026-05-19-s6-dark-factory-live-run.md`
 (§7 "Definitive conclusion"), and `docs/research/tf-*.md` /
-`packages/tiny-firegrid/docs/findings/tf-*.md`.
+`packages/firelab/docs/findings/tf-*.md`.
 
 The sim lives at
-`packages/tiny-firegrid/src/simulations/dark-factory-pipeline.ts`. Run a sim:
-`pnpm --filter @firegrid/tiny-firegrid simulate:run -- <id>`; inspect with
+`packages/firelab/src/simulations/dark-factory-pipeline.ts`. Run a sim:
+`pnpm --filter @firegrid/firelab simulate:run -- <id>`; inspect with
 `simulate:show` / `simulate:proof` / `simulate:duckdb`. Trace artifacts land
-under `packages/tiny-firegrid/.simulate/runs/<id>/` (gitignored).
+under `packages/firelab/.simulate/runs/<id>/` (gitignored).
 
 The Anthropic key is persisted at `~/.firegrid-anthropic-key` and exported in
 `~/.zshenv` (all zsh incl. subprocesses). Verify quota with a direct
@@ -402,7 +402,7 @@ bash scripts/task-exit.sh <bead>          # flush beads, commit, push, open/refr
 beads (`br create … --silent`) and owns status mutations; **the cron owns
 beads-sync** (durable push) — never hand-push `issues.jsonl`, never re-run the
 import. Read with `bv --robot-triage` / `--robot-insights`; **never bare `bv`**
-(blocking TUI). Join key for tiny-firegrid: label `tfind:NNN` historically;
+(blocking TUI). Join key for firelab: label `tfind:NNN` historically;
 今 use the bead id directly.
 
 **Structured decision loop** (how lanes escalate a call to you): a lane
@@ -505,7 +505,7 @@ explains why it doesn't run.
 
 ---
 
-## 7. `packages/tiny-firegrid/` is structurally a mess — clean it to this contract
+## 7. `packages/firelab/` is structurally a mess — clean it to this contract
 
 A separate agent is mid-cleanup of this. Current state and the **target** the
 package must regrow to:
@@ -530,7 +530,7 @@ it (e.g. `output-journal-pipeline.ts` exists self-contained), or temporarily
 
 ### 7b. The contract `src/simulations/` MUST regrow to (do NOT re-accrete)
 
-The current `TinyFiregridSimulation` is wrong. It types assertions as
+The current `FirelabSimulation` is wrong. It types assertions as
 `summarize: (result) => Record<string, unknown>` + freeform `localize` — so a
 sim's **expectations are undeclared imperative code**, different per sim, with
 no schema; you reverse-engineer intent by reading each sim's `driver()` +
@@ -543,7 +543,7 @@ everything layered around them is accretion.
 
 Target contract — collapse to **four fields**:
 ```ts
-interface TinyFiregridSimulation {
+interface FirelabSimulation {
   id; description;
   makeHost(env): Layer<FiregridHost>;
   driver(env): Effect<unknown, unknown, Firegrid>;   // exercises the path
@@ -590,7 +590,7 @@ stated so the next session recognizes the pattern early:
   green" bar. The architectural question — *does a §6-specific renderer belong
   in the shared runner? does this assertion blob belong in the contract?* —
   was never asked. Each PR passed alone; the aggregate was incoherent. No one
-  owned "is tiny-firegrid still the clean trace-generator it was meant to be."
+  owned "is firelab still the clean trace-generator it was meant to be."
 - **Confident conclusions asserted on unverified inference — at least five
   times.** (1) the §6 "victory" over-declaration; (2) "no ACP path forces
   tool-choice, terminal" reasoned from the protocol surface, not source;
@@ -612,7 +612,7 @@ stated so the next session recognizes the pattern early:
 - **Meta-lesson the original "actual issues" list demonstrated.** When a
   prior coordinator (me) re-listed the issues this arc surfaced — #1 §6
   never ran, #2 codec double-advertisement, #3 instrumentation gap,
-  #4 `rows()` live-tail, #5 codec error.message drop, #6 tiny-firegrid
+  #4 `rows()` live-tail, #5 codec error.message drop, #6 firelab
   drift, plus resolved Gap-3 — and the PO challenged "what data backs
   this," **the list collapsed on re-check**: #1 was the symptom, not an
   issue; #3 was misframed (the boundary is in a package we didn't open,
@@ -712,7 +712,7 @@ verified without independent source reads: cca1's TFIND-017 (refuted on
 read), cca1's #417 serial-reconciler mechanism (outcome verified, mechanism
 suspect), oca3's #406 fact-advancement timing story (built on the refuted
 TFIND-017), oca1's "terminal ACP" framing (relocated to the unread Claude
-Agent SDK). The repo has `packages/tiny-firegrid/FINDINGS_TRIAGE_RUBRIC.md`
+Agent SDK). The repo has `packages/firelab/FINDINGS_TRIAGE_RUBRIC.md`
 explicitly to triage findings *before* routing — and it was not applied
 to any of these. That is a coordinator-hygiene failure separate from the
 meta-rule.

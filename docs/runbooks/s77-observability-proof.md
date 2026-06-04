@@ -5,12 +5,12 @@ into **queryable rows** such that every **wait**, every **delegation**,
 every **tool call**, and every **decision** a run performed is an
 inspectable row reachable through **the same query interface operators
 use** — the per-run DuckDB (`simulate:query` / `simulate:duckdb` →
-`tiny_firegrid_spans`). This runbook documents the falsifiable check
+`firelab_spans`). This runbook documents the falsifiable check
 that asserts it.
 
 ## The check
 
-`packages/tiny-firegrid/scripts/assert-s77-observability.mjs` —
+`packages/firelab/scripts/assert-s77-observability.mjs` —
 self-contained (reads only a run's own DuckDB via the `duckdb` binary,
 the operator interface; no production-package import). Falsifiable: a
 REQUIRED class with **zero** queryable rows exits non-zero and prints a
@@ -18,18 +18,18 @@ surfaced FINDING — it is never papered.
 
 ```
 # inputs (deterministic, no API key):
-pnpm --filter @firegrid/tiny-firegrid simulate:run -- stdio-jsonl-tool-execution-pipeline
-pnpm --filter @firegrid/tiny-firegrid simulate:run -- multi-context-production-consuming-pipeline
+pnpm --filter @firegrid/firelab simulate:run -- stdio-jsonl-tool-execution-pipeline
+pnpm --filter @firegrid/firelab simulate:run -- multi-context-production-consuming-pipeline
 # proof:
-node packages/tiny-firegrid/scripts/assert-s77-observability.mjs
+node packages/firelab/scripts/assert-s77-observability.mjs
 # or against a specific run dir / sim-id substring:
-node packages/tiny-firegrid/scripts/assert-s77-observability.mjs <run-or-substr> [...]
+node packages/firelab/scripts/assert-s77-observability.mjs <run-or-substr> [...]
 ```
 
 ## §7.7 class → row predicate (grounded in observed span inventories)
 
 Classes are classified by `span_name` predicate over the operator-facing
-`tiny_firegrid_spans` table:
+`firelab_spans` table:
 
 | class | predicate (substring of `span_name`) | observed evidence rows |
 |---|---|---|
@@ -98,8 +98,8 @@ The Anthropic/OpenAI keys live in local lanes' `~/.zshenv`; **CI runners
 do not have them and must not** (never bake a key into CI).
 
 **CI reality (verified, stated honestly):** no key-dependent sim is
-executed by CI. There is no `packages/tiny-firegrid/test/` dir, the
-tiny-firegrid `test` script is empty (`turbo run test` runs none of
+executed by CI. There is no `packages/firelab/test/` dir, the
+firelab `test` script is empty (`turbo run test` runs none of
 them), `ci.yml` invokes no `simulate`/`proof`/`demo`, and the §7.7
 check above audits only deterministic completing sims (agent-gated
 classes are `optional`, never forced). So today there is **no false CI

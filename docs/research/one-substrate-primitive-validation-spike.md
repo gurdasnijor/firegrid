@@ -1,10 +1,10 @@
-# Spike: Validate Channels-As-Transport In tiny-firegrid (Collapse Edition)
+# Spike: Validate Channels-As-Transport In firelab (Collapse Edition)
 
 Date: 2026-05-20
 Status: dispatchable, 2 cycles wall-clock
-Owner: tiny-firegrid coordinator
+Owner: firelab coordinator
 Source SDD: `docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_PRIMITIVE.md`
-Validation substrate: `packages/tiny-firegrid/`
+Validation substrate: `packages/firelab/`
 Supersedes: earlier 5-phase 17-sim draft of this same doc
 Last amended: 2026-05-20 (Gary's spike review: Source-read 1 promoted to
 Cycle 0 pre-gate; Sim 2 grounded in actual current APIs not aspirational
@@ -421,10 +421,10 @@ finite, not that each adapter is bulletproof.
 
 ## Dispatch instructions for workers
 
-Each sim follows the established tiny-firegrid pattern:
+Each sim follows the established firelab pattern:
 
 ```
-packages/tiny-firegrid/src/simulations/spike-channel-deletion/<name>/
+packages/firelab/src/simulations/spike-channel-deletion/<name>/
   host.ts        — composes the test substrate
   driver.ts      — drives via public client surface or channel verbs
   index.ts       — wires host + driver into defineSimulation
@@ -516,7 +516,7 @@ The collapse is achieved by:
   primitive
 - `packages/client-sdk/src/firegrid.ts` — current grab-bag, primary
   deletion target
-- `packages/tiny-firegrid/README.md` — sim infrastructure conventions
+- `packages/firelab/README.md` — sim infrastructure conventions
 - `docs/handoffs/sprint-to-private-beta/02-GARY_ARCHITECTURE_ASSESSMENT.md`
   — parallel-paths inventory (input to Sim 1)
 - `docs/handoffs/sprint-to-private-beta/02b-COMPANION_ARCHITECTURE_ASSESSMENT.md`

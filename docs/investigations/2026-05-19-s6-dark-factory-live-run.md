@@ -5,7 +5,7 @@
 - Run: `2026-05-19T12-33-30-428Z__dark-factory-pipeline`
 - Wall clock: `12:33:30.429Z → 12:36:44.920Z` — **3 min 14 s**, `status: completed`, exit 0
 - Trace volume: **22,511 span events**, **97 distinct span types**
-- Sim: `packages/tiny-firegrid/src/simulations/dark-factory-pipeline.ts` (merged #390), driven through the **public Firegrid client** with a real `claude-agent-acp` planner + runtime-context MCP.
+- Sim: `packages/firelab/src/simulations/dark-factory-pipeline.ts` (merged #390), driven through the **public Firegrid client** with a real `claude-agent-acp` planner + runtime-context MCP.
 
 ---
 
@@ -324,13 +324,13 @@ Firegrid toolset and narrate the correct plan, but do not invoke the tools.
 ### Reproduce / inspect
 
 ```
-pnpm --filter @firegrid/tiny-firegrid simulate:show  -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
-pnpm --filter @firegrid/tiny-firegrid simulate:duckdb -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
+pnpm --filter @firegrid/firelab simulate:show  -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
+pnpm --filter @firegrid/firelab simulate:duckdb -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
 # then: SELECT name, count(*) FROM spans GROUP BY 1 ORDER BY 2 DESC;
 ```
 
 Artifacts (gitignored, local): `trace.md`, `trace.json`, `live-spans.jsonl`
-(22,511 events), `traces.otlp.jsonl`, `duckdb/tiny-firegrid.duckdb` under
-`packages/tiny-firegrid/.simulate/runs/2026-05-19T12-33-30-428Z__dark-factory-pipeline/`.
+(22,511 events), `traces.otlp.jsonl`, `duckdb/firelab.duckdb` under
+`packages/firelab/.simulate/runs/2026-05-19T12-33-30-428Z__dark-factory-pipeline/`.
 The run summary (`run.json`) carries the `sawX` flags, `resultTextExcerpt`,
 and the planner-derived findings quoted above.

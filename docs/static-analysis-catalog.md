@@ -16,9 +16,9 @@
 | **ESLint** | 10 custom `local/` + ~45 typescript-eslint + 4 @stylistic + 1 @effect + ~12 `no-restricted-imports` blocks + extensive `no-restricted-syntax` | all (`--max-warnings 0`, warn=fail) | per-package via 26 `files:` blocks; **type-aware** only on `{src,packages,apps}/**/*.{ts,tsx}` | single-node + type-aware AST | none (zero-tolerance) |
 | **Semgrep** | 53 | **ERROR-only**, **`packages/` tree only** | TS; per-rule `paths:` | YAML patterns (~18 use semgrep-only features; ~35 simple/regex) | `semgrep-error-baseline.json` |
 | **ast-grep** | 8 | **1** (`hrtime-number-arithmetic`) | `packages/` | tree-sitter patterns | none |
-| **dependency-cruiser** | ~35 forbidden | all (2 passes) | `packages/*/src` + 2nd pass adds `tiny-firegrid/test` | import dependency graph | none |
+| **dependency-cruiser** | ~35 forbidden | all (2 passes) | `packages/*/src` + 2nd pass adds `firelab/test` | import dependency graph | none |
 | **bespoke node scripts** | 7 gates | 6 (clean-room-guard unwired) | filesystem / `packages/**` | substring / line-regex / ts-morph AST / FS-structural | 3 ratchet, 4 zero-state |
-| **jscpd** | 1 | yes | `packages/*/src` (tiny-firegrid excluded) | token clone detection | `.jscpd.json` threshold=0 |
+| **jscpd** | 1 | yes | `packages/*/src` (firelab excluded) | token clone detection | `.jscpd.json` threshold=0 |
 | **knip** | 1 | yes | all workspaces | reachability graph | forced-zero |
 | **effect-language-service** | per-package diagnostics | yes | 9 packages, per-package baseline | Effect LSP (type-aware) | per-package multiset |
 
@@ -49,7 +49,7 @@ Invocation: `eslint . --max-warnings 0 --cache` (every `warn` fails CI). Plugins
 | `local/no-module-durable-cache` | top-level `let`; or top-level cache/registry/runs/… Map/Set/array/object | same | warn |
 | `local/no-host-authority-registry` | `run/completion/claim/eventPlane` × `cache/registry` named decls | `runtime/src/**` (minus tests) | warn |
 | `local/no-hidden-control-plane` | imports of `node:http(s)`/express/fastify/hono/koa/`@effect/platform/HttpServer` | `{client-sdk,runtime}/src/**` | error |
-| `local/simulation-host-real-firegrid-host` | sim host.ts that never imports **or** never calls `FiregridHost` from `@firegrid/runtime/unified` (anti-forge) | `tiny-firegrid/src/simulations/*/host.ts` | error |
+| `local/simulation-host-real-firegrid-host` | sim host.ts that never imports **or** never calls `FiregridHost` from `@firegrid/runtime/unified` (anti-forge) | `firelab/src/simulations/*/host.ts` | error |
 | `local/no-extends-error` | `class X extends Error` (push `Data.TaggedError`) | `packages/**/src`+`apps/**/src` (minus tests) | error |
 | `local/no-process-env-outside-bin` | `process.env` (off under `src/bin/**`) | `packages/**/src`+`apps/**/src` (minus tests, bin) | error |
 
@@ -63,13 +63,13 @@ Type-aware highlights (irreplaceable by syntactic tools): `no-floating-promises`
 |---|---|---|---|
 | `@effect/no-import-from-barrel-package` | bans barrel imports of `@firegrid/{client-sdk,substrate,runtime}` (forces subpaths) | `packages/**/src`+`apps/**/src` | warn |
 | `@stylistic/{comma-dangle,eol-last,quotes,semi}` | `always-multiline`, `always`, double, no-semi | MAIN | error |
-| `no-restricted-imports` | **~12 per-package boundary configs** encoding the architecture dep graph (substrate/client-sdk/cli/runtime/host-sdk/protocol/lab import bans + tiny-firegrid driver/host/index allowlists) | numerous blocks | error |
-| `no-restricted-syntax` | `riskyEffectRuntimeCalls` (`Effect.run*`, warn), `effectDebtGuardrails` (`Effect/Layer.orDie`, `Effect.die`, warn), **tiny-firegrid sim forge-guards** (error: no `Effect.run*`, `process.exit`, `as FiregridHost`, `as unknown`, `claimStatus`, `findings:[]`, recorder/fake-codec/fake-sandbox imports), substrate namespace/default import bans | MAIN + ~10 blocks | warn (debt) / **error** (sim guards) |
+| `no-restricted-imports` | **~12 per-package boundary configs** encoding the architecture dep graph (substrate/client-sdk/cli/runtime/host-sdk/protocol/lab import bans + firelab driver/host/index allowlists) | numerous blocks | error |
+| `no-restricted-syntax` | `riskyEffectRuntimeCalls` (`Effect.run*`, warn), `effectDebtGuardrails` (`Effect/Layer.orDie`, `Effect.die`, warn), **firelab sim forge-guards** (error: no `Effect.run*`, `process.exit`, `as FiregridHost`, `as unknown`, `claimStatus`, `findings:[]`, recorder/fake-codec/fake-sandbox imports), substrate namespace/default import bans | MAIN + ~10 blocks | warn (debt) / **error** (sim guards) |
 | core (`js.configs.recommended`) | standard correctness set; type-redundant subset disabled on TS by ts-eslint | all files | error |
 
 ### 1d. The 26 `files:` scopes ("per-package stacks")
 
-Global ignores; `**/*.js` (node globals only); **MAIN** `{src,packages,apps}/**/*.{ts,tsx}` (type-aware, the bulk); `packages/**/src`+`apps/**/src` (timer/cache/debt rules); `{client-sdk,runtime}/src` (control-plane); per-package import-boundary blocks for substrate, client-sdk, cli, runtime (+ `runtime/src/bin` relaxed, + `runtime/src/{runtime-host,providers,runtime-ingress}`, + `runtime/src/internal/event-stream-materializer.ts`), host-sdk, protocol, lab; tiny-firegrid `simulations/*/{driver,host,index}.ts` + `src/**` + `simulations/**` + `test/**` (forge-guards, several blocks with **duplicated** selectors across G7/G9/G10/G11/G13); test override block (downgrade unsafe-* to warn); `src/bin/**` (process-env off).
+Global ignores; `**/*.js` (node globals only); **MAIN** `{src,packages,apps}/**/*.{ts,tsx}` (type-aware, the bulk); `packages/**/src`+`apps/**/src` (timer/cache/debt rules); `{client-sdk,runtime}/src` (control-plane); per-package import-boundary blocks for substrate, client-sdk, cli, runtime (+ `runtime/src/bin` relaxed, + `runtime/src/{runtime-host,providers,runtime-ingress}`, + `runtime/src/internal/event-stream-materializer.ts`), host-sdk, protocol, lab; firelab `simulations/*/{driver,host,index}.ts` + `src/**` + `simulations/**` + `test/**` (forge-guards, several blocks with **duplicated** selectors across G7/G9/G10/G11/G13); test override block (downgrade unsafe-* to warn); `src/bin/**` (process-env off).
 
 ---
 
@@ -158,7 +158,7 @@ Gate (`lint:ast-grep`): `sg scan … --filter hrtime-number-arithmetic --error=h
 
 ## 4. dependency-cruiser — `.dependency-cruiser.cjs` (~35 forbidden, all `error`)
 
-Invocation (`lint:deps`): `depcruise --config .dependency-cruiser.cjs packages` then a 2nd pass `--include-only '(^packages/.*/src|^packages/tiny-firegrid/test)' packages/tiny-firegrid/test`. Default `includeOnly: ^packages/.*/src`. No baseline (hard-zero).
+Invocation (`lint:deps`): `depcruise --config .dependency-cruiser.cjs packages` then a 2nd pass `--include-only '(^packages/.*/src|^packages/firelab/test)' packages/firelab/test`. Default `includeOnly: ^packages/.*/src`. No baseline (hard-zero).
 
 **Graph-native:** `no-circular` (carve-out: durable-launch secret cycle), `runtime-src-no-folder-cycles`, `not-to-unresolvable`, `no-non-package-json`, `not-to-deprecated`, `no-duplicate-dep-types`, `not-to-test-from-production`.
 
@@ -170,9 +170,9 @@ Invocation (`lint:deps`): `depcruise --config .dependency-cruiser.cjs packages` 
 
 **durable-streams containment:** `durable-streams-imports-contained`, `effect-durable-operators-state-only`, `client-sdk-no-broad-durable-streams-root`, `client-sdk-production-no-node-tier-durable-streams-subpaths`.
 
-**tiny-firegrid airgap:** `tiny-firegrid-sim-no-fake-substitutes` (no fake-codec/acp-sandbox-fake/production-flow-scenario/`unified/adapter.ts`), **R2** `tiny-firegrid-sim-airgap-whole-sim` (every sim file except host.ts: no runtime/host-sdk/protocol internals/`@effect/workflow`/`@durable-streams`), **R3** `tiny-firegrid-test-no-internals` (test/ airgap; fires in 2nd pass).
+**firelab airgap:** `firelab-sim-no-fake-substitutes` (no fake-codec/acp-sandbox-fake/production-flow-scenario/`unified/adapter.ts`), **R2** `firelab-sim-airgap-whole-sim` (every sim file except host.ts: no runtime/host-sdk/protocol internals/`@effect/workflow`/`@durable-streams`), **R3** `firelab-test-no-internals` (test/ airgap; fires in 2nd pass).
 
-> "R1" = the tiny-firegrid layout allowlist (§5, a script), not a depcruise rule. R4 = an ESLint rule.
+> "R1" = the firelab layout allowlist (§5, a script), not a depcruise rule. R4 = an ESLint rule.
 
 ---
 
@@ -181,7 +181,7 @@ Invocation (`lint:deps`): `depcruise --config .dependency-cruiser.cjs packages` 
 | gate (script) | enforces | scope | mechanism | gated in |
 |---|---|---|---|---|
 | `runtime-public-surface-check.mjs` | `runtime/src` root-dir shape: required semantic dirs+READMEs, no numeric-prefix dirs, only `{README,index,runtime-errors}` root files, no stale dirs/exports | `runtime/src` + `runtime/package.json` + 2 docs | filesystem + JSON, no baseline | `lint` |
-| `tiny-firegrid-layout-check.mjs` | **R1** tiny-firegrid `src` top-level allowlist; each `simulations/<id>/` = exactly `{index,driver,host}.ts` | `tiny-firegrid/src` | filesystem exact-set | `lint` |
+| `firelab-layout-check.mjs` | **R1** firelab `src` top-level allowlist; each `simulations/<id>/` = exactly `{index,driver,host}.ts` | `firelab/src` | filesystem exact-set | `lint` |
 | `effect-quality-metrics-check.mjs` | ratchet on 10 ts-morph AST counts (`extendsError`, `processEnvOutsideBin` [strict-0], `throwOutsideBin`, `forOfInPackageSource`, `anyNoContextCast`, `nodeCryptoImport`, `dataTaggedErrorDeclaration`, `newDurableStreamSite`, `perCallLayerProvide`, `effectOrDie`) | `packages/**/src` (ts-morph) | **AST + baseline ratchet** | `verify` (`lint:effect-quality`) |
 | `clean-room-hard-root-guard.mjs` | runtime root-dir allowlist (diverges from `runtime-public-surface`); `_archive` no prod importers; host-sdk runtime subpath/barrel rules | `runtime/src` + `packages/**/src` + `host-sdk/src` | filesystem + line-regex, zero-state | **not wired** (`lint:clean-room-hard-root` only) |
 | _(retired tf-636o)_ | `effect-native-production-cutover-check.mjs`, `test-layout-check.mjs`, `host-sdk-runtime-import-baseline.mjs` removed — stale/dormant gates (forbade already-deleted tokens; generic test-placement; vacuous while `host-sdk` is `export {}`). host-sdk→runtime boundary still enforced by dependency-cruiser + ESLint `no-restricted-imports`. | — | — | — |
@@ -190,8 +190,8 @@ Invocation (`lint:deps`): `depcruise --config .dependency-cruiser.cjs packages` 
 
 ## 6. jscpd / knip / effect-language-service
 
-- **jscpd** — `.jscpd.json` (`minTokens 40`, `minLines 5`, ts/tsx, ignores tests/`__tests__`/**tiny-firegrid**). Gate `lint:dup` (`scripts/jscpd-check-baseline.mjs`) scans `packages/*/src`, compares `statistics.total.duplicatedLines` to config `threshold` (**0**). In `verify`.
-- **knip** — `knip.json` per-workspace `entry`/`project` (all 9 packages + `tooling` + root scripts; tiny-firegrid `ignoreDependencies` includes `@effect/{ai,workflow}`). Gate `lint:dead` (`knip-check-baseline.mjs`) requires `.knip-baseline.json` `issueCount == 0` (forced-zero). In `verify`.
+- **jscpd** — `.jscpd.json` (`minTokens 40`, `minLines 5`, ts/tsx, ignores tests/`__tests__`/**firelab**). Gate `lint:dup` (`scripts/jscpd-check-baseline.mjs`) scans `packages/*/src`, compares `statistics.total.duplicatedLines` to config `threshold` (**0**). In `verify`.
+- **knip** — `knip.json` per-workspace `entry`/`project` (all 9 packages + `tooling` + root scripts; firelab `ignoreDependencies` includes `@effect/{ai,workflow}`). Gate `lint:dead` (`knip-check-baseline.mjs`) requires `.knip-baseline.json` `issueCount == 0` (forced-zero). In `verify`.
 - **effect-language-service** — `tooling/src/effect-diagnostics-check.ts`, per-package turbo `diagnostics` task; ratchets each package's `effect-language-service --format json` output against `packages/*/.effect-diagnostics-baseline.json` (identity key excludes line/column; multiset add-detection). All packages 0 errors; warnings/messages baselined (e.g. runtime 0/6/14, effect-durable-streams 0/3/34, protocol 0/0/18). In `check`.
 
 ---
@@ -240,7 +240,7 @@ findings:
 Evaluated in Phase 3; none should move to ESLint:
 - `effect-quality-metrics-check.mjs` — **baseline-ratchet** semantics ESLint
   can't express (and now the home for the relocated Semgrep rules above).
-- `runtime-public-surface-check.mjs`, `tiny-firegrid-layout-check.mjs` —
+- `runtime-public-surface-check.mjs`, `firelab-layout-check.mjs` —
   **filesystem/directory-shape** checks, not code-pattern rules; out of ESLint's
   domain.
 

@@ -146,8 +146,8 @@ completion work.
 - **Tiny-firegrid is the workbench; production is where validated shapes get
   built.** A production lane that depends on an unresolved
   shape/signature/composition/substrate question dispatches only after a
-  tiny-firegrid simulation answers that question GREEN. Production code is
-  written *fresh* against the validated shape — tiny-firegrid modules do not
+  firelab simulation answers that question GREEN. Production code is
+  written *fresh* against the validated shape — firelab modules do not
   graduate by copy/move into `packages/runtime/`, `packages/host-sdk/`, or
   `packages/protocol/`. The simulation result is the contract; production is
   written against the contract using the production substrate, types, and

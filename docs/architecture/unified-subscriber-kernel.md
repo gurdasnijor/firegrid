@@ -5,7 +5,7 @@ distinction is permanent or transitional, and what a smaller runtime
 kernel looks like.
 
 Status: **synthesis** across already-decided cannon architecture + four
-load-bearing tiny-firegrid simulations. The cannon authority is
+load-bearing firelab simulations. The cannon authority is
 `docs/cannon/architecture/kernel-owned-write-arm.md` (active,
 dispatchable). This doc is the engineer-facing collapse story tying the
 cannon to what shrinks in the codebase.
@@ -236,12 +236,12 @@ contract.
 - `docs/architecture/2026-05-22-runtime-rearch-closeout.md` — the
   rearch closeout, including the axis-2 addendum.
 - Simulations (load-bearing):
-  - `packages/tiny-firegrid/src/simulations/input-suspend-crash-recovery/`
-  - `packages/tiny-firegrid/src/simulations/kernel-owned-write-arm/`
-  - `packages/tiny-firegrid/src/simulations/tiny-input-append-wakeup/`
-  - `packages/tiny-firegrid/src/simulations/runtime-context-session-workflow/`
+  - `packages/firelab/src/simulations/input-suspend-crash-recovery/`
+  - `packages/firelab/src/simulations/kernel-owned-write-arm/`
+  - `packages/firelab/src/simulations/tiny-input-append-wakeup/`
+  - `packages/firelab/src/simulations/runtime-context-session-workflow/`
 - Supporting:
-  - `packages/tiny-firegrid/src/simulations/per-key-subscriber-push-restart/`
+  - `packages/firelab/src/simulations/per-key-subscriber-push-restart/`
 - Engine source — the asymmetry:
   - `packages/runtime/src/engine/internal/engine-runtime.ts` —
     `recoverPendingClockWakeups`; no equivalent for non-clock suspends.

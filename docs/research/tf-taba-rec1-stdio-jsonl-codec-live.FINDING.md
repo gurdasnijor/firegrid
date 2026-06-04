@@ -15,7 +15,7 @@ There is also a Codex-side permission gate equivalent: with noninteractive
 
 ## Sim Added
 
-- `packages/tiny-firegrid/src/simulations/codec-stdio-jsonl-live/`
+- `packages/firelab/src/simulations/codec-stdio-jsonl-live/`
 - Driver launches a real Codex CLI process via a local-process runtime:
   `node -e <bridge>` waits for Firegrid's first stdio-jsonl prompt frame, then
   execs `codex --sandbox read-only -a never -c mcp_servers.firegrid_stdio_probe.url=... exec --json`.
@@ -35,13 +35,13 @@ ACIDs exercised:
 Run:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run codec-stdio-jsonl-live --timeout-ms 240000
+pnpm --filter @firegrid/firelab simulate:run codec-stdio-jsonl-live --timeout-ms 240000
 ```
 
 Trace artifact:
 
 ```text
-packages/tiny-firegrid/.simulate/runs/2026-05-20T08-36-43-852Z__codec-stdio-jsonl-live/trace.jsonl
+packages/firelab/.simulate/runs/2026-05-20T08-36-43-852Z__codec-stdio-jsonl-live/trace.jsonl
 ```
 
 Observed raw wire:

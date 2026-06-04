@@ -1,6 +1,6 @@
 # Beads Operating Guide (coordinator-facing)
 
-Practical guide for working the tiny-firegrid issue graph with `br`/`bv`.
+Practical guide for working the firelab issue graph with `br`/`bv`.
 This is the *operating* doc; `AGENTS.md` → "Beads (br)" → "Firegrid workspace
 specifics" holds the workspace facts (prefix `tf`, `tfind:NNN` join label,
 git-tracked `issues.jsonl`, the FINDINGS/CONFIGS authority cutover). Read that
@@ -8,7 +8,7 @@ block first; this one assumes it.
 
 ## TL;DR
 
-- **Beads is the sole authority** for tiny-firegrid finding/config status.
+- **Beads is the sole authority** for firelab finding/config status.
   The old Markdown ledgers (`FINDINGS.md`/`CONFIGS.md`/`HANDOFF.md`) were
   deleted post-cutover (#354/#356) — do not recreate them.
 - **Two reliable query surfaces only.** Never parse `br … --json` ad hoc.

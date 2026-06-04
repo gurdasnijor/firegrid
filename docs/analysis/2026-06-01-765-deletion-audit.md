@@ -24,7 +24,7 @@ Each finding carries a **Tracked?** column (SDD §, bead id, or `SILENT`) and a 
 
 | Area | Files | Nature |
 |---|---|---|
-| `packages/tiny-firegrid/src/simulations` | 166 | sim pruning (proof-chain GC) |
+| `packages/firelab/src/simulations` | 166 | sim pruning (proof-chain GC) |
 | `packages/runtime/src` | 76 | old `composition/` + `subscribers/` + parts of `channels/`+`tables/` tiers |
 | `experiments/agent-coordination-patterns/*` | 84 | experiment dir restructure (out of audit scope, LOW) |
 | `packages/runtime/test` | 22 | tests for deleted/ported behavior |
@@ -167,7 +167,7 @@ Capabilities the old tiers had that the unified tier neither demonstrably ports 
 | R10 | **Malformed-input handling** changed skip-and-continue → `Effect.orDie` (kills session body) | `subscribers/runtime-context-session-workflow/workflow.ts` | REPLACED-DIFFERENTLY (undocumented delta) | `runtime-context.ts:116-123` `orDie` on a bad payload; old path logged + advanced cursor past it. No SDD notes the behavior change. | SILENT | LOW-MED |
 
 Adjacent state-layer notes (corroborating, lower-severity):
-- **R11 — tf-aseo durable loop-state + tf-7kq8 output-scan storm guard** (`tables/runtime-context-state.ts`): the durable cursor/pending-permission/exit table and the `nextOutputObservation` gap-skip walker are gone; the new body redefines progress as "read own signals" (legitimate reshape) but the **O(outputs) replay invariant has no production guard** and is exercised only in tiny-firegrid. `unified/tables.ts:1-27` carries rationale prose. **TRACKED by tf-aseo** (cannon work-mapping, "independent, parallel"); the *production guard for the new model* is the open part. **MED.**
+- **R11 — tf-aseo durable loop-state + tf-7kq8 output-scan storm guard** (`tables/runtime-context-state.ts`): the durable cursor/pending-permission/exit table and the `nextOutputObservation` gap-skip walker are gone; the new body redefines progress as "read own signals" (legitimate reshape) but the **O(outputs) replay invariant has no production guard** and is exercised only in firelab. `unified/tables.ts:1-27` carries rationale prose. **TRACKED by tf-aseo** (cannon work-mapping, "independent, parallel"); the *production guard for the new model* is the open part. **MED.**
 - **R12 — `runs` family half-cutover**: ledger says "keep only `contexts`," but `runs` survives in schema (`protocol/launch/table.ts:179`), is **read** by `channels/host-control.ts`+`session-self/live.ts`, yet has **no production writer**. Either dead legacy that should also have been cut, or a wiring gap. **SILENT / MED — author should confirm.**
 - **R13 — `claude session/new._meta alwaysLoad` coax**: ledger's unified/-only grep flagged this as gone, but it **EXISTS** at `sources/codecs/acp/index.ts:182-234` (`claudeAgentAcpMeta`). **NOT a drop** — reconciliation note, not a finding.
 
@@ -185,16 +185,16 @@ A deleted test for a *sanctioned-cut* behavior is expected. A deleted test for a
 | C4 | **channel-router rejection guards** (`UnsupportedVerb`, pre-invocation parse-fail, `UnknownChannelTarget`, structured `RuntimeChannelDispatchError`) — code survives in `router.ts`, only happy-path now tested | `channels/host-control-router.test.ts` | **HIGH** |
 | C5 | **tf-aseo replay invariants** — shared-sequence **log-gap skip** + pending-permission **request+response reload across replay**; terminal evidence durable-row-owned; ToolUse non-state-relevant under ACP | `workflow-engine/runtime-context-state{,.sparse}.test.ts` | **HIGH** (compounds R11) |
 | C6 | **`wait_for_any` multi-source race + durable race-replay** (tf-0xe4) | `workflow-engine/workflows/wait-for-workflow.test.ts` | **HIGH** — *and a silent-drop candidate*: confirm whether multi-source agent waiting is still in scope (if yes → untested survivor; if no → dropped capability) |
-| C7 | adapter **dup-command-claim "no duplicate stdin/bytes"** + evict-immediately-exited; #738 out-of-order spawn-once | `subscribers/runtime-context-session/{codec,raw}-adapter.test.ts`, `runtime-context-session-workflow/regression.test.ts` | MED (only shape-level tiny-firegrid coverage) |
+| C7 | adapter **dup-command-claim "no duplicate stdin/bytes"** + evict-immediately-exited; #738 out-of-order spawn-once | `subscribers/runtime-context-session/{codec,raw}-adapter.test.ts`, `runtime-context-session-workflow/regression.test.ts` | MED (only shape-level firelab coverage) |
 | C8 | input-facts `insertOrGet` exactly-once + cross-context isolation + history-reconstruct; decode-ingress error-Left; control-request builder semantics; runtimeOutput layer-hoisting (tf-ivl6); runtime root-barrel kernel-tag hiding | `tables/runtime-context-input-facts.test.ts`, `transforms/decode-ingress-row.test.ts`, `protocol/test/launch/control-request.test.ts`, `client-sdk/test/firegrid.layer-hoisting.test.ts`, `public-surface-boundary.test.ts` | MED |
 
-> **Cross-cutting coverage-posture note:** the entire `packages/runtime/src/unified/` production module has **no dedicated `*.test.ts`** — its only validation is the surviving `unified-kernel-validation` tiny-firegrid sim (whose `invariants.ts` scans both the sim tree and `runtime/src/unified/`). The sim's own README states "Not a production cutover." So the substrate shape is proven, but the production module is unguarded by the standard test gate.
+> **Cross-cutting coverage-posture note:** the entire `packages/runtime/src/unified/` production module has **no dedicated `*.test.ts`** — its only validation is the surviving `unified-kernel-validation` firelab sim (whose `invariants.ts` scans both the sim tree and `runtime/src/unified/`). The sim's own README states "Not a production cutover." So the substrate shape is proven, but the production module is unguarded by the standard test gate.
 
 ---
 
-## 5. tiny-firegrid simulations (166 deleted) — triage
+## 5. firelab simulations (166 deleted) — triage
 
-**Verdict: routine cutover churn, no lost proofs.** The deletion GC'd an iterative proof-chain (37 sim dirs) that converged into one surviving successor sim (`simulations/unified-kernel-validation/`, explicitly the rebuild base per its README), four surviving `shape-c-*` sims, and production `unified/` code. tiny-firegrid itself is intact (bin/experiment/prototypes/runner/types.ts). Every spot-checked load-bearing theme (output-replay/cursor, loop-state/fact-matrix, crash-recovery/write-arm, wait, channel-registry/choreography, ACP/codec) has surviving sim and/or production-test coverage. The only caveat is the §4 posture note (unified/ has no standard test, only the sim). **No blocking action from the sim prune itself.**
+**Verdict: routine cutover churn, no lost proofs.** The deletion GC'd an iterative proof-chain (37 sim dirs) that converged into one surviving successor sim (`simulations/unified-kernel-validation/`, explicitly the rebuild base per its README), four surviving `shape-c-*` sims, and production `unified/` code. firelab itself is intact (bin/experiment/prototypes/runner/types.ts). Every spot-checked load-bearing theme (output-replay/cursor, loop-state/fact-matrix, crash-recovery/write-arm, wait, channel-registry/choreography, ACP/codec) has surviving sim and/or production-test coverage. The only caveat is the §4 posture note (unified/ has no standard test, only the sim). **No blocking action from the sim prune itself.**
 
 ---
 

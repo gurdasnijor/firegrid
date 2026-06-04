@@ -577,7 +577,7 @@ the actor/virtual-object model canon and the RFCs align with. **Answered at sour
   **fresh execution per event** (the `PermissionRoundtrip` shape), reading a durable
   cursor from state — it never re-drives a returned execution (which review 3
   correctly proved impossible). **`tf-c71h` is reframed accordingly**, and the
-  verifying tiny-firegrid workbench sim is specified in the analysis doc §4.
+  verifying firelab workbench sim is specified in the analysis doc §4.
 
 > Net: the §0.1 decision is **migrate one documented holdout body to the shape the
 > rest of the system already uses**, or formally ratify the parked body (reverse

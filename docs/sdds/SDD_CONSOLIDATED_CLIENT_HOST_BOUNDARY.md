@@ -78,7 +78,7 @@ Blast radius:
   start requests.
 - CLI/factory: migrate synchronous execution to host-owned APIs if the public
   client `start()` becomes request/ack shaped.
-- Tests/tiny-firegrid: replace reach-past context upserts and direct host start
+- Tests/firelab: replace reach-past context upserts and direct host start
   extraction with client writes plus host reconciliation.
 
 How it ends the reach-past:

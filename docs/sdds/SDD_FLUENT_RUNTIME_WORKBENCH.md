@@ -8,7 +8,7 @@ Canonical: No. This draft is not dispatchable unless added to
 
 Related:
 - `packages/fluent-firegrid`
-- `packages/tiny-firegrid`
+- `packages/firelab`
 - `docs/findings/tf-n3qc-fluent-firegrid-design.md`
 - `repos/sdk-typescript/packages/libs/restate-sdk-gen/DESIGN.md`
 - `repos/sdk-typescript/packages/libs/restate-sdk-gen/src/`
@@ -446,7 +446,7 @@ packages/fluent-runtime/
   src/Mcp.ts              # optional adapter over HttpApi/streams, not core
   src/main.ts             # optional launcher example only
 
-packages/tiny-firegrid/src/simulations/fluent-runtime-*/
+packages/firelab/src/simulations/fluent-runtime-*/
   host.ts                 # compose fluent-runtime layers
   driver.ts               # exercise public client/front-door APIs
   index.ts                # register simulation
@@ -563,7 +563,7 @@ own:
 - `map` projection used by the scheduler's central race;
 - thenable behavior for the scheduler/lib contract.
 
-For tiny-firegrid and unit tests, an in-process awaitable can implement the
+For firelab and unit tests, an in-process awaitable can implement the
 same interface without Durable Streams.
 
 After this split, the difference between an in-process package and a durable
@@ -622,7 +622,7 @@ Decision needed:
 
 - Prefer Restate-style deterministic replay for spawned routines, combinators,
   and channels.
-- Add durable routine rows only if a tiny-firegrid crash/restart simulation
+- Add durable routine rows only if a firelab crash/restart simulation
   proves replay cannot reconstruct local routine futures.
 - Use Durable Streams `fork` for agent `spawn` / `spawn_all` child sessions
   before inventing child-session row families.
@@ -669,7 +669,7 @@ The runtime package should still look like ordinary Effect application code:
   `HttpApiClient` for the front door and derived clients;
 - `HttpApiSwagger` for documentation from the same API definition;
 - `HttpRouter` only for health checks, websocket probes, diagnostics, and
-  tiny-firegrid controls.
+  firelab controls.
 
 ## Layer Diagram
 
@@ -740,7 +740,7 @@ const HttpLive = FluentRuntime.HttpLive.pipe(
 NodeRuntime.runMain(Layer.launch(HttpLive))
 ```
 
-For tiny-firegrid:
+For firelab:
 
 ```ts
 export const host = FluentRuntimeTestHost.layer({
@@ -775,14 +775,14 @@ export const driver = Effect.gen(function* () {
    unless a sim proves otherwise.
 7. **Define ingress first.** Create the `HttpApi` contract and derive server,
    Swagger docs, and typed client from it before adding alternate bindings.
-8. **Add tiny-firegrid runtime workbench.** Build `fluent-runtime` as the
+8. **Add firelab runtime workbench.** Build `fluent-runtime` as the
    durable `AwaitableLib`, durable operation producers, subscription handlers,
    fork-backed child sessions, finite turn streams, and front-door session/turn
    routing.
 9. **Plan production cutover.** Only after simulations prove the trace model,
    start replacing isolated production runtime entrypoints.
 
-Recommended tiny-firegrid proof sequence:
+Recommended firelab proof sequence:
 
 1. Fork a child session stream from a parent stream and prove the child reads
    inherited history through the fork offset, then diverges.
@@ -798,7 +798,7 @@ Recommended tiny-firegrid proof sequence:
 - Do not import from `packages/runtime`.
 - Do not expose Durable Streams writer handles in user DSL.
 - Do not make a second scheduler in `packages/fluent-runtime`.
-- Do not make tiny-firegrid a pass/fail harness; it remains a simulation
+- Do not make firelab a pass/fail harness; it remains a simulation
   workbench with traces and findings.
 - Do not add durable row families for in-memory scheduler concepts until a
   restart simulation proves deterministic replay is insufficient.

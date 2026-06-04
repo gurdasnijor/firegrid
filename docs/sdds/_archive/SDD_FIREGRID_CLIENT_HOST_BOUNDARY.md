@@ -102,7 +102,7 @@ has real in-tree consumers:
 - `packages/cli/src/bin/run.ts:262` (`firegrid run` — awaits exit code)
 - `apps/factory/src/host.ts:393` (awaits the run result)
 
-`client-sdk` public API must stay stable for consumers (incl. tiny-firegrid).
+`client-sdk` public API must stay stable for consumers (incl. firelab).
 Any change to `start()`'s return contract (terminal result → async request
 ack) is a breaking change to `apps/factory` and the CLI. This constraint, not
 the schema, is what bounds the down-payment. It must be a coordinator
@@ -183,7 +183,7 @@ decision I need signoff on, before any production code:
   return an ack). Host reconciler + CLI/factory migration tracked as the
   dependent follow-up (host-sdk / TFIND-008). **Risk:** between this PR and
   the host follow-up, no host consumes the requests — `createOrLoad`/`start`
-  are inert end-to-end until the host lands. tiny-firegrid can still assert
+  are inert end-to-end until the host lands. firelab can still assert
   the *durable request is written* (client-side, separate Effect invocation),
   which is precisely the TFIND-004 shape.
 

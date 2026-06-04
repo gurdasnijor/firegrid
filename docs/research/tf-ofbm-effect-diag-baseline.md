@@ -38,7 +38,7 @@ Observed current baseline:
 | `packages/protocol/tsconfig.json` | 0 | 0 | 18 |
 | `packages/runtime/tsconfig.json` | 0 | 6 | 23 |
 | `packages/cli/tsconfig.json` | 0 | 0 | 0 |
-| `packages/tiny-firegrid/tsconfig.json` | 0 | 0 | 0 |
+| `packages/firelab/tsconfig.json` | 0 | 0 | 0 |
 | **Total** | **1** | **51** | **124** |
 
 The dispatch referenced an earlier CI summary of `0 errors + 5 warnings + 21 messages` across protocol/runtime. The fresh `origin/main` worktree for this slice produced the larger table above because the existing script scans every package tsconfig, not only protocol/runtime.

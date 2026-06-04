@@ -44,7 +44,7 @@ Each deletion was verified preflight-green; the cascade of now-unused imports/he
 - `RuntimeObservationStreamsLive` — re-exported through the **main** `@firegrid/runtime` index (`runtime/src/index.ts`).
 - `client-sdk` (`FiregridRuntimeTables`, `firegridRuntimeTableTags`, `FiregridStandaloneLive`), `host-sdk`, `effect-durable-streams`/`effect-durable-operators` (`define`, `sseStream`, `appendWithProducer`, `useDurableLiveSuspenseQuery`), `observability` — leaf SDK / library public surfaces.
 - `runtime/src/bin/*` — binary entry points.
-- `tiny-firegrid/src/experiment/*` — experiment harness (intentionally standalone).
+- `firelab/src/experiment/*` — experiment harness (intentionally standalone).
 
 These remain in the gate's DEAD report for the PO/owner to decide; **FLAG, not force-delete**.
 

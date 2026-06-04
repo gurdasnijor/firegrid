@@ -23,7 +23,7 @@ Rationale (one paragraph):
 Four sub-sims, each implementing the same use case (host seeds 3 non-matching + 1 matching CallerFact, workflow waits for first match, emits a marker, returns the matched row):
 
 ```
-packages/tiny-firegrid/src/simulations/
+packages/firelab/src/simulations/
   tf-ui4l-baseline/  # Activity.make + Stream.runHead
   tf-ui4l-alpha/     # sugar Activity.streamed — engine-owned emit cursor
   tf-ui4l-beta/      # sugar Activity.subscribed — engine-owned ack + Option<A>
@@ -148,8 +148,8 @@ Commits:
 Files (1,500 LOC total):
 - `docs/research/tf-ui4l-activity-shape-design.md` (243 LOC)
 - `docs/research/tf-ui4l-activity-shape-comparison.FINDING.md` (this file)
-- `packages/tiny-firegrid/src/simulations/tf-ui4l-{baseline,alpha,beta,gamma}/{index,host,driver}.ts` (~1,250 LOC)
-- `packages/tiny-firegrid/package.json` (+@effect/workflow dep)
+- `packages/firelab/src/simulations/tf-ui4l-{baseline,alpha,beta,gamma}/{index,host,driver}.ts` (~1,250 LOC)
+- `packages/firelab/package.json` (+@effect/workflow dep)
 
 Trace runs (kept in `.simulate/runs/` locally for reproducibility):
 - baseline: `2026-05-20T07-22-48-584Z__tf-ui4l-baseline`

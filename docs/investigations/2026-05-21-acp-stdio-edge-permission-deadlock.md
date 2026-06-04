@@ -180,7 +180,7 @@ It declares `mayRequestPermissions: false` (`adapter.ts:37`) and references a *f
 ## 4. There was no flag / config escape hatch
 
 - The `acp` command (`packages/cli/src/bin/run.ts:798`) accepts only `--namespace, --agent, --agent-protocol, --cwd, --secret-env, --otel-file`. **No permission/auto-approve option.**
-- `packages/client-sdk/src/permission-auto-approve.ts` (`autoApproveSessionPermissions`) works on the **Firegrid session-facade plane** (`session.wait.forPermissionRequest` → `session.permissions.respond`). It is wired into client-SDK app sessions, tiny-firegrid sims, and the experiment harness — **never into the ACP stdio edge**. `hostAcpLayer` (`run.ts:544`) does not fork it.
+- `packages/client-sdk/src/permission-auto-approve.ts` (`autoApproveSessionPermissions`) works on the **Firegrid session-facade plane** (`session.wait.forPermissionRequest` → `session.permissions.respond`). It is wired into client-SDK app sessions, firelab sims, and the experiment harness — **never into the ACP stdio edge**. `hostAcpLayer` (`run.ts:544`) does not fork it.
 
 So the deadlock could only be fixed in code, not configuration.
 
@@ -214,7 +214,7 @@ Supporting facts (all verified):
 - Route is registered in the live edge router: `permissionRespond = makeHostPermissionRespondChannel(control)` + `runtimeRouteFromChannel(permissionRespond)` — `packages/runtime/src/channels/host-control-routes.ts:65,79`.
 - Channel target `"host.permissions.respond"` — `packages/protocol/src/channels/host-control.ts:193`.
 - Request schema `PermissionRespondInputSchema = { contextId, permissionRequestId, decision, idempotencyKey? }` — `packages/protocol/src/agent-tools/schema.ts:677`.
-- `decision` shape `{ _tag: "Allow", optionId? }` (`optionId` optional) — `schema.ts:661`. `{ _tag: "Allow" }` matches what `permission-auto-approve.ts` and the tiny-firegrid sims send.
+- `decision` shape `{ _tag: "Allow", optionId? }` (`optionId` optional) — `schema.ts:661`. `{ _tag: "Allow" }` matches what `permission-auto-approve.ts` and the firelab sims send.
 - Channel handler appends a permission-response input intent → resolves the codec `Deferred` — `packages/protocol/src/launch/host-control-request.ts:178-221`.
 - `tsc --noEmit` on `@firegrid/host-sdk`: clean.
 

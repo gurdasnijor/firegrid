@@ -159,7 +159,7 @@ and `packages/runtime/src/workflow-engine/workflows/runtime-context.ts:815`.
 
 ### 1. `tf-5n1z.3` — Runtime input channel -> DurableDeferred signal
 
-Build a tiny-firegrid prototype where a prompt/input channel send lowers
+Build a firelab prototype where a prompt/input channel send lowers
 directly to deterministic `DurableDeferred.done` for
 `RuntimeContextWorkflowNative`, without `RuntimeInputIntentDispatcherLive`.
 

@@ -19,7 +19,7 @@ source/wait rows; no in-memory gen-1 state is required.
 Run:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run inv3-restart-replay --timeout-ms 120000
+pnpm --filter @firegrid/firelab simulate:run inv3-restart-replay --timeout-ms 120000
 ```
 
 Run id:
@@ -37,7 +37,7 @@ docs/research/tf-r5e3-inv3-waitforworkflow-restart-replay.trace.jsonl
 Runner copy:
 
 ```text
-packages/tiny-firegrid/.simulate/runs/2026-05-20T06-50-02-694Z__inv3-restart-replay/trace.jsonl
+packages/firelab/.simulate/runs/2026-05-20T06-50-02-694Z__inv3-restart-replay/trace.jsonl
 ```
 
 The trace has 345 JSONL spans. Relevant span counts:
@@ -75,7 +75,7 @@ firegrid.inv3.timeout_after_restart.deadline_preserved = true
 Simulation code:
 
 ```text
-packages/tiny-firegrid/src/simulations/inv3-restart-replay/
+packages/firelab/src/simulations/inv3-restart-replay/
 ```
 
 The simulation is self-contained:
@@ -88,7 +88,7 @@ The simulation is self-contained:
 
 ## Runner Gap
 
-The stock tiny-firegrid runner exposes one `host(env)` layer per simulation
+The stock firelab runner exposes one `host(env)` layer per simulation
 run. It does not expose an official two-generation lifecycle API or OS-level
 process kill/restart driver. This sim therefore uses the smallest available
 probe: close the gen-1 Effect scope, construct a fresh gen-2 host composition

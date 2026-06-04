@@ -79,11 +79,11 @@ jobs:
         run: pnpm run lint:deps
 
   # The UKV coverage gate runs a live sim (~40s) and computes the verdict from
-  # the host-substrate trace oracle (packages/tiny-firegrid/src/runner/coverage.ts);
+  # the host-substrate trace oracle (packages/firelab/src/runner/coverage.ts);
   # the run exits non-zero on production-path-not-covered. It is the single
   # heaviest step. As its own job it runs in parallel and stops gating the lint
   # critical path. Not turbo-cacheable (the sim spawns real subprocesses — same
-  # reason tiny-firegrid#test is cache:false), so no cache step here.
+  # reason firelab#test is cache:false), so no cache step here.
   coverage-gate:
     name: UKV coverage gate
     runs-on: ubuntu-latest
@@ -97,7 +97,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Run UKV coverage gate (computed verdict)
-        run: pnpm --filter @firegrid/tiny-firegrid run coverage:gate
+        run: pnpm --filter @firegrid/firelab run coverage:gate
 
   typecheck:
     name: Typecheck

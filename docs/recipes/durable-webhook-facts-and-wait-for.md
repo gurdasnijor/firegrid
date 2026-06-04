@@ -15,7 +15,7 @@ so the agent's `wait_for({ channel: "firegrid.verifiedWebhooks", whereFields:
 - This pattern is **live and tested**. End-to-end proof:
   - `packages/runtime/test/channels/verified-webhook/source-live.test.ts` —
     Linear + GitHub through the helper with merged channel projection.
-  - `packages/tiny-firegrid/src/simulations/linear-webhook-cookbook-composition/`
+  - `packages/firelab/src/simulations/linear-webhook-cookbook-composition/`
     — full agent loop (`pnpm simulate:run linear-webhook-cookbook-composition`).
 - Public surface: `@firegrid/runtime/channels/verified-webhook/source-live`
   (`makeVerifiedWebhookSource`, `mergeWebhookSourceChannels`).
@@ -145,7 +145,7 @@ scalar fact fields, and returns the matched row to the agent as the
 | `packages/runtime/src/verified-webhook-ingest/adapter.ts` | The HMAC-verify + decode + `insertOrGet` body the helper calls. Handles both generic JSON and Linear-shaped payloads. |
 | `packages/protocol/src/channels/verified-webhook.ts` | `VerifiedWebhookFactChannelTarget` (`"firegrid.verifiedWebhooks"`) + `VerifiedWebhookFactChannel` Tag. |
 | `packages/protocol/src/verified-webhook/schema.ts` | `VerifiedWebhookFactSchema`, `LinearWebhookFactSchema`, fact-key encoding. |
-| `packages/tiny-firegrid/src/simulations/linear-webhook-cookbook-composition/` | Full worked example with agent loop. The helper distills its boilerplate. |
+| `packages/firelab/src/simulations/linear-webhook-cookbook-composition/` | Full worked example with agent loop. The helper distills its boilerplate. |
 
 ## What The Helper Does NOT Touch
 

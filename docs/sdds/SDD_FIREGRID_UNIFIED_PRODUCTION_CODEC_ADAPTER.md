@@ -115,7 +115,7 @@ Scenario 9 gained `FIREGRID_UKV_USE_REAL_CLAUDE_ACP=1` env toggle: when set alon
 
 Phase F landed scenario 8 — drives the real `AcpSessionLive` codec through an in-process `FixtureAgent` over `TransformStream` byte pipes. Sees the full ACP wire flow (initialize → newSession → prompt → session_updates → exit) and confirms the production adapter handles it cleanly. Sample run: 8/8 scenarios + 21/21 OTel seams (the 5 codec-level seams added: `acp.initialize`, `acp.new_session`, `acp.prompt`, `acp.session_update`, `acp.exit`).
 
-Scenario 9 lands the **live-canary subprocess** behind `FIREGRID_UKV_RUN_ACP_LIVE=1`. Instead of spawning `claude-agent-acp` directly (which requires API credentials), it spawns `tiny-firegrid/src/bin/fake-acp-agent-process.ts` — a Node entry that wraps `FixtureAgent` over `process.stdin` / `process.stdout`. The codec sees genuine subprocess bytes; the agent on the other side speaks real ACP without needing credentials. Swapping in the actual `claude-agent-acp` binary is a one-line change in the resolver's `argv` once credentials are available — the surrounding stack is unchanged.
+Scenario 9 lands the **live-canary subprocess** behind `FIREGRID_UKV_RUN_ACP_LIVE=1`. Instead of spawning `claude-agent-acp` directly (which requires API credentials), it spawns `firelab/src/bin/fake-acp-agent-process.ts` — a Node entry that wraps `FixtureAgent` over `process.stdin` / `process.stdout`. The codec sees genuine subprocess bytes; the agent on the other side speaks real ACP without needing credentials. Swapping in the actual `claude-agent-acp` binary is a one-line change in the resolver's `argv` once credentials are available — the surrounding stack is unchanged.
 
 ### 6. Architectural finding: tool-result feedback is codec-specific
 

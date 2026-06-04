@@ -4,7 +4,7 @@ Status: draft — framing for coordinator review + Gurdas signoff, NO code
 Created: 2026-05-18
 Owner: Firegrid Client SDK (sidecar `sidecar/session-observation`)
 
-Resolves: `packages/tiny-firegrid/FINDINGS.md` → TFIND-040.
+Resolves: `packages/firelab/FINDINGS.md` → TFIND-040.
 
 Gated only on TFIND-030 (landed #329, typed `AgentOutputEvent`). NOT gated on
 #332. **Explicit open decision deferred to #332:** the attach-point (session

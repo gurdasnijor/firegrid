@@ -91,7 +91,7 @@ Two corollaries the data settles:
    ~15 sim + 2 bin callers are unchanged. The §12 cutover (§10 step 4) flips the
    **default** floor to the `DurableStreams`-consuming one, making
    `FiregridRuntime(spec, adapter)` carry `R = DurableStreams`. **Migration
-   cost:** each direct caller (the tiny-firegrid sim `host.ts` files +
+   cost:** each direct caller (the firelab sim `host.ts` files +
    `bin/_compose.ts` + the `FiregridHost` shim) gains exactly one
    `.pipe(Layer.provide(DurableStreamsLive.{embedded|configured}))`. All
    mechanical; none require composition changes.

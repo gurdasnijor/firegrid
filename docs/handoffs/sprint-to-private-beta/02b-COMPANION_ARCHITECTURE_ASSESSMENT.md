@@ -98,7 +98,7 @@ firewall. **Public-surface discipline is materially lower** — probably
   codec-adapter helpers
 - Simulation methodology doc INSTRUCTS new examples to use
   `hostProjectionObserver` (line 60 of
-  `packages/tiny-firegrid/docs/methodology.md`)
+  `packages/firelab/docs/methodology.md`)
 - Client-sdk re-exports `FiregridRuntimeTables`,
   `FiregridControlPlaneTableLive`, and `runtimeControlPlaneStreamUrl` as
   public surface
@@ -140,7 +140,7 @@ under cannon research/history, not active SDDs.
 
 ### Finding 2: Simulation methodology doc is a firewall-violation prescription
 
-`packages/tiny-firegrid/docs/methodology.md:60` reads:
+`packages/firelab/docs/methodology.md:60` reads:
 
 > "should use `hostProjectionObserver` from `@firegrid/host-sdk` when the
 > condition..."
@@ -391,7 +391,7 @@ A check that:
 ### Gate C: Methodology / examples doc sweep
 
 A check that:
-- `packages/tiny-firegrid/docs/methodology.md` does not teach
+- `packages/firelab/docs/methodology.md` does not teach
   substrate-import patterns as recommended
 - Public examples (in docs/cookbook/, package READMEs) compose Layers
   via the documented public composition entrypoints, not via
@@ -591,4 +591,4 @@ Cross-references:
 - `docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
 - `docs/cannon/sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
 - `.dependency-cruiser.cjs` — `currentHostSdkSubstrateDebt` (scoreboard)
-- `packages/tiny-firegrid/docs/methodology.md:60` — leak-prescription evidence
+- `packages/firelab/docs/methodology.md:60` — leak-prescription evidence

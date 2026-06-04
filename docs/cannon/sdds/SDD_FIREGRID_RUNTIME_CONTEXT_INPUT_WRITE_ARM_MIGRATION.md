@@ -60,7 +60,7 @@ owned write+arm. The host kernel/controller may evolve from today's
 `RuntimeContextWorkflowRuntimeLive` authority position, but it must expose the
 target primitive rather than preserving the dispatcher/mailbox contract.
 
-`tf-c9r9` should validate the target primitive in the S1/tiny-firegrid
+`tf-c9r9` should validate the target primitive in the S1/firelab
 reference path first. A production runtime-context cutover is a later,
 separately scoped transactional replacement.
 
@@ -128,7 +128,7 @@ bookkeeping for existing mailbox-backed contexts, not target architecture.
 ### Phase 1 - Reference Controller
 
 Build the host-kernel/controller-owned write+arm shape in the S1 or
-tiny-firegrid table-wait reference path.
+firelab table-wait reference path.
 
 Acceptance:
 

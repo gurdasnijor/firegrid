@@ -412,7 +412,7 @@ conditions.
 
 Measurement shape:
 
-- `pnpm --filter @firegrid/tiny-firegrid simulate:perf` reports local substrate
+- `pnpm --filter @firegrid/firelab simulate:perf` reports local substrate
   spans, durable writes, replay reads, and scheduler delays.
 - live dark-factory / ACP traces provide the LLM network-latency denominator
   when API keys and subprocesses are available.
@@ -580,7 +580,7 @@ If both land, the body-plan layer can choose:
 
 - short term: `wait_for` lowers to `WaitForWorkflow`;
 - long term: `wait_for` lowers to `streamWait`;
-- both implementations are measured by the same tiny-firegrid replay/perf sims.
+- both implementations are measured by the same firelab replay/perf sims.
 
 If the engine-primitive track lands during Phase 1 execution, Lane 4's
 `durable-tools/` deletion becomes cleaner: the aggressive SDD's

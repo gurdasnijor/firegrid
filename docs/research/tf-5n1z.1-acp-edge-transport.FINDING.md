@@ -4,11 +4,11 @@
 
 GREEN, narrow viability proof.
 
-The tiny-firegrid `acp-edge-transport` spike validates `firegrid-zed-acp-stdio-external-agent.VALIDATION.4`: an external ACP client can connect to a Firegrid host-composed ACP stdio edge, create an ACP session, send multiple prompt turns, receive ACP `sessionUpdate` output, and receive `PromptResponse.stopReason=end_turn` from Firegrid `TurnComplete` evidence without waiting for the runtime process to exit.
+The firelab `acp-edge-transport` spike validates `firegrid-zed-acp-stdio-external-agent.VALIDATION.4`: an external ACP client can connect to a Firegrid host-composed ACP stdio edge, create an ACP session, send multiple prompt turns, receive ACP `sessionUpdate` output, and receive `PromptResponse.stopReason=end_turn` from Firegrid `TurnComplete` evidence without waiting for the runtime process to exit.
 
 Run evidence:
 
-- `pnpm --filter @firegrid/tiny-firegrid simulate:run -- acp-edge-transport`
+- `pnpm --filter @firegrid/firelab simulate:run -- acp-edge-transport`
 - run id: `2026-05-21T08-06-44-403Z__acp-edge-transport`
 - `simulate:show`: 364 spans, 5 traces, 0 errored, sides `host=351 subprocess=7 driver=3 codec=2`
 - `simulate:perf`: 221.9ms window, no idle gaps above threshold

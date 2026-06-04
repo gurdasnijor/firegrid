@@ -141,22 +141,22 @@ Current evidence:
   `tasks/get` from runtime output at lines 38-41, backs `tasks/result` from
   runtime output at lines 43-47, and maps `tasks/update` to
   `HostPermissionRespondChannel.binding.append` at lines 49-52.
-- [packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/wire.ts](../../packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/wire.ts:75)
+- [packages/firelab/src/simulations/mcp-tasks-gateway/wire.ts](../../packages/firelab/src/simulations/mcp-tasks-gateway/wire.ts:75)
   defines the old `task-events` stream plus `appendTaskEvent` / `taskEvents`
   helpers at lines 75-101.
-- [packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/protocol.ts](../../packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/protocol.ts:7)
+- [packages/firelab/src/simulations/mcp-tasks-gateway/protocol.ts](../../packages/firelab/src/simulations/mcp-tasks-gateway/protocol.ts:7)
   imports and uses the old task-event helpers at lines 7-10, 109-118, 141, and
   434.
-- [packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/driver.ts](../../packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/driver.ts:113)
+- [packages/firelab/src/simulations/mcp-tasks-gateway/driver.ts](../../packages/firelab/src/simulations/mcp-tasks-gateway/driver.ts:113)
   creates and watches the old `task-events` stream at lines 113-118, 190-199,
   and 271-295.
-- [packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/protocol.ts](../../packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/protocol.ts:229)
+- [packages/firelab/src/simulations/mcp-task-projection-gateway/protocol.ts](../../packages/firelab/src/simulations/mcp-task-projection-gateway/protocol.ts:229)
   implements the replacement projection shape in source: project task state from
   output observations at lines 229-285, wait for projected terminal output at
   lines 344-370, create a self-describing task id and forward `session_prompt`
   at lines 449-498, and serve `tasks/get` / `tasks/result` / `tasks/update` at
   lines 501-540.
-- [packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts](../../packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/host.ts:271)
+- [packages/firelab/src/simulations/mcp-task-projection-gateway/host.ts](../../packages/firelab/src/simulations/mcp-task-projection-gateway/host.ts:271)
   wires the replacement to `RuntimeOutputTable`, `SessionAgentOutputChannel`,
   and `HostPermissionRespondChannel` at lines 271-318.
 
@@ -165,11 +165,11 @@ spike-local task-event gateway:
 
 | Surface | LoC |
 | --- | ---: |
-| `packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/driver.ts` | 424 |
-| `packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/host.ts` | 337 |
-| `packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/index.ts` | 11 |
-| `packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/protocol.ts` | 616 |
-| `packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/wire.ts` | 146 |
+| `packages/firelab/src/simulations/mcp-tasks-gateway/driver.ts` | 424 |
+| `packages/firelab/src/simulations/mcp-tasks-gateway/host.ts` | 337 |
+| `packages/firelab/src/simulations/mcp-tasks-gateway/index.ts` | 11 |
+| `packages/firelab/src/simulations/mcp-tasks-gateway/protocol.ts` | 616 |
+| `packages/firelab/src/simulations/mcp-tasks-gateway/wire.ts` | 146 |
 | **Total** | **1,534** |
 
 Precondition: Phase 3 must land the production MCP task-projection adapter in
@@ -211,5 +211,5 @@ it is not part of the required deletion subtotal.
   [packages/runtime/src/unified/channel-bindings.ts](../../packages/runtime/src/unified/channel-bindings.ts:306):
   current real channel path; not counted until a later source-verified gateway
   replacement exists.
-- `packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/`: current
+- `packages/firelab/src/simulations/mcp-task-projection-gateway/`: current
   replacement evidence for target 4; not counted as deletable in this baseline.

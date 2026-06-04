@@ -86,7 +86,7 @@ as *target* — keep it as the bridge-rationale record, don't navigate architect
 
 **F5 — `tf-vfq9` (BLOCKED, P1) cites deleted `file:line` evidence** — EVIDENCE(`docs/research/tf-vfq9-mcp-tool-call-cutover.STOP.md` cites `ToolCallWorkflow`/`toolUseToEffect`/`runtime/src/workflow-engine/` — all deleted by #765; `mcp-host/toolkit.ts:97` explicitly notes it is "NOT main's deleted ToolCallWorkflow") — CLASSIFICATION(stale evidence on a live bead) — DISPOSITION(gates: the open cutover should target `unified/mcp-host/` + `subscribers/runtime-context.ts`, not the doc's deleted paths) — tracked-by: tf-vfq9 (re-scope its evidence against `unified/`).
 
-**F6 — `tf-ll90.11.1` (P0 OPEN) but its backdoors are already deleted on `main`** — EVIDENCE(`docs/findings/2026-06-01-test-only-codepath-removal-manifest.md` §E targets recorder/fake-codec/fake-sandbox; no `RecorderAdapter`/`fake-codec`/`acp-sandbox-fake` remain under `packages/tiny-firegrid/src/` or `unified/adapter.ts`) — CLASSIFICATION(stale bead vs main) — DISPOSITION(supports: no-backdoor discipline already holds) — SUGGESTED BEAD: verify + close `tf-ll90.11.1` (or narrow to any residual) — bead/main divergence.
+**F6 — `tf-ll90.11.1` (P0 OPEN) but its backdoors are already deleted on `main`** — EVIDENCE(`docs/findings/2026-06-01-test-only-codepath-removal-manifest.md` §E targets recorder/fake-codec/fake-sandbox; no `RecorderAdapter`/`fake-codec`/`acp-sandbox-fake` remain under `packages/firelab/src/` or `unified/adapter.ts`) — CLASSIFICATION(stale bead vs main) — DISPOSITION(supports: no-backdoor discipline already holds) — SUGGESTED BEAD: verify + close `tf-ll90.11.1` (or narrow to any residual) — bead/main divergence.
 
 **F7 — `docs/handoffs/README.md` + `sprint-to-private-beta/` misroute new agents** — EVIDENCE(README points to `sprint-to-private-beta/` as "the active handoff packet"; that directory is a pre-#765 May-21 wave; README does not mention night-drive / s6) — CLASSIFICATION(stale) — DISPOSITION(gates: the directory entry point advertises a closed wave) — SUGGESTED BEAD: "Refresh `docs/handoffs/README.md` to name night-drive + s6 as the canonical-current pair; mark sprint-to-private-beta historical" (P2).
 
@@ -183,7 +183,7 @@ as *target* — keep it as the bridge-rationale record, don't navigate architect
 | `tf-24p-gap3-417-mechanism-review.md` | ANSWERED-CLOSED (off-path) | pre-unified reconciler verification. |
 | `tf-r06u-12-adapter-divergence-mcp-reach.md` | ANSWERED-CLOSED | adapter onboarding = config; fed tf-r06u.14. |
 | `tf-r06u-23-28-mcp-host-already-on-main.md` | ANSWERED-CLOSED | port-forward executed (mcp-host on main). |
-| `tf-r06u-25-tiny-firegrid-asset-inventory.md` | ANSWERED-CLOSED | relocation strategy consumed. |
+| `tf-r06u-25-firelab-asset-inventory.md` | ANSWERED-CLOSED | relocation strategy consumed. |
 | `tf-r06u-28-mcp-host-port-plan.md` | ANSWERED-CLOSED | built per plan (`unified/mcp-host/*`). |
 
 **Only 1 finding carries live action** (sleep-spike suspension boundary). The P0 leak is bead-tracked, not finding-doc'd (F10). 3 STALE/fixed docs (tf-ll90-9-2, tf-ll90-ukv-acp-tool-result, enforcement-surface-audit) should get a one-line "RESOLVED on main" footer.

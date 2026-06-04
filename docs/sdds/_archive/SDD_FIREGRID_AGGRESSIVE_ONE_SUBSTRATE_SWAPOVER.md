@@ -112,7 +112,7 @@ Question:
 
 Work:
 
-- Build a tiny-firegrid runtime-context stream body sim that triggers a
+- Build a firelab runtime-context stream body sim that triggers a
   permission request mid-flight.
 - Drive a permission response.
 - Prove one of these shapes:
@@ -353,7 +353,7 @@ Owns:
 
 - runtime-context workflow test sync helper
 - `workflow-core-paths` sim assertions
-- dark-factory / tiny-firegrid smoke wiring
+- dark-factory / firelab smoke wiring
 
 Work:
 
@@ -398,7 +398,7 @@ New spans are present:
 
 Owns:
 
-- new tiny-firegrid restart/bounce sim or focused test
+- new firelab restart/bounce sim or focused test
 
 Work:
 

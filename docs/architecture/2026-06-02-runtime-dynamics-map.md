@@ -70,7 +70,7 @@ flowchart LR
 
 Condensation collapses the 13 subsystems to **11 DAG nodes via 2 cycles**:
 - **`unified ⇄ runtime`** — the **only product cycle** (the other, `side.driver ⇄
-  tiny-firegrid`, is sim-harness, ignore). 14 calls each direction, p50 ~176ms.
+  firelab`, is sim-harness, ignore). 14 calls each direction, p50 ~176ms.
   Per the shrink-loop playbook this is the **#1 structural target**: make the SCC
   *gone* — either co-locate the reciprocal pair into one module (`N`→10) or cleanly
   break it with a typed one-directional boundary (kernel facade `unified/index.ts`
@@ -85,7 +85,7 @@ Condensation collapses the 13 subsystems to **11 DAG nodes via 2 cycles**:
   dead pure-indirection to inline. (Pre-unified maps flagged several.) The collapse
   already removed that class.
 - **Invisible coupling (DI/layer/channel, no static import):** `client-sdk → runtime`,
-  `client-sdk → effect-durable-operators`, `tiny-firegrid → effect-durable-operators`.
+  `client-sdk → effect-durable-operators`, `firelab → effect-durable-operators`.
   These are real runtime edges with no import — worth a deliberate seam in the re-arch
   rather than implicit layer wiring.
 

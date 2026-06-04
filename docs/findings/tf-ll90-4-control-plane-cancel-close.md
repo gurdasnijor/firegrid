@@ -2,7 +2,7 @@
 
 Date: 2026-06-01
 Run: `2026-06-01T21-09-23-935Z__control-plane-cancel-close`
-Trace: `packages/tiny-firegrid/.simulate/runs/2026-06-01T21-09-23-935Z__control-plane-cancel-close/trace.jsonl`
+Trace: `packages/firelab/.simulate/runs/2026-06-01T21-09-23-935Z__control-plane-cancel-close/trace.jsonl`
 Bead: `tf-ll90.4`
 
 This run includes the runner fix from
@@ -23,7 +23,7 @@ FiregridHost({ durableStreamsBaseUrl, namespace, codec: "acp", envPolicy })
 The `envPolicy` authorizes only
 `FIREGRID_FAKE_ACP_FIXTURE=env:FIREGRID_FAKE_ACP_FIXTURE` for the existing
 driver launch config. With the PR #783 leaf-agent update, the spawned process at
-`packages/tiny-firegrid/src/bin/fake-acp-agent-process.ts` runs the official ACP
+`packages/firelab/src/bin/fake-acp-agent-process.ts` runs the official ACP
 SDK example agent over the real local-process sandbox.
 
 The driver uses the public client seam:

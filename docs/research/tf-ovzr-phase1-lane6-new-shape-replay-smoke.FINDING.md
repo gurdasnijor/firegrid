@@ -24,7 +24,7 @@ exits. User-requested workflow cancellation remains terminal cancellation.
 Run:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run phase1-lane6-new-shape-replay --timeout-ms 120000 --watch
+pnpm --filter @firegrid/firelab simulate:run phase1-lane6-new-shape-replay --timeout-ms 120000 --watch
 ```
 
 Run id:
@@ -43,7 +43,7 @@ docs/research/tf-gyxc-engine-recycle-suspend-not-cancel.trace.jsonl
 Runner copy:
 
 ```text
-packages/tiny-firegrid/.simulate/runs/2026-05-20T09-27-52-547Z__phase1-lane6-new-shape-replay/trace.jsonl
+packages/firelab/.simulate/runs/2026-05-20T09-27-52-547Z__phase1-lane6-new-shape-replay/trace.jsonl
 ```
 
 ## Evidence

@@ -16,8 +16,8 @@ Base: `sim/unified-kernel-validation` (#765 trunk).
 | (c) | STRUCTURAL substrate-leak gate | the F3 block of the corpus (the **type checker**) — no bespoke script | `pnpm typecheck` (runtime) |
 
 ### Placement decision (important)
-The corpus lives in **`packages/runtime/test/`**, NOT `tiny-firegrid/test/` as
-the dispatch suggested — because **`tiny-firegrid`'s tsconfig excludes `test/`**
+The corpus lives in **`packages/runtime/test/`**, NOT `firelab/test/` as
+the dispatch suggested — because **`firelab`'s tsconfig excludes `test/`**
 (`include: ["src/**/*.ts"]`), so an `@ts-expect-error` there is **inert** (never
 seen by `tsc`). `runtime`'s tsconfig includes `test/**`, so `pnpm typecheck`
 actually evaluates the directives. Importing `@firegrid/client-sdk` here also

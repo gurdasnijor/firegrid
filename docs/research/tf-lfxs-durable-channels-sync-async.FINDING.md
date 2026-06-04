@@ -6,7 +6,7 @@ Run:
 `2026-05-21T04-07-32-532Z__durable-channels-sync-async-spike`
 
 Trace:
-`packages/tiny-firegrid/.simulate/runs/2026-05-21T04-07-32-532Z__durable-channels-sync-async-spike/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-05-21T04-07-32-532Z__durable-channels-sync-async-spike/trace.jsonl`
 
 ## What Was Tested
 

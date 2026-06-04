@@ -21,7 +21,7 @@ Verdict: GREEN for the minimal SignalTable-backed write+arm fix.
 
 ## Public RUN Proof
 
-Command: `pnpm --filter @firegrid/tiny-firegrid simulate run unified-kernel-validation`
+Command: `pnpm --filter @firegrid/firelab simulate run unified-kernel-validation`
 
 The driver used only `@firegrid/client-sdk` + `effect`. No terminal latch or host-side backdoor was added.
 

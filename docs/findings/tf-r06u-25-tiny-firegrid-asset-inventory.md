@@ -1,13 +1,13 @@
-# tf-r06u.25 — tiny-firegrid misplaced-asset inventory + convert/delete/relocate strategy
+# tf-r06u.25 — firelab misplaced-asset inventory + convert/delete/relocate strategy
 
 Date: 2026-06-01
 Owner: tf-r06u.25 (agent2 / lane-b)
 Feeds: the relocation work + the R3 static-enforcement PR (tf-r06u.24); the mcp-host rebuild (tf-r06u.28); the workbench sim (tf-r06u.23).
-Method: import-surface scan of `packages/tiny-firegrid/src/simulations/*` + `test/**` + `src/prototypes/*`, classified against `tiny-firegrid/docs/methodology.md` (driver = `@firegrid/client-sdk` + Effect only; `host(env)` may compose runtime/protocol; codec/sandbox/internals reach from a driver or test = private seam → owning package). R3 policy: public-surface vitest ALLOWED; internals-reaching NOT.
+Method: import-surface scan of `packages/firelab/src/simulations/*` + `test/**` + `src/prototypes/*`, classified against `firelab/docs/methodology.md` (driver = `@firegrid/client-sdk` + Effect only; `host(env)` may compose runtime/protocol; codec/sandbox/internals reach from a driver or test = private seam → owning package). R3 policy: public-surface vitest ALLOWED; internals-reaching NOT.
 
 ## Headline (load-bearing)
 
-**The tiny-firegrid test suite does not currently collect.** `npx vitest list` aborts at `test/wave-d-a-shape-b-input-identity-dedup/probe.test.ts` (imports a deleted sim `src/simulations/wave-d-a-shape-b-input-identity-dedup/index.ts`), and several tests import runtime subpaths that #765 deleted and are **not exported**: `@firegrid/runtime/composition/host-live`, `@firegrid/runtime/producers/codecs/mcp`, `@firegrid/runtime/composition/runtime-context-mcp-base-url`, `@firegrid/runtime/kernel`. So tiny-firegrid is **not a passing gate today** — its drift is masked because it isn't in the green CI set. The deleted `composition/host-live` + `producers/codecs/mcp` path **is** the "deleted mcp-host" the gateway work must rebuild (tf-r06u.28); three tests are its orphaned consumers.
+**The firelab test suite does not currently collect.** `npx vitest list` aborts at `test/wave-d-a-shape-b-input-identity-dedup/probe.test.ts` (imports a deleted sim `src/simulations/wave-d-a-shape-b-input-identity-dedup/index.ts`), and several tests import runtime subpaths that #765 deleted and are **not exported**: `@firegrid/runtime/composition/host-live`, `@firegrid/runtime/producers/codecs/mcp`, `@firegrid/runtime/composition/runtime-context-mcp-base-url`, `@firegrid/runtime/kernel`. So firelab is **not a passing gate today** — its drift is masked because it isn't in the green CI set. The deleted `composition/host-live` + `producers/codecs/mcp` path **is** the "deleted mcp-host" the gateway work must rebuild (tf-r06u.28); three tests are its orphaned consumers.
 
 Classification legend: **KEEP** (compliant) · **CONVERT** (→ proper sim: client-sdk driver + host(env) + runner→trace→prose finding) · **RELOCATE** (→ owning-package test/, exercises a private seam) · **DELETE** (no value / superseded).
 
@@ -26,7 +26,7 @@ Classification legend: **KEEP** (compliant) · **CONVERT** (→ proper sim: clie
 | `unified-kernel-validation` | `driver.ts` is clean (no `@firegrid/*`); `host.ts`/`substrate.ts`/`scenarios.ts` compose `@firegrid/runtime/unified` etc. (allowed for the composition tier). **BUT** `production-flow-acp-scenario.ts` + `production-flow-acp-live-scenario.ts` drive `AcpSessionLive` + `LocalProcessSandboxProvider` directly (private seam), and `firegrid-client-scenarios.ts` uses `@firegrid/client-sdk` (public). | **KEEP** (canonical #765 validation sim) — but **FLAG**: the `production-flow-acp-*` scenarios are private-seam codec drivers (candidate RELOCATE to `runtime/test`, same shape as the tf-r06u.12 live test). Owner = the #765 validation track; do not rip up unilaterally. Also fix the latent `acp-agent.js`→`index.js` bin bug (see tf-r06u.12 finding). |
 | `channel-completion-contracts` | `probe.ts` imports `@firegrid/protocol/channels` + `/channels/router` (exported public protocol contracts); `test/.../probe.test.ts` imports the sim only | **KEEP** as public-surface probe (protocol channels are a published surface), pending confirmation it asserts public outputs only. |
 | `child-output-existing-channel-router` | `probe.ts` imports `@firegrid/runtime/channels` (internal) + protocol channels/session-facade/observations | **RELOCATE** → `runtime/test` (reaches `runtime/channels` internals). |
-| `shape-c-non-recursive-start` | `index.ts`+`public-facade.ts`+`runtime.ts`; imports only `@firegrid/tiny-firegrid` (self). Shape C deleted wholesale by #765. | **DELETE** (superseded — Shape C abandoned). |
+| `shape-c-non-recursive-start` | `index.ts`+`public-facade.ts`+`runtime.ts`; imports only `@firegrid/firelab` (self). Shape C deleted wholesale by #765. | **DELETE** (superseded — Shape C abandoned). |
 | `shape-c-terminal-ordering` | same | **DELETE** (superseded). |
 
 ## C. `test/**`

@@ -132,7 +132,7 @@ If asked "what now?", answer:
 
 1. Dispatch a narrow carveout-reduction lane against one or two files from the
    8-file list.
-2. Dispatch a surface-hygiene lane: barrel-export audit, tiny-firegrid
+2. Dispatch a surface-hygiene lane: barrel-export audit, firelab
    methodology/examples sweep, and `hostProjectionObserver` removal path.
 3. Dispatch projection-surface cleanup from `tf-aago`: client SDK + CLI presets
    lower to protocol launch/channel contracts, not a separate config DSL.
@@ -326,7 +326,7 @@ If asked "what now?", answer:
   `@firegrid/client`/`runtime-host`/`agent-tools` surfaces, and
   `client-sdk/src/internal/projection-wait.ts` still mentions the deleted
   durable-tools wait router.
-- Before treating tiny-firegrid runs as gates, verify the runner fails the
+- Before treating firelab runs as gates, verify the runner fails the
   process on driver failure. An intermediate `acp-sdk-example-agent` run had a
   driver span status error while `simulate:run` still exited zero with
   `outcome=DriverCompleted`.
@@ -350,8 +350,8 @@ git grep -n "RuntimeControlRequestWorkflowEngineLive\\|HostRuntimeObservationSub
 git grep -n "durable-tools wait_router\\|@firegrid/client\\|runtime-host\\|@firegrid/runtime/agent-tools" origin/main -- packages docs
 bash scripts/lane-sweep.sh --json
 gh pr list --state open --limit 20 --json number,title,isDraft,mergeStateStatus,statusCheckRollup,url
-pnpm --filter @firegrid/tiny-firegrid simulate:run acp-sdk-example-agent
-pnpm --filter @firegrid/tiny-firegrid simulate:perf 2026-05-20T22-03-21-597Z__acp-sdk-example-agent
+pnpm --filter @firegrid/firelab simulate:run acp-sdk-example-agent
+pnpm --filter @firegrid/firelab simulate:perf 2026-05-20T22-03-21-597Z__acp-sdk-example-agent
 ```
 
 ## If Asked To Dispatch

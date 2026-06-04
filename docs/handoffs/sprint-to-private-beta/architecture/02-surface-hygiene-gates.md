@@ -47,7 +47,7 @@ Goal: examples validate public surfaces instead of normalizing internal imports.
 
 Acceptance:
 
-- `packages/tiny-firegrid/docs/methodology.md` does not instruct new sims to use
+- `packages/firelab/docs/methodology.md` does not instruct new sims to use
   `hostProjectionObserver` from `@firegrid/host-sdk`;
 - current sims using that helper are migrated to one of:
   - client-sdk waits for client-visible assertions;

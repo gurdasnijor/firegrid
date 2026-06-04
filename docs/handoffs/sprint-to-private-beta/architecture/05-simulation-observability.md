@@ -4,7 +4,7 @@
 
 Candidate handoff sim:
 
-`packages/tiny-firegrid/src/simulations/acp-sdk-example-agent/`
+`packages/firelab/src/simulations/acp-sdk-example-agent/`
 
 Purpose: exercise the installed `@agentclientprotocol/sdk` example agent through
 the public Firegrid client/session projection, not through host-sdk internals.
@@ -34,7 +34,7 @@ Latest clean run:
 
 Trace:
 
-`packages/tiny-firegrid/.simulate/runs/2026-05-20T22-03-21-597Z__acp-sdk-example-agent/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-05-20T22-03-21-597Z__acp-sdk-example-agent/trace.jsonl`
 
 Perf read:
 
@@ -69,7 +69,7 @@ Observed gaps:
 One intermediate failed run produced a driver span with error status while
 `simulate:run` still exited zero with `outcome=DriverCompleted`.
 
-Before tiny-firegrid runs become private-beta gates:
+Before firelab runs become private-beta gates:
 
 - driver span errors must fail the simulation command;
 - failed driver exits must fail the simulation command;
@@ -97,7 +97,7 @@ Known cleanup:
 
 ## Methodology Rewrite
 
-`packages/tiny-firegrid/docs/methodology.md` should say:
+`packages/firelab/docs/methodology.md` should say:
 
 - drivers should use public client-sdk/session APIs when validating public
   behavior;

@@ -39,7 +39,7 @@ The experiment should use these workbench capabilities directly:
 - tool metadata can describe the available channels;
 - trace artifacts record channel dispatch, tool calls, permission flow, and
   session output;
-- deterministic tiny-firegrid simulations can replay the same shapes for
+- deterministic firelab simulations can replay the same shapes for
   regression coverage.
 
 The implementation test is therefore not "can we write a custom coordinator?"
@@ -497,12 +497,12 @@ for outputs, and starts a selector session to choose or combine results.
 
 ---
 
-## tiny-firegrid Implementation Shape
+## firelab Implementation Shape
 
 Implement the repeatable evidence path under:
 
 ```text
-packages/tiny-firegrid/src/simulations/agent-coordination-patterns/
+packages/firelab/src/simulations/agent-coordination-patterns/
   board.ts
   driver.ts
   fixture-agent.ts

@@ -1,4 +1,4 @@
-# tiny-firegrid Strategy: The Software Factory as North Star
+# firelab Strategy: The Software Factory as North Star
 
 ## §1 — What we're building toward
 
@@ -166,7 +166,7 @@ grows the accessor that removes the need. Some apparent reach-pasts are
 intended public surface that just hasn't been documented as such; the
 toy's discipline is what adjudicates the difference.
 
-That's the criterion `tiny-firegrid` is converging toward. The toy's
+That's the criterion `firelab` is converging toward. The toy's
 configurations exist to validate, one capability at a time, that the
 surface the factory needs is real and expressible. When a configuration
 that wires the factory's minimal slice — a trigger, a parent context, a
@@ -289,7 +289,7 @@ some such imports are gaps; some are intended public surface that
 simply isn't documented as such; only investigation can tell which is
 which.
 
-The relationship between these artifacts and `tiny-firegrid` is
+The relationship between these artifacts and `firelab` is
 complementary. The factory app validates *practicability* — can a real
 consumer build the factory today, and where does it have to reach below
 the public surface to do so. The toy validates *expressibility* — can
@@ -350,12 +350,12 @@ things. These are the capabilities the rest of this document refers to.
    substrate is the log.
 
 These are the seven capabilities. The rest of this document is about how
-Firegrid exposes them and how `tiny-firegrid` proves they're really
+Firegrid exposes them and how `firelab` proves they're really
 exposed.
 
-## §8 — How tiny-firegrid converges
+## §8 — How firelab converges
 
-`tiny-firegrid` is a small package inside the Firegrid monorepo whose
+`firelab` is a small package inside the Firegrid monorepo whose
 only job is to prove the capabilities in §7 are real and accessible
 through Firegrid's public surface. It does this by writing
 configurations — small TypeScript files that wire a specific capability
@@ -430,8 +430,8 @@ For the artifacts grounding §6.5:
 
 For operational state:
 
-- `packages/tiny-firegrid/FINDINGS.md` — the findings ledger
-- `packages/tiny-firegrid/CONFIGS.md` — the configurations index
+- `packages/firelab/FINDINGS.md` — the findings ledger
+- `packages/firelab/CONFIGS.md` — the configurations index
 
 For current operational state — active threads, in-flight findings,
 configuration progress — see `FINDINGS.md` and `CONFIGS.md`. This

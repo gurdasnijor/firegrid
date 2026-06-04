@@ -14,7 +14,7 @@ const requireFromTest = createRequire(import.meta.url)
 const tsxCli = requireFromTest.resolve("tsx/cli")
 const fakeAgent = path.join(
   repoRoot,
-  "packages/tiny-firegrid/src/bin/fake-acp-agent-process.ts",
+  "packages/firelab/src/bin/fake-acp-agent-process.ts",
 )
 
 const REQUIRED_ZED_TRACE_SPANS = [

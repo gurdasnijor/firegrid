@@ -19,7 +19,7 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@firegrid/tiny-firegrid#test": {
+    "@firegrid/firelab#test": {
       "dependsOn": ["^build"],
       "outputs": [],
       "cache": false

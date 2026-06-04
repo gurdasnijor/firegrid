@@ -16,7 +16,7 @@
     "**/*.test.tsx",
     "**/*.test.mts",
     "**/__tests__/**",
-    "packages/tiny-firegrid/**"
+    "packages/firelab/**"
   ],
   "reporters": [
     "console",

@@ -6,7 +6,7 @@ Status: draft — finding + framing for coordinator signoff, NO production code
 Created: 2026-05-17
 Owner: Firegrid Host SDK (sidecar `sidecar/runtime-start-deps`)
 
-Resolves: `packages/tiny-firegrid/FINDINGS.md` → TFIND-029
+Resolves: `packages/firelab/FINDINGS.md` → TFIND-029
 "`RuntimeStartCapabilityLive` should enumerate workflow support dependencies."
 
 Depends on (gating): TFIND-005 "Workflow layer composition leaks type

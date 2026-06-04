@@ -40,7 +40,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   // Force-close lingering connections before graceful stop — same pattern
-  // tiny-firegrid live-substrate tests use to avoid socket starvation under
+  // firelab live-substrate tests use to avoid socket starvation under
   // parallel preflight load.
   ;(server as unknown as {
     server?: { closeAllConnections?: () => void }

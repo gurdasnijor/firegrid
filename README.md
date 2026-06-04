@@ -275,9 +275,9 @@ sandbox, with a captured trace — via the local simulations (no credentials
 needed for the default scenario):
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:list
-pnpm --filter @firegrid/tiny-firegrid simulate:run unified-kernel-validation
-pnpm --filter @firegrid/tiny-firegrid simulate:show   # inspect the captured trace
+pnpm --filter @firegrid/firelab simulate:list
+pnpm --filter @firegrid/firelab simulate:run unified-kernel-validation
+pnpm --filter @firegrid/firelab simulate:show   # inspect the captured trace
 ```
 
 Run a host that binds to a durable-streams backend and stays alive for clients:
@@ -286,7 +286,7 @@ Run a host that binds to a durable-streams backend and stays alive for clients:
 DURABLE_STREAMS_BASE_URL=... FIREGRID_RUNTIME_NAMESPACE=... pnpm firegrid host
 ```
 
-The simulations in `packages/tiny-firegrid` are the best way to inspect real
+The simulations in `packages/firelab` are the best way to inspect real
 traces while the public client API is still settling.
 
 ---
@@ -299,7 +299,7 @@ traces while the public client API is still settling.
 | `@firegrid/runtime` | Durable runtime internals and workflow engine integration |
 | `@firegrid/host-sdk` | Host composition and channel bindings |
 | `@firegrid/client-sdk` | App/client surface over Firegrid sessions and channels |
-| `@firegrid/tiny-firegrid` | Local simulations and trace artifacts |
+| `@firegrid/firelab` | Local simulations and trace artifacts |
 
 Most users start with the client/session surface. Contributors should read the
 architecture docs before changing package boundaries.
@@ -329,7 +329,7 @@ pnpm lint
 
 - [Factory vision](docs/vision/factory-vision.md)
 - [Canon docs](docs/cannon/README.md)
-- [tiny-firegrid guide](packages/tiny-firegrid/README.md)
+- [firelab guide](packages/firelab/README.md)
 - [Client SDK README](packages/client-sdk/README.md)
 
 ---

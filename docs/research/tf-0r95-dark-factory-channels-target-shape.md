@@ -7,7 +7,7 @@ Status: prep note, blocked on `tf-kddg` first draft or ping-back for the generic
 - `docs/architecture/host-sdk-runtime-boundary.md`
 - `docs/cannon/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md`
 - `br show tf-kddg`
-- `packages/tiny-firegrid/src/simulations/dark-factory/host.ts`
+- `packages/firelab/src/simulations/dark-factory/host.ts`
 
 ## Relevant ACIDs
 
@@ -61,7 +61,7 @@ the body-plan channels in dark-factory host composition.
 Prefer a sibling module to keep `host.ts` readable:
 
 ```ts
-// packages/tiny-firegrid/src/simulations/dark-factory/channels.ts
+// packages/firelab/src/simulations/dark-factory/channels.ts
 import { Context, Effect, Layer, Schema } from "effect"
 import {
   approvalChannel,
@@ -75,23 +75,23 @@ import {
 } from "@firegrid/host-sdk"
 
 export class FactoryEventsChannel extends Context.Tag(
-  "tiny-firegrid/dark-factory/FactoryEventsChannel",
+  "firelab/dark-factory/FactoryEventsChannel",
 )<FactoryEventsChannel, IngressChannel<typeof DarkFactoryFactRowSchema>>() {}
 
 export class PlanReadyEventChannel extends Context.Tag(
-  "tiny-firegrid/dark-factory/PlanReadyEventChannel",
+  "firelab/dark-factory/PlanReadyEventChannel",
 )<PlanReadyEventChannel, BidirectionalChannel<typeof PlanReadyEventSchema>>() {}
 
 export class DmOperatorIngressChannel extends Context.Tag(
-  "tiny-firegrid/dark-factory/DmOperatorIngressChannel",
+  "firelab/dark-factory/DmOperatorIngressChannel",
 )<DmOperatorIngressChannel, IngressChannel<typeof OperatorMessageSchema>>() {}
 
 export class NotificationOperatorEgressChannel extends Context.Tag(
-  "tiny-firegrid/dark-factory/NotificationOperatorEgressChannel",
+  "firelab/dark-factory/NotificationOperatorEgressChannel",
 )<NotificationOperatorEgressChannel, EgressChannel<typeof OperatorMessageSchema>>() {}
 
 export class ApprovalOperatorChannel extends Context.Tag(
-  "tiny-firegrid/dark-factory/ApprovalOperatorChannel",
+  "firelab/dark-factory/ApprovalOperatorChannel",
 )<ApprovalOperatorChannel, CallableChannel<typeof ApprovalRequestSchema, typeof ApprovalResponseSchema>>() {}
 
 export const DarkFactoryChannelsLive = (options: {
@@ -175,7 +175,7 @@ the `approval.operator` capability.
 5. The dark-factory host currently has no durable operator for operator DM or
    notification rows. If `tf-kddg` does not provide test/fake bindings for
    human channels, this bead should add the smallest dark-factory-local binding
-   surface rather than moving generic human-channel code into tiny-firegrid.
+   surface rather than moving generic human-channel code into firelab.
 
 ## Implementation Checklist After `tf-kddg`
 

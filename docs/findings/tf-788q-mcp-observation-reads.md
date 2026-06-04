@@ -23,7 +23,7 @@ The production `FiregridMcpServerLayer` durable-streams branch wires those exist
 
 Successful run:
 
-`packages/tiny-firegrid/.simulate/runs/2026-06-03T12-28-48-390Z__mcp-client-sdk-observations/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-06-03T12-28-48-390Z__mcp-client-sdk-observations/trace.jsonl`
 
 Evidence:
 
@@ -32,7 +32,7 @@ Evidence:
 - Permission round-trip remained MCP Tasks-backed: trace line 343 has `firegrid.client.mcp.rpc.tasks/update`, line 362 has `firegrid.agent_event_pipeline.acp.permission_response`, line 383 has `unified.permission-roundtrip.execute`, and line 432 has `firegrid.client.mcp.rpc.tasks/result`.
 - Driver annotations at trace line 434 record `watch_observed_child=true`, `snapshot_agent_output_count=21`, `initial_output_matched=true`, `permission_wait_matched=true`, `sent_task_update=true`, `result_had_marker=true`, and `permission_roundtrip_completed=true`.
 
-The simulation that produced this trace is [driver.ts](/Users/gnijor/gurdasnijor/firegrid-worktrees/tf-788q-mcp-observation-reads/packages/tiny-firegrid/src/simulations/mcp-client-sdk-observations/driver.ts:119) and uses the production host layer via [index.ts](/Users/gnijor/gurdasnijor/firegrid-worktrees/tf-788q-mcp-observation-reads/packages/tiny-firegrid/src/simulations/mcp-client-sdk-observations/index.ts:8).
+The simulation that produced this trace is [driver.ts](/Users/gnijor/gurdasnijor/firegrid-worktrees/tf-788q-mcp-observation-reads/packages/firelab/src/simulations/mcp-client-sdk-observations/driver.ts:119) and uses the production host layer via [index.ts](/Users/gnijor/gurdasnijor/firegrid-worktrees/tf-788q-mcp-observation-reads/packages/firelab/src/simulations/mcp-client-sdk-observations/index.ts:8).
 
 ## Boundary
 

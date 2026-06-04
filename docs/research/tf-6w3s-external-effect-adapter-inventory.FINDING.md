@@ -27,7 +27,7 @@ Static grep pass over the monorepo for:
 Primary production-source confirmation query:
 
 ```bash
-rg -n --glob 'packages/*/src/**/*.ts' --glob '!packages/tiny-firegrid/src/simulations/**' --glob '!**/*.test.ts' --glob '!**/test/**' \
+rg -n --glob 'packages/*/src/**/*.ts' --glob '!packages/firelab/src/simulations/**' --glob '!**/*.test.ts' --glob '!**/test/**' \
   -e 'Effect\.tryPromise\s*\(' -e '\bawait\s+fetch\s*\(' -e '\bfetch\s*\(' \
   -e 'HttpClientRequest\.' -e 'FetchHttpClient|NodeHttpClient' \
   -e 'node:http|createServer|server\.listen' \
@@ -111,23 +111,23 @@ These were still recorded because the source-read asked for a monorepo grep pass
 
 | Call site group | External effect | Status |
 |---|---|---|
-| `packages/tiny-firegrid/src/runner/telemetry.ts:3,12,13,120,215` | OTLP HTTP client, `execSync`, trace file writer | Simulation runner harness, excluded |
-| `packages/tiny-firegrid/src/runner/runtime.ts:20,21,134,138` | run-directory mkdir/stat/write | Simulation runner harness, excluded |
-| `packages/tiny-firegrid/src/runner/list.ts:1,39` | simulation directory read | Simulation runner harness, excluded |
-| `packages/tiny-firegrid/src/runner/show.ts:2,118` | run directory read | Simulation runner harness, excluded |
-| `packages/tiny-firegrid/src/runner/trace.ts:2,83,95,114` | trace file/directory read | Simulation runner harness, excluded |
-| `packages/tiny-firegrid/src/index.ts:55,63,83,93,95,113,124` | Effect CLI `Command.make` declarations | CLI parsing only, no child process spawn |
-| `packages/tiny-firegrid/src/simulations/codec-stdio-jsonl-live/driver.ts:39,47,73,74` | direct `child_process.spawn("codex", ...)` and stdio streams | Simulation driver, excluded |
-| `packages/tiny-firegrid/src/simulations/codec-stdio-jsonl-live/host.ts:7,170,193` | local HTTP server in sim host | Simulation host, excluded |
-| `packages/tiny-firegrid/src/simulations/inv4-channel-registry/host.ts:17,261,284` | local HTTP server in sim host | Simulation host, excluded |
-| `packages/tiny-firegrid/src/simulations/inv2-waitforworkflow-layered/mcp-server.ts:46` | local MCP HTTP server in sim fixture | Simulation fixture, excluded |
-| `packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/mcp-server.ts:34` | local MCP HTTP server in sim fixture | Simulation fixture, excluded |
-| `packages/tiny-firegrid/src/simulations/inv5-cross-agent-event-choreography/host.ts:54` | local HTTP server in sim host | Simulation host, excluded |
-| `packages/tiny-firegrid/src/simulations/dark-factory/driver.ts:6,65,67,68` | artifact directory/file writes | Simulation artifact writer, excluded |
-| `packages/tiny-firegrid/src/simulations/phase1-lane6-new-shape-replay/driver.ts:4` | `Effect.tryPromise` harness body | Simulation driver, excluded |
-| `packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/driver.ts:4` | `Effect.tryPromise` harness body | Simulation driver, excluded |
-| `packages/tiny-firegrid/src/simulations/phase0-wave-2b-stream-zip-restart-replay/driver.ts:4` | `Effect.tryPromise` harness body | Simulation driver, excluded |
-| retired tiny-firegrid migration backlog | legacy spike strings using HTTP, fs, stdin/stdout, `Effect.tryPromise` | Deleted from the active simulation tree; no longer a live exclusion surface |
+| `packages/firelab/src/runner/telemetry.ts:3,12,13,120,215` | OTLP HTTP client, `execSync`, trace file writer | Simulation runner harness, excluded |
+| `packages/firelab/src/runner/runtime.ts:20,21,134,138` | run-directory mkdir/stat/write | Simulation runner harness, excluded |
+| `packages/firelab/src/runner/list.ts:1,39` | simulation directory read | Simulation runner harness, excluded |
+| `packages/firelab/src/runner/show.ts:2,118` | run directory read | Simulation runner harness, excluded |
+| `packages/firelab/src/runner/trace.ts:2,83,95,114` | trace file/directory read | Simulation runner harness, excluded |
+| `packages/firelab/src/index.ts:55,63,83,93,95,113,124` | Effect CLI `Command.make` declarations | CLI parsing only, no child process spawn |
+| `packages/firelab/src/simulations/codec-stdio-jsonl-live/driver.ts:39,47,73,74` | direct `child_process.spawn("codex", ...)` and stdio streams | Simulation driver, excluded |
+| `packages/firelab/src/simulations/codec-stdio-jsonl-live/host.ts:7,170,193` | local HTTP server in sim host | Simulation host, excluded |
+| `packages/firelab/src/simulations/inv4-channel-registry/host.ts:17,261,284` | local HTTP server in sim host | Simulation host, excluded |
+| `packages/firelab/src/simulations/inv2-waitforworkflow-layered/mcp-server.ts:46` | local MCP HTTP server in sim fixture | Simulation fixture, excluded |
+| `packages/firelab/src/simulations/inv2-waitforworkflow/mcp-server.ts:34` | local MCP HTTP server in sim fixture | Simulation fixture, excluded |
+| `packages/firelab/src/simulations/inv5-cross-agent-event-choreography/host.ts:54` | local HTTP server in sim host | Simulation host, excluded |
+| `packages/firelab/src/simulations/dark-factory/driver.ts:6,65,67,68` | artifact directory/file writes | Simulation artifact writer, excluded |
+| `packages/firelab/src/simulations/phase1-lane6-new-shape-replay/driver.ts:4` | `Effect.tryPromise` harness body | Simulation driver, excluded |
+| `packages/firelab/src/simulations/runtime-tool-use-executor-contract/driver.ts:4` | `Effect.tryPromise` harness body | Simulation driver, excluded |
+| `packages/firelab/src/simulations/phase0-wave-2b-stream-zip-restart-replay/driver.ts:4` | `Effect.tryPromise` harness body | Simulation driver, excluded |
+| retired firelab migration backlog | legacy spike strings using HTTP, fs, stdin/stdout, `Effect.tryPromise` | Deleted from the active simulation tree; no longer a live exclusion surface |
 | `packages/*/test/**`, `packages/**/*.test.ts`, fixtures | `fetch`, `FetchHttpClient`, file I/O, web streams, spawned fixture scripts | Tests/fixtures, excluded |
 | `scripts/**` | shell/node tooling fs, process, and HTTP-adjacent commands | Repository tooling, excluded |
 

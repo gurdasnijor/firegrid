@@ -49,4 +49,4 @@ The replay path (point-`get` `assignedInputs[${contextId}/${cursor}]` → `input
 - `packages/effect-durable-operators/src/DurableTable.ts` (`:722` rows()/`subscribeChanges`; `:504` `appendInsertWithPrimaryKeyFence`; `:772-789` `Appended`→`Inserted`, offset discarded).
 - `docs/sdds/SDD_RUNTIME_CONTEXT_WORKFLOW_INPUT_TABLE_CUTOVER.md` Amendment 1 §A2 (P3-A/P3-B), §A4 (forbidden surfaces / stop conditions).
 - `tf-e5rf`/#651 (F3 wakeup: `engine.resume` + `Workflow.suspend` proven — the *wakeup* half is ready; this STOP is the *ordering* half).
-- `packages/tiny-firegrid/src/simulations/tiny-input-append-wakeup/FINDING.md` (superseded write-time shape; does not validate P3 ordering).
+- `packages/firelab/src/simulations/tiny-input-append-wakeup/FINDING.md` (superseded write-time shape; does not validate P3 ordering).

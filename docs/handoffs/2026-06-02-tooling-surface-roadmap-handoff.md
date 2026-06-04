@@ -12,7 +12,7 @@ one-off `.mjs` wrappers and drift-prone baseline JSON.
 - **knip + jscpd → native strict-0.** `lint:dead = knip --treat-config-hints-as-errors`,
   `lint:dup = jscpd packages/*/src` (`.jscpd.json` threshold 0). Deleted the `.mjs`
   count-wrappers + `.knip-baseline.json` + orphan `runtime-shape-baseline*.json`.
-- **trace-seam coverage co-located** → `packages/tiny-firegrid/src/runner/seam-coverage.ts`
+- **trace-seam coverage co-located** → `packages/firelab/src/runner/seam-coverage.ts`
   (effect-native, reuses `runner/trace.ts`) + `bin/` entries. Both `scripts/` copies gone.
 - **Retired** (one-off-by-one-off, evaluated as wrappers / settled-migration scaffolding):
   `public-surface-check`, `layout-check`, `tooling.mjs` (`arch:deps` depcruise wrapper,
@@ -126,7 +126,7 @@ Full plan is in the bead (`br show tf-q6vf`). Summary:
 - **`tf-h1ld` (filed):** product `node:http`/`node:net`/`node:stream` → `@effect/platform`.
   7 sites: `runtime/src/unified/mcp-host/mcp-host.ts` (`node:http` `createServer`),
   `runtime/src/channels/verified-webhook/source-live.ts` (`node:http`/`node:net`),
-  `runtime/src/bin/acp.ts` (`node:stream`), and the tiny-firegrid sim equivalents
+  `runtime/src/bin/acp.ts` (`node:stream`), and the firelab sim equivalents
   (`simulations/verified-webhook-wait/host.ts`, `bin/fake-acp-agent-process.ts`). Migrate to
   `@effect/platform` `HttpServer` / `Stream`; then extend `local/no-raw-node-io` to
   `node:http`/`net`/`stream`, **drop the `bin/` exemption**, and remove the escape-hatches.

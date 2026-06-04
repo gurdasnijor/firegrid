@@ -1,7 +1,7 @@
 # DELIVERY — tf-7bp §6 action-result survives host restart
 
 Status authority: bead `tf-7bp`. Self-contained sim
-`packages/tiny-firegrid/src/simulations/action-survives-restart-pipeline.ts`
+`packages/firelab/src/simulations/action-survives-restart-pipeline.ts`
 (auto-discovered; no `configurations/` import; no registry edit).
 Lane-built, deterministic, no LLM (independent of the #395 external
 Anthropic-quota blocker).

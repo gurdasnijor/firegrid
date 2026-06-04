@@ -33,7 +33,7 @@ To keep the loop moving (and to get a different-provider control), we swapped th
 
 ## 2. Method
 
-1. **Hardened the elicitation driver** (`packages/tiny-firegrid/src/simulations/acp-tool-elicitation/driver.ts`) so contaminated runs are *contained and labeled* rather than smeared:
+1. **Hardened the elicitation driver** (`packages/firelab/src/simulations/acp-tool-elicitation/driver.ts`) so contaminated runs are *contained and labeled* rather than smeared:
    - Per-turn **outcome classification** → span attr `firegrid.acp_elicitation.outcome` ∈ `{ok, empty_end_turn, provider_overloaded, acp_timeout, internal_error, driver_error}`.
    - **Fail-fast**: abort the matrix after **2 consecutive** failure outcomes (provider/timeout/internal/driver), skipping the remaining prompts so one bad provider window can't drain the runner budget. Driver span records `aborted` / `aborted_after` / `planned_turn_count` vs `turn_count`.
    - **Grouped + reordered prompts** (`prompts.ts`): `baseline` (cheap, runs first as a de-facto preflight) → `channel` → `child` → `scheduler`; each turn span carries `firegrid.acp_elicitation.group`.
@@ -152,9 +152,9 @@ Decisive queries (run against the per-run `trace.jsonl`):
 
 | Concern | Path |
 |---|---|
-| Hardened elicitation driver (classification + fail-fast) | `packages/tiny-firegrid/src/simulations/acp-tool-elicitation/driver.ts` |
-| Grouped prompt matrix | `packages/tiny-firegrid/src/simulations/acp-tool-elicitation/prompts.ts` |
-| Agent swap (codex-acp; revert block to claude-acp in comment) | `packages/tiny-firegrid/src/simulations/acp-tool-elicitation/host.ts` |
+| Hardened elicitation driver (classification + fail-fast) | `packages/firelab/src/simulations/acp-tool-elicitation/driver.ts` |
+| Grouped prompt matrix | `packages/firelab/src/simulations/acp-tool-elicitation/prompts.ts` |
+| Agent swap (codex-acp; revert block to claude-acp in comment) | `packages/firelab/src/simulations/acp-tool-elicitation/host.ts` |
 | Trace-health analyzer | `scripts/acp-trace-health.py` |
 | ACP stdio edge (typed `agent_silent` reason) | `packages/host-sdk/src/host/acp-stdio-edge.ts` |
 | Codex tool mapper (no filtering; `mcp.${server}.${tool}` naming) | `agentclientprotocol/codex-acp:src/CodexToolCallMapper.ts` |
@@ -169,11 +169,11 @@ Decisive queries (run against the per-run `trace.jsonl`):
 ```bash
 # codex-acp (current host wiring): needs OPENAI_API_KEY in env
 TINY_FIREGRID_TIMEOUT="300 seconds" \
-  pnpm --filter @firegrid/tiny-firegrid simulate:run acp-tool-elicitation
+  pnpm --filter @firegrid/firelab simulate:run acp-tool-elicitation
 
 # analyze
 python3 scripts/acp-trace-health.py \
-  packages/tiny-firegrid/.simulate/runs/<run-id>/trace.jsonl
+  packages/firelab/.simulate/runs/<run-id>/trace.jsonl
 
 # ground-truth tool calls (the metric the health report can't be trusted on):
 #   extract `tool_call` titles from firegrid.wire.raw attributes (see §5)

@@ -24,7 +24,7 @@
 <rect x="374" y="63" width="6.5" height="18" fill="#e8821e" opacity="0.52"/>
 <rect x="381" y="63" width="6.5" height="18" fill="#e8821e" opacity="0.87"/>
 <rect x="388" y="63" width="6.5" height="18" fill="#e8821e" opacity="0.52"/>
-<text x="354" y="99" text-anchor="end">tiny-firegrid/src/runner/runtime.ts</text>
+<text x="354" y="99" text-anchor="end">firelab/src/runner/runtime.ts</text>
 <rect x="360" y="84" width="1120" height="20" fill="#fafafa" stroke="#eee"/>
 <rect x="360" y="85" width="6.5" height="18" fill="#e8821e" opacity="0.40"/>
 <text x="354" y="121" text-anchor="end">runtime/src/engine/internal/engine-runtime.ts</text>
@@ -76,7 +76,7 @@
 <rect x="1074" y="217" width="6.5" height="18" fill="#999" opacity="0.30"/>
 <rect x="1081" y="217" width="6.5" height="18" fill="#e8821e" opacity="0.56"/>
 <rect x="1095" y="217" width="6.5" height="18" fill="#e8821e" opacity="0.52"/>
-<text x="354" y="253" text-anchor="end">tiny-firegrid/src/simulations/control-plane-cancel-clo</text>
+<text x="354" y="253" text-anchor="end">firelab/src/simulations/control-plane-cancel-clo</text>
 <rect x="360" y="238" width="1120" height="20" fill="#fafafa" stroke="#eee"/>
 <rect x="388" y="239" width="6.5" height="18" fill="#999" opacity="0.30"/>
 <rect x="395" y="239" width="6.5" height="18" fill="#e8821e" opacity="0.40"/>

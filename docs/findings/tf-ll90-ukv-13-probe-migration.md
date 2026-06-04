@@ -2,7 +2,7 @@
 
 Date: 2026-06-01
 Run: `2026-06-01T21-12-49-123Z__unified-kernel-validation`
-Trace: `packages/tiny-firegrid/.simulate/runs/2026-06-01T21-12-49-123Z__unified-kernel-validation/trace.jsonl`
+Trace: `packages/firelab/.simulate/runs/2026-06-01T21-12-49-123Z__unified-kernel-validation/trace.jsonl`
 Outcome: `DriverCompleted`, 433 spans, sides `driver=235,sdk=184,subprocess=13`.
 
 ## Summary

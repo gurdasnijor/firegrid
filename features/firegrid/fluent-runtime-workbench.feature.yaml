@@ -29,7 +29,7 @@ components:
 
   SIM:
     requirements:
-      1: "A tiny-firegrid launchHost:false simulation exercises the fluent-runtime store against the embedded Durable Streams server."
+      1: "A firelab launchHost:false simulation exercises the fluent-runtime store against the embedded Durable Streams server."
       2: "The simulation emits trace spans for session creation, turn append-and-close, turn closed read-back, and fork support probing."
       3: "The simulation executes a SandboxProvider activity from a fluent-firegrid workflow `run` step and replays the same journal without re-running the provider body."
 
@@ -38,4 +38,4 @@ constraints:
     requirements:
       1: "The first slice is limited to Effect, @effect/platform, effect-durable-streams, and package-local code."
       2: "Subscription/webhook claim-ack behavior is deferred until the Durable Streams server version surface is verified on the lane."
-      3: "SandboxProvider composition stays at the tiny-firegrid integration boundary and does not add an @firegrid/runtime dependency to @firegrid/fluent-runtime."
+      3: "SandboxProvider composition stays at the firelab integration boundary and does not add an @firegrid/runtime dependency to @firegrid/fluent-runtime."

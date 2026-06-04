@@ -50,7 +50,7 @@
         "test/**/*.ts"
       ]
     },
-    "packages/tiny-firegrid": {
+    "packages/firelab": {
       "entry": [
         "src/bin/**/*.ts",
         "src/simulations/*/index.ts"

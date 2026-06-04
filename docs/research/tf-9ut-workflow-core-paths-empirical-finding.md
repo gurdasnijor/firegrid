@@ -3,10 +3,10 @@
 Bead: `tf-9ut` · run: `2026-05-20T04-41-55-047Z__workflow-core-paths`
 
 Trace artifact:
-`packages/tiny-firegrid/.simulate/runs/2026-05-20T04-41-55-047Z__workflow-core-paths/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-05-20T04-41-55-047Z__workflow-core-paths/trace.jsonl`
 
 This is a measurement artifact, not a Shape A decision. The sim exists at
-`packages/tiny-firegrid/src/simulations/workflow-core-paths/` and is listed by
+`packages/firelab/src/simulations/workflow-core-paths/` and is listed by
 `simulate:list`. Its host pre-seeds one caller-owned fact source
 (`host.ts:20-22`, `host.ts:72-86`) and exposes it through
 `CallerOwnedFactStreams` (`host.ts:88-95`). Its driver launches real
@@ -36,7 +36,7 @@ be treated as stale baseline evidence for the fixed observability bug, not as
 the current Shape A input.
 
 ```bash
-TRACE=packages/tiny-firegrid/.simulate/runs/2026-05-20T04-41-55-047Z__workflow-core-paths/trace.jsonl
+TRACE=packages/firelab/.simulate/runs/2026-05-20T04-41-55-047Z__workflow-core-paths/trace.jsonl
 
 jq -rs '
   map(select(.name=="firegrid.durable_tools.wait_router.complete_match"))
@@ -58,7 +58,7 @@ Equivalent DuckDB sketch:
 
 ```sql
 CREATE TABLE spans AS
-SELECT * FROM read_json_auto('packages/tiny-firegrid/.simulate/runs/2026-05-20T04-41-55-047Z__workflow-core-paths/trace.jsonl');
+SELECT * FROM read_json_auto('packages/firelab/.simulate/runs/2026-05-20T04-41-55-047Z__workflow-core-paths/trace.jsonl');
 
 SELECT
   attributes['firegrid.wait.source'] AS source,
@@ -78,7 +78,7 @@ were dominated by `POST /mcp/runtime-context/:contextId` (7 spans / 291.2ms).
 Idle gaps above 1,000ms were 4,004ms, 1,251ms, 1,013ms, and 1,341ms.
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:perf \
+pnpm --filter @firegrid/firelab simulate:perf \
   2026-05-20T04-41-55-047Z__workflow-core-paths \
   --top 5 --idle-threshold-ms 1000
 ```

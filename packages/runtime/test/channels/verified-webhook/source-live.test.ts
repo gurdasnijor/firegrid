@@ -2,7 +2,7 @@
  * `makeVerifiedWebhookSource` helper integration test.
  *
  * Proves the helper compresses the per-adapter boilerplate from
- * `tiny-firegrid/src/simulations/linear-webhook-cookbook-composition/host.ts`
+ * `firelab/src/simulations/linear-webhook-cookbook-composition/host.ts`
  * (243 lines of host wiring per source) into one factory call per source,
  * while still routing through the existing channel + table + ingest stack:
  *

@@ -1,6 +1,6 @@
 # Runtime re-architecture — close-out: what's settled, what's actionable, what to simulate
 
-**Date:** 2026-05-22. **Supersedes** the "two blocking decisions" framing (dead) and is the action layer over the synthesis (`2026-05-22-runtime-rearch-synthesis.md`) + the four briefs (`rearch-Q1..Q4`). **Discipline:** every remaining unknown is paired with a `packages/tiny-firegrid` simulation that settles it empirically — no decisions made blind.
+**Date:** 2026-05-22. **Supersedes** the "two blocking decisions" framing (dead) and is the action layer over the synthesis (`2026-05-22-runtime-rearch-synthesis.md`) + the four briefs (`rearch-Q1..Q4`). **Discipline:** every remaining unknown is paired with a `packages/firelab` simulation that settles it empirically — no decisions made blind.
 
 ---
 
@@ -78,7 +78,7 @@ The structural target is now sharper: the runtime body should not read the dense
 
 ## 3. Remaining unknowns → the simulation that settles each
 
-Per the tiny-firegrid method: build a sim, get empirical data, verify/falsify. Each open item below maps to a sim (new or an extension of an existing one).
+Per the firelab method: build a sim, get empirical data, verify/falsify. Each open item below maps to a sim (new or an extension of an existing one).
 
 ### S1 — durability gap (axis 2) · **highest value** · new sim `input-suspend-crash-recovery`
 Falsify/confirm the gap CC3 inferred from code, then measure candidate fixes.

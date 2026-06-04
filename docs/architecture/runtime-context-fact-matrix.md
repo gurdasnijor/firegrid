@@ -4,7 +4,7 @@ Audience: anyone touching the per-event RuntimeContext subscriber,
 adding a new fact kind, or debugging why a fact didn't advance state.
 
 Status: architectural reference. Invariants enforced by the
-`runtime-context-fact-matrix` tiny-firegrid simulation (clean-room
+`runtime-context-fact-matrix` firelab simulation (clean-room
 proof). Production code: `packages/runtime/src/subscribers/runtime-context/`.
 
 ## The matrix
@@ -144,8 +144,8 @@ for each.
 ## Ground Truth
 
 - Simulation:
-  `packages/tiny-firegrid/src/simulations/runtime-context-fact-matrix/`
-- Run: `pnpm --filter @firegrid/tiny-firegrid exec tsx src/index.ts run runtime-context-fact-matrix`
+  `packages/firelab/src/simulations/runtime-context-fact-matrix/`
+- Run: `pnpm --filter @firegrid/firelab exec tsx src/index.ts run runtime-context-fact-matrix`
 - Verdict span: `firegrid.tiny_fact_matrix.verdict` (attribute names match
   the invariants above)
 - Constraints doc: `docs/cannon/architecture/runtime-design-constraints.md`
@@ -157,7 +157,7 @@ for each.
 - Output table: `packages/runtime/src/tables/runtime-output.ts`
 - Sparse-vs-dense cursor walker (production):
   `packages/runtime/test/tables/runtime-context-state.sparse.test.ts`
-- Finding: `packages/tiny-firegrid/src/simulations/runtime-context-fact-matrix/FINDING.md`
+- Finding: `packages/firelab/src/simulations/runtime-context-fact-matrix/FINDING.md`
 
 ## Do Not
 

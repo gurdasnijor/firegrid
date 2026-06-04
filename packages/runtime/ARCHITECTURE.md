@@ -27,7 +27,7 @@ callers. Prefer explicit subpaths in new code:
 | --- | --- |
 | `@firegrid/runtime/composition/host-live` | Runtime host layers and config-derived host layers. |
 | `@firegrid/runtime/composition/host-public` | `startRuntime`, ingress helpers, and public host facade helpers. |
-| `@firegrid/runtime/engine/durable-streams-workflow-engine` | Firegrid-backed `@effect/workflow` engine adapter and durable state row types for engine tests and tiny-firegrid simulations. |
+| `@firegrid/runtime/engine/durable-streams-workflow-engine` | Firegrid-backed `@effect/workflow` engine adapter and durable state row types for engine tests and firelab simulations. |
 | `@firegrid/runtime/subscribers/{tool-dispatch,wait-router,scheduled-prompt,runtime-control}` | Runtime-owned Shape D workflow definitions, payload schemas, outcome schemas, and execution-id helpers. |
 | `@firegrid/runtime/events` | Normalized runtime agent event contracts and envelope helpers. |
 | `@firegrid/runtime/sources/codecs` | Scoped codec session contracts and concrete ACP / stdio JSONL session layers (Kafka-Connect "Source" tier — pure emitters). |

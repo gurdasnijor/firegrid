@@ -19,10 +19,10 @@ this map uses the corrected current state throughout.
 
 | Stale reference | Current reality |
 | --- | --- |
-| `apps/factory` (§A "real consumer side", §6.5) — "exercises several capabilities cleanly through public-shaped boundaries" | **Does not exist** (`apps/` is absent). The real-consumer proof role is now carried by **`packages/tiny-firegrid/` simulations over the public client/channel surface**. |
-| `packages/tiny-firegrid/FINDINGS.md` + `CONFIGS.md` (§9 "operational hook", §8 convergence) — markdown ledgers of gaps/configs | **Retired into beads** (br). Findings/configs are now beads with the `tfind:`/channel/spike labels; `bv --robot-triage` is the authority. No FINDINGS.md/CONFIGS.md files. |
-| "configurations" as the unit (§8) — small TS files wiring one capability | Now **simulations** under `packages/tiny-firegrid/src/simulations/<id>/{host,driver,index}.ts` (post-#426 runner shape), discovered by `simulate:list`. |
-| Capstone = `apps/factory` end-to-end | Capstone = **tiny-firegrid over public channels** (trigger→reviewed-action trace through the public client/channel surface). This is tf-l5cg. |
+| `apps/factory` (§A "real consumer side", §6.5) — "exercises several capabilities cleanly through public-shaped boundaries" | **Does not exist** (`apps/` is absent). The real-consumer proof role is now carried by **`packages/firelab/` simulations over the public client/channel surface**. |
+| `packages/firelab/FINDINGS.md` + `CONFIGS.md` (§9 "operational hook", §8 convergence) — markdown ledgers of gaps/configs | **Retired into beads** (br). Findings/configs are now beads with the `tfind:`/channel/spike labels; `bv --robot-triage` is the authority. No FINDINGS.md/CONFIGS.md files. |
+| "configurations" as the unit (§8) — small TS files wiring one capability | Now **simulations** under `packages/firelab/src/simulations/<id>/{host,driver,index}.ts` (post-#426 runner shape), discovered by `simulate:list`. |
+| Capstone = `apps/factory` end-to-end | Capstone = **firelab over public channels** (trigger→reviewed-action trace through the public client/channel surface). This is tf-l5cg. |
 
 ## §1 Capability map (§7 capabilities 1–7)
 
@@ -65,7 +65,7 @@ reviewed action, traced, over public channels" (tf-l5cg).
 1. **tf-7ecs — vision operational refresh (docs).** Fold §0's corrections into
    `docs/vision/factory-vision.md`: drop `apps/factory`, retire FINDINGS/CONFIGS
    references to the bead model, recast "configurations" as simulations, recast
-   the capstone as tiny-firegrid-over-public-channels. Independent; can run now.
+   the capstone as firelab-over-public-channels. Independent; can run now.
 2. **tf-o3x4 — delegation proof (Cap 4 → DELIVERED).** Prove parent→child
    delegation through the public surface (parent correlation, outside-observable,
    inside-resumable). Closes the one PARTIAL that isn't deferred-by-design.

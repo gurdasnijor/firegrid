@@ -30,7 +30,7 @@ must be blessed. It mainly identifies couplings option A must resolve.
 **Tier: source-verified fact.** The run never exercised permission/tool relay.
 The driver says each prompt waits briefly for output because the fixture would
 strand permission responses if it reached `requestPermission`
-(`packages/tiny-firegrid/src/simulations/per-event-runtime-context/driver.ts:14`).
+(`packages/firelab/src/simulations/per-event-runtime-context/driver.ts:14`).
 The trace summary confirms zero permission/tool/turn-complete outputs:
 `snapshot_permission_request_count=0`, `snapshot_tool_use_count=0`,
 `snapshot_turn_complete_count=0`, and output tags
@@ -66,10 +66,10 @@ without the relay caveat (`host.ts:4`). The evidence actually proves the direct
 session-input subset.
 
 **Punch-list:**
-- Amend `packages/tiny-firegrid/src/simulations/per-event-runtime-context/index.ts:7`
+- Amend `packages/firelab/src/simulations/per-event-runtime-context/index.ts:7`
   to say "proves the direct session-input subset" or equivalent, not full
   RuntimeContext adoption.
-- Amend `packages/tiny-firegrid/src/simulations/per-event-runtime-context/host.ts:4`
+- Amend `packages/firelab/src/simulations/per-event-runtime-context/host.ts:4`
   to carry the same caveat.
 - In `docs/findings/tf-c71h-per-event-runtime-context-workbench.md:130`, expand
   the migration coupling list beyond permission/tool and `host.permissions.respond`

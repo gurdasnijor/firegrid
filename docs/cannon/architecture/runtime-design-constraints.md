@@ -104,7 +104,7 @@ default answer for every runtime-shrink decision.
 The default path is:
 
 ```text
-prove the target in packages/tiny-firegrid
+prove the target in packages/firelab
   -> build the compliant production shape
   -> delete the wrong shape
 ```
@@ -122,9 +122,9 @@ would block a dispatched target-shape bead. "Preserve existing production
 behavior" is not a sufficient argument while the product has no production user
 state to preserve.
 
-`packages/tiny-firegrid` exists to make large architectural bets cheap. Any
+`packages/firelab` exists to make large architectural bets cheap. Any
 runtime SDD whose uncertainty is architectural rather than mechanical should
-first be expressed as a tiny-firegrid simulation. The simulation must answer a
+first be expressed as a firelab simulation. The simulation must answer a
 specific topology question, not produce another research brief. Its result is
 one of:
 
@@ -134,14 +134,14 @@ one of:
 - **RED:** the target edge fails; stop and revise the architecture before
   touching production code.
 
-Do not spend production effort improving a known-wrong edge when a tiny-firegrid
+Do not spend production effort improving a known-wrong edge when a firelab
 simulation can validate the shorter target edge faster. Bridge work is debt; in
 greenfield mode, debt is admitted only when it accelerates deletion.
 
-`packages/tiny-firegrid/` is the workbench. Production runtime code under
+`packages/firelab/` is the workbench. Production runtime code under
 `packages/runtime/`, `packages/host-sdk/`, and `packages/protocol/` is where
 validated shapes get *built*. The two roles do not blur, and validated
-tiny-firegrid modules do not graduate into production by copy/move:
+firelab modules do not graduate into production by copy/move:
 production code is written fresh against the simulation's answered
 contract, using production substrate, types, and Layer graph.
 
@@ -169,12 +169,12 @@ route, or agent-tool surface, answer these questions:
 3. Which canonical role is it: event producer, transform, or keyed subscriber?
 4. Does an existing primitive already own it: `DurableTable`, channel router,
    typed source observation, or a durable completion/event result row?
-5. Can the target edge be validated first in `packages/tiny-firegrid`?
+5. Can the target edge be validated first in `packages/firelab`?
 6. Does the proposed change comply with all seven constraints below?
 
 If the answer to 2 is "self-inflicted" or the answer to 6 is "no", stop and
 rewrite the work around the constraint. If the answer to 5 is "yes", prove the
-target edge in tiny-firegrid before touching production runtime code. Do not
+target edge in firelab before touching production runtime code. Do not
 land another parallel protocol,
 cursor, mailbox, request/claim/completion table, or operation-shaped workflow to
 make the current shape cheaper.
@@ -474,7 +474,7 @@ not allocate arrival-order sequences as durable authority.
 Gate result: in a greenfield codebase, production controller-owned write+arm is
 not the expected next step. It evolves the known-wrong parked-body edge. The
 active validation path is `tf-tvg1`: prove the shorter per-event
-workflow/keyed-subscriber RuntimeContext shape in tiny-firegrid, then rewrite
+workflow/keyed-subscriber RuntimeContext shape in firelab, then rewrite
 the production RuntimeContext surface against that target. The former production
 write+arm bridge bead `tf-5cn1` is superseded by `tf-tvg1`.
 

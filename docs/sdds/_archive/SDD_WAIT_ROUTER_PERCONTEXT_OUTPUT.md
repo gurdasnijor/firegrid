@@ -39,7 +39,7 @@ The stream-name contract is in `packages/protocol/src/launch/authority.ts:254-27
 
 The A4 residue is visible in `packages/host-sdk/src/host/layers.ts:148-164`: the host-owned output layer binds ambient `RuntimeOutputTable` to `...firegrid.host.{hostId}.runtimeOutput`, but the comment says nothing writes it post-#315 and it remains only because `RuntimeWaitStreamsLive` has a structural dependency on `RuntimeAgentOutputEventsLayer`.
 
-The regression shape is captured in `packages/host-sdk/test/host/runtime-observation-sources.test.ts:107-117`: a `PermissionRequest` row written through the production per-context stream used to be missed when the wait observed the unwritten host-prefixed stream. The tiny model at `packages/tiny-firegrid/test/wait-for-output-pipeline.test.ts:5-28` frames the toy-level target as resolving `AgentOutput` sources against per-context output targets.
+The regression shape is captured in `packages/host-sdk/test/host/runtime-observation-sources.test.ts:107-117`: a `PermissionRequest` row written through the production per-context stream used to be missed when the wait observed the unwritten host-prefixed stream. The tiny model at `packages/firelab/test/wait-for-output-pipeline.test.ts:5-28` frames the toy-level target as resolving `AgentOutput` sources against per-context output targets.
 
 ## Options
 

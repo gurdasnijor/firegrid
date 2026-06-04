@@ -35,9 +35,9 @@ The package barrel does not expose the URL helper. `packages/client-sdk/src/inde
 
 The README endorses a real consumer pattern. `packages/client-sdk/README.md:206-249` shows a browser UI using `DurableTableProvider`, `useDurableTable(FiregridRuntimeTables.ControlPlane)`, and `FiregridControlPlaneTableLive` for live control-plane reads. The pattern is production-facing, not test-only.
 
-The tiny migration note records the reach-past in consumer-shaped code. `packages/tiny-firegrid/test/MIGRATION_NOTES.md:25-35` says the tests compose `FiregridRuntimeTables.ControlPlane` from the client SDK but still import `runtimeControlPlaneStreamUrl` from `@firegrid/protocol/launch` to build the table layer, matching the Flamecast live-query shape.
+The tiny migration note records the reach-past in consumer-shaped code. `packages/firelab/test/MIGRATION_NOTES.md:25-35` says the tests compose `FiregridRuntimeTables.ControlPlane` from the client SDK but still import `runtimeControlPlaneStreamUrl` from `@firegrid/protocol/launch` to build the table layer, matching the Flamecast live-query shape.
 
-The production-consuming tiny tests show the exact reach-past: `packages/tiny-firegrid/test/multi-context-production-consuming-pipeline.test.ts:3-14` imports client SDK tables but imports `runtimeControlPlaneStreamUrl` from protocol, and `:42-54` uses it to construct `FiregridRuntimeTables.ControlPlane.layer(...)`.
+The production-consuming tiny tests show the exact reach-past: `packages/firelab/test/multi-context-production-consuming-pipeline.test.ts:3-14` imports client SDK tables but imports `runtimeControlPlaneStreamUrl` from protocol, and `:42-54` uses it to construct `FiregridRuntimeTables.ControlPlane.layer(...)`.
 
 The protocol helper itself is namespace-scoped. `packages/protocol/src/launch/authority.ts:500-505` encodes `{ baseUrl, namespace }` into the runtime control-plane stream URL. It does not require host identity, context identity, or runtime ownership.
 
@@ -123,7 +123,7 @@ That distinction matters for signoff. Exposing the control-plane helper does not
 
 1. Should the export keep the protocol name `runtimeControlPlaneStreamUrl`, or use a client-facing alias and optionally re-export the protocol name for compatibility?
 2. Should `FiregridControlPlaneTableLive` remain the preferred path in docs, with the URL helper documented only for advanced DurableTable provider composition?
-3. Should tests under `packages/tiny-firegrid/test/*production*` switch to the client SDK import after signoff, or should the first implementation prove only package export/type availability?
+3. Should tests under `packages/firelab/test/*production*` switch to the client SDK import after signoff, or should the first implementation prove only package export/type availability?
 4. Should `@firegrid/client-sdk/firegrid` and the root `@firegrid/client-sdk` barrel both expose the helper?
 5. Is a future C-style `firegridControlPlaneTableLayer(...)` worth a separate ergonomic issue after the narrow re-export lands?
 

@@ -33,7 +33,7 @@ holds.
 
 ## Callers migrated (every direct `FiregridRuntime` call site)
 
-- **15 tiny-firegrid sim `host.ts`**: channel-completion-contracts,
+- **15 firelab sim `host.ts`**: channel-completion-contracts,
   child-output-existing-channel-router, codex-acp-tool-calls,
   comp-derisk-ordering, comp-sim-idempotent, control-plane-cancel-close,
   cross-agent-delegation, factory-capstone, mcp-production-task-projection,
@@ -56,7 +56,7 @@ hole-closed Layer — still a one-line, mechanical fix.
 
 1. **Sims use `configuredWith(env.durableStreamsBaseUrl)`, NOT `embedded`.** The
    task predicted sims would use `DurableStreamsLive.embedded`. They cannot: the
-   tiny-firegrid runner (`runner/runtime.ts`) manages a SINGLE
+   firelab runner (`runner/runtime.ts`) manages a SINGLE
    `DurableStreamTestServer` (or a configured base URL) and hands the same
    `baseUrl` to BOTH the sim host (`hostEnv.durableStreamsBaseUrl`) AND the
    driver/client. An `embedded` Live that started its own in-process server would

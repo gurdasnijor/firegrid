@@ -51,8 +51,8 @@ schedule_me, execute`.
 ## G-MCP-2 - Discovery silent-mismatch
 
 `VERIFIED` (trace + source verified, 2026-05-19):
-the Codex ACP tiny-firegrid simulation writes gitignored local evidence under
-`packages/tiny-firegrid/.simulate/runs/<run-id>/`. For the exporter model, see
+the Codex ACP firelab simulation writes gitignored local evidence under
+`packages/firelab/.simulate/runs/<run-id>/`. For the exporter model, see
 `docs/runbooks/firegrid-effect-tracing.md`.
 
 Classification result:

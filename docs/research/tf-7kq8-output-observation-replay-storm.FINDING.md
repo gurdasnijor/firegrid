@@ -104,7 +104,7 @@ size, so a turn that would hang at scale now stays O(outputs).
 
 ## Gates
 
-`@firegrid/runtime` + `@firegrid/tiny-firegrid` typecheck; host-sdk
+`@firegrid/runtime` + `@firegrid/firelab` typecheck; host-sdk
 runtime-context-workflow-core + runtime-codec-event-plane tests (14) pass;
 `lint` + `lint:dead` + `lint:dup` + `lint:deps` green; Effect-diag within
 baseline.

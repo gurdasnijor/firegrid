@@ -6,7 +6,7 @@ Owner: Firegrid Protocol / Host SDK / Tiny Firegrid (sim: `unified-kernel-valida
 Grounded in:
 - `https://github.com/durable-streams/durable-streams/blob/main/PROTOCOL.md` — append-only stream protocol
 - `https://github.com/durable-streams/durable-streams/blob/main/packages/state/STATE-PROTOCOL.md` — change-message state derivation extension
-- `packages/tiny-firegrid/src/simulations/unified-kernel-validation/` — empirical proof that signal-based subscribers cover the product surface
+- `packages/firelab/src/simulations/unified-kernel-validation/` — empirical proof that signal-based subscribers cover the product surface
 Related:
 - `docs/architecture/unified-subscriber-kernel.md` — conceptual collapse story for subscriber bodies
 - `docs/cannon/architecture/kernel-owned-write-arm.md` — the durable signal primitive this SDD bottoms out on
@@ -205,7 +205,7 @@ Firegrid's public abstractions — durable-streams beneath, channels above — a
 
 - `https://github.com/durable-streams/durable-streams/blob/main/PROTOCOL.md` — the bedrock
 - `https://github.com/durable-streams/durable-streams/blob/main/packages/state/STATE-PROTOCOL.md` — change-message extension
-- `packages/tiny-firegrid/src/simulations/unified-kernel-validation/` — empirical proof of the subscriber pattern
+- `packages/firelab/src/simulations/unified-kernel-validation/` — empirical proof of the subscriber pattern
 - `packages/protocol/src/channels/core.ts` — where `DurableEventChannel<P>` would land
 - `packages/protocol/src/channels/host-control.ts` — the seven specialized Tags this SDD proposes to collapse
 - `packages/protocol/src/launch/host-control-request.ts` — the binding factories that mirror the response shapes

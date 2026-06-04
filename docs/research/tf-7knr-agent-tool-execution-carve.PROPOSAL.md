@@ -41,7 +41,7 @@ This proposal intentionally does not relocate workflow definitions. Lane 4
 
 | File | Current role | Substrate dependencies today | Consumers | Boundary decision |
 | --- | --- | --- | --- | --- |
-| `execution/index.ts` | Public barrel for execution internals. Exports `AgentToolHost`, `toolUseToEffect`, `FiregridAgentToolkitLayer`, `ToolCallWorkflow`, `ToolCallWorkflowLayer`. | Transitive workflow, channel registry, host callback, toolkit binding. | Host-sdk public export, tiny-firegrid sims. | Split export surface. Keep binding adapter exports only as host-sdk internals; move workflow-definition exports to runtime with Lane 4. |
+| `execution/index.ts` | Public barrel for execution internals. Exports `AgentToolHost`, `toolUseToEffect`, `FiregridAgentToolkitLayer`, `ToolCallWorkflow`, `ToolCallWorkflowLayer`. | Transitive workflow, channel registry, host callback, toolkit binding. | Host-sdk public export, firelab sims. | Split export surface. Keep binding adapter exports only as host-sdk internals; move workflow-definition exports to runtime with Lane 4. |
 | `execution/tool-host.ts` | Host-coupled callback seam for spawn/session/provider/approval operations. | Types from protocol, runtime events, host-local error ADT. Live implementation is `host/agent-tool-host-live.ts`. | `tool-use-to-effect.ts`, runtime workflow support, commands, tests, sims. | Replace as execution seam with runtime-owned callback tags. Host-sdk provides Live Layers from host topology. |
 | `execution/tool-use-to-effect.ts` | Monolithic `ToolUse` -> `ToolResult` lowering. Decodes protocol schemas, dispatches by tool name, executes each arm, catches failures. | `DurableClock`, `WorkflowEngine`, `ChannelRegistry`, stream waits, durable-tool predicate helper, `AgentToolHost`. | `RuntimeToolUseExecutorLive`, `ToolCallWorkflowLayer`, tests. | Shrink to binding adapter: decode input, call runtime execution service, map runtime error to `ToolError`, encode `ToolResult`. Move validated arm execution below line. |
 | `execution/toolkit-layer.ts` | Effect AI Toolkit handler plus host-scoped per-tool-call workflow wiring. Defines `ToolCallWorkflow` so tool calls run under a workflow instance. | `Workflow.make`, `Workflow.toLayer`, `RuntimeContextWorkflowRuntime`, observation substrate, `AgentToolHost`, `ChannelRegistry`. | `mcp-host.ts`, toolkit tests, host integration tests. | Keep Toolkit/MCP handler in host-sdk. Move `ToolCallWorkflow` definition/support below line with Lane 4. Handler should call runtime-owned tool-call execution workflow/service through host composition. |
@@ -59,7 +59,7 @@ This proposal intentionally does not relocate workflow definitions. Lane 4
   inside that workflow.
 
 `AgentToolHost` is consumed by `tool-use-to-effect.ts`, host command/control
-surfaces, workflow support layers, tests, and tiny-firegrid simulations. Its
+surfaces, workflow support layers, tests, and firelab simulations. Its
 Live implementation lives in `packages/host-sdk/src/host/agent-tool-host-live.ts`
 and already proves the dependency-inversion shape, but the tag itself is
 currently host-sdk-owned and therefore is not a valid runtime dependency.

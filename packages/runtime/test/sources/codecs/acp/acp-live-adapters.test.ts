@@ -6,8 +6,8 @@
  * `LocalProcessSandboxProvider` — the exact two seams
  * `ProductionCodecAdapterLive.buildSessionForContext` composes
  * (src/unified/codec-adapter.ts:264-317). They drive the PRIVATE codec/sandbox
- * seam (no client-sdk, no FiregridHost), so per tiny-firegrid methodology they
- * live in the owning package's test/ folder, NOT as a tiny-firegrid sim.
+ * seam (no client-sdk, no FiregridHost), so per firelab methodology they
+ * live in the owning package's test/ folder, NOT as a firelab sim.
  *
  * GATED behind `FIREGRID_ACP_LIVE=1` (subprocess spawn + network + API creds)
  * so default CI skips them. Per adapter, the bin + credential must be present:

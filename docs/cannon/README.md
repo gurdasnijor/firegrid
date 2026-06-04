@@ -33,7 +33,7 @@ index anchors to:
 - **Channel-boundary enforcement** — `tf-bffo`/#589. Public surface narrowed;
   host-sdk durable wiring relocated into the runtime; channels are the only
   above-box doorway.
-- **Phase 0 target tiny-firegrid reference** — `tf-3w1e`/#604 (framing),
+- **Phase 0 target firelab reference** — `tf-3w1e`/#604 (framing),
   reconciled `tf-qnq9`/#588. The clean-room, API-compatible specimen of the
   target host/runtime shape: edge → channel router → host kernel workflow →
   workflow-owned durable resources → child session workflows. It is the review
@@ -113,7 +113,7 @@ Read in this order:
 - `architecture/current-convergence-assessment-2026-05-20.md` — current
   convergence and next-phase work sequencing.
 - `architecture/transactional-cutover-rule.md` — replacement work outside
-  `packages/tiny-firegrid/` must ship transactionally; tiny-firegrid remains the
+  `packages/firelab/` must ship transactionally; firelab remains the
   allowed sandbox for partial spikes.
 - `architecture/runtime-design-constraints.md` — canonical Firegrid runtime
   stop-condition: the operational application of the Stream-First Agent
@@ -268,7 +268,7 @@ Read in this order:
   `tf-7kq8` O(resumes × history) replay storm, but the target is a sparse
   workflow-owned transition log containing only body-relevant semantic triggers
   such as permission requests, non-ACP tool uses, and termination.
-- Half-ships are allowed only in `packages/tiny-firegrid/`. Production package
+- Half-ships are allowed only in `packages/firelab/`. Production package
   work must either complete the replacement, declare a temporary bridge with a
   blocking deletion/reconciliation bead, or remain explicitly open.
 

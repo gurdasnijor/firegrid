@@ -310,9 +310,9 @@ these project facts override it:
   (this `br` version names it `issues.jsonl`, not `beads.jsonl`),
   `config.yaml`, and `metadata.json` are committed. The JSONL is the source of
   truth; after `br sync --flush-only` run `git add .beads && git commit`.
-- **tiny-firegrid authority cutover:** Beads is the **sole** authority for
-  tiny-firegrid finding and configuration status. The old Markdown ledgers
-  (`packages/tiny-firegrid/FINDINGS.md`, `CONFIGS.md`, `HANDOFF.md`) were
+- **firelab authority cutover:** Beads is the **sole** authority for
+  firelab finding and configuration status. The old Markdown ledgers
+  (`packages/firelab/FINDINGS.md`, `CONFIGS.md`, `HANDOFF.md`) were
   **deleted** once the cutover was signed off (#354/#356) — do not recreate
   them. Each `TFIND-*` finding is a `br` issue; each configuration is an epic
   (`issue_type=epic`, `config:<slug>` label). Status changes happen via `br`.
@@ -494,7 +494,7 @@ owner returns, coordinate in the bead thread instead of overwriting their work.
 ### Mapping Cheat Sheet
 
 In this repo the issue prefix is `tf`, so `###` below means a full id like
-`tf-q44` (and for tiny-firegrid work also carry the `tfind:NNN` label):
+`tf-q44` (and for firelab work also carry the `tfind:NNN` label):
 
 | Concept | Value |
 |---------|-------|

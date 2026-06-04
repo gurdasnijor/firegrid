@@ -129,7 +129,7 @@ question. Concretely the framing decision needed from Gurdas:
   - Cat C (TS2769, `react-types.test.ts`) — explicit `createElement`
     type args; provider is generic+correct.
 - Full `pnpm turbo run typecheck` + `pnpm run lint` + affected suites +
-  tiny-firegrid green. macOS: NO `timeout`.
+  firelab green. macOS: NO `timeout`.
 
 ## Shared-store proof (Option Y correctness gate — STRUCTURAL, discharged)
 
@@ -287,7 +287,7 @@ Verification (all green):
   #326's own diff (mechanical callsite), out of #331 scope.
 - Full CI gate on #331 standalone: `lint` + `lint:dead` + `lint:dup` +
   `lint:deps` + `turbo typecheck` (17/17) + `turbo test` (17/17, incl.
-  tiny-firegrid; host-sdk 96/96 incl. the deterministic wake path).
+  firelab; host-sdk 96/96 incl. the deterministic wake path).
 - A stray `consistent-type-imports` residue from the env-narrowing WIP
   (runtime-substrate / agent-tool-host-live) was finished as type-only
   imports so the lint gate is clean.

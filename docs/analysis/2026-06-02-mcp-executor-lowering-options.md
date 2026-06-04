@@ -52,7 +52,7 @@ call channels invoke `binding.call`, and ingress waits for the next row
 The capstone host already provides an app `RuntimeChannelRouter` to
 `ToolDispatchLive` and separately provides `HostPlaneSessionControlRouterLive`
 for session tools
-([`factory-capstone/host.ts:227-239`](../../packages/tiny-firegrid/src/simulations/factory-capstone/host.ts#L227)).
+([`factory-capstone/host.ts:227-239`](../../packages/firelab/src/simulations/factory-capstone/host.ts#L227)).
 The CLI composition provides `ToolDispatchLive` with the host-plane session
 router but not an app `RuntimeChannelRouter`
 ([`_compose.ts:152-163`](../../packages/runtime/src/bin/_compose.ts#L152)).

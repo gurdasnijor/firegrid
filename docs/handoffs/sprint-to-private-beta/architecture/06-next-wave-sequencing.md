@@ -66,7 +66,7 @@ Sequence:
 2. runtime verified ingest;
 3. host/app channel binding;
 4. app/cookbook composition;
-5. deterministic tiny-firegrid smoke;
+5. deterministic firelab smoke;
 6. one live-provider smoke if credentials are available.
 
 Choose one side-effect adapter first: Linear or GitHub, not both.
@@ -90,7 +90,7 @@ Work:
 - open engine-native `streamWait` / `streamWaitAny` if Firegrid overhead
   approaches a meaningful fraction of provider/model latency, or if another
   workflow-body composition leak appears;
-- harden tiny-firegrid runner failure propagation;
+- harden firelab runner failure propagation;
 - reduce flaky/concurrent test risk on beta-critical paths.
 
 ## Explicit Deferrals

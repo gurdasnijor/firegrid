@@ -21,7 +21,7 @@ components:
       5: Parent factory run create/load is idempotent by an external source key containing provider or source identity plus external id such as issue id, ticket id, or correlation id; duplicate external triggers resolve to the same parent RuntimeContext and session identity rather than creating competing parent runs.
       6: Public agent-tool exposure uses session_new, session_prompt, session_cancel, and session_close semantics; spawn and spawn_all remain host-internal lowering seams rather than the public session-plane abstraction.
       7: The v1 session handle carries explicit context authority and uses the RuntimeContext contextId as the sessionId until a separate session registry is introduced.
-      8: A public client/tiny-firegrid proof demonstrates session_new child creation, initial handoff prompt delivery, session_prompt resume, and child output observation without the driver importing host-sdk or runtime internals.
+      8: A public client/firelab proof demonstrates session_new child creation, initial handoff prompt delivery, session_prompt resume, and child output observation without the driver importing host-sdk or runtime internals.
 
   CAPABILITY:
     requirements:

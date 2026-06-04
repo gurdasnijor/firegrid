@@ -814,7 +814,7 @@ RuntimeAgentOutputAfterEvents.forContext(contextId)
   -> onMatch(...)
 ```
 
-That is a useful helper for tiny-firegrid simulations: it lets the host side
+That is a useful helper for firelab simulations: it lets the host side
 stop a run when a trace-visible condition has appeared, while keeping the driver
 on the public client surface. But it is not a public host-sdk product API.
 More importantly, it should not become a new blessed observation interface in a
@@ -835,11 +835,11 @@ Current leak path:
   `HostProjectionObserverOptions`.
 - The same barrel also re-exports `RuntimeAgentOutputObservation` from
   `@firegrid/runtime/runtime-output`.
-- `packages/tiny-firegrid/src/simulations/codex-acp-tool-calls/host.ts` imports
+- `packages/firelab/src/simulations/codex-acp-tool-calls/host.ts` imports
   both from `@firegrid/host-sdk`.
-- `packages/tiny-firegrid/src/simulations/wait-pre-attach-roundtrip/host.ts`
+- `packages/firelab/src/simulations/wait-pre-attach-roundtrip/host.ts`
   does the same.
-- `packages/tiny-firegrid/docs/methodology.md` currently instructs future sims
+- `packages/firelab/docs/methodology.md` currently instructs future sims
   to use `hostProjectionObserver` from `@firegrid/host-sdk`.
 
 Why this matters: permissive host-sdk exports let internal runtime observation
@@ -850,7 +850,7 @@ available import path.
 Recommended backlog shape:
 
 1. Prefer migrating simulations to client-sdk projection waits in the driver
-   when the observed condition is client-visible. That keeps tiny-firegrid on the
+   when the observed condition is client-visible. That keeps firelab on the
    public surface it is supposed to validate.
 2. Where the stop condition is genuinely host-only instrumentation, write the
    observer locally using existing `Stream` / `RuntimeObservationStreams`
@@ -859,12 +859,12 @@ Recommended backlog shape:
 3. If the observed thing is an application fact/event, express it as a channel
    binding and wait on the channel rather than observing runtime output rows
    directly.
-4. Update `packages/tiny-firegrid/docs/methodology.md` so host observers are
+4. Update `packages/firelab/docs/methodology.md` so host observers are
    described as exceptional harness-private instrumentation, not host-sdk API.
 5. Remove `hostProjectionObserver`, `HostProjectionObserverOptions`, and
    `RuntimeAgentOutputObservation` from the host-sdk root export barrel unless a
    real product binding needs them through a narrower, named surface.
-6. Keep the driver rule unchanged: tiny-firegrid drivers import only
+6. Keep the driver rule unchanged: firelab drivers import only
    `@firegrid/client-sdk`; host files may compose host Layers, but should not
    normalize private substrate helpers as public SDK imports.
 
@@ -877,7 +877,7 @@ docs presents host-sdk as stable public API.
 ## Dynamic Data-Plane Evidence Added
 
 New simulation candidate:
-`packages/tiny-firegrid/src/simulations/acp-sdk-example-agent/`.
+`packages/firelab/src/simulations/acp-sdk-example-agent/`.
 
 Purpose: drive the installed `@agentclientprotocol/sdk` example ACP agent
 through the public Firegrid client session projection, not through host-sdk
@@ -930,7 +930,7 @@ Evidence from the trace:
   auto-approve waiter interrupted at scope close, which is acceptable for this
   deterministic example but should be watched in beta perf gates.
 - HTTP rolls still include
-  `POST /v1/stream/tiny-firegrid.firegrid.host.tiny-firegrid-host.durableTools`
+  `POST /v1/stream/firelab.firegrid.host.firelab-host.durableTools`
   despite durable-tools deletion. This may be a historical stream namespace
   label rather than resurrected durable-tools code, but it is worth grepping
   before private-beta trace artifacts are published.
@@ -957,7 +957,7 @@ Runner finding:
   (`expected edit Status`) while `simulate:run` still exited zero with
   `outcome=DriverCompleted`. The runner appears to classify driver fiber
   completion without propagating failure as a failing process outcome. Before
-  relying on tiny-firegrid as a private-beta gate, add an acceptance check that
+  relying on firelab as a private-beta gate, add an acceptance check that
   errored driver spans or failed driver exits make the simulation command fail.
 
 ### Finding: Duplicate Session Operation Catalogs
@@ -1335,7 +1335,7 @@ Unacceptable beta gaps:
 
 Goal: convert a correct private-beta loop into a robust beta.
 
-1. Run `pnpm --filter @firegrid/tiny-firegrid simulate:perf` after the loop is
+1. Run `pnpm --filter @firegrid/firelab simulate:perf` after the loop is
    stable.
 2. Compare Firegrid overhead to provider/LLM latency. If internal overhead is
    material, dispatch engine-native `streamWait/streamWaitAny`.

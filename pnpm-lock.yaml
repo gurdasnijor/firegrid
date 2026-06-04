@@ -300,7 +300,7 @@ importers:
         specifier: ^3.2.0
         version: 3.2.4(@types/node@22.19.17)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
 
-  packages/tiny-firegrid:
+  packages/firelab:
     dependencies:
       '@effect/ai':
         specifier: ^0.35.0

@@ -734,7 +734,7 @@ const local = {
         type: "problem",
         docs: {
           description:
-            "Require tiny-firegrid simulation hosts to compose through the single Firegrid host composition root (firegridHost / runFiregridHost), so sim == prod and no per-sim layer assembly creeps back in.",
+            "Require firelab simulation hosts to compose through the single Firegrid host composition root (firegridHost / runFiregridHost), so sim == prod and no per-sim layer assembly creeps back in.",
         },
         schema: [],
         messages: {
@@ -1378,7 +1378,7 @@ export default tseslint.config(
     // the import-graph analysis the dead-code gate (tf-uc8u / tf-ztwu) relies
     // on — they silently shielded `permissionDecisionDeferred` and `sseStream`
     // as false-positive DEAD flags. Computed specifiers (`import(expr)`, e.g.
-    // the tiny-firegrid plugin loader) are NOT matched and remain legal; their
+    // the firelab plugin loader) are NOT matched and remain legal; their
     // target is runtime data with no resolvable internal export anyway.
     // Uses a distinct `local/*` rule id (not no-restricted-syntax) so it never
     // clobbers the shared effectDebtGuardrails block. Scope deliberately
@@ -1454,7 +1454,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/tiny-firegrid/src/simulations/*/driver.ts"],
+    files: ["packages/firelab/src/simulations/*/driver.ts"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -1495,7 +1495,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/tiny-firegrid/src/simulations/*/host.ts"],
+    files: ["packages/firelab/src/simulations/*/host.ts"],
     rules: {
       "local/simulation-host-real-firegrid-host": "error",
       "no-restricted-imports": [
@@ -1526,12 +1526,12 @@ export default tseslint.config(
           selector:
             "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
           message:
-            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+            "firelab sims must not self-run effects. Export a driver; the runner executes it.",
         },
         {
           selector: "MemberExpression[object.name='process'][property.name='exit']",
           message:
-            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+            "firelab sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
         },
         {
           selector:
@@ -1578,7 +1578,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/tiny-firegrid/src/simulations/*/index.ts"],
+    files: ["packages/firelab/src/simulations/*/index.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1592,7 +1592,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/tiny-firegrid/src/simulations/*/host.ts"],
+    files: ["packages/firelab/src/simulations/*/host.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1611,12 +1611,12 @@ export default tseslint.config(
           selector:
             "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
           message:
-            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+            "firelab sims must not self-run effects. Export a driver; the runner executes it.",
         },
         {
           selector: "MemberExpression[object.name='process'][property.name='exit']",
           message:
-            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+            "firelab sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
         },
         {
           selector:
@@ -1648,14 +1648,14 @@ export default tseslint.config(
     },
   },
   {
-    // tf-r06u.24 R4 — no standalone-script shape in tiny-firegrid/src. A sim is
+    // tf-r06u.24 R4 — no standalone-script shape in firelab/src. A sim is
     // a folder exporting a host(env)+driver run BY the runner (→ trace → prose
     // finding), never a script that self-runs an Effect and prints a verdict.
     // `Effect.runPromise*`/`runSync*` is the standalone-script signal and has
     // zero legitimate use in src (the CLI entry uses NodeRuntime.runMain), so
     // it is banned src-wide. (`process.exit` is banned only under simulations/
     // below — bin/ spawn targets and the runner legitimately exit.)
-    files: ["packages/tiny-firegrid/src/**/*.ts"],
+    files: ["packages/firelab/src/**/*.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1663,7 +1663,7 @@ export default tseslint.config(
           selector:
             "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
           message:
-            "tiny-firegrid/src must not self-run effects. Export a host(env)+driver; the runner executes the sim (simulate run) and emits the trace. A spike that needs to drive a private seam belongs in the owning package's test/ (docs/findings/tf-r06u-25-tiny-firegrid-asset-inventory.md).",
+            "firelab/src must not self-run effects. Export a host(env)+driver; the runner executes the sim (simulate run) and emits the trace. A spike that needs to drive a private seam belongs in the owning package's test/ (docs/findings/tf-r06u-25-firelab-asset-inventory.md).",
         },
       ],
     },
@@ -1692,7 +1692,7 @@ export default tseslint.config(
     // tf-r06u.24 R4 (cont.) — no process.exit inside a sim. Drivers signal
     // completion by returning; the runner owns process lifecycle. (bin/ spawn
     // targets + runner/ are infra and may exit, so this is simulations-scoped.)
-    files: ["packages/tiny-firegrid/src/simulations/**/*.ts"],
+    files: ["packages/firelab/src/simulations/**/*.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1700,12 +1700,12 @@ export default tseslint.config(
           selector:
             "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
           message:
-            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+            "firelab sims must not self-run effects. Export a driver; the runner executes it.",
         },
         {
           selector: "MemberExpression[object.name='process'][property.name='exit']",
           message:
-            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+            "firelab sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
         },
         {
           selector:
@@ -1752,7 +1752,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/tiny-firegrid/test/**/*.ts"],
+    files: ["packages/firelab/test/**/*.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1772,7 +1772,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/tiny-firegrid/src/simulations/*/driver.ts"],
+    files: ["packages/firelab/src/simulations/*/driver.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1786,12 +1786,12 @@ export default tseslint.config(
           selector:
             "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
           message:
-            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+            "firelab sims must not self-run effects. Export a driver; the runner executes it.",
         },
         {
           selector: "MemberExpression[object.name='process'][property.name='exit']",
           message:
-            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+            "firelab sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
         },
         {
           selector:
@@ -1809,7 +1809,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/tiny-firegrid/src/simulations/restate-primitive-compat/driver.ts"],
+    files: ["packages/firelab/src/simulations/restate-primitive-compat/driver.ts"],
     rules: {
       "local/no-unclassified-workflow-make": "off",
       "no-restricted-imports": "off",
@@ -1819,18 +1819,18 @@ export default tseslint.config(
           selector:
             "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
           message:
-            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+            "firelab sims must not self-run effects. Export a driver; the runner executes it.",
         },
         {
           selector: "MemberExpression[object.name='process'][property.name='exit']",
           message:
-            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+            "firelab sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
         },
       ],
     },
   },
   {
-    files: ["packages/tiny-firegrid/src/simulations/fluent-runtime-workbench/driver.ts"],
+    files: ["packages/firelab/src/simulations/fluent-runtime-workbench/driver.ts"],
     rules: {
       "no-restricted-imports": "off",
       "no-restricted-syntax": [
@@ -1839,12 +1839,12 @@ export default tseslint.config(
           selector:
             "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
           message:
-            "tiny-firegrid sims must not self-run effects. Export a driver; the runner executes it.",
+            "firelab sims must not self-run effects. Export a driver; the runner executes it.",
         },
         {
           selector: "MemberExpression[object.name='process'][property.name='exit']",
           message:
-            "tiny-firegrid sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+            "firelab sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
         },
         {
           selector:

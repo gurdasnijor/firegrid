@@ -34,7 +34,7 @@ Related findings:
 
 `packages/protocol/src/session-facade/schema.ts:390-429` constructs observations by decoding the typed event and writing `_tag: event._tag`. Runtime values already maintain the invariant. The public schema/type does not express it.
 
-The original cast evidence is in `packages/tiny-firegrid/test/codex-acp-tool-call-pipeline.test.ts:295-317`: helper code narrows on `observation._tag`, then falls back to `asRecord(observation.event)` to read `part.delta` / `part.name`. That cast is not needed if the consumer narrows on `observation.event._tag`, but its presence is a useful signal: the public envelope invites the wrong narrowing path.
+The original cast evidence is in `packages/firelab/test/codex-acp-tool-call-pipeline.test.ts:295-317`: helper code narrows on `observation._tag`, then falls back to `asRecord(observation.event)` to read `part.delta` / `part.name`. That cast is not needed if the consumer narrows on `observation.event._tag`, but its presence is a useful signal: the public envelope invites the wrong narrowing path.
 
 Current tests also show the alternative. Several production-consuming tiny tests now read text deltas by narrowing `observation.event._tag`, proving Reading A is viable for consumers that know the intended pattern.
 

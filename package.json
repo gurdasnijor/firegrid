@@ -24,10 +24,10 @@
     "lint:dead": "knip --treat-config-hints-as-errors",
     "gate:test-only-exports": "tsx scripts/test-only-export-gate.ts",
     "gate:contract-id": "tsx scripts/contract-id-canonical-gate.ts",
-    "lint:deps": "depcruise --config .dependency-cruiser.cjs packages && depcruise --config .dependency-cruiser.cjs --include-only '(^packages/.*/src|^packages/tiny-firegrid/test)' packages/tiny-firegrid/test && tsx scripts/contract-id-canonical-gate.ts",
+    "lint:deps": "depcruise --config .dependency-cruiser.cjs packages && depcruise --config .dependency-cruiser.cjs --include-only '(^packages/.*/src|^packages/firelab/test)' packages/firelab/test && tsx scripts/contract-id-canonical-gate.ts",
     "lint:dup": "jscpd packages/*/src",
     "preflight": "turbo run lint lint:dead lint:dup lint:deps typecheck test diagnostics coverage:gate --continue --output-logs=errors-only",
-    "coverage:gate": "pnpm --filter @firegrid/tiny-firegrid run coverage:gate",
+    "coverage:gate": "pnpm --filter @firegrid/firelab run coverage:gate",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "verify": "pnpm run preflight"

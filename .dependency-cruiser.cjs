@@ -567,12 +567,12 @@ module.exports = {
       to: { path: "^packages/host-sdk/src" },
     },
     {
-      name: "tiny-firegrid-sim-no-fake-substitutes",
+      name: "firelab-sim-no-fake-substitutes",
       severity: "error",
       comment:
-        "tiny-firegrid simulations must exercise production code: no fake codec/sandbox modules and no direct adapter internals from simulations.",
+        "firelab simulations must exercise production code: no fake codec/sandbox modules and no direct adapter internals from simulations.",
       from: {
-        path: "^packages/tiny-firegrid/src/simulations/",
+        path: "^packages/firelab/src/simulations/",
       },
       to: {
         path: [
@@ -585,7 +585,7 @@ module.exports = {
       },
     },
     {
-      // tf-r06u.24 R2 — tiny-firegrid sim airgap (WHOLE SIM, host.ts carved out).
+      // tf-r06u.24 R2 — firelab sim airgap (WHOLE SIM, host.ts carved out).
       // Extends the eslint driver.ts/host.ts airgap (eslint.config.js:707-757) to
       // every simulation file except host.ts: a sim drives the PUBLIC client/host
       // seam; only host(env) composes the substrate. Anything else reaching into
@@ -593,16 +593,16 @@ module.exports = {
       // exercising a private seam — write it as a test in the owning package.
       // tf-bp2t intentionally carves out a hostless greenfield substrate
       // workbench: it does not claim to validate the Firegrid client/host seam.
-      name: "tiny-firegrid-sim-airgap-whole-sim",
+      name: "firelab-sim-airgap-whole-sim",
       severity: "error",
       comment:
-        "tiny-firegrid sims drive the public client/host seam; only host.ts composes the substrate. No runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports from a non-host.ts sim file.",
+        "firelab sims drive the public client/host seam; only host.ts composes the substrate. No runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports from a non-host.ts sim file.",
       from: {
-        path: "^packages/tiny-firegrid/src/simulations/",
+        path: "^packages/firelab/src/simulations/",
         pathNot: [
           "/host\\.ts$",
-          "^packages/tiny-firegrid/src/simulations/fluent-runtime-workbench/sandbox-activity-host\\.ts$",
-          "^packages/tiny-firegrid/src/simulations/restate-primitive-compat/",
+          "^packages/firelab/src/simulations/fluent-runtime-workbench/sandbox-activity-host\\.ts$",
+          "^packages/firelab/src/simulations/restate-primitive-compat/",
         ],
       },
       to: {
@@ -620,17 +620,17 @@ module.exports = {
       },
     },
     {
-      // tf-r06u.24 R3 — tiny-firegrid test airgap (public-surface vitest only).
-      // tiny-firegrid/test exercises the PUBLIC surface (@firegrid/client-sdk is
+      // tf-r06u.24 R3 — firelab test airgap (public-surface vitest only).
+      // firelab/test exercises the PUBLIC surface (@firegrid/client-sdk is
       // allowed); a test reaching runtime/host-sdk/protocol internals belongs in
       // the OWNING package's test/ folder. Enforced via a dedicated test-scoped
       // depcruise run (the default lint:deps scope is src-only — see lint:deps).
-      name: "tiny-firegrid-test-no-internals",
+      name: "firelab-test-no-internals",
       severity: "error",
       comment:
-        "tiny-firegrid tests are not simulation evidence; no runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports.",
+        "firelab tests are not simulation evidence; no runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports.",
       from: {
-        path: "^packages/tiny-firegrid/test/",
+        path: "^packages/firelab/test/",
       },
       to: {
         path: [

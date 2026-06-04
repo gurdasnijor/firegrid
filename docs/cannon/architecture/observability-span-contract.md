@@ -51,7 +51,7 @@ until this document promotes them.
 | `firegrid.workflow_engine.clock.schedule` | `@firegrid/runtime` | Workflow timer scheduling boundary. |
 | `firegrid.workflow_engine.deferred.done` | `@firegrid/runtime` | Workflow deferred completion boundary. |
 | `firegrid.workflow_engine.execution.execute` | `@firegrid/runtime` | Workflow execution boundary. |
-| `firegrid.simulation.run` | `@firegrid/tiny-firegrid` | Stable envelope for Firegrid-maintained simulation artifacts. This is stable for Firegrid validation tooling, not a product API for beta applications. |
+| `firegrid.simulation.run` | `@firegrid/firelab` | Stable envelope for Firegrid-maintained simulation artifacts. This is stable for Firegrid validation tooling, not a product API for beta applications. |
 
 ## Internal Span Families
 
@@ -78,9 +78,9 @@ matched by the prefix or generated pattern.
 | `firegrid.runtime_observation_streams.*` | `@firegrid/runtime` | Runtime observation stream read models. |
 | `firegrid.runtime_output.*` | `@firegrid/runtime` | Runtime output journal and per-context read models. |
 | `firegrid.workflow_engine.*` except stable names above | `@firegrid/runtime` | Workflow engine polling, resume, interrupt, clock fire, activity claim, and workflow registration details. |
-| `firegrid.acp_sdk_example_agent.*` | `@firegrid/tiny-firegrid` | Simulation driver details. |
-| `firegrid.codec_stdio_jsonl_live.*` | `@firegrid/tiny-firegrid` | Simulation probe details. |
-| `firegrid.inv1.*`, `firegrid.inv4.*`, `firegrid.phase0.*`, `firegrid.phase1.*`, `firegrid.sim.*`, `firegrid.simulation.sim1.*`, `firegrid.sim3.*`, `firegrid.tf_i724.*`, `firegrid.wait_pre_attach.*`, `firegrid.wave2b.*`, `firegrid.workflow_core_paths.*` | `@firegrid/tiny-firegrid` | Simulation-local spans. They are allowed only for simulation-specific assertions. |
+| `firegrid.acp_sdk_example_agent.*` | `@firegrid/firelab` | Simulation driver details. |
+| `firegrid.codec_stdio_jsonl_live.*` | `@firegrid/firelab` | Simulation probe details. |
+| `firegrid.inv1.*`, `firegrid.inv4.*`, `firegrid.phase0.*`, `firegrid.phase1.*`, `firegrid.sim.*`, `firegrid.simulation.sim1.*`, `firegrid.sim3.*`, `firegrid.tf_i724.*`, `firegrid.wait_pre_attach.*`, `firegrid.wave2b.*`, `firegrid.workflow_core_paths.*` | `@firegrid/firelab` | Simulation-local spans. They are allowed only for simulation-specific assertions. |
 | `firegrid.host.control_request.start.dispatch`, `firegrid.host.control_request.lifecycle.dispatch` | `@firegrid/runtime` | Generated dispatch spans from the control-request reconciler. |
 | `firegrid.mcp.http METHOD`, `firegrid.mcp.http METHOD /runtime-context/:contextId` | `@firegrid/host-sdk` | Generated HTTP middleware names; method is part of the generated value. |
 
@@ -113,7 +113,7 @@ matched by the prefix or generated pattern.
 | `firegrid.channel.*` | Contract owner by channel; live binding owner emits | Channel call/wait spans. Session permission call is stable; other channel spans are internal unless promoted. |
 | `firegrid.durable_table.*` | `effect-durable-operators` | Durable table substrate spans. Stable names are exact-name opt-ins only. |
 | `firegrid.durable_streams.*` | `effect-durable-streams` | Durable stream transport spans. Internal by default. |
-| `firegrid.simulation.*`, `firegrid.sim.*`, and named simulation prefixes | `@firegrid/tiny-firegrid` | Simulation validation surface. Stable only where explicitly listed. |
+| `firegrid.simulation.*`, `firegrid.sim.*`, and named simulation prefixes | `@firegrid/firelab` | Simulation validation surface. Stable only where explicitly listed. |
 
 ## Stable Attribute Keys
 
@@ -165,7 +165,7 @@ guaranteed to appear on every stable span.
 | `firegrid.process.role` | Process role in simulation artifacts. |
 | `firegrid.git.commit` | Git commit recorded in simulation artifacts. |
 | `firegrid.git.branch` | Git branch recorded in simulation artifacts. |
-| `firegrid.tiny_firegrid.version` | Tiny-firegrid version recorded in simulation artifacts. |
+| `firegrid.firelab.version` | Tiny-firegrid version recorded in simulation artifacts. |
 
 All other observed attribute keys are INTERNAL unless a later registry revision
 promotes them. In particular, payload-bearing or raw-wire keys such as
@@ -180,7 +180,7 @@ namespace label, not a current `firegrid.durable_tools.*` production span
 emitter.
 
 The Phase 1 gate detector in
-`packages/tiny-firegrid/src/runner/phase1-gate.ts` still recognizes historical
+`packages/firelab/src/runner/phase1-gate.ts` still recognizes historical
 `firegrid.durable_tools.*` span names so old traces remain explainable. New
 spans must not use `firegrid.durable_tools.*`; future cleanup can migrate the
 host stream segment once compatibility and trace history requirements are

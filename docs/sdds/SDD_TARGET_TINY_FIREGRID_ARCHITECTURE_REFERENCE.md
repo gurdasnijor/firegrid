@@ -44,12 +44,12 @@ The big architectural question for this reference is intentionally narrow:
 > Can channels write and read workflow-owned `DurableTable` state directly,
 > while an individual workflow runs as a state machine over that same table?
 
-The target tiny-firegrid reference exists to answer that question in a clean
+The target firelab reference exists to answer that question in a clean
 room before production migration work keeps fighting historical layers.
 
 ## Decision
 
-Build a compact executable reference under `packages/tiny-firegrid` where:
+Build a compact executable reference under `packages/firelab` where:
 
 ```text
 production-compatible channel contract
@@ -379,7 +379,7 @@ polling intervals. It is not a public API and not an activity.
 Use a deliberately small layout for the first simulation:
 
 ```text
-packages/tiny-firegrid/src/simulations/target-architecture-reference/
+packages/firelab/src/simulations/target-architecture-reference/
   index.ts       # simulation registration
   channels.ts    # production-compatible targets and schemas, plus local aliases only when production lacks a neutral contract
   session.ts     # SessionTable, SessionWorkflow, transitionSession, cursor logic
