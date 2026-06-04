@@ -5,7 +5,7 @@ Date: 2026-06-03
 Simulation: `op-registry-prompt-keystone`
 
 Trace:
-`packages/tiny-firegrid/.simulate/runs/2026-06-03T08-18-49-849Z__op-registry-prompt-keystone/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-06-03T08-18-49-849Z__op-registry-prompt-keystone/trace.jsonl`
 
 ## Finding
 
@@ -13,7 +13,7 @@ Trace:
 record, lowered into a generated `SessionPromptChannel` binding, and driven
 through the production per-event RuntimeContext path to a real ACP agent.
 
-This is a tiny-firegrid simulation, not a static textual pass/fail. The driver
+This is a firelab simulation, not a static textual pass/fail. The driver
 completed and observed the marker text from the real agent:
 `firegrid.op_registry_prompt.status="marker_observed"` with spawn target
 `npx -y @agentclientprotocol/claude-agent-acp@0.36.1`
@@ -26,7 +26,7 @@ the public client seam:
 
 - Projection metadata:
   `{ operationId: "session.prompt", toolName: "session_prompt", clientName: "sessions.prompt", cliName: "sessions prompt" }`
-  (`packages/tiny-firegrid/src/simulations/op-registry-prompt-keystone/host.ts:28`).
+  (`packages/firelab/src/simulations/op-registry-prompt-keystone/host.ts:28`).
 - Agent-tool input/output schemas:
   `SessionPromptToolInputSchema` and `SessionPromptToolOutputSchema`
   (`host.ts:35`, `host.ts:58`).
@@ -54,15 +54,15 @@ input }, { discard: true })` (`host.ts:142`).
 Primary causal path in the trace:
 
 - Generated surface executed:
-  `tiny_firegrid.op_registry_prompt.generated_session_prompt.append` carried
+  `firelab.op_registry_prompt.generated_session_prompt.append` carried
   `operation.id=session.prompt`, `tool_name=session_prompt`,
   `client_name=sessions.prompt`, `cli_name=sessions prompt`,
   `channel.target=session.prompt`, `verb=send`, `kind=egress`,
   `durable=true` (`trace.jsonl:89`).
 - Production per-event body ran for the same context/input:
   `firegrid.unified.session.body` has
-  `context.id=session:tiny-firegrid:op-registry-prompt-keystone`,
-  `input.idempotency_key=tiny-firegrid-op-registry-prompt-turn-1`,
+  `context.id=session:firelab:op-registry-prompt-keystone`,
+  `input.idempotency_key=firelab-op-registry-prompt-turn-1`,
   `unified.input.kind=prompt` (`trace.jsonl:84`).
 - The production adapter started/attached a real process:
   `firegrid.unified.adapter.start_or_attach` with adapter kind
@@ -72,7 +72,7 @@ Primary causal path in the trace:
 - The ACP wire path received a real prompt:
   `firegrid.agent_event_pipeline.source.local_process.stdin_bytes` contains
   JSON-RPC method `session/prompt`, message id
-  `tiny-firegrid-op-registry-prompt-turn-1`, and the marker prompt text
+  `firelab-op-registry-prompt-turn-1`, and the marker prompt text
   (`trace.jsonl:80`).
 - The codec prompt span ran:
   `firegrid.agent_event_pipeline.acp.prompt` has the same ACP prompt id,

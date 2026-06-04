@@ -127,8 +127,8 @@ Foundational. Everything downstream depends on the Tag existing.
 
 Added per design-partner request: prove the production loop works end-to-end before deferring real-codec work.
 
-- [x] `FakeCodecAdapter` Live in `tiny-firegrid/.../fake-codec.ts` — implements the `RuntimeContextSessionAdapter` Tag with deterministic agent output simulation. `startOrAttach` writes `Ready`; `send(prompt)` writes `ToolUse`; `send(tool-result)` writes `PermissionRequest`; `send(permission-response)` writes `TurnComplete`. All rows go to `RuntimeOutputTable.events`.
-- [x] `productionFlowScenario` in `tiny-firegrid/.../production-flow-scenario.ts` — hand-composes the substrate (shares `RuntimeOutputTable` between codec and observer via `Layer.provideMerge` rather than two independent `Layer.provide`s, which would create separate in-memory instances).
+- [x] `FakeCodecAdapter` Live in `firelab/.../fake-codec.ts` — implements the `RuntimeContextSessionAdapter` Tag with deterministic agent output simulation. `startOrAttach` writes `Ready`; `send(prompt)` writes `ToolUse`; `send(tool-result)` writes `PermissionRequest`; `send(permission-response)` writes `TurnComplete`. All rows go to `RuntimeOutputTable.events`.
+- [x] `productionFlowScenario` in `firelab/.../production-flow-scenario.ts` — hand-composes the substrate (shares `RuntimeOutputTable` between codec and observer via `Layer.provideMerge` rather than two independent `Layer.provide`s, which would create separate in-memory instances).
 - [x] Driver scenario 7 lands in `driver.ts` with assertions on the full loop: session reaches terminal with `inputsConsumed >= 4` (prompt + auto-tool-result + auto-permission-response + terminal), codec saw the relayed tool-result and permission-response inputs, exactly 1 spawn + 1 deregister, exactly 1 tool invocation.
 
 **Acceptance result:** `production flow (e2e) ... session=true inputs=4 codecSends=3 dereg=1 tool=1× auto-relay=true`. The full loop **codec → journal → observer → workflow → relay → session** is now structurally proven and regression-locked.

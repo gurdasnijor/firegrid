@@ -19,7 +19,7 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@firegrid/tiny-firegrid#test": {
+    "firelab#test": {
       "dependsOn": ["^build"],
       "outputs": [],
       "cache": false
@@ -28,7 +28,7 @@
       "dependsOn": ["build"],
       "outputs": []
     },
-    "trace:seams:ukv": {
+    "coverage:gate": {
       "outputs": [],
       "cache": false
     },

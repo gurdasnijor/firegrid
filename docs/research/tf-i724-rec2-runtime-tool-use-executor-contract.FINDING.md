@@ -4,10 +4,10 @@ Date: 2026-05-20
 
 Simulation:
 
-- `packages/tiny-firegrid/src/simulations/runtime-tool-use-executor-contract/`
-- Run: `pnpm --filter @firegrid/tiny-firegrid simulate:run runtime-tool-use-executor-contract --timeout-ms 60000`
-- Trace: `packages/tiny-firegrid/.simulate/runs/2026-05-20T08-37-14-862Z__runtime-tool-use-executor-contract/trace.jsonl`
-- Summary: `pnpm --filter @firegrid/tiny-firegrid simulate:show 2026-05-20T08-37-14-862Z__runtime-tool-use-executor-contract`
+- `packages/firelab/src/simulations/runtime-tool-use-executor-contract/`
+- Run: `pnpm --filter firelab simulate:run runtime-tool-use-executor-contract --timeout-ms 60000`
+- Trace: `packages/firelab/.simulate/runs/2026-05-20T08-37-14-862Z__runtime-tool-use-executor-contract/trace.jsonl`
+- Summary: `pnpm --filter firelab simulate:show 2026-05-20T08-37-14-862Z__runtime-tool-use-executor-contract`
 
 ## Contract Surface
 

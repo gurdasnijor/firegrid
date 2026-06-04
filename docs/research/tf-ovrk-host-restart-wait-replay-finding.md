@@ -251,7 +251,7 @@ only) and do not affect other tests.
   than 100ms, this test will become a flake. The structural assertion
   (span names present) is the load-bearing check; the timing tunable
   is the secondary check.
-- A full OS-process restart sim against tiny-firegrid was not written.
+- A full OS-process restart sim against firelab was not written.
   The dispatch contemplated that as the alternative; the engine-seam
   test gives equivalent trace evidence with smaller surface area and
   no LLM dependency. If tf-ivl6 or a downstream Shape A/C-Step-3 PR

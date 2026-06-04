@@ -89,16 +89,16 @@ that wants to restrict which agents can observe which sessions
 attaches its authority check inside this resolver — it is not a
 channel-protocol concern.
 
-The tiny-firegrid sims leave the resolver permissive (any registered
+The firelab sims leave the resolver permissive (any registered
 session observable) and call out that the production resolver is where
 the authority binding lives.
 
 ### Evidence
 
-- `packages/tiny-firegrid/src/simulations/child-output-existing-channel-router/` —
+- `packages/firelab/src/simulations/child-output-existing-channel-router/` —
   proves the cursor + snapshot-first / subscribe-after-cursor boundary
   holds for live, still-producing child sessions. 7 vitest assertions.
-- `packages/tiny-firegrid/src/simulations/agent-coordination-readiness/` —
+- `packages/firelab/src/simulations/agent-coordination-readiness/` —
   proves the public client path (`handle.wait.forAgentOutput`) and the
   router-direct path (`HostPlaneChannelRouter.dispatch`) return the same
   observation `sequence`. See its FINDING.md for the readiness matrix
@@ -172,7 +172,7 @@ row.
 
 ### Evidence and current limit
 
-- `packages/tiny-firegrid/src/simulations/inv5-cross-agent-event-choreography/` —
+- `packages/firelab/src/simulations/inv5-cross-agent-event-choreography/` —
   proves the choreography mechanism: one real `claude-agent-acp`
   process emits via `emit_event`, the row lands in the
   `CallerOwnedFactStreams` source, the host can read it.

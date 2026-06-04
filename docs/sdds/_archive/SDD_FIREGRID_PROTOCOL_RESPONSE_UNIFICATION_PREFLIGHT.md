@@ -6,7 +6,7 @@ Status: proposed (pre-flight for SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION Phas
 Created: 2026-05-31
 Owner: Firegrid Protocol / Runtime / Client SDK
 Predecessor: `SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION.md`
-Validated by: `packages/tiny-firegrid/src/simulations/unified-kernel-validation/` (6/6 scenarios + 16/16 invariants green; signal-based subscribers + `DurableEventChannel<P>` + Firegrid SDK driver all proven)
+Validated by: `packages/firelab/src/simulations/unified-kernel-validation/` (6/6 scenarios + 16/16 invariants green; signal-based subscribers + `DurableEventChannel<P>` + Firegrid SDK driver all proven)
 
 ## Why this pre-flight exists at all
 
@@ -190,7 +190,7 @@ Phase 2 is ONE PR but the internal commit sequence keeps each commit reviewable:
 5. **`client-sdk`: retype named methods' return types (`EventOffset` instead of bespoke rows).** Coordinated with (4); the standalone defaults file is deleted.
 6. **Deletion commit: remove Shape C subscriber dirs, removed table row families, removed schemas, removed factories, removed bridge helpers, removed tests.** This is the −5,000-line commit.
 7. **Update consumers + their tests.** Mechanical sweep.
-8. **`tiny-firegrid` simulation: update imports to use promoted signal primitive from `@firegrid/runtime`. Rewrite `firegrid-client-scenarios.ts`'s driver to use NAMED methods (`firegrid.prompt`, `firegrid.permissions.respond`, etc.) — no more `channels.call` escape hatch. Add invariant I17 locking the named-method shape.**
+8. **`firelab` simulation: update imports to use promoted signal primitive from `@firegrid/runtime`. Rewrite `firegrid-client-scenarios.ts`'s driver to use NAMED methods (`firegrid.prompt`, `firegrid.permissions.respond`, etc.) — no more `channels.call` escape hatch. Add invariant I17 locking the named-method shape.**
 
 The PR is not mergeable until commit (6) lands. Commits (1)–(5) without (6) is the historical failure mode — abstraction landed, legacy still load-bearing.
 
@@ -232,5 +232,5 @@ Before opening the Phase 2 PR:
 
 - `SDD_FIREGRID_PROTOCOL_RESPONSE_UNIFICATION.md` — the parent SDD
 - `SDD_FIREGRID_AGGRESSIVE_ONE_SUBSTRATE_SWAPOVER.md` — prior aggressive swapover pattern (precedent for the "one PR, big deletion" shape)
-- `packages/tiny-firegrid/src/simulations/unified-kernel-validation/` — empirical proof; the shape Phase 2 lifts into production
+- `packages/firelab/src/simulations/unified-kernel-validation/` — empirical proof; the shape Phase 2 lifts into production
 - `https://github.com/durable-streams/durable-streams/blob/main/PROTOCOL.md` — the bedrock the unified shape ultimately rests on

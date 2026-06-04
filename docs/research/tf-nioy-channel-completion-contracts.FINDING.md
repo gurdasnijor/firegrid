@@ -2,8 +2,8 @@
 
 Date: 2026-05-21
 Status: evaluation spike
-Probe: `packages/tiny-firegrid/src/simulations/channel-completion-contracts/probe.ts`
-Tests: `packages/tiny-firegrid/test/channel-completion-contracts/probe.test.ts`
+Probe: `packages/firelab/src/simulations/channel-completion-contracts/probe.ts`
+Tests: `packages/firelab/test/channel-completion-contracts/probe.test.ts`
 SDD target: `docs/sdds/SDD_FIREGRID_DURABLE_CHANNELS_SYNC_ASYNC.md`
 
 ## Question
@@ -18,7 +18,7 @@ completion belongs to the operation contract.
 
 ## Probe Summary
 
-The tiny-firegrid probe models four placements:
+The firelab probe models four placements:
 
 | Candidate | Router inspectable before dispatch | Edge can map transport response | Verdict |
 |---|---:|---:|---|

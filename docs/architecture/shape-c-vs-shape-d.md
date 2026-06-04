@@ -15,7 +15,7 @@ Shape C path as bridge state expected to collapse.
 
 Invariants enforced by `shape-d-workflow-admission` +
 `shape-d-tool-dispatch-mcp-entry` + `runtime-context-fact-matrix` +
-several other tiny-firegrid simulations.
+several other firelab simulations.
 
 ## Why the distinction exists today
 
@@ -138,15 +138,15 @@ The decision table above complies with the runtime design constraints
 
 ## Ground Truth
 
-- Simulation: `packages/tiny-firegrid/src/simulations/shape-d-workflow-admission/`
+- Simulation: `packages/firelab/src/simulations/shape-d-workflow-admission/`
   — proves the three-subscriber decision table empirically on real
   `DurableStreamsWorkflowEngine` + `DurableTable` across crash boundaries.
-- Simulation: `packages/tiny-firegrid/src/simulations/shape-d-tool-dispatch-mcp-entry/`
+- Simulation: `packages/firelab/src/simulations/shape-d-tool-dispatch-mcp-entry/`
   — proves the MCP-entry tool path is at-most-once via
   `Workflow.idempotencyKey` alone (no separate result table needed).
-- Simulation: `packages/tiny-firegrid/src/simulations/runtime-context-fact-matrix/`
+- Simulation: `packages/firelab/src/simulations/runtime-context-fact-matrix/`
   — the Shape C fact taxonomy this layers on.
-- Simulation: `packages/tiny-firegrid/src/simulations/input-suspend-crash-recovery/`
+- Simulation: `packages/firelab/src/simulations/input-suspend-crash-recovery/`
   — proves a Shape D body parked on `Workflow.suspend` is **not**
   re-armed by reconstruction. The asymmetry that makes
   `DurableClock.sleep` the only safely-parked binding.

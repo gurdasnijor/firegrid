@@ -75,6 +75,6 @@ mechanical relocation rather than design work.
   rather than treating it purely as deprecate-vs-remove cleanup.
 - **#588 / tf-1fcd** — REQUEST CHANGES → closed for replan. The live coordination-topology
   sim computed its GREEN verdict in a bespoke driver-side evidence harness
-  (`validateLiveEvidence`) instead of deriving it from native tiny-firegrid
+  (`validateLiveEvidence`) instead of deriving it from native firelab
   artifacts (durable channel rows / trace spans); scripted-JSON prompts also made
   GREEN near-tautological. Host substrate + public-surface driver were keeper-quality.

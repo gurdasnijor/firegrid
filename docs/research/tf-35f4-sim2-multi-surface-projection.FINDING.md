@@ -63,7 +63,7 @@ Exported from `packages/host-sdk/src/host/index.ts`.
 | `packages/client-sdk/src/channels/host-sessions-create-or-load-default.ts` | `HostSessionsCreateOrLoadChannelStandaloneLive` — minimal-default binding for non-host-process callers (mirror of the host-sdk Pattern 1 binding). |
 | `packages/client-sdk/src/firegrid.ts` | Rewired `createOrLoadSession` to dispatch via the channel Tag (captured at `make` time so the public `FiregridSessionsClient.createOrLoad` signature stays unchanged). `FiregridLive` now bundles the standalone default Layer so existing tests (which wire `FiregridLive` directly) need no per-test change. |
 
-### Sim source — `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim2-multi-surface-projection/`
+### Sim source — `packages/firelab/src/simulations/spike-channel-deletion/sim2-multi-surface-projection/`
 
 | File | Purpose |
 | --- | --- |
@@ -71,17 +71,17 @@ Exported from `packages/host-sdk/src/host/index.ts`.
 | `driver.ts` | `runClientMethodProjection` + `runMcpToolProjection` + a substrate-row inspector. |
 | `index.ts` | Module facade. |
 
-### Evidence harness — `packages/tiny-firegrid/test/spike-channel-deletion/sim2-multi-surface-projection.test.ts`
+### Evidence harness — `packages/firelab/test/spike-channel-deletion/sim2-multi-surface-projection.test.ts`
 
 Five vitest assertions running both projections and inspecting substrate rows directly. All pass (~240ms). Used as the cited row-level evidence below.
 
 ### Why a vitest harness instead of `simulate:run`
 
-`simulate:run` discovers TOP-LEVEL folders under `src/simulations/` and matches `id === folder name` (see `packages/tiny-firegrid/src/runner/list.ts`). The dispatch's nested path `spike-channel-deletion/sim2-multi-surface-projection/` is intentional (groups Sims 1-3) but is NOT directly discoverable without extending the runner walk depth. Sim 2's load-bearing measurement is substrate-row + response equivalence — natively expressed in vitest assertions — so the test harness is the right shape for the evidence. Extending the simulate runner to walk nested spike folders is **out of Sim 2 scope** and noted as a residual ergonomic helper.
+`simulate:run` discovers TOP-LEVEL folders under `src/simulations/` and matches `id === folder name` (see `packages/firelab/src/runner/list.ts`). The dispatch's nested path `spike-channel-deletion/sim2-multi-surface-projection/` is intentional (groups Sims 1-3) but is NOT directly discoverable without extending the runner walk depth. Sim 2's load-bearing measurement is substrate-row + response equivalence — natively expressed in vitest assertions — so the test harness is the right shape for the evidence. Extending the simulate runner to walk nested spike folders is **out of Sim 2 scope** and noted as a residual ergonomic helper.
 
 ## Evidence (cited)
 
-All five assertions are in `packages/tiny-firegrid/test/spike-channel-deletion/sim2-multi-surface-projection.test.ts`:
+All five assertions are in `packages/firelab/test/spike-channel-deletion/sim2-multi-surface-projection.test.ts`:
 
 1. **Response identity equivalence** — both projections produce `sessionId === contextId`, both equal to `sessionContextIdForExternalKey(externalKey)`. (Assertions at lines ~100–110 of the test.)
 2. **Substrate row shape equivalence** — `Object.keys(clientRow).sort() === Object.keys(mcpRow).sort()`; both rows carry an `_otel` stamp; `runtime`/`createdBy`/`contextId` fields match the corresponding request. (Assertions at lines ~112–127.)
@@ -143,8 +143,8 @@ Per the dispatch "ergonomic helpers needed: VISIBLE, named, treated as public-AP
 | `packages/host-sdk/src/host/index.ts` | exports `HostSessionsCreateOrLoadChannelLive` |
 | `packages/client-sdk/src/channels/host-sessions-create-or-load-default.ts` | new |
 | `packages/client-sdk/src/firegrid.ts` | rewire `createOrLoad` to dispatch via channel Tag; bundle default Layer in `FiregridLive` |
-| `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim2-multi-surface-projection/{host,driver,index}.ts` | new sim source |
-| `packages/tiny-firegrid/test/spike-channel-deletion/sim2-multi-surface-projection.test.ts` | new evidence harness (5 assertions, all green) |
+| `packages/firelab/src/simulations/spike-channel-deletion/sim2-multi-surface-projection/{host,driver,index}.ts` | new sim source |
+| `packages/firelab/test/spike-channel-deletion/sim2-multi-surface-projection.test.ts` | new evidence harness (5 assertions, all green) |
 | `docs/research/tf-35f4-sim2-multi-surface-projection.FINDING.md` | this document |
 
 ## Cross-references

@@ -96,7 +96,7 @@ dispatch-arm → the `createOrLoadRuntimeContext` direct op (insert-or-get; the
 insert is already idempotent on contextId via upsert). Wire
 `FiregridMcpClient.sessions` (a new `createOrLoadByKey` or extend) in
 `packages/client-sdk/src/mcp.ts`. Then RESTORE comp-sim-idempotent (it's deleted;
-`git checkout <pre-#910> -- packages/tiny-firegrid/src/simulations/comp-sim-idempotent` or recreate)
+`git checkout <pre-#910> -- packages/firelab/src/simulations/comp-sim-idempotent` or recreate)
 and migrate it onto firegridHost (the #910 pattern) + the new MCP op. Update
 `docs/findings/tf-ll90-8-4-held-sims.md`. (verified-webhook-wait stays HELD —
 dynamic-plane send/read, separate.)

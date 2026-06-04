@@ -75,11 +75,11 @@ Deletion step:
 
 Current source:
 
-- `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:61-74`
+- `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:61-74`
   observes `RuntimeAgentOutputAfterEvents.forContext`.
-- `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:76-106`
+- `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:76-106`
   observes raw `RuntimeOutputTable.events.rows()`.
-- `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/observation-state.ts`
+- `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/observation-state.ts`
   still names the legacy path labels.
 
 Current state on this branch:
@@ -235,7 +235,7 @@ Sequencing consequence:
    and confirm only removable docs/generated references plus the source export
    remain.
 3. Re-run:
-   `rg -n "RuntimeAgentOutputAfterEvents|RuntimeOutputTable\\.events\\.rows|waitForIngressChannelProjection|waitForAgentOutputObservation" packages/client-sdk/src packages/host-sdk/src packages/tiny-firegrid/src/simulations/spike-channel-deletion`
+   `rg -n "RuntimeAgentOutputAfterEvents|RuntimeOutputTable\\.events\\.rows|waitForIngressChannelProjection|waitForAgentOutputObservation" packages/client-sdk/src packages/host-sdk/src packages/firelab/src/simulations/spike-channel-deletion`
    and compare against this inventory.
 4. Delete `projection-observer.ts` and the host barrel export. Slice A landed
    this deletion after `tf-zd8s`.
@@ -244,7 +244,7 @@ Sequencing consequence:
    with a single `SessionAgentOutputChannel` observer.
 6. Preserve the client public session wait facade as the product path unless
    `tf-aago` has replaced its internal helper with an equivalent channel helper.
-7. Run focused tests for host-sdk and the Sim 1 tiny-firegrid path, then run
+7. Run focused tests for host-sdk and the Sim 1 firelab path, then run
    `pnpm preflight`.
 8. `bash scripts/task-exit.sh tf-05jj`; do not self-merge.
 

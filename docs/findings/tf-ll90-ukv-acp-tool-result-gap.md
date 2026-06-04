@@ -8,7 +8,7 @@ rejects `ToolResult` inputs emitted by the unified tool-dispatch path.
 
 Evidence run:
 
-- `packages/tiny-firegrid/.simulate/runs/2026-06-01T20-59-14-844Z__unified-kernel-validation/trace.jsonl`
+- `packages/firelab/.simulate/runs/2026-06-01T20-59-14-844Z__unified-kernel-validation/trace.jsonl`
 
 Production path evidence:
 

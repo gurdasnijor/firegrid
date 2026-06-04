@@ -12,7 +12,7 @@ Two independently-built foreign ACP adapters each (a) complete a full turn throu
 
 ## What was run (evidence, not assertion)
 
-`acp-live-adapters.test.ts` drives the **private codec/sandbox seam** — the exact two Layers `ProductionCodecAdapterLive.buildSessionForContext` composes (`packages/runtime/src/unified/codec-adapter.ts:264-317`): `SandboxProvider.create`/`openBytePipe` (real subprocess) → `AcpSessionLive(byteStream, …)` (real codec) → consume the mapped `AgentOutputEvent` stream. No `@firegrid/client-sdk`, no `FiregridHost` — hence it lives in the owning package's `test/`, per `tiny-firegrid/docs/methodology.md` ("if the scenario needs codec/sandbox primitives, it is exercising a private seam … write the test in the owning package's test/ folder").
+`acp-live-adapters.test.ts` drives the **private codec/sandbox seam** — the exact two Layers `ProductionCodecAdapterLive.buildSessionForContext` composes (`packages/runtime/src/unified/codec-adapter.ts:264-317`): `SandboxProvider.create`/`openBytePipe` (real subprocess) → `AcpSessionLive(byteStream, …)` (real codec) → consume the mapped `AgentOutputEvent` stream. No `@firegrid/client-sdk`, no `FiregridHost` — hence it lives in the owning package's `test/`, per `firelab/docs/methodology.md` ("if the scenario needs codec/sandbox primitives, it is exercising a private seam … write the test in the owning package's test/ folder").
 
 | test | claude-agent-acp@0.36.1 | codex-acp@0.0.44 |
 |---|---|---|
@@ -69,7 +69,7 @@ AdapterRegistryEntry {
 
 ## Out-of-scope incidental
 
-`tiny-firegrid/.../production-flow-acp-live-scenario.ts` resolves `@agentclientprotocol/claude-agent-acp/dist/acp-agent.js` as its real-binary spawn target; that file is a library module (exports `runAcp`/`claudeCliPath`), and the package `bin` is `dist/index.js`. Spawning `acp-agent.js` exits 0 with no ACP I/O — that gated toggle has never driven the binary. One-line fix (`dist/index.js`); filed separately, not in this PR.
+`firelab/.../production-flow-acp-live-scenario.ts` resolves `@agentclientprotocol/claude-agent-acp/dist/acp-agent.js` as its real-binary spawn target; that file is a library module (exports `runAcp`/`claudeCliPath`), and the package `bin` is `dist/index.js`. Spawning `acp-agent.js` exits 0 with no ACP I/O — that gated toggle has never driven the binary. One-line fix (`dist/index.js`); filed separately, not in this PR.
 
 ## Reproduction
 
@@ -85,4 +85,4 @@ FIREGRID_CODEX_ACP_BIN=/abs/path/to/@agentclientprotocol/codex-acp/dist/index.js
 
 ## Deferred follow-up (motivates the §4 rebuild)
 
-A true tiny-firegrid PUBLIC-surface MCP-reach sim — driver on `@firegrid/client-sdk`, `host(env)` composing a `FiregridHost` that surfaces the choreography toolkit via MCP — is **blocked on the host-owned MCP-surfacing rebuild** (the deleted `mcp-host`). It is deferred and is itself a motivation for the §4 separation/registry work. Filed as a blocked bead.
+A true firelab PUBLIC-surface MCP-reach sim — driver on `@firegrid/client-sdk`, `host(env)` composing a `FiregridHost` that surfaces the choreography toolkit via MCP — is **blocked on the host-owned MCP-surfacing rebuild** (the deleted `mcp-host`). It is deferred and is itself a motivation for the §4 separation/registry work. Filed as a blocked bead.

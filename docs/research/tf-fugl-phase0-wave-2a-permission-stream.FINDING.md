@@ -26,17 +26,17 @@ stream to prove permission-response routing into `runtimeInputStream`.
 
 ## Probe
 
-Sim: `packages/tiny-firegrid/src/simulations/phase0-wave-2a-permission-stream/`
+Sim: `packages/firelab/src/simulations/phase0-wave-2a-permission-stream/`
 
 Run:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run phase0-wave-2a-permission-stream --timeout-ms 120000 --watch
+pnpm --filter firelab simulate:run phase0-wave-2a-permission-stream --timeout-ms 120000 --watch
 ```
 
 Run id: `2026-05-20T08-30-45-817Z__phase0-wave-2a-permission-stream`
 
-Trace: `packages/tiny-firegrid/.simulate/runs/2026-05-20T08-30-45-817Z__phase0-wave-2a-permission-stream/trace.jsonl`
+Trace: `packages/firelab/.simulate/runs/2026-05-20T08-30-45-817Z__phase0-wave-2a-permission-stream/trace.jsonl`
 
 The sim reuses the merged INV-1 stream-zip runtime-context body and drives `claude-agent-acp` through the public session surface. The prompt asks for one `sleep` MCP tool call and then a marker. The driver responds to the ACP `PermissionRequest` with `Allow`, waits 60 seconds, and records the routing verdict span.
 

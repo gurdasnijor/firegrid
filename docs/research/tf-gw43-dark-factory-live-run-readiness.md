@@ -6,9 +6,9 @@ LLM/provider cycles were spent.
 Sources read:
 
 - `docs/vision/factory-vision.md`
-- `packages/tiny-firegrid/src/simulations/dark-factory/host.ts`
-- `packages/tiny-firegrid/src/simulations/dark-factory/driver.ts`
-- `packages/tiny-firegrid/src/simulations/dark-factory/index.ts`
+- `packages/firelab/src/simulations/dark-factory/host.ts`
+- `packages/firelab/src/simulations/dark-factory/driver.ts`
+- `packages/firelab/src/simulations/dark-factory/index.ts`
 - `packages/host-sdk/src/host/channel.ts`
 - `packages/host-sdk/src/host/mcp-channel-metadata.ts`
 - `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts`
@@ -55,7 +55,7 @@ runtime-owned wait workflow path.
 | --- | --- | --- | --- |
 | 1 | Accept external events as durable, verified facts | Partially works now | The sim seeds a synthetic `factory.trigger.accepted` row into `DarkFactoryFactTable.facts`, and `factory.events` exposes that row as a typed ingress channel. The verified webhook substrate exists elsewhere, but dark-factory is not currently exercising an external provider webhook path. |
 | 2 | Hold participant identity durably across time | Works for a bounded smoke now | `darkFactoryDriver` creates or loads one runtime context by external key, enables runtime-context MCP, prompts it, and starts it through public client calls. The host owns `RuntimeContextWorkflow` start/attach and lifecycle handling. |
-| 3 | Map one external intent to one participant | Works for one singleton sim participant; needs run-key refinement for repeated live runs | The driver uses `externalKey: { source: "tiny-firegrid.dark-factory", id: "dark-factory" }`. That proves create/load identity, but repeated ticket-like live runs should key by run or external entity instead of a singleton id. |
+| 3 | Map one external intent to one participant | Works for one singleton sim participant; needs run-key refinement for repeated live runs | The driver uses `externalKey: { source: "firelab.dark-factory", id: "dark-factory" }`. That proves create/load identity, but repeated ticket-like live runs should key by run or external entity instead of a singleton id. |
 | 4 | Let participants delegate to other participants | Partially works now; full §6 delegation still needs a proof run | `session_new` and `session_prompt` lower through `AgentToolHost` into child `RuntimeContextWorkflow` creation and host-owned ingress. `spawn_all` is still unsupported by the live host service. The §6 implementer/reviewer loop should use `session_new`/`session_prompt` first, not assume bulk fan-out. |
 | 5 | Let participants wait for things | Channel-backed wait can be smoked now; final readiness is gated on the runtime-owned wait workflow cutover | `wait_for` and `wait_for_any` resolve `ChannelInventory` entries and can read typed channel streams. They do not yet hand off to `WaitForWorkflow.execute`; timeout uses the current tool-call workflow activity. Full §6 should wait for the final Lane B / `tf-xw0w` wait arm if the goal is to prove the public substrate, not just the channel facade. |
 | 6 | Let participants take actions in the world and remember what they did | Sleep works now; real world actions are not full-run ready | `sleep` is runtime-owned and durable. `send` can append to egress/bidirectional channels, and `execute` can call a sandbox provider if present. The current dark-factory run does not yet bind real Linear/GitHub/Slack side effects. Also, registered `approval.operator` currently returns `{ matched: false, timedOut: true }`, so the visible approval channel does not exercise the permission request/response path. |
@@ -104,13 +104,13 @@ Full §6 requires more than the current dark-factory sim can honestly prove:
    over the `approval.*` fallback, an agent calling the advertised channel will
    not drive the existing permission request/response adapter.
 3. External trigger path: dark-factory currently seeds a synthetic trigger row.
-   A real factory run needs a bounded choice between synthetic tiny-firegrid
+   A real factory run needs a bounded choice between synthetic firelab
    trigger and verified webhook ingress.
 4. Real side-effect adapters: the §6 story mentions Linear/GitHub/Slack-like
    work. The current sim only has local durable tables, sandbox execution if
    composed, and runtime-context MCP tools.
 5. Repeated-run identity: the driver should not reuse the singleton
-   `tiny-firegrid.dark-factory/dark-factory` external key for multiple ticket
+   `firelab.dark-factory/dark-factory` external key for multiple ticket
    runs.
 6. Driver stop condition: `driver.ts` loops forever waiting for agent output.
    A live run needs a bounded terminal predicate, timeout, and artifact path.

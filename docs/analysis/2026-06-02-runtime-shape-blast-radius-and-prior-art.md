@@ -127,9 +127,9 @@ the multi-event-per-key session-input case."**
 
 ---
 
-## 4. The verifying sim — spec for `tf-c71h` (tiny-firegrid workbench)
+## 4. The verifying sim — spec for `tf-c71h` (firelab workbench)
 
-Per `packages/tiny-firegrid/docs/methodology.md` §"The workbench pattern" (the
+Per `packages/firelab/docs/methodology.md` §"The workbench pattern" (the
 production per-event RuntimeContext tier does not exist yet, so we design its
 contract in a sim, on the real substrate, driven through the public client surface).
 
@@ -209,8 +209,8 @@ reverse C2/C5.** The contained blast radius + the in-tree reference (`Permission
 `packages/runtime/src/unified/mcp-host/tool-dispatch.ts` ·
 `packages/runtime/src/unified/signal.ts:54-77/150/220-227/266-309` ·
 `packages/runtime/src/unified/codec-adapter.ts:408` ·
-`packages/tiny-firegrid/docs/methodology.md` ·
-`packages/tiny-firegrid/src/simulations/unified-kernel-validation/{host,driver}.ts` ·
+`packages/firelab/docs/methodology.md` ·
+`packages/firelab/src/simulations/unified-kernel-validation/{host,driver}.ts` ·
 `docs/research/durable-execution-api-design-survey.md` ·
 proposal `docs/proposals/PROPOSAL_RUNTIME_CONTEXT_KEYED_SUBSCRIBER_RECONCILE_2026-06-02.md` ·
 beads `tf-tvg1`, `tf-c71h`, `tf-r06u.36`.

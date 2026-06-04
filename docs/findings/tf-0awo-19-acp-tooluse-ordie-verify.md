@@ -21,13 +21,13 @@ path. The observer currently wraps the forked workflow execution in
 Command:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run unified-kernel-validation
+pnpm --filter firelab simulate:run unified-kernel-validation
 ```
 
 Run:
 
 ```text
-packages/tiny-firegrid/.simulate/runs/2026-06-02T11-16-05-056Z__unified-kernel-validation/trace.jsonl
+packages/firelab/.simulate/runs/2026-06-02T11-16-05-056Z__unified-kernel-validation/trace.jsonl
 ```
 
 Trace sequence:
@@ -53,7 +53,7 @@ firegrid.ukv.migrated_probe.8.evidence="snapshot ToolUse count=0; trace surfaced
 ```
 
 This run is not a fake codec or recorder path. It is the production ACP codec
-through the tiny-firegrid `unified-kernel-validation` host. Its subprocess is
+through the firelab `unified-kernel-validation` host. Its subprocess is
 the official ACP TypeScript SDK example agent path recorded in the trace.
 
 ### PR #446 / tf-v7t trace read

@@ -16,7 +16,7 @@ recommended a durable `RuntimeContextStateTable` loop-state slice.
 
 ## What this sim proves
 
-`packages/tiny-firegrid/src/simulations/loop-state-table` models loop state as
+`packages/firelab/src/simulations/loop-state-table` models loop state as
 **one workflow-owned `DurableTable` row** (`loopState`) carrying both cursors
 **and** the pending permission request/response sets, plus append-only
 `inputs`/`outputs`/`sentActions` logs. Every processing pass **reloads the row
@@ -78,6 +78,6 @@ orderings and replay placement are deterministic.
 ## Running
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run loop-state-table
-pnpm --filter @firegrid/tiny-firegrid simulate:perf <runId>
+pnpm --filter firelab simulate:run loop-state-table
+pnpm --filter firelab simulate:perf <runId>
 ```

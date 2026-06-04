@@ -8,7 +8,7 @@ This is not a claim that MCP Tasks delete Firegrid's execution router or make op
 
 ## What was built
 
-The simulation is `packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/`.
+The simulation is `packages/firelab/src/simulations/mcp-tasks-gateway/`.
 
 - The durable wire is three `effect-durable-streams` streams: requests, responses, and task events (`wire.ts:55-77`). The simulation client speaks that durable-streams HTTP wire directly with raw `fetch` and imports only `@firegrid/client-sdk/firegrid` plus `effect` (`driver.ts:1-6`, `driver.ts:92-199`).
 - The task store is an append-only durable task-event log with status values `working`, `input_required`, `completed`, `failed`, and `cancelled` (`wire.ts:33-53`). In-process refs/fibers are only the live execution/awaiting-input handles (`protocol.ts:33-56`, `protocol.ts:369-388`).
@@ -23,15 +23,15 @@ The simulation is `packages/tiny-firegrid/src/simulations/mcp-tasks-gateway/`.
 
 The host is a real `FiregridRuntime` with a real claude ACP spawn target (`host.ts:304-335`, `driver.ts:8-12`). The generated prompt channel is a spike-local `session.prompt` durable-event binding that calls `RuntimeContextSessionWorkflow.execute(..., { discard: true })`, not a fake codec or recorder (`host.ts:139-185`). The MCP toolkit is registered against the real `FiregridAgentToolkit`, with a gateway context resolved from the control-plane table (`host.ts:197-225`, `host.ts:255-269`). Prompt lifecycle observation is sourced from protocol launch views over the runtime output table on the host side (`host.ts:228-244`).
 
-The tiny-firegrid runner now provides the public `FiregridConfig` service to drivers so this simulation can read the already-public durable-streams base URL and namespace without adding a client-sdk spike export (`types.ts:28-38`, `runner/runtime.ts:232-249`).
+The firelab runner now provides the public `FiregridConfig` service to drivers so this simulation can read the already-public durable-streams base URL and namespace without adding a client-sdk spike export (`types.ts:28-38`, `runner/runtime.ts:232-249`).
 
 ## Trace Evidence
 
 Run:
 
-`packages/tiny-firegrid/.simulate/runs/2026-06-03T10-25-46-724Z__mcp-tasks-gateway/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-06-03T10-25-46-724Z__mcp-tasks-gateway/trace.jsonl`
 
-`pnpm --filter @firegrid/tiny-firegrid simulate -- show 2026-06-03T10-25-46-724Z__mcp-tasks-gateway` reported 500 spans, 1 trace, and 0 errored spans.
+`pnpm --filter firelab simulate -- show 2026-06-03T10-25-46-724Z__mcp-tasks-gateway` reported 500 spans, 1 trace, and 0 errored spans.
 
 Load-bearing trace rows:
 

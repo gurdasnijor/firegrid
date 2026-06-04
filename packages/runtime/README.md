@@ -30,7 +30,7 @@ import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/engine/durable-s
 | --- | --- |
 | `@firegrid/runtime/composition/host-live` | Runtime host Layer composition. |
 | `@firegrid/runtime/composition/host-public` | `startRuntime`, ingress helpers, and public host facade helpers. |
-| `@firegrid/runtime/engine/durable-streams-workflow-engine` | Low-level durable `@effect/workflow` engine substrate for engine tests and tiny-firegrid simulations. |
+| `@firegrid/runtime/engine/durable-streams-workflow-engine` | Low-level durable `@effect/workflow` engine substrate for engine tests and firelab simulations. |
 | `@firegrid/runtime/subscribers/wait-router` | Runtime-owned wait workflow definitions. |
 | `@firegrid/runtime/subscribers/runtime-control` | Runtime-control workflow definitions and dispatcher surfaces. |
 

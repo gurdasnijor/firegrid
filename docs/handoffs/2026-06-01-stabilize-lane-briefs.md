@@ -14,7 +14,7 @@ Simplest: copy the fenced block for each lane and pipe it:
 
 **Board (see handoff §map):** Lane 1 owns `unified/` FIRST (trunk-green production fixes); Lane 2
 (kernel lifecycle, sims-first) and Lane 3 (harness/enforcement + real-agent + proofs) start in
-tiny-firegrid (non-colliding); Lane 4 (enforcement-surface audit) is read-only/non-colliding.
+firelab (non-colliding); Lane 4 (enforcement-surface audit) is read-only/non-colliding.
 Lane 2 enters `unified/` only after Lane 1 merges green. **Never two lanes in `unified/` at once.**
 Governing rule: **gather data (run a sim) before concluding** (handoff §0). **HARD GATE:** "make
 CI green" (Lane 1 / `tf-ll90.1`) is blocked-by the sim-enforcement (Lane 3 / `tf-ll90.15`) — a
@@ -65,7 +65,7 @@ Mission: make the durable session lifecycle real — cancel/close, crash-recover
 write+arm, terminal-completion (fix the process leak), schedule_me delivery. SIMS-FIRST.
 
 READ FIRST: docs/handoffs/2026-06-01-stabilize-unified-handoff.md §0 (THE META-RULE) +
-packages/tiny-firegrid/docs/methodology.md + docs/runbooks/firegrid-effect-tracing.md (sims
+packages/firelab/docs/methodology.md + docs/runbooks/firegrid-effect-tracing.md (sims
 are RUN via simulate:run; evidence = the captured OTLP trace, NOT vitest) +
 docs/cannon/architecture/kernel-owned-write-arm.md (CANNON) + docs/recipes/_lift-candidates.md
 (the lifecycle sims to rebuild) + docs/recipes/README.md (check before building any
@@ -87,7 +87,7 @@ ACCEPTANCE: a RUN sim producing .simulate/runs/<id>/ trace evidence over the pub
 a prose finding citing specific spans; (later) the production that makes it pass. NO vitest, NO
 test/probe.ts, NO in-script verdict.
 
-DISCIPLINE: tiny-firegrid ONLY at start (non-colliding). Production enters unified/ ONLY after
+DISCIPLINE: firelab ONLY at start (non-colliding). Production enters unified/ ONLY after
 Lane 1 merges green (never 2 lanes in unified/). The lifecycle properties share ONE durable
 terminal-emit surface (tf-ll90.3) — design it once, don't duplicate. Confirm your plan + the
 cancel/close sim shape with the coordinator BEFORE building.
@@ -103,7 +103,7 @@ as airgapped RUN sims. (The kernel currently has NO trace-evidenced coverage —
 against internals, and only fake-codec, never a real agent.)
 
 READ FIRST: docs/handoffs/2026-06-01-stabilize-unified-handoff.md §0 (THE META-RULE) +
-packages/tiny-firegrid/docs/methodology.md + docs/runbooks/firegrid-effect-tracing.md +
+packages/firelab/docs/methodology.md + docs/runbooks/firegrid-effect-tracing.md +
 docs/recipes/_lift-candidates.md (the rebuild catalog) + docs/recipes/agent-to-agent-observation.md
 + docs/recipes/runtime-permission-resume.md (composable patterns to REUSE, not rebuild — observe→
 respond→resume on existing channels, "Do Not Reimplement").
@@ -113,7 +113,7 @@ TASK 1 = tf-ll90.15 (sim-enforcement CI GATE) — ★ CRITICAL PATH: this HARD-G
 current sim forges it (driver.ts value-imports ./host.ts for a substrate handle; unified-kernel-
 validation sprawls to ~18 files + fakes; others use runtime.ts/probe.test.ts + vitest verdicts).
 Build the enforcement AS A CI GATE (red on any violation), per the full spec on the bead:
-  - SHAPE LOCK: a sim is EXACTLY {index.ts, driver.ts, host.ts} (extend scripts/tiny-firegrid-
+  - SHAPE LOCK: a sim is EXACTLY {index.ts, driver.ts, host.ts} (extend scripts/firelab-
     layout-check.mjs) — no substrate.ts/scenarios.ts/fake-codec.ts/runtime.ts/probe.ts sprawl.
   - ENTRY LOCK: index.ts must `export default defineSimulation({host, driver})`; runSimulation is
     the only runner; brand defineSimulation's return so a hand-rolled literal is a type error.
@@ -135,7 +135,7 @@ tf-ll90.11's CORE list — as RUN sims (use _lift-candidates.md).
 ACCEPTANCE: vitest gone + test tree converted; a real-agent RUN sim with a captured trace proving
 the path; every artifact is a RUN sim + trace + prose finding. NO vitest anywhere.
 
-DISCIPLINE: tiny-firegrid ONLY (non-colliding). Coordinate sim-dir ownership with Lane 2 (they own
+DISCIPLINE: firelab ONLY (non-colliding). Coordinate sim-dir ownership with Lane 2 (they own
 the cancel/write-arm/terminal/schedule lifecycle sims; you own harness + real-agent + codec + wait
 + output). Confirm your plan (esp. the test-tree conversion list — which convert vs remove) with
 the coordinator BEFORE building.
@@ -162,13 +162,13 @@ with EVIDENCE (read the rule/script/baseline + what it gates; note if it's vacuo
 deleted dirs or actively blocking the §4 reshape):
 1. scripts/ — the ~20 WIRED enforcement scripts (clean-room-hard-root-guard, effect-native-
    production-cutover-check, legacy-runtime-roots-scoreboard, runtime-target-legacy-type-only-check,
-   runtime-public-surface-check, host-sdk-runtime-import-baseline, test-layout-check, tiny-firegrid-
+   runtime-public-surface-check, host-sdk-runtime-import-baseline, test-layout-check, firelab-
    layout-check, trace-seam-coverage, tiny-config-prod-coverage, jscpd/knip/semgrep/effect-quality
    baselines, preflight, tooling.mjs) + git-hooks/{pre-commit,pre-push}. (~19 orphan coordination/
    cron tools — cmux-dispatch, lane-sweep, task-enter, beads-sync, state-watch — are operational,
    note-but-deprioritize.)
 2. .dependency-cruiser.cjs — ALL rules; ESP the ~17 runtime-folder-tier + *-no-legacy-tree-import +
-   runtime-shape-c-* rules (the pre-unified tiering the collapse retired). Flag the tiny-firegrid
+   runtime-shape-c-* rules (the pre-unified tiering the collapse retired). Flag the firelab
    R2/R3 airgap rules as ALIGNED-but-needs-strengthening (→ tf-ll90.15, don't duplicate).
 3. .effect-diagnostics-baseline.json — the 82-entry floor: stale debt the green-up should FIX,
    deleted/superseded code, or legit? Same for the semgrep/jscpd/knip baselines.

@@ -21,7 +21,7 @@
  * PLACEMENT: `@firegrid/runtime/test` — runtime's tsconfig includes `test/**`, so
  * `pnpm typecheck` actually evaluates the `expectTypeOf` / `@ts-expect-error`
  * directives here (mirrors misuse-resistance-footguns.test.ts). A `.type-test`
- * under tiny-firegrid would be inert.
+ * under firelab would be inert.
  */
 
 import type { PublicLaunchRuntimeIntent } from "@firegrid/protocol/launch"

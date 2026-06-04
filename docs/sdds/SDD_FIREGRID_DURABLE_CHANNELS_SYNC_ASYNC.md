@@ -322,5 +322,5 @@ a stronger binding specifies claim/ack semantics.
 - `@effect/workflow` `DurableDeferred` - durable awakeable semantics behind sync handshakes.
 - `packages/effect-durable-operators/src/DurableTable.ts` - durable append + rows behind async mode.
 - `docs/research/tf-lfxs-durable-channels-sync-async.FINDING.md` - spike evidence and verdict.
-- `docs/research/tf-nioy-channel-completion-contracts.FINDING.md` - completion-contract placement evaluation and tiny-firegrid probe.
+- `docs/research/tf-nioy-channel-completion-contracts.FINDING.md` - completion-contract placement evaluation and firelab probe.
 - `docs/sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md` - route descriptor metadata and edge dispatch boundary.

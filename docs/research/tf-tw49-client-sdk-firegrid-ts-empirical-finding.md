@@ -5,7 +5,7 @@ Bead: `tf-tw49` · gates: `tf-ivl6` (refactor)
 This is a measurement artifact, not a refactor design. The bead surfaced
 8 concerns; this doc classifies each against direct-source evidence and,
 where useful, trace evidence from
-`packages/tiny-firegrid/.simulate/runs/2026-05-20T00-00-43-070Z__codex-acp-tool-calls/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-05-20T00-00-43-070Z__codex-acp-tool-calls/trace.jsonl`
 (4017 spans / 90.012s window / driver = codex-agent-acp). The
 60-sec-grep heuristic was applied first: 6 of 8 concerns settle from
 direct source-read of `firegrid.ts` alone; 2 (#1, #7) are
@@ -52,7 +52,7 @@ self-time is dominated by long-lived durable-stream `rows()` subscriptions:
 ```
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:perf \
+pnpm --filter firelab simulate:perf \
   2026-05-20T00-00-43-070Z__codex-acp-tool-calls \
   --top 12 --idle-threshold-ms 1000
 ```
@@ -499,7 +499,7 @@ Entanglement is twofold:
 Use this minimum query set for future client-sdk-perf comparisons:
 
 ```bash
-TRACE=packages/tiny-firegrid/.simulate/runs/<RUN>/trace.jsonl
+TRACE=packages/firelab/.simulate/runs/<RUN>/trace.jsonl
 
 # Per-call layer acquire amplification (concern #1)
 jq -r 'select(.name=="firegrid.durable_table.layer.acquire")

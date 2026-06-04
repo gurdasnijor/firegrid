@@ -57,15 +57,15 @@ prompt a real agent  →  capture OTel trace  →  analyze (3 axes)  →  fix or
 Two **known metric artifacts** (don't be misled): `tool-call result=0/open=N` is a span-name
 mismatch (tools DID return), and it lumps *fast tool errors* (`ToolInvalidInput`) in with *turn timeouts*.
 
-### Headless ACP driver → now a tiny-firegrid sim
+### Headless ACP driver → now a firelab sim
 We first built `scripts/acp-drive.mjs` (a loose Node ACP client). It was then **replaced** by a
-framework-native simulation, `packages/tiny-firegrid/src/simulations/acp-tool-elicitation/`
+framework-native simulation, `packages/firelab/src/simulations/acp-tool-elicitation/`
 (modeled on `acp-edge-transport`): `host = AcpStdioEdgeLive` + real claude-acp; `driver` = a
 `class ElicitationClient implements acp.Client` driving the edge over an in-memory `ndJsonStream`
 harness, replaying a curated prompt matrix (`prompts.ts`) one turn per span. Run:
 ```
 ANTHROPIC_API_KEY=... TINY_FIREGRID_TIMEOUT="300 seconds" \
-  pnpm --filter @firegrid/tiny-firegrid simulate:run -- acp-tool-elicitation
+  pnpm --filter firelab simulate:run -- acp-tool-elicitation
 ```
 Inherits `simulate:show / perf / duckdb`. (In PR #639.) Drives the edge **in-process** — faithful
 for edge *logic*, not the literal subprocess/stdio boundary.
@@ -160,7 +160,7 @@ trace (one 140k-span trace) was a pre-fix capture.
 | Codec blocking `requestPermission` | `packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:488` |
 | Embedded server `:4437` + registry (merged #638) | `packages/cli/src/bin/run.ts` (`durableStreamsEndpoint`) |
 | Trace-health report | `scripts/acp-trace-health.py` |
-| Headless elicitation sim | `packages/tiny-firegrid/src/simulations/acp-tool-elicitation/` (PR #639) |
+| Headless elicitation sim | `packages/firelab/src/simulations/acp-tool-elicitation/` (PR #639) |
 | Stream-inspector UI | `tools/durable-streams-ui/` (PR #639) |
 | Permission-deadlock finding | `docs/investigations/2026-05-21-acp-stdio-edge-permission-deadlock.md` |
 | Parent→child gap finding | `docs/investigations/2026-05-21-acp-parent-child-output-channel-gap.md` |

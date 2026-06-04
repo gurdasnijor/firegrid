@@ -1,6 +1,6 @@
 # tf-jt8q — tool/result roundtrip without ToolCallWorkflow or deferred mailbox (2026-05-22)
 
-**Bead:** `tf-jt8q` (P1). Clean-room tiny-firegrid prototype. Sibling to
+**Bead:** `tf-jt8q` (P1). Clean-room firelab prototype. Sibling to
 `tf-zjuf` (permission rendezvous) and the `tf-aseo` durable-loop-state re-scope.
 Simulation only — not production code.
 
@@ -15,7 +15,7 @@ skip cursor, achieving **exactly-once tool execution across replays** and
 
 ## What this sim proves
 
-`packages/tiny-firegrid/src/simulations/tool-result-roundtrip` models the turn
+`packages/firelab/src/simulations/tool-result-roundtrip` models the turn
 over three durable collections — `loopState` (one row: skip cursor +
 `executedToolUses` set + counts), `outputs` (agent emits text / tool_use /
 turn_complete), `toolResults` (workflow appends, keyed by `toolUseId`). Every
@@ -103,6 +103,6 @@ module latch (same pattern as `target-architecture-reference` / `loop-state-tabl
 ## Running
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run tool-result-roundtrip
-pnpm --filter @firegrid/tiny-firegrid simulate:perf <runId>
+pnpm --filter firelab simulate:run tool-result-roundtrip
+pnpm --filter firelab simulate:perf <runId>
 ```

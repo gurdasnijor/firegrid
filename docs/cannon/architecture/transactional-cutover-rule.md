@@ -6,7 +6,7 @@ Date: 2026-05-21
 Firegrid does not accept half-shipped replacement architecture in production
 packages.
 
-`packages/tiny-firegrid/` is the exception. It is the sandbox for spikes,
+`packages/firelab/` is the exception. It is the sandbox for spikes,
 evidence, partial demonstrations, and intentionally disposable prototypes.
 Half-ships are allowed there as long as they are not presented as production
 implementation.
@@ -18,7 +18,7 @@ explicitly classified as still blocking the cutover.
 
 ## Rule
 
-Replacement work outside `packages/tiny-firegrid/` must be transactional.
+Replacement work outside `packages/firelab/` must be transactional.
 
 That means a PR, bead, or wave that changes product code, public docs, package
 boundaries, SDK surfaces, runtime behavior, or canonical architecture may close
@@ -34,11 +34,11 @@ as complete only if one of these is true:
    It may validate a direction, but it must not close the implementation work it
    motivates.
 
-Anything else is a half-ship and is not acceptable outside tiny-firegrid.
+Anything else is a half-ship and is not acceptable outside firelab.
 
-Inside `packages/tiny-firegrid/`, partial work is acceptable when it is labeled
+Inside `packages/firelab/`, partial work is acceptable when it is labeled
 as a spike, fixture, simulation, or finding generator. The moment code moves
-from tiny-firegrid into `packages/client-sdk`, `packages/runtime`,
+from firelab into `packages/client-sdk`, `packages/runtime`,
 `packages/host-sdk`, `packages/protocol`, apps, CLI, or canonical docs, the
 transactional rule applies.
 
@@ -75,7 +75,7 @@ the PR is not a finished cutover.
 
 ## Example: Durable Sync/Async Channels
 
-`tf-lfxs` validated durable sync/async channel framing in tiny-firegrid, which
+`tf-lfxs` validated durable sync/async channel framing in firelab, which
 was allowed to be partial. `tf-lf9p` then moved into production code and shipped
 the first production slice: dependent session writes no longer require explicit
 `session.whenReady` before `session.prompt` or `session.start`.

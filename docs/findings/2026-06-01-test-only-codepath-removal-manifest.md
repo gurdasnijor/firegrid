@@ -35,7 +35,7 @@ Scenario 9 is **env-gated OFF by default** (`driver.ts:187` → `scenarios = pro
 > - `runtime/src/sources/sandbox/internal-provider.ts` · `makeInMemorySandboxStore` — consumed by the **production** sandbox providers `sources/sandbox/local-process.ts:319` and `sources/sandbox/effect-ai.ts:93`. It is the real in-memory registry backing production providers, not a test stand-in.
 > - `runtime/src/unified/channel-bindings.ts` · the "stub" channel Lives (`:132-204`) — these are **production-incomplete** read-side bindings (return stable offsets / `Stream.empty`), the R4/R5 gap in the deletion audit. They are unfinished production wiring, **owned by `tf-ll90.2`** (relocate to `channels/` + real reads), not a sim backdoor. Flag, don't delete here.
 
-## B. Sim backdoors in the UKV simulation (`packages/tiny-firegrid/src/simulations/unified-kernel-validation/`)
+## B. Sim backdoors in the UKV simulation (`packages/firelab/src/simulations/unified-kernel-validation/`)
 
 | # | File · symbol | Fakes | Consumers (grepped) | Removal |
 |---|---|---|---|---|

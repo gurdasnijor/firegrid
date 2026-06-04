@@ -326,11 +326,11 @@ channels, host-sdk, or client. One new runtime file + one edited workflow arm.
 ## §3 Validation plan
 
 1. **Clean-room re-gate (no engine).** Re-run the tf-q4uz oracle
-   (`pnpm --filter @firegrid/tiny-firegrid simulate:run phase0b-output-replay-oracle`)
+   (`pnpm --filter firelab simulate:run phase0b-output-replay-oracle`)
    as the red→green target; confirm the table-cursor candidate holds
    amplification ≈ 1.0 across the D∈{4,8,16,32,64} sweep where the scan specimen
    blows `(D+1)/2`.
-2. **Substrate proof (point vs scan).** A focused tiny-firegrid sim or
+2. **Substrate proof (point vs scan).** A focused firelab sim or
    `effect-durable-operators` test asserting `events.get(compositeKey)` returns
    the row at `sequence` in O(1) (no `toArray`), proving the read needs no new
    index. (This is the load-bearing substrate claim; pin it with a test.)

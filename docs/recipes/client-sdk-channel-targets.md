@@ -90,10 +90,10 @@ use case; don't reach for it without one.
 ## Regression evidence
 
 The mapping table above is asserted as a structural contract by the
-tiny-firegrid simulation:
+firelab simulation:
 
 ```
-pnpm --filter @firegrid/tiny-firegrid test test/shape-c-channel-router-turn/probe.test.ts
+pnpm --filter firelab test test/shape-c-channel-router-turn/probe.test.ts
 ```
 
 (25/25 vitest tests as of the FINDING reference below.) The simulation
@@ -106,7 +106,7 @@ fails loud.
 
 ## Ground Truth
 
-- `packages/tiny-firegrid/src/simulations/shape-c-channel-router-turn/FINDING.md`
+- `packages/firelab/src/simulations/shape-c-channel-router-turn/FINDING.md`
   — the verdict, the mapping derivation, the negative guards, the
   out-of-scope decisions.
 - `packages/client-sdk/src/firegrid.ts` — the production surface.

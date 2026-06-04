@@ -46,7 +46,7 @@ PR #446 (`tf-v7t`, open PR head
 `36fbc8d2eaf52e49c76a85d7a8804387af8ce9dc`) adds the missing dark-factory
 driver policy loop on its branch:
 
-- `packages/tiny-firegrid/src/simulations/dark-factory/driver.ts:40-58`
+- `packages/firelab/src/simulations/dark-factory/driver.ts:40-58`
   documents the finding: every MCP tool invocation is wrapped by
   `canUseTool`; Firegrid forwards it; the driver must respond.
 - `driver.ts:59-94` implements `forkAutoApprovePermissions`, repeatedly

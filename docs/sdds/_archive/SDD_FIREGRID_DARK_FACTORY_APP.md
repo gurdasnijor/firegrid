@@ -694,7 +694,7 @@ decides the sequence, and code provides durable capabilities.
 ### Tiny Firegrid Simulation Evidence
 
 `CLAIM-VERIFIED` (trace + source verified, 2026-05-19):
-`packages/tiny-firegrid/src/simulations/dark-factory-pipeline.ts` provides the
+`packages/firelab/src/simulations/dark-factory-pipeline.ts` provides the
 simulation shape for the full factory-vision §6 loop. The simulation composes a
 Firegrid host, binds the app-owned `darkFactory.facts` DurableTable as a public
 `CallerFact` wait stream, seeds the trigger plus happy-path human/provider edge
@@ -707,7 +707,7 @@ surface. It does not encode a planner/implementer/reviewer/merge phase chain.
 
 Evidence run
 `2026-05-19T11-41-51-752Z__dark-factory-pipeline` is local under
-`packages/tiny-firegrid/.simulate/runs/2026-05-19T11-41-51-752Z__dark-factory-pipeline/`.
+`packages/firelab/.simulate/runs/2026-05-19T11-41-51-752Z__dark-factory-pipeline/`.
 It uses `@agentclientprotocol/claude-agent-acp@0.36.1` with
 `ANTHROPIC_API_KEY`. The trace shows the public client prompt append succeeded
 with short `inputId` `planner-prompt`, `firegrid.host.codec.start_session`

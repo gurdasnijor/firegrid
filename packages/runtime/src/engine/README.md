@@ -46,7 +46,7 @@ sibling of `events/`, below the pipeline tiers
   `durable-streams-workflow-engine.ts` is part of the externally
   importable surface.
 - Become a public package subpath. The substrate is composition-private;
-  external consumers (host-sdk, tiny-firegrid simulations) reach the
+  external consumers (host-sdk, firelab simulations) reach the
   engine via `@firegrid/runtime/composition/host-workflow-engine`'s
   `HostWorkflowEngineLive`, never through `@firegrid/runtime/engine`.
 

@@ -2,7 +2,7 @@
 
 Audience: maintainers deciding what to promote into public-facing docs.
 
-The `tiny-firegrid` simulations contain GREEN-verdict patterns that
+The `firelab` simulations contain GREEN-verdict patterns that
 codify production-load-bearing primitives but are not surfaced as
 recipes, runbooks, or ARCHITECTURE.md sections. Each entry below
 recommends a target lift — usually a recipe, sometimes an
@@ -54,7 +54,7 @@ Lift them when a contributor is making changes in the affected layer:
 
 ### 1. Wave C dispatch contract — client SDK ↔ runtime channel targets
 
-**Sim:** `tiny-firegrid/src/simulations/shape-c-channel-router-turn/FINDING.md`
+**Sim:** `firelab/src/simulations/shape-c-channel-router-turn/FINDING.md`
 
 **Verdict:** GREEN. The FINDING contains a complete mapping table of
 every public `firegrid.ts` client method → production `ChannelTarget` +
@@ -73,7 +73,7 @@ target). The simulation is the test that keeps it honest.
 
 ### 2. RuntimeContext fact matrix — the per-key subscriber contract
 
-**Sim:** `tiny-firegrid/src/simulations/runtime-context-fact-matrix/FINDING.md`
+**Sim:** `firelab/src/simulations/runtime-context-fact-matrix/FINDING.md`
 
 **Verdict:** GREEN. Tabulates every fact kind that drives RuntimeContext
 state (input, output_transition, permission_response, tool_result,
@@ -91,7 +91,7 @@ wiring).
 
 ### 3. Shape D dispatch — when to wrap a tool in a workflow
 
-**Sim:** `tiny-firegrid/src/simulations/shape-d-tool-dispatch-mcp-entry/FINDING.md`
+**Sim:** `firelab/src/simulations/shape-d-tool-dispatch-mcp-entry/FINDING.md`
 
 **Verdict:** GREEN (option A). Establishes the criterion that the
 existing Shape D `ToolCallWorkflow` + `RuntimeToolUseExecutor` pair is
@@ -109,8 +109,8 @@ the criterion + linking to the finding for the proof.
 ### 4. Agent observation through the channel router
 
 **Sims:**
-- `tiny-firegrid/src/simulations/agent-coordination-readiness/FINDING.md`
-- `tiny-firegrid/src/simulations/child-output-existing-channel-router/FINDING.md`
+- `firelab/src/simulations/agent-coordination-readiness/FINDING.md`
+- `firelab/src/simulations/child-output-existing-channel-router/FINDING.md`
 
 **Verdict:** GREEN. Documents the agent's path to observing another
 agent's output through the existing `HostPlaneChannelRouter.dispatch`.
@@ -130,7 +130,7 @@ the three sims as evidence.
 
 ### 5. Channel completion contracts
 
-**Sim:** `tiny-firegrid/src/simulations/channel-completion-contracts/`
+**Sim:** `firelab/src/simulations/channel-completion-contracts/`
 (no FINDING.md — sim itself is the contract test).
 
 **Pattern:** every channel target declares completion semantics
@@ -142,7 +142,7 @@ Reference the simulation as the regression gate.
 
 ### 6. Locked tool surface — agentic patterns primitive profile
 
-**Sim:** `tiny-firegrid/src/simulations/agentic-patterns-primitive-profile/`
+**Sim:** `firelab/src/simulations/agentic-patterns-primitive-profile/`
 (no FINDING.md; one-shot vitest at
 `test/agentic-patterns-primitive-profile.test.ts` asserts the locked
 tool list).
@@ -157,7 +157,7 @@ linking the test.
 
 ### 7. Inv-4 channel registry shape
 
-**Sim:** `tiny-firegrid/src/simulations/inv4-channel-registry/` (no
+**Sim:** `firelab/src/simulations/inv4-channel-registry/` (no
 FINDING.md).
 
 **Pattern:** how channels register with the host's channel router. The

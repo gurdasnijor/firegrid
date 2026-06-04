@@ -44,4 +44,4 @@ Normal guardrail gate:
 
 ## Recommended Next Slice
 
-The next consumer-migration slice should target `packages/host-sdk/src/host/runtime-context-workflow-core.ts`. It is now a pure compatibility shim, but production modules, tests, and tiny-firegrid simulations still import the host-sdk path. Move those consumers to `@firegrid/runtime/workflows` in a focused migration before deleting the shim and removing its carveout.
+The next consumer-migration slice should target `packages/host-sdk/src/host/runtime-context-workflow-core.ts`. It is now a pure compatibility shim, but production modules, tests, and firelab simulations still import the host-sdk path. Move those consumers to `@firegrid/runtime/workflows` in a focused migration before deleting the shim and removing its carveout.

@@ -1,16 +1,16 @@
 # tf-4cik.1 Agent Runtime Fixture Replay Finding
 
-The conformance backbone is a tiny-firegrid simulation:
+The conformance backbone is a firelab simulation:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run agent-runtime-fixture-replay-harness
-pnpm --filter @firegrid/tiny-firegrid simulate:show <run-id>
-pnpm --filter @firegrid/tiny-firegrid simulate:perf <run-id>
+pnpm --filter firelab simulate:run agent-runtime-fixture-replay-harness
+pnpm --filter firelab simulate:show <run-id>
+pnpm --filter firelab simulate:perf <run-id>
 ```
 
 The standard run is deterministic. It replays checked-in ACP, stdio-jsonl,
 fake MCP/provider, restart/disconnect, and codec double-advertisement fixtures
-from `packages/tiny-firegrid/src/simulations/agent-runtime-fixture-replay-harness/corpus/`.
+from `packages/firelab/src/simulations/agent-runtime-fixture-replay-harness/corpus/`.
 Live-agent canaries are declared in the matrix but skipped unless explicitly
 enabled by environment; they are not the CI foundation.
 
@@ -20,7 +20,7 @@ Verified run:
 
 ```txt
 run: 2026-05-21T05-07-09-285Z__agent-runtime-fixture-replay-harness
-trace: packages/tiny-firegrid/.simulate/runs/2026-05-21T05-07-09-285Z__agent-runtime-fixture-replay-harness/trace.jsonl
+trace: packages/firelab/.simulate/runs/2026-05-21T05-07-09-285Z__agent-runtime-fixture-replay-harness/trace.jsonl
 matrix rows: 6
 fuzz cases: 60
 unsupported rows: live-canary-codex-acp

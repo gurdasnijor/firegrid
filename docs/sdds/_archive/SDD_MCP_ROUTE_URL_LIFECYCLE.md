@@ -100,7 +100,7 @@ self-contained. For MCP it is **not**: the agent needs a concrete URL
 whose authority (listener host/port) is created by the host *after* the
 client write. TFIND-048 is that unresolved sub-question. Its resolution
 is a section of / amendment to the #332 transaction, sequenced into the
-same protocol/host/client/tiny-firegrid changes — not a parallel SDD
+same protocol/host/client/firelab changes — not a parallel SDD
 with its own merge.
 
 ---
@@ -146,7 +146,7 @@ concrete URL — but only because the CLI is itself the host.**
 
 **The Codex ACP fixture is uniquely test-fixture-shaped.**
 
-- `tiny-firegrid/src/configurations/codex-acp-tool-call-pipeline.ts:22-36`
+- `firelab/src/configurations/codex-acp-tool-call-pipeline.ts:22-36`
   — `codexAcpToolCallMcpUrl({host, port, path, contextId})` builds the
   concrete URL from caller-supplied host/port.
 - `test/codex-acp-tool-call-pipeline.test.ts:374-392` — the test
@@ -154,7 +154,7 @@ concrete URL — but only because the CLI is itself the host.**
   `contextId = sessionContextIdForExternalKey(externalKey)`, builds the
   URL, and embeds it — all **before** the context exists, with the test
   orchestrator playing **both** host and client and pre-allocating the
-  port the host will bind. No other tiny-firegrid configuration
+  port the host will bind. No other firelab configuration
   (durable-streams, stdio-jsonl, output-journal) uses MCP or pre-derives
   a context-scoped URL. Codex ACP is the only one.
 
@@ -398,7 +398,7 @@ runtime host that builds the reconciler daemon:
   `RuntimeControlRequestReconcilerDaemonLive`
   (`packages/host-sdk/src/host/layers.ts:251-254`).
 - Same pattern: `packages/cli/src/bin/run.ts:423` and
-  `packages/tiny-firegrid/src/configurations/codex-acp-tool-call-pipeline.ts:74`.
+  `packages/firelab/src/configurations/codex-acp-tool-call-pipeline.ts:74`.
 
 There is **no** in-tree topology that runs the reconciler in a process
 that does not also build the MCP listener. The MCP listener is opt-in
@@ -526,7 +526,7 @@ load-bearing proof and lands in the same transaction.
 3. **CLI** (`packages/cli`): delete `run.ts:379-382` + `:479`
    pre-`createOrLoad` injection and the dead pre-derivation plumbing;
    CLI emits only the URL-less marker.
-4. **tiny-firegrid**: resume the paused Codex ACP config + test on the
+4. **firelab**: resume the paused Codex ACP config + test on the
    URL-less marker + host-provisioned URL only (Condition 4).
 5. **Findings/Beads**: status is `br`-owned; coordinator updates the
    ledger. No hand-edit in this PR.

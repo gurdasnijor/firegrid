@@ -148,7 +148,7 @@ gateway-edge-over-substrate implementation.
   exact strings before editing.
 - **dep-cruiser `includeOnly: "^packages/.*/src"`** — `lint:deps` scans `src`
   only; the R3 test rule needs the dedicated second invocation in `lint:deps`
-  (`--include-only '(^packages/.*/src|^packages/tiny-firegrid/test)'`) so the
+  (`--include-only '(^packages/.*/src|^packages/firelab/test)'`) so the
   forbidden `to`-edges (runtime/src) are in the graph to match.
 - **`pnpm install` in a fresh worktree** prunes a phantom `experiments/agent-coordination-patterns`
   importer from `pnpm-lock.yaml` (that dir is absent on #765) — `git checkout

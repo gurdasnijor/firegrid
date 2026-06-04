@@ -221,7 +221,7 @@ target.
 non-enumeration issue), the Zed config, or the tf-r1gz observability changes
 (exporter-only).
 
-**Related seams:** `tf-9sx9` (tiny-firegrid observer-leak removal), the A4
+**Related seams:** `tf-9sx9` (firelab observer-leak removal), the A4
 output-stream correctness seam.
 
 **Repro:** `firegrid acp --agent claude-acp --agent-protocol acp -- npx -y

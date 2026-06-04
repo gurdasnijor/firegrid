@@ -115,8 +115,11 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
           execute(
             ctx,
             gen(function* () {
+              // STOPGAP (pre-rearch): wall-clock race margin widened so `fast`
+              // deterministically wins on loaded CI. See the sibling test below
+              // + docs/reviews/fluent-effect-review-1.md (race-witness addendum).
               const slow = run(
-                () => Effect.as(Effect.sleep(20), "slow"),
+                () => Effect.as(Effect.sleep(50), "slow"),
                 { name: "slow" },
               )
               const fast = run(
@@ -139,6 +142,14 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
     const svc = service({
       name: "raceReplaySvc",
       handlers: {
+        // STOPGAP (pre-rearch): this race picks its winner by wall-clock sleeps.
+        // The old margin (slow=5ms / fast=1ms) flaked on loaded CI — `slow` could
+        // win the 4ms gap. Widened so `fast` deterministically wins; the
+        // let-loser-finish sleep is kept comfortably > slow so the loser still
+        // runs to completion and journals. The real fix lands with the
+        // fluent-effect re-arch: assert the journaled-winner property over a
+        // deterministic clock (TestClock), not a wall-clock winner.
+        // See docs/reviews/fluent-effect-review-1.md (race-witness addendum).
         hedge: (ctx, _: void) =>
           execute(
             ctx,
@@ -146,7 +157,7 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
               const slow = run(
                 () => {
                   executions.slow += 1
-                  return Effect.as(Effect.sleep(5), "slow")
+                  return Effect.as(Effect.sleep(50), "slow")
                 },
                 { name: "slow" },
               )
@@ -158,7 +169,7 @@ describe("@firegrid/fluent-firegrid sdk-gen combinator slice", () => {
                 { name: "fast" },
               )
               const winner = yield* race([slow, fast])
-              yield* sleep(10, "let-loser-finish")
+              yield* sleep(120, "let-loser-finish")
               return winner
             }),
           ),

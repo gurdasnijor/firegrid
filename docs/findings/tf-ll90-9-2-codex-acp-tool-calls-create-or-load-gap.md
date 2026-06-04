@@ -1,11 +1,11 @@
 # Codex ACP Tool-Call Proof Stops At createOrLoad
 
 `tf-ll90.9.2` rebuilt the deleted `codex-acp-tool-calls` proof as a shaped
-tiny-firegrid RUN sim:
+firelab RUN sim:
 
-- `packages/tiny-firegrid/src/simulations/codex-acp-tool-calls/index.ts`
-- `packages/tiny-firegrid/src/simulations/codex-acp-tool-calls/driver.ts`
-- `packages/tiny-firegrid/src/simulations/codex-acp-tool-calls/host.ts`
+- `packages/firelab/src/simulations/codex-acp-tool-calls/index.ts`
+- `packages/firelab/src/simulations/codex-acp-tool-calls/driver.ts`
+- `packages/firelab/src/simulations/codex-acp-tool-calls/host.ts`
 
 The sim has two public-client scenarios:
 
@@ -25,7 +25,7 @@ Run:
 `2026-06-02T00-18-28-790Z__codex-acp-tool-calls`
 
 Trace:
-`packages/tiny-firegrid/.simulate/runs/2026-06-02T00-18-28-790Z__codex-acp-tool-calls/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-06-02T00-18-28-790Z__codex-acp-tool-calls/trace.jsonl`
 
 Result:
 
@@ -44,7 +44,7 @@ Run:
 `2026-06-02T00-22-01-760Z__codex-acp-tool-calls`
 
 Trace:
-`packages/tiny-firegrid/.simulate/runs/2026-06-02T00-22-01-760Z__codex-acp-tool-calls/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-06-02T00-22-01-760Z__codex-acp-tool-calls/trace.jsonl`
 
 Result:
 

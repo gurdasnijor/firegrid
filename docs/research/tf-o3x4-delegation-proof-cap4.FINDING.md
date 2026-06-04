@@ -1,7 +1,7 @@
 # FINDING — tf-o3x4 factory capability #4 delegation proof
 
 Status authority: bead `tf-o3x4`. Simulation:
-`packages/tiny-firegrid/src/simulations/delegation-proof-cap4`.
+`packages/firelab/src/simulations/delegation-proof-cap4`.
 
 ## Verdict
 
@@ -64,9 +64,9 @@ sessions, extend the existing session tool shape deliberately.
 ## Evidence commands
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run delegation-proof-cap4 --timeout-ms 240000
-pnpm --filter @firegrid/tiny-firegrid simulate:show 2026-05-21T05-19-22-981Z__delegation-proof-cap4
-pnpm --filter @firegrid/tiny-firegrid simulate:perf 2026-05-21T05-19-22-981Z__delegation-proof-cap4
+pnpm --filter firelab simulate:run delegation-proof-cap4 --timeout-ms 240000
+pnpm --filter firelab simulate:show 2026-05-21T05-19-22-981Z__delegation-proof-cap4
+pnpm --filter firelab simulate:perf 2026-05-21T05-19-22-981Z__delegation-proof-cap4
 ```
 
 ## Non-goals held

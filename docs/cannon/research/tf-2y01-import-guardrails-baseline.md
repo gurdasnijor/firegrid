@@ -215,7 +215,7 @@ packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts
 packages/host-sdk/src/host/runtime-ingress-transform.ts
 ```
 
-Why removed: both files were pure re-export shims to `@firegrid/runtime/workflows`. Their only active imports were in tiny-firegrid simulations, and those imports now use the canonical runtime workflow subpath directly.
+Why removed: both files were pure re-export shims to `@firegrid/runtime/workflows`. Their only active imports were in firelab simulations, and those imports now use the canonical runtime workflow subpath directly.
 
 No-carveout probe after shim retirement:
 
@@ -265,7 +265,7 @@ Base: current `origin/main` for `codex/tf-ygz3-shim-retirement-iteration-4`.
 
 Result: no carveouts removed. The list remains 8 files.
 
-Why no ratchet: only `packages/host-sdk/src/host/runtime-context-workflow-core.ts` is a pure compatibility shim, and it still has active production, test, and tiny-firegrid simulation consumers. The other seven carveouts are implementation modules or channel bindings that actively import workflow engine, workflow definitions, or durable table substrate.
+Why no ratchet: only `packages/host-sdk/src/host/runtime-context-workflow-core.ts` is a pure compatibility shim, and it still has active production, test, and firelab simulation consumers. The other seven carveouts are implementation modules or channel bindings that actively import workflow engine, workflow definitions, or durable table substrate.
 
 No-carveout probe:
 

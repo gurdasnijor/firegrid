@@ -7,7 +7,7 @@ state internally.
 
 ## Caller Audit
 
-- **Category A: production host/reconciler callers.** CLI and tiny-firegrid
+- **Category A: production host/reconciler callers.** CLI and firelab
   runnable paths already run a host reconciler and commonly call
   `session.whenReady` before prompt/start. Fork 2 is compatible; `whenReady`
   remains valid and redundant on those paths.

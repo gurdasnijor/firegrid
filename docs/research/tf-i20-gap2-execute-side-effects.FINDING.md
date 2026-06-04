@@ -38,7 +38,7 @@ clear and was built:
 
 ## Self-contained sim (no configurations/ import)
 
-`packages/tiny-firegrid/src/simulations/execute-provider-side-effect-pipeline.ts`
+`packages/firelab/src/simulations/execute-provider-side-effect-pipeline.ts`
 — deterministic, agent-free stdio-jsonl child (no LLM): it emits one
 `execute` ToolUse whose sandbox-neutral input is a real provider command,
 the host runs it via `LocalProcessSandboxProvider`, and the child re-emits

@@ -65,7 +65,7 @@ Current lane posture from the latest sweep:
 | Lane | State |
 |---|---|
 | 1 | On `tf-aseo`. Lint fixes were pushed to #633, but rebase was aborted because the output path conflict is design-bearing. The current instruction visible in the lane is to re-derive `tf-aseo` fresh on current main. |
-| 2 | Stopped on `tf-vrz6`. Found that durable-stream offsets are non-dense byte/compound positions, so P3-B cannot simply point-read by offset. Recommends tiny-firegrid derisk before amending SDD text. |
+| 2 | Stopped on `tf-vrz6`. Found that durable-stream offsets are non-dense byte/compound positions, so P3-B cannot simply point-read by offset. Recommends firelab derisk before amending SDD text. |
 | 3 | Finished #660 and is idle. |
 | 4 | Active on `tf-r6br`, implementing protocol-owned route completion metadata / receipt shape. |
 | 5 | Finished #661 and is idle. |
@@ -363,7 +363,7 @@ Why it matters:
 
 Decision needed:
 
-- Validate the P3-B consume shape in tiny-firegrid before production cutover.
+- Validate the P3-B consume shape in firelab before production cutover.
 - Decide whether the durable primitive is:
   - a forward read after an opaque offset,
   - a separate dense arrival index/cursor table,
@@ -572,7 +572,7 @@ whether we call the effort successful.
    Preferred: re-derive fresh on current main. Do not mechanically rebase #633.
    The output-observation conflict is architecture-bearing.
 
-4. Dispatch or continue P3-B tiny-firegrid consume derisk.
+4. Dispatch or continue P3-B firelab consume derisk.
 
    This should test forward-read / crash / replay / idempotency / suspend-resume
    behavior with non-dense offsets. It should produce the wording for the SDD

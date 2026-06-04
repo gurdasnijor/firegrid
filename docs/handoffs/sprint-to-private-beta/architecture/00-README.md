@@ -66,7 +66,7 @@ Private beta is plausible when:
 - the 8-file host-sdk substrate carveout list is zero or down to one named
   compatibility shim with no runtime behavior;
 - host-sdk/client-sdk barrels no longer export substrate internals as public API;
-- package READMEs, tiny-firegrid methodology, and examples no longer teach
+- package READMEs, firelab methodology, and examples no longer teach
   substrate imports;
 - protocol is the source of truth for shared operation, observation, channel,
   and error schemas;

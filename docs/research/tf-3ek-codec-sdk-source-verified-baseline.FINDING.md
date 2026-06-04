@@ -41,7 +41,7 @@ Of the five candidate causes for `tools/call=0` enumerated in
 | **#2** `tool_choice` defaulted to `auto` → model chose prose | **CONFIRMED as a real SDK gap** | `rg 'tool_choice\|toolChoice' sdk.d.ts` = **0 hits**. The SDK does not expose `tool_choice` in its public typed surface. tf-549's conclusion re-confirmed against this exact pin. |
 | **#3** tool schema/name mismatch | **NOT INVESTIGATED here** — needs the instrumentation lane's wire capture |
 | **#4** claude-agent-acp's system-prompt steering toward prose/explore | **STRUCTURALLY LOCKED** | `acp-agent.js:1371-1387`: default = `{type:"preset", preset:"claude_code"}`. Custom `_meta.systemPrompt` allows forwarding `append`/`excludeDynamicSections` only; `type:"preset"` and `preset:"claude_code"` are force-set on the merged object. No override path through ACP `_meta`. |
-| **#5** tool-result round-trip break / streaming parse race | **PARTIALLY EVIDENCED — different mechanism than handoff framing** | The 2026-05-19 live run (see below) captured `observedToolInputs:['…wait_for:{}']` — the planner *did* call `wait_for`, but the assertion harness raced streaming JSON tool_use blocks and observed empty args. That is a **measurement gap in tiny-firegrid's harness**, not "model didn't invoke tools." |
+| **#5** tool-result round-trip break / streaming parse race | **PARTIALLY EVIDENCED — different mechanism than handoff framing** | The 2026-05-19 live run (see below) captured `observedToolInputs:['…wait_for:{}']` — the planner *did* call `wait_for`, but the assertion harness raced streaming JSON tool_use blocks and observed empty args. That is a **measurement gap in firelab's harness**, not "model didn't invoke tools." |
 | **#6** permission gate (Layer 4 GAP — not in original five) | **RESOLVED** via PR #446 forked auto-approve handler | `claude-agent-acp@0.36.1` gates MCP tool use through `canUseTool` and `session/request_permission` (`acp-agent.js:1008-1118`, installed into SDK options at `acp-agent.js:1393`). Firegrid's codec forwards this as `PermissionRequest` (`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:480-493`). Dark-factory needed a driver-side policy loop using `session.wait.forPermissionRequest` + `session.permissions.respond`; PR #446 adds that loop before agent start. |
 
 **2026-05-20 arc-closure update:** cause #1 is resolved by the `.mcp.json`
@@ -124,7 +124,7 @@ Given the above, the instrumentation work should:
    with empty observed args. The instrumentation should capture:
    - The raw streaming tool_use blocks (deltas) emitted by the model
    - The `session/update` messages claude-agent-acp pushes back over ACP
-   - How tiny-firegrid's harness aggregates streaming blocks into final
+   - How firelab's harness aggregates streaming blocks into final
      `observedToolInputs`
 
    The expected outcome is *not* "the model didn't call tools" but rather

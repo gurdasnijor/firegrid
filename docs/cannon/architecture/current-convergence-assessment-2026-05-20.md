@@ -127,7 +127,7 @@ leak triggers them.
 
 ### Phase 3: Performance And Product Hardening
 
-1. Run `pnpm --filter @firegrid/tiny-firegrid simulate:perf`.
+1. Run `pnpm --filter firelab simulate:perf`.
 2. Compare Firegrid overhead to provider/LLM latency.
 3. Open engine-native primitives only if the measured trigger fires.
 4. Expand adapters and beta coverage.

@@ -2,7 +2,7 @@
 
 ## Conclusion
 
-**PASS for the INV-1 de-risking question.** A self-contained tiny-firegrid sim replaced the native runtime-context workflow registration with the same workflow name (`firegrid.runtime-context`) and a custom body shaped as:
+**PASS for the INV-1 de-risking question.** A self-contained firelab sim replaced the native runtime-context workflow registration with the same workflow name (`firegrid.runtime-context`) and a custom body shaped as:
 
 ```ts
 Stream.zipLatest(
@@ -18,7 +18,7 @@ The live `claude-agent-acp` run completed through two public-session prompt turn
 Trace path:
 
 ```text
-packages/tiny-firegrid/.simulate/runs/2026-05-20T07-04-33-404Z__inv1-stream-zip-body/trace.jsonl
+packages/firelab/.simulate/runs/2026-05-20T07-04-33-404Z__inv1-stream-zip-body/trace.jsonl
 ```
 
 `.simulate/runs` is gitignored, so the relevant trace excerpts are embedded below.
@@ -27,9 +27,9 @@ packages/tiny-firegrid/.simulate/runs/2026-05-20T07-04-33-404Z__inv1-stream-zip-
 
 - Native input ingress already uses `DurableDeferred` keyed by context and sequence (`runtimeInputDeferredFor`), so the sim reuses the same input deferred contract instead of inventing a parallel input source. See `packages/host-sdk/src/host/runtime-context-workflow-core.ts:182`.
 - Native output following currently uses `WaitFor.match` over `AgentOutputAfter` (`waitForAgentOutput` / `nextAgentOutput`), then the recursive `runReactiveLoop` alternates completed input handling with output following. See `packages/host-sdk/src/host/runtime-context-workflow-core.ts:192` and `packages/host-sdk/src/host/runtime-context-workflow-core.ts:486`.
-- The production workflow name is `firegrid.runtime-context`; the sim registers the replacement workflow under the same name so existing `appendRuntimeInputDeferred` completions reach the custom body. See `packages/host-sdk/src/host/runtime-context-workflow-core.ts:563` and `packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/host.ts:591`.
-- The sim input stream is sequential over `runtimeInputDeferredFor(contextId, sequence)`. The output stream is sequential over `RuntimeAgentOutputAfterEvents.initial/after`, avoiding durable wait-store row creation while still observing `AgentOutputAfter` boundaries. See `packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/host.ts:232` and `packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/host.ts:251`.
-- The custom workflow body is exactly the requested `Stream.zipLatest(inputs, outputs).runForEach(handler)` shape, with handler spans annotating both input and output sequence numbers. See `packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/host.ts:509` and `packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/host.ts:536`.
+- The production workflow name is `firegrid.runtime-context`; the sim registers the replacement workflow under the same name so existing `appendRuntimeInputDeferred` completions reach the custom body. See `packages/host-sdk/src/host/runtime-context-workflow-core.ts:563` and `packages/firelab/src/simulations/inv1-stream-zip-body/host.ts:591`.
+- The sim input stream is sequential over `runtimeInputDeferredFor(contextId, sequence)`. The output stream is sequential over `RuntimeAgentOutputAfterEvents.initial/after`, avoiding durable wait-store row creation while still observing `AgentOutputAfter` boundaries. See `packages/firelab/src/simulations/inv1-stream-zip-body/host.ts:232` and `packages/firelab/src/simulations/inv1-stream-zip-body/host.ts:251`.
+- The custom workflow body is exactly the requested `Stream.zipLatest(inputs, outputs).runForEach(handler)` shape, with handler spans annotating both input and output sequence numbers. See `packages/firelab/src/simulations/inv1-stream-zip-body/host.ts:509` and `packages/firelab/src/simulations/inv1-stream-zip-body/host.ts:536`.
 
 ## Trace-Amplified Claims
 
@@ -71,7 +71,7 @@ FIREGRID_INV1_FIRST_READY
 FIREGRID_INV1_SECOND_DONE
 ```
 
-Driver implementation evidence is in `packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/driver.ts:44` for the `claude-agent-acp` runtime and `packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/driver.ts:83` for the wait loop that sends turn 2 only after turn 1 output is observed.
+Driver implementation evidence is in `packages/firelab/src/simulations/inv1-stream-zip-body/driver.ts:44` for the `claude-agent-acp` runtime and `packages/firelab/src/simulations/inv1-stream-zip-body/driver.ts:83` for the wait loop that sends turn 2 only after turn 1 output is observed.
 
 ## Acceptance Verdict
 
@@ -82,6 +82,6 @@ Driver implementation evidence is in `packages/tiny-firegrid/src/simulations/inv
 
 ## Notes
 
-The sim is intentionally self-contained under `packages/tiny-firegrid/src/simulations/inv1-stream-zip-body/` and does not modify `packages/host-sdk/test` or `packages/runtime/test`.
+The sim is intentionally self-contained under `packages/firelab/src/simulations/inv1-stream-zip-body/` and does not modify `packages/host-sdk/test` or `packages/runtime/test`.
 
 This finding validates the architectural shape for SDD_FIREGRID_ONE_SUBSTRATE Step 4. It is not a production refactor; productionizing should still decide whether the output stream should use the `RuntimeAgentOutputAfterEvents.initial/after` substrate directly, or a durable-deferred bridge, based on the desired replay and cancellation semantics.

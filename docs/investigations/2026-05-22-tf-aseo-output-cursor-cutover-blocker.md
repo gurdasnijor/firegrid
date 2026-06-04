@@ -47,7 +47,7 @@ Re-scope `tf-aseo` to one of:
 
 2. **Type-unexpressibility-only slice (narrow, no INV-2).** Replace the `events.initial` scan with a point-get against `RuntimeOutputTable.events.get` and remove `RuntimeAgentOutputAfterEvents` from `RuntimeContextWorkflowExecutionEnv`, **keeping** the in-process immutability memo from #612 to avoid the O(D²) real-read regression (candidate B+memo). This kills the scan / `agent_output.initial` span and the scan authority in the body env, but explicitly **does not** claim INV-2 / durable cursor; the trace gate would assert "no scan span", not "skip". Smaller, correct, but leaves the durable-cursor goal for slice 1.
 
-3. **Confirm #612 is sufficient for private beta** and defer the structural cursor to the tiny-firegrid reference (`tf-ly2g`) until the loop-state model is durabilized there first.
+3. **Confirm #612 is sufficient for private beta** and defer the structural cursor to the firelab reference (`tf-ly2g`) until the loop-state model is durabilized there first.
 
 I recommend **option 1** (it is the real target and unblocks removing the scan authority correctly), with the explicit note that it expands the slice into output-derived loop state (not the input mailbox).
 

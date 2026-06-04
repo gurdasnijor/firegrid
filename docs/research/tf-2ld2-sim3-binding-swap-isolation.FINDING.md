@@ -20,14 +20,14 @@ The sim also contributes the shared protocol-owned channel scaffolding requested
 Command:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run sim3-binding-swap-isolation --timeout-ms 120000
+pnpm --filter firelab simulate:run sim3-binding-swap-isolation --timeout-ms 120000
 ```
 
 Run:
 
 - `runId`: `2026-05-20T23-56-50-006Z__sim3-binding-swap-isolation`
 - `traceId`: `f2b586c2dc8381c7bcf075258163f3c2`
-- `trace`: `packages/tiny-firegrid/.simulate/runs/2026-05-20T23-56-50-006Z__sim3-binding-swap-isolation/trace.jsonl`
+- `trace`: `packages/firelab/.simulate/runs/2026-05-20T23-56-50-006Z__sim3-binding-swap-isolation/trace.jsonl`
 - Driver span: `firegrid.sim3.binding_swap_isolation.driver`
 - Driver span status: `{ "code": 1 }`
 

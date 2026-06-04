@@ -1,4 +1,4 @@
-# tiny-firegrid Strategy: The Software Factory as North Star
+# firelab Strategy: The Software Factory as North Star
 
 ## §1 — What we're building toward
 
@@ -166,7 +166,7 @@ grows the accessor that removes the need. Some apparent reach-pasts are
 intended public surface that just hasn't been documented as such; the
 toy's discipline is what adjudicates the difference.
 
-That's the criterion `tiny-firegrid` is converging toward. The toy's
+That's the criterion `firelab` is converging toward. The toy's
 simulations exist to validate, one capability at a time, that the
 surface the factory needs is real and expressible. When a simulation
 that wires the factory's minimal slice — a trigger, a parent context, a
@@ -264,10 +264,10 @@ payload hash. The durable boundary starts at the fact row, not at the
 HTTP edge. This is the first capability in §7 — external events as
 durable verified facts — expressed as working code today.
 
-**`packages/tiny-firegrid` simulations** are the real-consumer-over-the-
+**`packages/firelab` simulations** are the real-consumer-over-the-
 public-surface evidence. (An earlier draft pointed at an `apps/factory`
 app; that app does not exist in this checkout — the real-consumer role
-is carried entirely by tiny-firegrid simulations exercising the public
+is carried entirely by firelab simulations exercising the public
 client / channel surface.) After the channel-collapse wave the client
 surface is channelized: `firegrid.sessions.createOrLoad`,
 `session.prompt`/`start`, `permissions.respond`, `watchContexts`,
@@ -349,12 +349,12 @@ things. These are the capabilities the rest of this document refers to.
    substrate is the log.
 
 These are the seven capabilities. The rest of this document is about how
-Firegrid exposes them and how `tiny-firegrid` proves they're really
+Firegrid exposes them and how `firelab` proves they're really
 exposed.
 
-## §8 — How tiny-firegrid converges
+## §8 — How firelab converges
 
-`tiny-firegrid` is a small package inside the Firegrid monorepo whose
+`firelab` is a small package inside the Firegrid monorepo whose
 only job is to prove the capabilities in §7 are real and accessible
 through Firegrid's public surface. It does this by writing
 *simulations* — small folders (`src/simulations/<id>/{host,driver,
@@ -394,7 +394,7 @@ kinds matter; both feed the bead ledger.
 
 The toy's findings and simulations are tracked as **beads** (the `br`
 issue tracker), not standalone markdown ledgers. (Earlier drafts
-referenced `FINDINGS.md` and `CONFIGS.md` inside `packages/tiny-firegrid`;
+referenced `FINDINGS.md` and `CONFIGS.md` inside `packages/firelab`;
 those were retired into beads. `bv --robot-triage` / `br` are the
 authority; findings carry channel/spike/`tfind:` labels.)
 
@@ -430,7 +430,7 @@ For the artifacts grounding §6.5:
   product-vs-substrate boundary)
 - `packages/protocol/src/channels/` + `packages/host-sdk/src/host/channels/`
   — the channel contracts + bindings the public surface projects through
-- `packages/tiny-firegrid/src/simulations/` — the public-surface
+- `packages/firelab/src/simulations/` — the public-surface
   capability simulations (the real-consumer evidence; no separate
   `apps/factory` exists)
 
@@ -438,7 +438,7 @@ For operational state:
 
 - Findings + simulations are tracked as **beads** (`br` / `bv
   --robot-triage`), not markdown ledgers. The retired
-  `packages/tiny-firegrid/FINDINGS.md` + `CONFIGS.md` are gone.
+  `packages/firelab/FINDINGS.md` + `CONFIGS.md` are gone.
 - The §7 capability → current-state delivery map lives in the tf-d6s9
   capability map (`docs/handoffs/tf-d6s9-factory-vision-capability-map.md`)
   — the operational current-state companion to this strategic frame.
@@ -475,7 +475,7 @@ PARTIAL by design — action = MCP tool + durable observation evidence
 concrete crash-durability pressure rather than built speculatively. No
 capability is a hard beta blocker on substrate grounds.
 
-**Real-consumer evidence.** Carried by `packages/tiny-firegrid`
+**Real-consumer evidence.** Carried by `packages/firelab`
 simulations over the public channel surface (no separate `apps/factory`).
 `linear-webhook-cookbook-composition` exercises the signed-route→verified-
 fact→`wait_for` half of the trigger loop today.
@@ -486,5 +486,5 @@ capability 4), and tf-l5cg (the capstone simulation — one trace, over
 public channels, from external trigger to reviewed action, chaining
 capabilities 1→7). The Cap-6 durable-action-receipt promotion fires only
 if the capstone demonstrates a waitable-receipt need. The factory-ready
-capstone — tiny-firegrid over public channels — replaces the earlier
+capstone — firelab over public channels — replaces the earlier
 `apps/factory` end-to-end as the integrative acceptance artifact.

@@ -58,6 +58,6 @@ handler, or a new substrate registry.
 
 ## Showcase Assets
 
-- Simulation: `packages/tiny-firegrid/src/simulations/agentic-patterns-primitive-profile/`
-- Smoke: `packages/tiny-firegrid/test/agentic-patterns-primitive-profile.test.ts`
+- Simulation: `packages/firelab/src/simulations/agentic-patterns-primitive-profile/`
+- Smoke: `packages/firelab/test/agentic-patterns-primitive-profile.test.ts`
 - Spec: `features/firegrid/agentic-patterns-primitive-profile.feature.yaml`

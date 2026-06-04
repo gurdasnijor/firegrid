@@ -6,11 +6,11 @@ feature:
 components:
   PHASE_0_TARGET_REFERENCE:
     requirements:
-      1: packages/tiny-firegrid contains an API-compatible clean-room reference implementation that drives the production protocol, client, edge, and channel contracts needed by the individual workflow slice while replacing only the behind-contract runtime implementation.
+      1: packages/firelab contains an API-compatible clean-room reference implementation that drives the production protocol, client, edge, and channel contracts needed by the individual workflow slice while replacing only the behind-contract runtime implementation.
       2: The target reference composes a host-plane channel router, channel route implementations, workflow-owned DurableTable state, and one workflow body without importing production host-sdk or runtime implementation modules as behavioral dependencies.
       3: Host-plane route bodies in the target reference lower channel verbs to workflow-owned DurableTable writes or reads without exposing workflow handles, engine handles, DurableTable handles, output tables, request rows, claim rows, deferred rows, or completion rows to callers.
       4: Workflow-owned state in the target reference is modeled as an individual workflow state machine over a small number of DurableTable collections, not as separate request, claim, deferred, and completion table families per CRUD operation.
-      5: The target reference proves session create or load, start, prompt, cancel, close or resume, duplicate input identity, and workflow-owned table progress through native tiny-firegrid OTel trace evidence and durable table/workflow artifacts.
+      5: The target reference proves session create or load, start, prompt, cancel, close or resume, duplicate input identity, and workflow-owned table progress through native firelab OTel trace evidence and durable table/workflow artifacts.
       6: The target reference does not reference appendRuntimeInputDeferred, WorkflowEngineTable.deferreds, RuntimeInputIntentDispatcherLive, or RuntimeControlPlaneTable.inputIntents.
       7: "The target reference treats implementation sprawl as a stop-and-re-evaluate condition: adding a new public abstraction, request/claim/completion/deferred bridge, broad registry, adapter subsystem, authority model, parent/child workflow orchestration, cross-host routing, or non-reference production concern above the workflow-owned table seam requires an SDD update before code continues."
 
@@ -19,7 +19,7 @@ components:
       1: The target reference models agent output as a workflow-owned DurableTable append log owned by the individual workflow, not as a host-owned replay scan, request row, claim row, completion row, deferred mailbox, or adapter subsystem.
       2: Output observation in the target reference advances a durable observer cursor by output sequence and exposes wait semantics that resume after the last observed sequence.
       3: Workflow replay or resume in the target reference reconstructs progress from workflow-owned table state and does not duplicate output rows or re-read the full output history inside the replay boundary.
-      4: The target reference proves a verbose agent-output stream, ToolUse observation, ToolResult return, and TurnComplete/result-return path with native tiny-firegrid trace spans and durable table artifacts.
+      4: The target reference proves a verbose agent-output stream, ToolUse observation, ToolResult return, and TurnComplete/result-return path with native firelab trace spans and durable table artifacts.
       5: The target reference emits a trace invariant showing output observation attempts are bounded by distinct output rows, not by resumes multiplied by output history.
 
   PHASE_1_CONTEXT_WORKFLOW:

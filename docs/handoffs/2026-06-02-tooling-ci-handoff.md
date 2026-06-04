@@ -16,7 +16,7 @@ Role: **tooling / dev-infra / CI** lane. Scope: preflight, CI workflow, lint/sta
 | #786 | lockfile sync for the `tooling/` workspace pkg + knip-clean it (the original CI break) |
 | #796 | **dropped the duplicate `effect:diagnostics`** that ran in both the lint script and its own job (lint gate 44s→1.6s local); ESLint `--cache` + Turbo cache via `actions/cache` |
 | #797 | **per-package turbo `effect:diagnostics`** — split the global baseline into `packages/*/.effect-diagnostics-baseline.json`, new typed checker `tooling/src/effect-diagnostics-check.ts`; unchanged packages skip the language-service run |
-| #799 | tf-ll90.19.1: restored `@effect/{workflow,ai}` to tiny-firegrid (runtime-resolution deps, knip-ignored) + `task-enter.sh` auto-install + `preflight.ts` missing-deps guard |
+| #799 | tf-ll90.19.1: restored `@effect/{workflow,ai}` to firelab (runtime-resolution deps, knip-ignored) + `task-enter.sh` auto-install + `preflight.ts` missing-deps guard |
 | #803 | **split `trace:seams:ukv` into its own parallel CI job** (was last/sequential in Lint; Lint 92s→52s) |
 | #804 | `docs/static-analysis-catalog.md` — full rule inventory (the consolidation reference) |
 
@@ -24,7 +24,7 @@ Role: **tooling / dev-infra / CI** lane. Scope: preflight, CI workflow, lint/sta
 
 Jobs now: `lint`, `trace-seams`, `typecheck`, `effect-diagnostics`, `tests`. Latest run (caches warming on main):
 - Lint ~52s · effect-diagnostics **15s** (warm turbo) · typecheck/tests ~50s · **UKV trace seams ~65–70s ← current long pole**.
-- The trace gate is an **uncacheable live sim** (spawns subprocesses, mtime-based run selection — same reason `tiny-firegrid#test` is `cache:false`). Further speedup there is sim-side (Agent3 / tiny-firegrid owners) or larger runners (cost), **not** a tooling-cache lever.
+- The trace gate is an **uncacheable live sim** (spawns subprocesses, mtime-based run selection — same reason `firelab#test` is `cache:false`). Further speedup there is sim-side (Agent3 / firelab owners) or larger runners (cost), **not** a tooling-cache lever.
 
 **Tooling/CI-mechanics levers are essentially exhausted** — the bottleneck is now genuine compute (one sim), not redundant work or cold caches.
 
@@ -44,7 +44,7 @@ Semgrep and ast-grep were retired in #814. ESLint is the keystone for
 code-pattern enforcement; jscpd, dependency-cruiser, knip, and the Effect
 diagnostics gate remain distinct.
 
-**Hard constraint (Coordinator directive):** NEVER weaken the anti-forge / enforcement gates — the tiny-firegrid sim locks (ESLint `simulation-host-real-firegrid-host` + `no-restricted-syntax` forge guards), dep-cruiser airgaps (R2/R3) + host-sdk→runtime boundary, and the effect-quality/knip ratchets. Strengthen or hold; baselines shrink, never grow without justification. Clear any change to these with the Coordinator.
+**Hard constraint (Coordinator directive):** NEVER weaken the anti-forge / enforcement gates — the firelab sim locks (ESLint `simulation-host-real-firegrid-host` + `no-restricted-syntax` forge guards), dep-cruiser airgaps (R2/R3) + host-sdk→runtime boundary, and the effect-quality/knip ratchets. Strengthen or hold; baselines shrink, never grow without justification. Clear any change to these with the Coordinator.
 
 ## Gotchas learned this session
 

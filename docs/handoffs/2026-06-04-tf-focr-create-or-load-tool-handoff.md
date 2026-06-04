@@ -65,7 +65,7 @@ schema (operation-id-uniqueness.test.ts header).
    547-563 impl): take `SessionCreateOrLoadInput` (externalKey/runtime/createdBy),
    `callTool("session_create_or_load", request)`, decode the `{sessionId,
    contextId}` handle. Drop the `SessionNewToolInput`→`session_new` mapping.
-7. **Restore the sim** — `git show 63791b544:packages/tiny-firegrid/src/simulations/comp-sim-idempotent/{driver,host,index}.ts`.
+7. **Restore the sim** — `git show 63791b544:packages/firelab/src/simulations/comp-sim-idempotent/{driver,host,index}.ts`.
    - `host.ts`: migrate to `firegridHost({ spec, adapter, backend, ingress })`
      (the #910 pattern — see any sim under simulations/*/host.ts, e.g.
      control-plane-cancel-close). durableStreams ingress with a gateway external
@@ -90,7 +90,7 @@ schema (operation-id-uniqueness.test.ts header).
 
 ## PROVE
 
-Run the restored sim: `pnpm --filter @firegrid/tiny-firegrid run simulate:run
+Run the restored sim: `pnpm --filter firelab run simulate:run
 comp-sim-idempotent`. Expect `DriverCompleted`; the trace's summary span
 (`firegrid.sim.idempotent_one_intent`) shows first==redeliver==all replays (one
 participant) and distinct_entity/other_source as DISTINCT contextIds. Then full

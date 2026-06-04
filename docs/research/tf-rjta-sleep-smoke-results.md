@@ -2,7 +2,7 @@
 
 ## Scope
 
-This slice adds a deterministic tiny-firegrid integration smoke for the smallest
+This slice adds a deterministic firelab integration smoke for the smallest
 factory-vision delivery path that does not spend LLM/provider cycles.
 
 The smoke composes the existing dark-factory host and drives the public
@@ -33,7 +33,7 @@ external provider process, and it does not exercise factory choreography.
 Local targeted validation:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid test -- sleep-only-substrate-smoke.test.ts
+pnpm --filter firelab test -- sleep-only-substrate-smoke.test.ts
 ```
 
 Result: pass.

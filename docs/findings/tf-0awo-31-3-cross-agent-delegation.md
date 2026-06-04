@@ -1,7 +1,7 @@
 # tf-0awo.31.3 — cap-4 cross-agent delegation (parent → child via `session_new`)
 
 **Bead:** tf-0awo.31.3 (cap-4 slice, under tf-0awo.31)
-**Sim:** `packages/tiny-firegrid/src/simulations/cross-agent-delegation`
+**Sim:** `packages/firelab/src/simulations/cross-agent-delegation`
 **Acceptance role:** live end-to-end acceptance that #831's `session_new`/`session_prompt`
 lowering performs observable parent → child delegation over the public surface.
 

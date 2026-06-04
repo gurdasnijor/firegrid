@@ -42,7 +42,7 @@ TFIND-031 reach-past:
 - Host seam (`agent-tool-host-live.ts`): `cancelSession`/`closeSession`
   replaced the `unsupportedAgentTool` stubs with a durable
   `lifecycleRequests` append.
-- Sim (`packages/tiny-firegrid/src/simulations/session-lifecycle-unwind-pipeline.ts`):
+- Sim (`packages/firelab/src/simulations/session-lifecycle-unwind-pipeline.ts`):
   self-contained (no `configurations/` import); deterministic stdio-jsonl
   agent calls the `session_cancel` agent tool against its own running
   session; terminal asserted purely through the public Firegrid client.

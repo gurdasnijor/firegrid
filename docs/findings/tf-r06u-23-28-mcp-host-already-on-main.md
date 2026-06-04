@@ -30,4 +30,4 @@ Commits `d24e45734` / `3da108a60` ("register full MCP toolset before serving for
 
 ## Why this is the right call
 
-"tiny-firegrid = empirical answer machine" cuts both ways: before building a workbench to answer "does `@effect/ai` McpServer work with these adapters and what's the contract," check whether the answer already exists. It does, on main, with a documented wire-compat fix (tf-x3sv) and tests. Porting-forward + preserving the invariant beats re-deriving it.
+"firelab = empirical answer machine" cuts both ways: before building a workbench to answer "does `@effect/ai` McpServer work with these adapters and what's the contract," check whether the answer already exists. It does, on main, with a documented wire-compat fix (tf-x3sv) and tests. Porting-forward + preserving the invariant beats re-deriving it.

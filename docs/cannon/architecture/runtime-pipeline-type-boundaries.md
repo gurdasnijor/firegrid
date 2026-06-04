@@ -554,7 +554,7 @@ must not grow a `WorkflowEngine` requirement without changing shape and going
 back through the SDD gate.
 
 In greenfield mode, do not create long-lived compatibility folders. If a
-target-shaped replacement is proven in tiny-firegrid, move production code
+target-shaped replacement is proven in firelab, move production code
 directly to the target path and delete the old path in the same wave. A
 temporary `legacy/` path is allowed only when the bead names the deletion point
 and CI blocks new imports from it.
@@ -606,7 +606,7 @@ should be answerable by reading `R`.
 
 Because Firegrid has no production user state to preserve, this document is an
 execution guide, not a migration-compatibility guide. The fastest safe path is
-to prove the target edge in `packages/tiny-firegrid`, then build that target
+to prove the target edge in `packages/firelab`, then build that target
 shape in production and delete the wrong shape. Do not spend production effort
 shrinking a known-wrong edge unless that bridge demonstrably accelerates
 deletion of the edge.

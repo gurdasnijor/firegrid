@@ -31,7 +31,7 @@ rows, not a separate task-event store (`packages/runtime/src/unified/mcp-host/ta
 ## Trace proof
 
 Trace:
-`packages/tiny-firegrid/.simulate/runs/2026-06-03T11-18-10-877Z__mcp-production-task-projection/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-06-03T11-18-10-877Z__mcp-production-task-projection/trace.jsonl`
 
 Load-bearing lines:
 

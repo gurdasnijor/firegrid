@@ -17,10 +17,10 @@ evidence.
 ## Evidence
 
 Simulation:
-`packages/tiny-firegrid/src/simulations/mcp-task-projection-gateway/`
+`packages/firelab/src/simulations/mcp-task-projection-gateway/`
 
 Trace:
-`packages/tiny-firegrid/.simulate/runs/2026-06-03T10-52-46-665Z__mcp-task-projection-gateway/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-06-03T10-52-46-665Z__mcp-task-projection-gateway/trace.jsonl`
 
 The sim wire defines only request and response streams; there is no
 `task-events` stream or append-only task log in the new sim
@@ -66,7 +66,7 @@ invokes the production `RuntimeContextSessionWorkflow.execute` per-event path
 
 The trace shows a real local `claude-acp` spawn:
 `trace.jsonl:97` (`firegrid.agent_event_pipeline.source.local_process.open_byte_pipe`)
-and `trace.jsonl:197` (`unified.session.spawn/session:tiny-firegrid:mcp-task-projection-session`).
+and `trace.jsonl:197` (`unified.session.spawn/session:firelab:mcp-task-projection-session`).
 
 The MCP driver called `session_prompt`, repeatedly polled `tasks/get`, observed
 `input_required`, sent `tasks/update`, and later called `tasks/result`

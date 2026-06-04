@@ -100,7 +100,7 @@ Import guardrails + ratcheting (Lane 5, 7 slices):
 - **#528** — tf-ygz3 honest no-ratchet FINDING (closes the per-file shim track)
 
 Dark-factory channel migration (Lane 6, 1 slice):
-- **#505** — tf-0r95 FactoryEventsChannel + PlanReadyEventChannel + DmOperatorIngressChannel + NotificationOperatorEgressChannel + ApprovalOperatorChannel moved from host-sdk into `packages/tiny-firegrid/src/simulations/dark-factory/host.ts`; session-tier Tags kept in host-sdk
+- **#505** — tf-0r95 FactoryEventsChannel + PlanReadyEventChannel + DmOperatorIngressChannel + NotificationOperatorEgressChannel + ApprovalOperatorChannel moved from host-sdk into `packages/firelab/src/simulations/dark-factory/host.ts`; session-tier Tags kept in host-sdk
 
 Factory-vision §6 (Lane 6, 5 slices):
 - **#510** — tf-gw43 §6 live-run readiness AUDIT (7 specific blockers identified)
@@ -430,9 +430,9 @@ packages/runtime/src/agent-event-pipeline/tool-execution/runtime-agent-tool-exec
 packages/runtime/src/streams/runtime-observation-streams.ts   ← inversion seam
 packages/runtime/src/verified-webhook-ingest/      ← Item B substrate
 packages/host-sdk/src/host/channel.ts              ← ChannelInventory API
-packages/tiny-firegrid/src/simulations/dark-factory/host.ts  ← Item B/C composition target
-packages/tiny-firegrid/src/simulations/dark-factory/driver.ts ← post-#521 bounded loop
-packages/tiny-firegrid/test/sleep-only-substrate-smoke.test.ts ← deterministic smoke pattern (extend for Items A/B/C)
+packages/firelab/src/simulations/dark-factory/host.ts  ← Item B/C composition target
+packages/firelab/src/simulations/dark-factory/driver.ts ← post-#521 bounded loop
+packages/firelab/test/sleep-only-substrate-smoke.test.ts ← deterministic smoke pattern (extend for Items A/B/C)
 .dependency-cruiser.cjs                            ← Item D guardrails + carveouts
 .effect-diagnostics-baseline.json                  ← #508 ratchet
 docs/sdds/                                         ← Gurdas-authored SDDs only; do not author new ones

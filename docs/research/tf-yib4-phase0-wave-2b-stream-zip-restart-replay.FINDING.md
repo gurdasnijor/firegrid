@@ -16,7 +16,7 @@ The SDD asks Wave-2B to combine the INV-1 stream-zip body with the INV-3 scoped-
 
 The runtime output journal contract is replay-oriented: `forContext` observes all rows for the context across every activity attempt from the beginning (`packages/runtime/src/agent-event-pipeline/authorities/runtime-output-journal.ts:25-37`). The host per-context implementation has the same replay shape: the stream includes every decoded observation for the context, including initial-state replay (`packages/host-sdk/src/host/per-context-runtime-output.ts:197-216`).
 
-The sim registers a workflow named `firegrid.runtime-context` with the stream-zip body, using `Stream.zipLatest(runtimeInputStream(...), runtimeOutputStream(...)).pipe(Stream.runForEach(...))` (`packages/tiny-firegrid/src/simulations/phase0-wave-2b-stream-zip-restart-replay/host.ts:524-585`). The driver starts generation 1, appends input/output sequence 0, bounces to generation 2, re-executes the same workflow id, appends input/output sequence 1, and waits for generation 2 handling (`packages/tiny-firegrid/src/simulations/phase0-wave-2b-stream-zip-restart-replay/host.ts:890-933`).
+The sim registers a workflow named `firegrid.runtime-context` with the stream-zip body, using `Stream.zipLatest(runtimeInputStream(...), runtimeOutputStream(...)).pipe(Stream.runForEach(...))` (`packages/firelab/src/simulations/phase0-wave-2b-stream-zip-restart-replay/host.ts:524-585`). The driver starts generation 1, appends input/output sequence 0, bounces to generation 2, re-executes the same workflow id, appends input/output sequence 1, and waits for generation 2 handling (`packages/firelab/src/simulations/phase0-wave-2b-stream-zip-restart-replay/host.ts:890-933`).
 
 ## Trace-Amplified Claims
 
@@ -24,7 +24,7 @@ Clean run:
 
 ```text
 run: 2026-05-20T08-35-46-802Z__phase0-wave-2b-stream-zip-restart-replay
-trace: packages/tiny-firegrid/.simulate/runs/2026-05-20T08-35-46-802Z__phase0-wave-2b-stream-zip-restart-replay/trace.jsonl
+trace: packages/firelab/.simulate/runs/2026-05-20T08-35-46-802Z__phase0-wave-2b-stream-zip-restart-replay/trace.jsonl
 outcome: DriverCompleted
 spans: 266
 ```
@@ -72,10 +72,10 @@ The generation 1 send was not duplicated after restart. Only the pre-restart inp
 
 ## Implementation Notes
 
-The sim lives at `packages/tiny-firegrid/src/simulations/phase0-wave-2b-stream-zip-restart-replay/` and uses the standard four-field `defineSimulation` contract (`index.ts`, `host.ts`, `driver.ts`). The host code computes and records the addendum verdict directly from generation 2 replay observations (`host.ts:936-978`).
+The sim lives at `packages/firelab/src/simulations/phase0-wave-2b-stream-zip-restart-replay/` and uses the standard four-field `defineSimulation` contract (`index.ts`, `host.ts`, `driver.ts`). The host code computes and records the addendum verdict directly from generation 2 replay observations (`host.ts:936-978`).
 
 ## Validation
 
-- `pnpm --filter @firegrid/tiny-firegrid typecheck` passed.
-- `pnpm --filter @firegrid/tiny-firegrid simulate:run phase0-wave-2b-stream-zip-restart-replay` passed with `DriverCompleted`.
+- `pnpm --filter firelab typecheck` passed.
+- `pnpm --filter firelab simulate:run phase0-wave-2b-stream-zip-restart-replay` passed with `DriverCompleted`.
 - `pnpm run verify` passed.

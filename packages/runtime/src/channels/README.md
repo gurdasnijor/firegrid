@@ -53,8 +53,8 @@ The `channel-completion-contracts` simulation explicitly rejected:
 
 ### Reference
 
-`packages/tiny-firegrid/src/simulations/channel-completion-contracts/`
-+ `packages/tiny-firegrid/test/channel-completion-contracts/probe.test.ts`
+`packages/firelab/src/simulations/channel-completion-contracts/`
++ `packages/firelab/test/channel-completion-contracts/probe.test.ts`
 — the structural proof that completion belongs on route descriptor
 metadata + typed terminal receipt schema. If a future channel proposes
 a different completion placement, the simulation is the regression gate.
@@ -82,7 +82,7 @@ This name indirection is load-bearing:
   `subscribers/tool-dispatch/README.md` enforces this.
 
 The `inv4-channel-registry` simulation
-(`packages/tiny-firegrid/src/simulations/inv4-channel-registry/`)
+(`packages/firelab/src/simulations/inv4-channel-registry/`)
 demonstrates the pattern: an agent waits on the opaque channel name
 `factory.events`; the host routes that to a private
 `darkFactory.facts` durable table. The agent's `wait_for` tool input
@@ -142,7 +142,7 @@ settled — leading to flaky races and lost retry context.
 
 ### Reference
 
-`packages/tiny-firegrid/src/simulations/shape-c-terminal-ordering/`
+`packages/firelab/src/simulations/shape-c-terminal-ordering/`
 reproduces the ordering gap and proves `SessionLifecycleChannel`
 closes it. Production wiring:
 

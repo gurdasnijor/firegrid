@@ -35,13 +35,13 @@ the remaining observation methods.
 ## Trace proof
 
 Trace:
-`packages/tiny-firegrid/.simulate/runs/2026-06-03T12-04-08-283Z__mcp-client-sdk-gateway/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-06-03T12-04-08-283Z__mcp-client-sdk-gateway/trace.jsonl`
 
 The sim imports the new client-sdk MCP export and uses it for the lifecycle
-under proof (`packages/tiny-firegrid/src/simulations/mcp-client-sdk-gateway/driver.ts:6`,
+under proof (`packages/firelab/src/simulations/mcp-client-sdk-gateway/driver.ts:6`,
 `:132`, `:140`, `:143`, `:148`, `:155`, `:160`). It reuses the production
 MCP host layer from Phase 1, not a sim-local MCP host
-(`packages/tiny-firegrid/src/simulations/mcp-client-sdk-gateway/index.ts:2`,
+(`packages/firelab/src/simulations/mcp-client-sdk-gateway/index.ts:2`,
 `:11`).
 
 Load-bearing trace lines:

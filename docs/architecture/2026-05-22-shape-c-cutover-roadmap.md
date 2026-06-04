@@ -66,11 +66,11 @@ Hard stops:
 
 ## Tiny-Firegrid-First Dispatch Gate
 
-`packages/tiny-firegrid/` is the workbench. Production runtime code under
+`packages/firelab/` is the workbench. Production runtime code under
 `packages/runtime/`, `packages/host-sdk/`, and `packages/protocol/` is where
 *validated* shapes get built. The two roles do not blur:
 
-- A tiny-firegrid simulation answers a specific topology question (shape,
+- A firelab simulation answers a specific topology question (shape,
   signature, composition, or substrate) with one of `GREEN | YELLOW | RED`
   (see `docs/cannon/architecture/runtime-design-constraints.md` §"Greenfield
   Operating Mode").
@@ -85,10 +85,10 @@ A production lane is dispatchable only when both are true:
    ordering below) has merged on `rearch/shape-c-cutover` and its exit
    gate is satisfied. Lanes do not dispatch against open sidecar branches,
    proof PRs, or "mostly merged" intermediate states.
-2. **Uncertain shape validated GREEN in tiny-firegrid.** If the lane
+2. **Uncertain shape validated GREEN in firelab.** If the lane
    contains any unresolved shape/signature/composition/substrate question
    that the wave it sits in has not already answered with a landed
-   artifact, the answer must come from a GREEN tiny-firegrid simulation
+   artifact, the answer must come from a GREEN firelab simulation
    before the production lane is dispatched. A YELLOW result dispatches
    the named substrate/helper layer first; a RED result stops the lane
    and revises the architecture.
@@ -105,7 +105,7 @@ What counts as an "uncertain shape" question (non-exhaustive):
   exchanged a real call (for example, `subscribers/x` calling
   `channels/router.ts` for the first time).
 
-What does **not** require a tiny-firegrid loop:
+What does **not** require a firelab loop:
 
 - mechanical moves whose upstream signature already landed and is referenced
   by name (Wave A artifact relocations into the semantic tree are the
@@ -146,10 +146,10 @@ Uncertain shape questions:     (list, or "none — mechanical")
 Tiny-firegrid simulation:      (sim name + GREEN / YELLOW / RED, or
                                 "n/a — no uncertain shape")
 Production approach:           (written fresh against landed shape /
-                                tiny-firegrid graduation [forbidden])
+                                firelab graduation [forbidden])
 ```
 
-A "tiny-firegrid graduation" entry is itself a violation. The gate exists
+A "firelab graduation" entry is itself a violation. The gate exists
 precisely so production is written fresh.
 
 ## Wave A: Artifact Placement
@@ -187,7 +187,7 @@ Dispatch precondition: Wave A exited on `rearch/shape-c-cutover`. The
 `composition/host-live.ts` Layer graph is the canonical example of a
 composition question — if its `R` channel, the table set it requires, or
 the host-sdk-facing public subpath is not already pinned by Wave A
-artifacts, the open question is answered by a tiny-firegrid composition
+artifacts, the open question is answered by a firelab composition
 simulation GREEN before the production root is dispatched. See
 "Tiny-Firegrid-First Dispatch Gate".
 
@@ -235,7 +235,7 @@ runtime root assembly landed and its public subpath stable. Any open
 shape/signature/composition question on the host-sdk side of the cut —
 how host-sdk installs the root, what its public Layer surface looks
 like, what the channel-router R-channel demands — is answered by a
-tiny-firegrid simulation GREEN before the production cutover lane is
+firelab simulation GREEN before the production cutover lane is
 dispatched. Speculative host-sdk lanes authored against an unlanded
 runtime root signature are deleted, not rebased. See
 "Tiny-Firegrid-First Dispatch Gate".
@@ -289,7 +289,7 @@ upstream Wave D dependency it sits behind (input-delivery + restart/
 idempotency gate the rest). Any open shape question for a lane — durable
 result identity key, completion-row schema, channel observation contract,
 the at-most-once primitive the lane chooses — is answered by a
-tiny-firegrid simulation GREEN before the production lane is dispatched.
+firelab simulation GREEN before the production lane is dispatched.
 Production PRs that predate their upstream Wave D lane's exit are
 speculative; their files are deleted and the lane is rewritten fresh
 against the landed shape. See "Tiny-Firegrid-First Dispatch Gate".

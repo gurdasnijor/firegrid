@@ -2,7 +2,7 @@
 
 Date: 2026-06-03
 Run: `2026-06-03T10-53-11-659Z__shape-c-terminal-ordering`
-Trace: `packages/tiny-firegrid/.simulate/runs/2026-06-03T10-53-11-659Z__shape-c-terminal-ordering/trace.jsonl`
+Trace: `packages/firelab/.simulate/runs/2026-06-03T10-53-11-659Z__shape-c-terminal-ordering/trace.jsonl`
 (local artifact — `.simulate/` is gitignored; the load-bearing span values are
 quoted inline below)
 Bead: `tf-ll90.5.1`
@@ -41,7 +41,7 @@ Real `claude-acp` subprocess over the production local-process sandbox:
 
 ```text
 trace line 47: firegrid.agent_event_pipeline.source.local_process.open_byte_pipe   (1×, "real subprocess spawn")
-trace line 56: firegrid.unified.adapter.start_or_attach   firegrid.context.id=session:tiny-firegrid:shape-c-terminal-ordering
+trace line 56: firegrid.unified.adapter.start_or_attach   firegrid.context.id=session:firelab:shape-c-terminal-ordering
 driver attr:   firegrid.shape_c_terminal.spawn_target = "npx -y @agentclientprotocol/claude-agent-acp@0.36.1"
 sides:         subprocess=15
 ```
@@ -73,15 +73,15 @@ The explicit `session.close()` is the only thing that bound the lifecycle end:
 ```text
 firegrid.shape_c_terminal.close_acknowledged = true
 
-trace line 190: firegrid.unified.session.terminal_signal   ctx=session:tiny-firegrid:shape-c-terminal-ordering   start=1780484003557927958
-trace line 180: firegrid.unified.adapter.deregister         ctx=session:tiny-firegrid:shape-c-terminal-ordering   start=1780484003574698500
+trace line 190: firegrid.unified.session.terminal_signal   ctx=session:firelab:shape-c-terminal-ordering   start=1780484003557927958
+trace line 180: firegrid.unified.adapter.deregister         ctx=session:firelab:shape-c-terminal-ordering   start=1780484003574698500
 ```
 
 For the same `firegrid.context.id`:
 
 - `terminal_signal.start` ≤ `deregister.start`  (Δ = **16.8 ms**) — the seam
   `session.terminal_ordering` invariant
-  (`packages/tiny-firegrid/src/runner/seam-coverage.ts:297`,
+  (`packages/firelab/src/runner/seam-coverage.ts:297`,
   `countTerminalBeforeDeregister`) holds: **terminal-before-deregister = 1**.
 - The `deregister` span (JSONL line 180) *ends* before the `terminal_signal`
   span (line 190): the deregister executes **inside** the terminal-driven

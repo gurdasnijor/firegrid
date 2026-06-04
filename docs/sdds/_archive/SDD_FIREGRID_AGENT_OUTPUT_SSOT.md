@@ -62,7 +62,7 @@ Non-test, non-definition importers:
 - **client-sdk:** `firegrid.ts`, `index.ts` (uses protocol projection)
 - **apps/factory:** `src/host.ts`
 - **protocol:** `session-facade/schema.ts` (#329)
-- **tiny-firegrid:** 4 configs + 2 runtime mirrors (toy; not edited by
+- **firelab:** 4 configs + 2 runtime mirrors (toy; not edited by
   sidecar — its adoption is maintainer-driven, noted)
 - barrel: `@firegrid/runtime/events` re-exports `contract.ts` + `output.ts`
   (subpath consumers rely on these names existing)
@@ -136,7 +136,7 @@ A-vs-B and observation-collapse depth are coordinator/Gurdas calls.
 
 ## 6. Adjacent (coordinator → Beads DB, not this PR)
 
-- tiny-firegrid has its own runtime mirrors (`src/runtime/agent-event-pipeline/…`);
+- firelab has its own runtime mirrors (`src/runtime/agent-event-pipeline/…`);
   their reconciliation is maintainer/toy-driven, out of sidecar scope.
 - Relates to TFIND-040 (client per-event observation) and TFIND-041
   (ToolUse lifecycle) — both consume the typed union; neither is in scope

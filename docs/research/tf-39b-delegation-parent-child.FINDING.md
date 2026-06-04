@@ -1,7 +1,7 @@
 # FINDING — tf-39b factory-vision §7.4 participant delegation
 
 Status authority: bead `tf-39b`. Self-contained sim
-`packages/tiny-firegrid/src/simulations/delegation-parent-child-pipeline.ts`
+`packages/firelab/src/simulations/delegation-parent-child-pipeline.ts`
 (auto-discovered by the #385 registry — no shared-file edit; no
 `configurations/` import). Lane-built, full CI gate green.
 

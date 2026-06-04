@@ -2,7 +2,7 @@
 
 Status authority: bead `tf-2kel`. Governing input: OLA SDD
 "One-Substrate" architectural de-risking — INV-2 (validates Steps 2-3).
-Scope: a tiny-firegrid sim that proves the Firegrid workflow engine
+Scope: a firelab sim that proves the Firegrid workflow engine
 handles the racing match/timeout shape natively, with NO production
 wait-router involvement, NO API changes.
 
@@ -43,8 +43,8 @@ from INV-3's documented bound.
 
 | Sim folder                                                                       | R-discharge shape         | Live run id                                          |
 |---|---|---|
-| `packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/`                   | capture-and-re-provide    | `2026-05-20T06-58-42-986Z__inv2-waitforworkflow`         |
-| `packages/tiny-firegrid/src/simulations/inv2-waitforworkflow-layered/`           | layer-composition (canonical) | `2026-05-20T07-15-23-072Z__inv2-waitforworkflow-layered` |
+| `packages/firelab/src/simulations/inv2-waitforworkflow/`                   | capture-and-re-provide    | `2026-05-20T06-58-42-986Z__inv2-waitforworkflow`         |
+| `packages/firelab/src/simulations/inv2-waitforworkflow-layered/`           | layer-composition (canonical) | `2026-05-20T07-15-23-072Z__inv2-waitforworkflow-layered` |
 
 Both runs: `DriverCompleted`, ~18–19 s wall, ~6 800 spans, all four
 acceptance criteria met identically.
@@ -489,7 +489,7 @@ worth following in production.
   preserved across restart. All 4 OLA acceptance criteria met.
 
   **Documented bound** (carried forward into the cutover risk
-  register): stock tiny-firegrid runner has no OS process-kill /
+  register): stock firelab runner has no OS process-kill /
   restart API, so the sim closes/rebuilds scoped host generations
   against the same Durable Streams URLs (the `env.stopSignal` route
   from OLA's acceptance spec). REPLAY-WORKS is established
@@ -513,18 +513,18 @@ worth following in production.
 ## Reproduction
 
 ```
-pnpm --filter @firegrid/tiny-firegrid simulate:run inv2-waitforworkflow
-pnpm --filter @firegrid/tiny-firegrid simulate:run inv2-waitforworkflow-layered
+pnpm --filter firelab simulate:run inv2-waitforworkflow
+pnpm --filter firelab simulate:run inv2-waitforworkflow-layered
 ```
 
 Requires `ANTHROPIC_API_KEY`. Wall-clock ~18–19 s per run. Traces are
 written to
-`packages/tiny-firegrid/.simulate/runs/<runId>/trace.jsonl`.
+`packages/firelab/.simulate/runs/<runId>/trace.jsonl`.
 
 ## Trace artifacts (committed)
 
 The full per-run traces (each ~6 800 spans, ~9 MB) are gitignored
-under `packages/tiny-firegrid/.simulate/`. Two focused excerpts
+under `packages/firelab/.simulate/`. Two focused excerpts
 alongside this file carry the load-bearing spans the verdicts above
 are derived from:
 

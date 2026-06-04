@@ -321,7 +321,7 @@ Implement as one transaction after this SDD is signed off:
 - `packages/host-sdk`
 - `packages/cli`
 - `apps/factory`
-- `packages/tiny-firegrid`
+- `packages/firelab`
 - relevant tests in each package
 - SDD/spec references for client-host boundary and session facade semantics
 
@@ -336,7 +336,7 @@ pnpm --filter @firegrid/protocol test
 pnpm --filter @firegrid/client-sdk test
 pnpm --filter @firegrid/host-sdk test
 pnpm --filter @firegrid/cli test
-pnpm --filter @firegrid/tiny-firegrid test
+pnpm --filter firelab test
 pnpm run typecheck
 pnpm run lint
 pnpm run lint:effect-quality

@@ -13,7 +13,7 @@ Removed:
 - `packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts`
 - `packages/host-sdk/src/host/runtime-ingress-transform.ts`
 
-Both files only re-exported symbols from `@firegrid/runtime/workflows`. Their only active imports were in tiny-firegrid simulations, which now import from the canonical runtime workflow subpath.
+Both files only re-exported symbols from `@firegrid/runtime/workflows`. Their only active imports were in firelab simulations, which now import from the canonical runtime workflow subpath.
 
 ## Per-File Disposition
 
@@ -24,10 +24,10 @@ Both files only re-exported symbols from `@firegrid/runtime/workflows`. Their on
 | `packages/host-sdk/src/host/control-request-reconciler.ts` | no | production implementation | Kept; still imports workflow substrate. |
 | `packages/host-sdk/src/host/index.ts` | no | public host barrel | Kept; mixed public exports plus workflow re-exports. |
 | `packages/host-sdk/src/host/internal/runtime-context-helpers.ts` | no | production implementation and re-exports | Kept; not a pure shim. |
-| `packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts` | yes | tiny-firegrid simulations only | Deleted; consumers migrated to `@firegrid/runtime/workflows`. |
+| `packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts` | yes | firelab simulations only | Deleted; consumers migrated to `@firegrid/runtime/workflows`. |
 | `packages/host-sdk/src/host/runtime-context-workflow-core.ts` | yes | production host-sdk modules and tests | Kept; consumers remain on host-sdk path. |
 | `packages/host-sdk/src/host/runtime-context-workflow-runtime.ts` | no | production implementation | Kept; still imports workflow substrate. |
-| `packages/host-sdk/src/host/runtime-ingress-transform.ts` | yes | tiny-firegrid simulations only | Deleted; consumers migrated to `@firegrid/runtime/workflows`. |
+| `packages/host-sdk/src/host/runtime-ingress-transform.ts` | yes | firelab simulations only | Deleted; consumers migrated to `@firegrid/runtime/workflows`. |
 | `packages/host-sdk/src/host/runtime-input-deferred.ts` | no | production implementation | Kept; still imports workflow substrate. |
 | `packages/host-sdk/src/host/session-log-channel.ts` | no | production channel binding | Kept; still imports durable table facade. |
 
@@ -49,8 +49,8 @@ Normal guardrail gate:
 
 ```bash
 pnpm run lint:deps
-pnpm --filter @firegrid/tiny-firegrid typecheck
+pnpm --filter firelab typecheck
 pnpm --filter @firegrid/host-sdk typecheck
-pnpm --filter @firegrid/tiny-firegrid test
+pnpm --filter firelab test
 pnpm --filter @firegrid/host-sdk test
 ```

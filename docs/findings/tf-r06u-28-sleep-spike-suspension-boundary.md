@@ -4,10 +4,10 @@ Date: 2026-06-01
 Owner: tf-r06u.28 (agent2 / lane-b)
 Method: direct library-source verification (`@effect/workflow@0.18.1`), the
 methodology-blessed ground-truth path for a private-seam question
-(`packages/tiny-firegrid/docs/methodology.md` §"Triage rubric": "Categories 1
+(`packages/firelab/docs/methodology.md` §"Triage rubric": "Categories 1
 and 2 need direct-source verification — read the production code"). This is a
 `@effect/workflow` + unified-substrate internals question, which the R3 airgap
-guard would forbid a tiny-firegrid *driver* from reaching — so the seam is read
+guard would forbid a firelab *driver* from reaching — so the seam is read
 at the library source, not a public-surface sim.
 
 ## The question

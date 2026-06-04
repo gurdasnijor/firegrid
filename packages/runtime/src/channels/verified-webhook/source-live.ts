@@ -1,6 +1,6 @@
 /**
  * makeVerifiedWebhookSource — lift the per-adapter boilerplate that
- * `tiny-firegrid/src/simulations/linear-webhook-cookbook-composition/host.ts`
+ * `firelab/src/simulations/linear-webhook-cookbook-composition/host.ts`
  * demonstrates into a reusable helper.
  *
  * Goal: adding a new external webhook adapter (Linear, GitHub, Slack, …) is

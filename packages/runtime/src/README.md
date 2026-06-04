@@ -131,7 +131,7 @@ These are intentionally not agent event-pipeline stages:
   Shape D `subscribers/` and `composition/host-workflow-engine.ts` only.
   Above-box consumers reach the host-scoped engine through
   `@firegrid/runtime/composition/host-workflow-engine`'s
-  `HostWorkflowEngineLive` Layer. Low-level engine tests and tiny-firegrid
+  `HostWorkflowEngineLive` Layer. Low-level engine tests and firelab
   substrate simulations use the explicit tree-aligned workbench subpath
   `@firegrid/runtime/engine/durable-streams-workflow-engine`; the old
   `@firegrid/runtime/workflow-engine` subpath is gone. The legacy

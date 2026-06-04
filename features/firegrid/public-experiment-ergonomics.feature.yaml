@@ -1,7 +1,7 @@
 feature:
   name: public-experiment-ergonomics
   product: firegrid
-  description: Provide tiny-firegrid helpers for authoring public-surface experiments and asserting post-run evidence from native tiny-firegrid artifacts.
+  description: Provide firelab helpers for authoring public-surface experiments and asserting post-run evidence from native firelab artifacts.
 
 components:
   PARTICIPANT_AUTHORING:
@@ -12,7 +12,7 @@ components:
 
   NATIVE_ARTIFACTS:
     requirements:
-      1: Experiment artifact helpers load spans through the shared tiny-firegrid trace reader used by simulate:show and simulate:perf.
+      1: Experiment artifact helpers load spans through the shared firelab trace reader used by simulate:show and simulate:perf.
       2: Experiment artifact helpers expose simulate:show output and simulate:perf output derived from the native runner formatters.
       3: Experiment artifact helpers accept named durable row sources so experiment assertions can inspect native channel rows that the host already persisted.
 

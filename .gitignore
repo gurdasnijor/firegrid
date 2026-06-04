@@ -11,7 +11,7 @@ coverage/
 .DS_Store
 *.log
 *.tsbuildinfo
-packages/tiny-firegrid/.simulate/
+packages/firelab/.simulate/
 .firegrid-smoke/
 .firegrid/
 tooling/analysis/mcp-tool-exposure-trace.json

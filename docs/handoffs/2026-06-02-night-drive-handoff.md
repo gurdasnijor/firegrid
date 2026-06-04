@@ -131,7 +131,7 @@ gateway) stay open because their children are real.
 - **Sims must exercise real production code (no backdoors).** Driver imports only
   `@firegrid/client-sdk`; host composes the real `FiregridHost` from
   `@firegrid/runtime/unified`; the **trace is the deliverable**, findings are
-  prose (`packages/tiny-firegrid/docs/methodology.md`). A sim that halts honestly
+  prose (`packages/firelab/docs/methodology.md`). A sim that halts honestly
   on a gap is a valid result.
 - **Double-check a candidate substrate gap against source before beading it —
   most collapse** (`tf-0awo.28`: the dark-factory "gaps" were by-design /
@@ -268,7 +268,7 @@ that. A proposal frames the PO decision; it does **not** decide it.
   level up.)
 - **Do-now, shape-neutral:** the P0 leak fix (§ below).
 
-**The validation chain (the tiny-firegrid preflight):**
+**The validation chain (the firelab preflight):**
 - `tf-tvg1` (IN_PROGRESS, P1) is the synthesis bead → A/B/C verdict + rewrite chain
   + deletion map. Its four child proofs **`tf-4fy3` / `tf-u8w2` / `tf-28b8` /
   `tf-1r0o` are CLOSED** — but they predate the reviews, the synthesis verdict is
@@ -278,7 +278,7 @@ that. A proposal frames the PO decision; it does **not** decide it.
   (review 3 proved you can't re-drive a returned execution) — the actor target
   spawns a **fresh execution per event** (the `PermissionRoundtrip` shape), reading
   a durable cursor. `tf-c71h` = prove RuntimeContext can adopt that shape for the
-  multi-event-per-key session-input case. Build as a tiny-firegrid **workbench**
+  multi-event-per-key session-input case. Build as a firelab **workbench**
   sim (spec in the analysis doc §4). Run it **before** any A/B/C synthesis.
 - Downstream cutover (gated on `tf-tvg1`): `tf-vrz6` (BLOCKED), `tf-w6qj` (OPEN),
   `tf-jpcg` (BLOCKED).

@@ -42,7 +42,7 @@ components:
       7: Comprehensive reports map quantitative metrics and qualitative board traces back to the research questions before drawing conclusions.
   EXECUTION:
     requirements:
-      1: The live harness composes a real Firegrid host and drives participant sessions through Firegrid's public client/session surfaces rather than tiny-firegrid-specific runner APIs.
+      1: The live harness composes a real Firegrid host and drives participant sessions through Firegrid's public client/session surfaces rather than firelab-specific runner APIs.
       2: Fixture or simulation runners may be added for regression coverage, but the headline experiment path uses real participant runtimes.
       3: CLI subprocess runs may be used as external smoke tests, but the primary experiment runner does not shell out to the Firegrid CLI.
       4: An arm only completes successfully after a `coordination.final` row is observed through `Firegrid.channels.waitFor`; missing final artifacts are reported as arm failures.

@@ -26,14 +26,14 @@ The four direction binding types map cleanly to DurableTable-style primitive sig
 
 ## Sim Evidence
 
-Sim source lives under `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/`. The host side registers the three non-product observer paths in `host.ts`: channel-backed `hostProjectionObserver` at `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:62`, direct `RuntimeAgentOutputAfterEvents.forContext` at `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:85`, and raw `RuntimeOutputTable.events.rows()` at `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:117`. The driver emits two `TextChunk`s and one `TurnComplete`, waits through `session.wait.forAgentOutput`, then compares all observer snapshots in `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/driver.ts:40`, `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/driver.ts:64`, `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/driver.ts:92`, and `packages/tiny-firegrid/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/driver.ts:150`.
+Sim source lives under `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/`. The host side registers the three non-product observer paths in `host.ts`: channel-backed `hostProjectionObserver` at `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:62`, direct `RuntimeAgentOutputAfterEvents.forContext` at `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:85`, and raw `RuntimeOutputTable.events.rows()` at `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/host.ts:117`. The driver emits two `TextChunk`s and one `TurnComplete`, waits through `session.wait.forAgentOutput`, then compares all observer snapshots in `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/driver.ts:40`, `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/driver.ts:64`, `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/driver.ts:92`, and `packages/firelab/src/simulations/spike-channel-deletion/sim1-agent-output-collapse/driver.ts:150`.
 
 Successful run:
 
 ```text
-pnpm --filter @firegrid/tiny-firegrid simulate:run sim1-agent-output-collapse --timeout-ms 120000
+pnpm --filter firelab simulate:run sim1-agent-output-collapse --timeout-ms 120000
 run: 2026-05-20T23-53-46-473Z__sim1-agent-output-collapse
-trace: packages/tiny-firegrid/.simulate/runs/2026-05-20T23-53-46-473Z__sim1-agent-output-collapse/trace.jsonl
+trace: packages/firelab/.simulate/runs/2026-05-20T23-53-46-473Z__sim1-agent-output-collapse/trace.jsonl
 ```
 
 Trace evidence from that run:
@@ -48,9 +48,9 @@ Trace evidence from that run:
 - `pnpm --filter @firegrid/protocol typecheck` passed.
 - `pnpm --filter @firegrid/host-sdk typecheck` passed.
 - `pnpm --filter @firegrid/client-sdk typecheck` passed.
-- `pnpm --filter @firegrid/tiny-firegrid typecheck` passed.
+- `pnpm --filter firelab typecheck` passed.
 - `pnpm --filter @firegrid/client-sdk exec vitest run test/firegrid.sessions.test.ts test/firegrid.layer-hoisting.test.ts` passed: 13 tests across 2 files.
-- `pnpm --filter @firegrid/tiny-firegrid simulate:run sim1-agent-output-collapse --timeout-ms 120000` passed with the GREEN trace above.
+- `pnpm --filter firelab simulate:run sim1-agent-output-collapse --timeout-ms 120000` passed with the GREEN trace above.
 - `pnpm run verify` passed end to end after the channel split, product-path rewrite, sim source, and finding were in place.
 
 ## Ergonomic Helper / Cycle 2 API Gap

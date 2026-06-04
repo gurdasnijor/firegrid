@@ -7,14 +7,14 @@ on `@effect/opentelemetry` directly; that boundary is required by
 
 ## In-repo simulation capture
 
-The standalone tiny-firegrid simulation runner uses
-`packages/tiny-firegrid/src/simulations/trace-recorder.ts` to install an Effect
+The standalone firelab simulation runner uses
+`packages/firelab/src/simulations/trace-recorder.ts` to install an Effect
 `Tracer` with `Effect.withTracer` and collect ended spans in memory.
-`packages/tiny-firegrid/src/simulations/trace-artifacts.ts` turns those spans
+`packages/firelab/src/simulations/trace-artifacts.ts` turns those spans
 into reusable run artifacts.
 
 Standalone simulations store gitignored local evidence assets under
-`packages/tiny-firegrid/.simulate/`:
+`packages/firelab/.simulate/`:
 
 - `.simulate/latest.json`
 - `.simulate/runs/<run-id>/run.json`
@@ -23,19 +23,19 @@ Standalone simulations store gitignored local evidence assets under
 - `.simulate/runs/<run-id>/live-spans.jsonl`
 - `.simulate/runs/<run-id>/traces.otlp.jsonl`
 - `.simulate/runs/<run-id>/duckdb/load.sql`
-- `.simulate/runs/<run-id>/duckdb/tiny-firegrid.duckdb`
+- `.simulate/runs/<run-id>/duckdb/firelab.duckdb`
 
 The preferred interface is the standalone simulation runner, not Vitest:
 
 ```bash
 OPENAI_API_KEY=... \
-pnpm --filter @firegrid/tiny-firegrid simulate:run -- codex-acp-tool-call-pipeline
+pnpm --filter firelab simulate:run -- codex-acp-tool-call-pipeline
 ```
 
 By default the runner infers:
 
 - namespace: `tiny-run-<simulation-id>-<run-suffix>`
-- run directory: `packages/tiny-firegrid/.simulate/runs/<run-id>`
+- run directory: `packages/firelab/.simulate/runs/<run-id>`
 
 Override with:
 
@@ -62,24 +62,24 @@ spans, and writes the OTLP/DuckDB bundle. A simulation is a small registry entry
 
 That shape keeps host configuration, public-client behavior, and artifact
 capture separated. New system simulations should be added under
-`packages/tiny-firegrid/src/simulations`.
+`packages/firelab/src/simulations`.
 
-## Viewing tiny-firegrid traces
+## Viewing firelab traces
 
 List available simulations and local runs:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:list
-pnpm --filter @firegrid/tiny-firegrid simulate:runs
-pnpm --filter @firegrid/tiny-firegrid simulate:show
+pnpm --filter firelab simulate:list
+pnpm --filter firelab simulate:runs
+pnpm --filter firelab simulate:show
 ```
 
 For token-efficient agent inspection, tail or attach to ended span records:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:tail
-pnpm --filter @firegrid/tiny-firegrid simulate:attach -- <run-id>
-pnpm --filter @firegrid/tiny-firegrid simulate:run -- codex-acp-tool-call-pipeline --tail
+pnpm --filter firelab simulate:tail
+pnpm --filter firelab simulate:attach -- <run-id>
+pnpm --filter firelab simulate:run -- codex-acp-tool-call-pipeline --tail
 ```
 
 `tail` and `attach` stream `.simulate/runs/<run-id>/live-spans.jsonl`, which is
@@ -92,16 +92,16 @@ stream is runner lifecycle plus real span start/end records. Because the live
 stream is append-only, interrupted runs still leave useful evidence even when
 the finalized DuckDB bundle has not been written yet.
 
-## Querying tiny-firegrid traces with DuckDB
+## Querying firelab traces with DuckDB
 
 The generated `traces.otlp.jsonl` file is OTLP JSONL shaped for
 `smithclay/duckdb-otlp`, which reads OpenTelemetry Collector file-export style
 trace exports via `read_otlp_traces(...)`.
 
-Install DuckDB locally, then load the latest tiny-firegrid run:
+Install DuckDB locally, then load the latest firelab run:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:duckdb
+pnpm --filter firelab simulate:duckdb
 ```
 
 If there is no `latest` run, the command exits with the exact `simulate:run`
@@ -110,48 +110,48 @@ command to create one. It does not silently start a long real-agent simulation.
 That command opens:
 
 ```text
-packages/tiny-firegrid/.simulate/runs/<run-id>/duckdb/tiny-firegrid.duckdb
+packages/firelab/.simulate/runs/<run-id>/duckdb/firelab.duckdb
 ```
 
 with:
 
 ```text
-packages/tiny-firegrid/.simulate/runs/<run-id>/duckdb/load.sql
+packages/firelab/.simulate/runs/<run-id>/duckdb/load.sql
 ```
 
 The loader installs and loads the community `otlp` extension, then materializes
-the run into `tiny_firegrid_spans` and creates `tiny_firegrid_span_summary`.
+the run into `firelab_spans` and creates `firelab_span_summary`.
 Useful starting queries:
 
 ```sql
-SELECT * FROM tiny_firegrid_span_summary LIMIT 25;
+SELECT * FROM firelab_span_summary LIMIT 25;
 
 SELECT
   span_name,
   round(duration / 1000000.0, 3) AS duration_ms,
   span_attributes
-FROM tiny_firegrid_spans
+FROM firelab_spans
 WHERE span_name LIKE 'firegrid.%'
 ORDER BY duration DESC
 LIMIT 50;
 
 SELECT *
-FROM tiny_firegrid_failed_spans
+FROM firelab_failed_spans
 ORDER BY timestamp;
 ```
 
 For one-off queries:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:query -- \
+pnpm --filter firelab simulate:query -- \
   latest \
-  "SELECT * FROM tiny_firegrid_span_summary LIMIT 25;"
+  "SELECT * FROM firelab_span_summary LIMIT 25;"
 ```
 
 If DuckDB is already open, run:
 
 ```sql
-.read packages/tiny-firegrid/.simulate/runs/<run-id>/duckdb/load.sql
+.read packages/firelab/.simulate/runs/<run-id>/duckdb/load.sql
 ```
 
 or directly query:
@@ -159,7 +159,7 @@ or directly query:
 ```sql
 INSTALL otlp FROM community;
 LOAD otlp;
-SELECT * FROM read_otlp_traces('packages/tiny-firegrid/.simulate/runs/<run-id>/traces.otlp.jsonl');
+SELECT * FROM read_otlp_traces('packages/firelab/.simulate/runs/<run-id>/traces.otlp.jsonl');
 ```
 
 ## Production or operator traces
@@ -192,7 +192,7 @@ await Effect.runPromise(
 
 The shared helper writes one ended span per JSON line for file destinations,
 supports console export for interactive tools, accepts extra span processors
-such as tiny-firegrid's heartbeat processor, and switches to OTLP JSON export
+such as firelab's heartbeat processor, and switches to OTLP JSON export
 when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Product packages and smoke harnesses
 still choose opt-in policy, resource attributes, and stdout/stderr discipline;
 reusable Firegrid packages only emit spans.
@@ -296,7 +296,7 @@ for(const k of Object.keys(c).sort())console.log(String(c[k]).padStart(5),k)
 
 Existing histogram one-liners that count every line will double-count when
 phases are enabled; filter `s.phase!=="start"` (above) to count completed spans.
-The tiny-firegrid trace reader (`simulate:show` / `simulate:perf`) already drops
+The firelab trace reader (`simulate:show` / `simulate:perf`) already drops
 `phase:"start"` records, so enabling phases during a simulation does not skew
 those views.
 

@@ -1,7 +1,7 @@
 # tf-0awo.30 — factory capstone sim after #831
 
 **Bead:** `tf-0awo.30b` · **Sim:** `factory-capstone` · **Date:** 2026-06-02
-**Run:** `packages/tiny-firegrid/.simulate/runs/2026-06-02T14-26-21-332Z__factory-capstone/trace.jsonl`
+**Run:** `packages/firelab/.simulate/runs/2026-06-02T14-26-21-332Z__factory-capstone/trace.jsonl`
 **Main:** `dcf6f312b1f6c9a1102333d2098f1c82aac14c71`
 
 ## Result
@@ -52,7 +52,7 @@ parent via `wait_for` over `session.agent_output`. That is the factory
 delegation proof that was blocked by the old `session_new` executor fallthrough.
 
 The run stops because the sim driver has an 80-output cap
-(`packages/tiny-firegrid/src/simulations/factory-capstone/driver.ts:69-78`),
+(`packages/firelab/src/simulations/factory-capstone/driver.ts:69-78`),
 not because the parent emitted a `FACTORY_CAPSTONE_FINDING` marker or hit its
 15s wait timeout. The child had reached an ACP permission request for
 `mcp__firegrid-runtime-context__execute` at lines 1073-1084. The parent then

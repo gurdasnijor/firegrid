@@ -218,7 +218,7 @@ LOC: ~5-6. Comparable to α.
 
 - **Q4 strict-3:** four sub-sims total (`baseline + α + β + γ`).
 
-**Three sub-sims** under `packages/tiny-firegrid/src/simulations/`:
+**Three sub-sims** under `packages/firelab/src/simulations/`:
 
 ```
 tf-ui4l-activity-shape-baseline/   { index, host, driver }.ts

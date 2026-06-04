@@ -16,7 +16,7 @@ The `unified-kernel-validation` simulation's production-flow scenario closes the
 
 ```bash
 # 1. Run the sim end-to-end.
-pnpm --filter @firegrid/tiny-firegrid simulate:run unified-kernel-validation
+pnpm --filter firelab simulate:run unified-kernel-validation
 
 # 2. Produce the seam coverage report for the most recent run.
 pnpm trace:seams
@@ -25,7 +25,7 @@ pnpm trace:seams
 pnpm trace:seams 2026-05-31T13-45-15-150Z__unified-kernel-validation
 ```
 
-The script reads `packages/tiny-firegrid/.simulate/runs/<runId>/trace.jsonl`, scans every span, and asserts each documented architectural seam has at least one matching span. Exit code is non-zero if any seam is uncovered. A `seam-coverage.json` artifact lands in the run directory.
+The script reads `packages/firelab/.simulate/runs/<runId>/trace.jsonl`, scans every span, and asserts each documented architectural seam has at least one matching span. Exit code is non-zero if any seam is uncovered. A `seam-coverage.json` artifact lands in the run directory.
 
 ## What "seam" means
 
@@ -61,7 +61,7 @@ A run that misses any non-optional seam has a wiring regression — the architec
 ## Sample coverage (from a real sim run)
 
 ```
-OTel seam coverage — packages/tiny-firegrid/.simulate/runs/2026-05-31T13-45-15-150Z__unified-kernel-validation
+OTel seam coverage — packages/firelab/.simulate/runs/2026-05-31T13-45-15-150Z__unified-kernel-validation
 Total spans in trace: 1333
 Seams: 16/16 covered
 
@@ -132,4 +132,4 @@ Every arrow above corresponds to a parent → child span in the trace. The full 
 
 ## Seam set as living invariant
 
-The list above is canonical. If a new seam gets added to the architecture (e.g. a peer-event observer relay), it should land in the `SEAMS` array in `packages/tiny-firegrid/src/runner/seam-coverage.ts` at the same time. That module is the source of truth for "what does end-to-end coverage mean today" — `pnpm trace:seams [runId]` reports it; `pnpm trace:seams:ukv` runs the sim then gates on it.
+The list above is canonical. If a new seam gets added to the architecture (e.g. a peer-event observer relay), it should land in the `SEAMS` array in `packages/firelab/src/runner/seam-coverage.ts` at the same time. That module is the source of truth for "what does end-to-end coverage mean today" — `pnpm trace:seams [runId]` reports it; `pnpm trace:seams:ukv` runs the sim then gates on it.

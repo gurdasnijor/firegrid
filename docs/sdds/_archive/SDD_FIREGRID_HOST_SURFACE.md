@@ -22,7 +22,7 @@ Related:
 `@firegrid/protocol` / `@firegrid/runtime`. It does **not** export a single
 type a reader can point to and say "this is what a Firegrid host provides."
 Every consumer — `apps/factory`, `apps/flamecast`, `packages/cli` bins,
-host-sdk tests, firegrid scenarios, and now `tiny-firegrid` — re-derives the
+host-sdk tests, firegrid scenarios, and now `firelab` — re-derives the
 host's provided rowset by inference. The toy surfaced this because its
 discipline ("compose against public boundaries, return canonical types") has
 no canonical host type to return; it had to invent a placeholder.
@@ -152,7 +152,7 @@ Acceptance gate before merge:
 
 Consumer scope for the landing PR (accepted): **type only, no migration.**
 The annotation is non-breaking for well-behaved consumers; they gain a name
-to adopt at their own pace. `tiny-firegrid` adoption is driven separately by
+to adopt at their own pace. `firelab` adoption is driven separately by
 the maintainer, not by this PR.
 
 ## Acceptance criteria (as landed)

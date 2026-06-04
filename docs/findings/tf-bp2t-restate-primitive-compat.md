@@ -2,8 +2,8 @@
 
 ## Summary
 
-This spike built a hostless tiny-firegrid simulation at
-`packages/tiny-firegrid/src/simulations/restate-primitive-compat/`.
+This spike built a hostless firelab simulation at
+`packages/firelab/src/simulations/restate-primitive-compat/`.
 
 The sim now targets the `@restatedev/restate-sdk-gen` center of gravity:
 free-standing `Operation<T>` / `Future<T>` combinators (`gen`, `execute`,
@@ -29,7 +29,7 @@ existing `DurableStreamsWorkflowEngine` proves a parallel workflow-engine path,
 but it is no longer required as the substrate for this Restate-style API.
 
 Primary trace:
-`packages/tiny-firegrid/.simulate/runs/2026-06-04T04-10-57-267Z__restate-primitive-compat/trace.jsonl`
+`packages/firelab/.simulate/runs/2026-06-04T04-10-57-267Z__restate-primitive-compat/trace.jsonl`
 
 Runner summary:
 

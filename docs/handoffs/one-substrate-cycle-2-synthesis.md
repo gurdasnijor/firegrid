@@ -46,7 +46,7 @@ Insert-or-get fence holds **across** projection boundaries: a client-method invo
 
 Load-bearing for future bindings: the MCP-tool projection runs in `runMcpToolProjection` **without a Firegrid client in scope** — proving the channel contract is independently consumable by REST/gRPC/MCP projections that don't import client-sdk.
 
-Five test assertions all pass in `packages/tiny-firegrid/test/spike-channel-deletion/sim2-multi-surface-projection.test.ts`. All 18 pre-existing client-sdk tests continue to pass.
+Five test assertions all pass in `packages/firelab/test/spike-channel-deletion/sim2-multi-surface-projection.test.ts`. All 18 pre-existing client-sdk tests continue to pass.
 
 **Sim 3 (tf-2ld2, PR #535) — binding-swap isolation + durable persistence on `SessionPermissionChannel`**
 

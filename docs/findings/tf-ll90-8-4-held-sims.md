@@ -14,7 +14,7 @@ create-or-load (insert-or-get on `[source, id]`) projected from the EXISTING
 mislabelled client method was corrected: `mcp.sessions.create` now wraps
 `session_new` (spawn child), and `mcp.sessions.createOrLoad` wraps the new
 idempotent tool. The sim is restored at
-`packages/tiny-firegrid/src/simulations/comp-sim-idempotent/` on `firegridHost`,
+`packages/firelab/src/simulations/comp-sim-idempotent/` on `firegridHost`,
 driver over `@firegrid/client-sdk/mcp`. Proven: same key (incl. 4 concurrent
 replays) → one `contextId`; different id and different source → distinct.
 

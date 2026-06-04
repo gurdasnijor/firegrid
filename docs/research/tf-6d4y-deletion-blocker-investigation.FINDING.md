@@ -42,23 +42,23 @@ Generated graph files were restored after inspection so this finding carries the
 | `packages/host-sdk/test/host/runtime-context-workflow-core.test.ts` | HARD test-only | Imports durable-tools public surface and exercises `WaitFor.match` plus `HostRuntimeObservationSubstrateLive`. |
 | `packages/host-sdk/test/host/runtime-observation-sources.test.ts` | HARD test-only | Imports `WaitFor` and uses `HostRuntimeObservationSubstrateLive`. |
 | `packages/runtime/test/authorities/provider-uniqueness.test.ts` | SCHEMA/test-only | Imports internal durable wait-store authorities and asserts table/provider identity. Delete or migrate with durable-tools. |
-| `packages/tiny-firegrid/src/simulations/inv3-restart-replay/host.ts` | HARD sim-only | Legacy durable-tools simulation imports `WaitFor`, `DurableToolsWaitForLive`, and `DurableToolsTable`. |
-| retired tiny-firegrid migration backlog | RESOLVED sim-only | The old migration backlog was deleted from the active simulation tree. |
-| `packages/tiny-firegrid/src/simulations/inv2-waitforworkflow/**` | DEAD comment evidence | Comments document the intended absence of `WaitFor.match`, wait-router, durable wait rows, and durable-tools wait-router spans. |
+| `packages/firelab/src/simulations/inv3-restart-replay/host.ts` | HARD sim-only | Legacy durable-tools simulation imports `WaitFor`, `DurableToolsWaitForLive`, and `DurableToolsTable`. |
+| retired firelab migration backlog | RESOLVED sim-only | The old migration backlog was deleted from the active simulation tree. |
+| `packages/firelab/src/simulations/inv2-waitforworkflow/**` | DEAD comment evidence | Comments document the intended absence of `WaitFor.match`, wait-router, durable wait rows, and durable-tools wait-router spans. |
 
 ## OTEL Trace Evidence
 
 Representative sim:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:run workflow-core-paths --timeout-ms 120000
+pnpm --filter firelab simulate:run workflow-core-paths --timeout-ms 120000
 ```
 
 Run:
 
 ```text
 2026-05-20T12-02-26-727Z__workflow-core-paths
-packages/tiny-firegrid/.simulate/runs/2026-05-20T12-02-26-727Z__workflow-core-paths/trace.jsonl
+packages/firelab/.simulate/runs/2026-05-20T12-02-26-727Z__workflow-core-paths/trace.jsonl
 ```
 
 The sim completed with `DriverCompleted`. A post-hoc `simulate:gate` run failed on expected workflow-execution/DurableDeferred checks for the in-flight Phase-1 gate shape, but its legacy durable-tools checks passed for `wait_for.match`, `runtime_context.workflow.output.wait`, and `wait_router.complete_match` all at zero. The raw span counts below are from the trace file itself.

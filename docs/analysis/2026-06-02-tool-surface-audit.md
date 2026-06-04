@@ -1,7 +1,7 @@
 # Tool-surface audit (tf-636o)
 
 - **Date:** 2026-06-02
-- **Scope:** root `package.json` scripts, `scripts/`, the tiny-firegrid sim runner + corpus, and the tooling docs.
+- **Scope:** root `package.json` scripts, `scripts/`, the firelab sim runner + corpus, and the tooling docs.
 - **Method:** every surface inspected against current `main` — referenced file/target existence, actual run where safe, and `grep` for live consumers. Classifications cite evidence.
 - **Bead:** tf-636o (also lands the arch-graph advisory + stale-script retirement + TOOLING.md rewrite).
 
@@ -30,14 +30,14 @@ Nothing in the root `package.json` is *broken* after this PR (one regression —
 | `firegrid:run`/`:acp`/`:host`/`:start`/`:host:env` | ❌ collapsed this PR | duplicated the unified `firegrid <sub>` bin (#830). The feature spec that named `firegrid:host` "the single host launch command" was itself **STALE** (it predated #830, which re-introduced the unified CLI — verified: `firegrid.ts` `withSubcommands(run/acp/host/start)`). Collapsed into `firegrid` + `firegrid:env` (the `.env`-loading variant); README + `runtime-env-boundary.md` repointed and the stale `firegrid-runtime-process` spec corrected. |
 | `format` | ✅ works | `eslint . --fix`. |
 | `publish:oss` | ✅ works | `scripts/publish-oss.sh`. |
-| `lint` | ✅ works | **edited this PR** — dropped the deleted `effect-native-production-cutover-check.mjs` + `test-layout-check.mjs`; now `eslint + runtime-public-surface-check + tiny-firegrid-layout-check`. |
+| `lint` | ✅ works | **edited this PR** — dropped the deleted `effect-native-production-cutover-check.mjs` + `test-layout-check.mjs`; now `eslint + runtime-public-surface-check + firelab-layout-check`. |
 | `lint:test-layout` / `lint:host-sdk-imports(:baseline)` | ❌ removed | scripts retired this PR (stale/vacuous gates). |
 | `lint:dead(:baseline)` / `lint:dup(:baseline)` / `lint:deps` / `lint:effect-quality(:baseline)` | ✅ works | all referenced scripts present. |
 | `preflight` | ✅ canonical | `tooling/src/preflight.ts` — the complete, parallel gate (11 gates). The real review bar. |
 | `verify` | ✅ fixed | **was** a serial subset that drifted (missing `effect:diagnostics` + `trace:seams:ukv`) **and** broke this PR by calling deleted `lint:host-sdk-imports`. Now `= pnpm run preflight` (drift-proof alias). |
 | `arch:deps*` (8) | ✅ works | `tooling.mjs arch deps <t>` (`all`/`detail` are aggregate targets). **Output is now git-ignored** (this PR) — the committed graphs were retired for the advisory PR comment. `arch:graphs:check` removed. |
 | `toy:coverage(:check)` | ✅ works | `tiny-config-prod-coverage.sh`. |
-| `trace:seams` / `trace:seams:ukv` | ✅ works | `trace-seam-coverage.ts` / tiny-firegrid filter. |
+| `trace:seams` / `trace:seams:ukv` | ✅ works | `trace-seam-coverage.ts` / firelab filter. |
 | `analysis:leaf` | ❌ removed this PR | ran `tooling/analysis/run-leaf-inventory.sh`, which invokes **ast-grep** (retired; `tooling/ast-grep/` gone) → dead. Script + alias deleted. |
 
 **Done this PR:** removed `effect:check`, `bootstrap`, `analysis:leaf` (+ dead `run-leaf-inventory.sh`), and collapsed the `firegrid:<sub>` family into the unified `firegrid` + `firegrid:env` — after verifying the feature spec that appeared to "protect" `firegrid:host` was itself stale (predated #830's unified CLI). Repointed README + `runtime-env-boundary.md` and corrected the `firegrid-runtime-process` spec. `check` vs `preflight` is documented in TOOLING.md.
@@ -46,14 +46,14 @@ Nothing in the root `package.json` is *broken* after this PR (one regression —
 
 | Group | Files | Status |
 |---|---|---|
-| Gate/quality (wired) | `tooling.mjs`, `runtime-public-surface-check.mjs`, `tiny-firegrid-layout-check.mjs`, `knip-{check,update}-baseline.mjs`, `jscpd-{check,update}-baseline.mjs`, `effect-quality-metrics-{check,baseline}.mjs`, `trace-seam-coverage.ts`, `tiny-config-prod-coverage.sh` | ✅ live (lint/preflight/CI) |
+| Gate/quality (wired) | `tooling.mjs`, `runtime-public-surface-check.mjs`, `firelab-layout-check.mjs`, `knip-{check,update}-baseline.mjs`, `jscpd-{check,update}-baseline.mjs`, `effect-quality-metrics-{check,baseline}.mjs`, `trace-seam-coverage.ts`, `tiny-config-prod-coverage.sh` | ✅ live (lint/preflight/CI) |
 | Lane/coordination | `cmux-dispatch.sh`, `cmux-broadcast.sh`, `lane-sweep.sh`, `dispatch-gap.sh`, `task-{enter,exit,reap}.sh` | ✅ live (worktree flow) |
 | Setup/publish | `install-git-hooks.sh` (+ `git-hooks/`), `publish-oss.sh` (+ `oss/`) | ✅ live |
 | Earlier-phase analysis | `runtime-corpus.sh`, `runtime-flow-map.py` (+ `docs/architecture/corpus/`) | ❌ **RETIRED this PR** — runtime-shrink-loop tooling from an earlier phase; not wired to any gate/CI; manifest referenced deleted sims. |
 | ACP trace analysis | `acp-trace-health.py` (+ `scripts/fixtures/acp-trace-health/`) | ✅ KEEP — still useful (maintainer-confirmed): standalone ACP-trace health/analysis CLI. |
 | Retired this PR | `arch-graphs-check.sh`, `beads-sync*.sh`, `state-watch*.sh`, `install-*-cron.sh`, `signoff-queue.sh`, `phase1-workflow-core-paths-gate.sh`, `effect-native-production-cutover-check.mjs`, `test-layout-check.mjs`, `host-sdk-runtime-import-baseline.mjs`, `runtime-corpus.sh`, `runtime-flow-map.py` | ❌ deleted |
 
-## C. tiny-firegrid sim runner — FIXED this PR
+## C. firelab sim runner — FIXED this PR
 
 The runner *used to* discover sims by eagerly importing **every**
 `simulations/<id>/index.ts` at startup, so one sim's unresolved import crashed

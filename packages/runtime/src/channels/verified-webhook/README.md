@@ -25,7 +25,7 @@ The verified-webhook channel — Live binding of the existing
 
 - **`docs/recipes/durable-webhook-facts-and-wait-for.md`** — the
   audience-facing recipe. Use it to onboard.
-- `tiny-firegrid/src/simulations/linear-webhook-cookbook-composition/` —
+- `firelab/src/simulations/linear-webhook-cookbook-composition/` —
   full agent-loop worked example. Runs end-to-end with
   `pnpm simulate:run linear-webhook-cookbook-composition`.
 
