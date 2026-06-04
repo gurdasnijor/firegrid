@@ -160,6 +160,28 @@ importers:
         specifier: ^3.2.0
         version: 3.2.4(@types/node@22.19.17)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
 
+  packages/fluent-runtime:
+    dependencies:
+      '@effect/platform':
+        specifier: ^0.96.1
+        version: 0.96.1(effect@3.21.2)
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
+      effect-durable-streams:
+        specifier: workspace:*
+        version: link:../effect-durable-streams
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
+
   packages/host-sdk:
     dependencies:
       '@firegrid/runtime':
@@ -326,6 +348,9 @@ importers:
       '@firegrid/client-sdk':
         specifier: workspace:*
         version: link:../client-sdk
+      '@firegrid/fluent-runtime':
+        specifier: workspace:*
+        version: link:../fluent-runtime
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
