@@ -24,6 +24,9 @@ components:
       2: "`all` delegates through the active scheduler slot instead of requiring an explicit operations parameter."
       3: "The package exports a free-standing `sleep(durationMs, name?)` primitive that records completion in the journal and replays without waiting again."
       4: "A `Future` yielded more than once is memoized so its backing work runs once and every yield observes the same result."
+      5: "The package exports Promise-shaped `race`, `any`, and `allSettled` combinators over Futures."
+      6: "The package exports tagged `select(branches)` that returns the winning tag and Future."
+      7: "The package exports `spawn(op)` for routine-backed Futures that compose with the same combinators."
 
   DEFINITIONS:
     requirements:

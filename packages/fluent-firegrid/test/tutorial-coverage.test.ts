@@ -22,9 +22,11 @@ describe("@firegrid/fluent-firegrid tutorial coverage", () => {
     ])
     expect(services.map((service) => service._kind)).toEqual([
       "service",
+      "service",
+      "service",
       "workflow",
     ])
-    expect(deferredSurface).toHaveLength(10)
+    expect(deferredSurface).toHaveLength(8)
     for (const item of deferredSurface) {
       expect(item.missing.length).toBeGreaterThan(12)
     }

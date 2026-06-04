@@ -1,3 +1,5 @@
+import { Effect } from "effect"
+
 export interface IncidentInput {
   readonly id: string
   readonly title: string
@@ -41,3 +43,9 @@ export const openRemediation = (
 
 export const notifyCoordinator = (remediationId: string): string =>
   `notified:${remediationId}`
+
+export const delayedValue = <T>(
+  durationMs: number,
+  value: T,
+): Effect.Effect<T> =>
+  Effect.as(Effect.sleep(durationMs), value)

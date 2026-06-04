@@ -11,6 +11,10 @@ Implemented:
 
 - `src/01-basics.ts` — a Firegrid-shaped durable step pipeline using
   free `run` and `all` inside generator operations.
+- `src/02-spawn.ts` — routine-backed Futures composed with
+  `all`, `race`, and `select`.
+- `src/03-timeout.ts` — timeout branching with
+  `select({ done, timeout: sleep(...) })`.
 - `src/09-workflows.ts` — a workflow-shaped surface using
   `workflow({ name, handlers })`.
 
@@ -18,10 +22,8 @@ Deferred until the package exposes the matching primitives:
 
 | family | missing substrate |
 |---|---|
-| spawn | routine-backed Future handles and restart/reclaim worker rows |
-| timeout / select | select/race semantics and durable wake integration for deadlines |
 | retry | journaled retry policy and attempt classification |
-| saga | generator.throw failure delivery plus durable compensation steps |
+| saga | durable compensation steps and compensation ordering helpers |
 | cancellation | durable cancellation events and AbortSignal fanout |
 | state | state/sharedState log fold and keyed workflow/object routing |
 | clients | typed service/object/workflow call and send descriptors |
