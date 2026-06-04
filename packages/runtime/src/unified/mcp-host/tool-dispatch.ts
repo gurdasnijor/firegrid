@@ -43,11 +43,10 @@ import { Activity, Workflow, WorkflowEngine } from "@effect/workflow"
 import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
   HostPromptChannel,
-  HostSessionsCreateOrLoadChannelTarget,
-  HostSessionsStartChannelTarget,
-  SessionCancelChannelTarget,
-  SessionCloseChannelTarget,
-  SessionPromptChannelTarget,
+  HostSessionsCreateOrLoadChannel,
+  SessionCancelChannel,
+  SessionCloseChannel,
+  SessionPromptChannel,
 } from "@firegrid/protocol/channels"
 import {
   firegridRuntimeContextMcpName,
@@ -55,7 +54,7 @@ import {
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import { Clock, Context, Duration, Effect, Layer, Option, ParseResult, Ref, Schema, Stream } from "effect"
-import { HostPlaneChannelRouter, RuntimeChannelRouter } from "../../channels/router.ts"
+import { RuntimeChannelRouter } from "../../channels/router.ts"
 import { ContextResolverTag } from "../../tables/codec-adapter-tags.ts"
 import { traversePath } from "../../transforms/field-equals.ts"
 import {
@@ -358,22 +357,26 @@ const runCall = (
     input.request,
   )
 
-const hostPlaneDispatch = (
+/**
+ * Resolve a host-control channel Tag from the ambient context, failing with a
+ * typed `ToolError` when the host did not provide it. The fixed-target host ops
+ * (session create-or-load / prompt / cancel / close) call the channel binding
+ * DIRECTLY — there is no host-plane router indirection (tf-s9uj).
+ */
+const requireHostChannel = <Id, Service>(
+  tag: Context.Tag<Id, Service>,
   toolUseId: string,
   toolName: string,
-  target: string,
-  verb: "send" | "call",
-  payload: unknown,
-): Effect.Effect<unknown, ToolError> =>
-  dispatchWithOptionalRouter(
-    Effect.serviceOption(HostPlaneChannelRouter),
-    "session tools require HostPlaneChannelRouter",
+): Effect.Effect<Service, ToolError> =>
+  requireOptionalService(
+    Effect.serviceOption(tag),
     toolUseId,
     toolName,
-    target,
-    verb,
-    payload,
+    `${toolName} requires ${tag.key}`,
   )
+
+const mapChannelError = (toolUseId: string, toolName: string) =>
+  (cause: unknown): ToolError => toolExecutionFailed(toolUseId, toolName, cause)
 
 const runtimeForChildSession = (
   contextId: string,
@@ -454,50 +457,38 @@ const runSessionNew = (
         agent: input.agentKind,
       },
     }
-    const child = yield* (hostPlaneDispatch(
+    const createOrLoad = yield* requireHostChannel(
+      HostSessionsCreateOrLoadChannel,
       toolUseId,
       "session_new",
-      String(HostSessionsCreateOrLoadChannelTarget),
-      "call",
-      {
-        externalKey: {
-          source: "firegrid.mcp.session_new",
-          id: `${contextId}:${toolUseId}`,
-        },
-        runtime,
-        createdBy: `mcp:${contextId}`,
+    )
+    const child = yield* createOrLoad.binding.call({
+      externalKey: {
+        source: "firegrid.mcp.session_new",
+        id: `${contextId}:${toolUseId}`,
+      },
+      runtime,
+      createdBy: `mcp:${contextId}`,
+      parentContextId: contextId,
+    }).pipe(Effect.mapError(mapChannelError(toolUseId, "session_new")))
+    const inputId = `input:${toolUseId}:initial`
+    const sessionPrompt = yield* requireHostChannel(
+      SessionPromptChannel,
+      toolUseId,
+      "session_new",
+    )
+    // The session.start ack was vestigial — the real spawn happens when this
+    // initial prompt drives the RuntimeContext workflow body (startOrAttach on
+    // first input), so there is no separate start to dispatch (tf-s9uj).
+    yield* sessionPrompt.forSession(child.sessionId).binding.append({
+      payload: input.prompt,
+      inputId,
+      idempotencyKey: `session_new:${toolUseId}:initial_prompt`,
+      metadata: {
+        agentKind: input.agentKind,
         parentContextId: contextId,
       },
-    ) as Effect.Effect<
-      { readonly sessionId: string; readonly contextId: string },
-      ToolError
-    >)
-    const inputId = `input:${toolUseId}:initial`
-    yield* hostPlaneDispatch(
-      toolUseId,
-      "session_new",
-      String(SessionPromptChannelTarget),
-      "send",
-      {
-        sessionId: child.sessionId,
-        prompt: {
-          payload: input.prompt,
-          inputId,
-          idempotencyKey: `session_new:${toolUseId}:initial_prompt`,
-          metadata: {
-            agentKind: input.agentKind,
-            parentContextId: contextId,
-          },
-        },
-      },
-    )
-    yield* hostPlaneDispatch(
-      toolUseId,
-      "session_new",
-      String(HostSessionsStartChannelTarget),
-      "call",
-      { sessionId: child.sessionId },
-    )
+    }).pipe(Effect.mapError(mapChannelError(toolUseId, "session_new")))
     return {
       session: {
         sessionId: child.sessionId,
@@ -516,21 +507,18 @@ const runSessionPrompt = (
   input: AgentToolSchemas.SessionPromptToolInput,
 ): Effect.Effect<AgentToolSchemas.SessionPromptToolOutput, ToolError> => {
   const inputId = input.inputId ?? `input:${toolUseId}`
-  return hostPlaneDispatch(
+  return requireHostChannel(
+    SessionPromptChannel,
     toolUseId,
     "session_prompt",
-    String(SessionPromptChannelTarget),
-    "send",
-    {
-      sessionId: input.sessionId,
-      prompt: {
+  ).pipe(
+    Effect.flatMap(sessionPrompt =>
+      sessionPrompt.forSession(input.sessionId).binding.append({
         payload: input.prompt,
         inputId,
         idempotencyKey: inputId,
         ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
-      },
-    },
-  ).pipe(
+      }).pipe(Effect.mapError(mapChannelError(toolUseId, "session_prompt")))),
     Effect.as({
       appended: true,
       sessionId: input.sessionId,
@@ -543,13 +531,10 @@ const runSessionCancel = (
   toolUseId: string,
   input: AgentToolSchemas.SessionCancelToolInput,
 ): Effect.Effect<AgentToolSchemas.SessionCancelToolOutput, ToolError> =>
-  hostPlaneDispatch(
-    toolUseId,
-    "session_cancel",
-    String(SessionCancelChannelTarget),
-    "call",
-    input,
-  ).pipe(
+  requireHostChannel(SessionCancelChannel, toolUseId, "session_cancel").pipe(
+    Effect.flatMap(cancel =>
+      cancel.binding.append(input).pipe(
+        Effect.mapError(mapChannelError(toolUseId, "session_cancel")))),
     Effect.as({
       cancelled: true,
       sessionId: input.sessionId,
@@ -560,13 +545,10 @@ const runSessionClose = (
   toolUseId: string,
   input: AgentToolSchemas.SessionCloseToolInput,
 ): Effect.Effect<AgentToolSchemas.SessionCloseToolOutput, ToolError> =>
-  hostPlaneDispatch(
-    toolUseId,
-    "session_close",
-    String(SessionCloseChannelTarget),
-    "call",
-    input,
-  ).pipe(
+  requireHostChannel(SessionCloseChannel, toolUseId, "session_close").pipe(
+    Effect.flatMap(close =>
+      close.binding.append(input).pipe(
+        Effect.mapError(mapChannelError(toolUseId, "session_close")))),
     Effect.as({
       closed: true,
       sessionId: input.sessionId,

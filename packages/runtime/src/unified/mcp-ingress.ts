@@ -2,11 +2,12 @@
  * `McpIngressLive` — the uniform MCP ingress (tf-ll90.8.4 / §12 "MCP is the
  * single ingress").
  *
- * Folds the exact MCP-ingress composition `bin/_compose.ts` hand-wired
- * (`FiregridMcpServerLayer` + `ToolDispatchLive` + `HostPlaneSessionControlRouterLive`
+ * Folds the MCP-ingress composition (`FiregridMcpServerLayer` + `ToolDispatchLive`
  * + the context-resolver / contexts-view / agent-output support) into ONE Live
  * so prod and sims compose the ingress identically instead of each re-rolling a
- * copy. Two transport variants, the dual of `DurableStreamsLive`:
+ * copy. The fixed-target session-control ops dispatch through the host-control
+ * channel bindings DIRECTLY (tf-s9uj — no host-plane router). Two transport
+ * variants, the dual of `DurableStreamsLive`:
  *
  *   - `http(cfg)` — the agent-facing HTTP listener (what `bin/_compose.ts` uses);
  *     the connecting agent's contextId rides the request URL, so no gateway.
@@ -38,7 +39,6 @@ import {
   runtimeAgentOutputObservationFromRow,
 } from "@firegrid/protocol/session-facade"
 import { Effect, Layer, Stream } from "effect"
-import { HostPlaneSessionControlRouterLive } from "../channels/host-plane-router.ts"
 import { ContextResolverFromControlPlaneTableLive } from "../tables/codec-adapter-providers.ts"
 import { AcpContextRows } from "../sources/codecs/acp/stdio-edge.ts"
 import { FiregridMcpServerLayer } from "./mcp-host/mcp-host.ts"
@@ -70,15 +70,15 @@ const GlobalAcpContextRowsLive = Layer.effect(
   ),
 )
 
-// ToolDispatch needs the context resolver + host-plane router (bin/_compose.ts
-// provided both into it); keep that exact shape.
+// ToolDispatch needs the context resolver; its session-control arms now call the
+// host-control channel bindings DIRECTLY (tf-s9uj — no host-plane router), which
+// the surrounding `FiregridRuntime` context already provides.
 const ToolDispatchLiveWithSupport = ToolDispatchLive.pipe(
   Layer.provideMerge(ContextResolverFromControlPlaneTableLive),
-  Layer.provideMerge(HostPlaneSessionControlRouterLive),
 )
 
-// The shared ingress composition — exactly as bin/_compose.ts wired it around
-// the server layer.
+// The shared ingress composition — wires the dispatch + support layers around the
+// server layer.
 const composeIngress = <ROut, E, RIn>(
   server: Layer.Layer<ROut, E, RIn>,
 ) =>
@@ -89,7 +89,7 @@ const composeIngress = <ROut, E, RIn>(
     ),
     GlobalAcpContextRowsLive,
     GlobalSessionAgentOutputChannelLive,
-  ).pipe(Layer.provideMerge(HostPlaneSessionControlRouterLive))
+  )
 
 export interface McpIngressHttpOptions {
   readonly host?: string

@@ -80,14 +80,6 @@ export class RuntimeChannelRouter extends Context.Tag(
   "firegrid/runtime/RuntimeChannelRouter",
 )<RuntimeChannelRouter, RuntimeChannelRouterService>() {}
 
-/**
- * Host-plane router for runtime-owned host-control routes. Host-sdk composes
- * this service at the edge; runtime owns the durable route implementations.
- */
-export class HostPlaneChannelRouter extends Context.Tag(
-  "firegrid/runtime/HostPlaneChannelRouter",
-)<HostPlaneChannelRouter, RuntimeChannelRouterService>() {}
-
 const supportsVerb = (
   descriptor: ChannelRouteDescriptor,
   verb: ChannelRouteVerb,
@@ -244,47 +236,9 @@ export const runtimeRouteFromChannel = (
   }
 }
 
-export const runtimeRouteFromFactoryChannel = <
-  Field extends string,
-  FactoryInput extends Record<Field, unknown>,
-  S extends Schema.Schema.Any,
-  Success,
->(options: {
-  readonly target: ChannelTarget
-  readonly field: Field
-  readonly inputSchema: Schema.Schema<FactoryInput, FactoryInput, never>
-  readonly channel: (
-    value: FactoryInput[Field],
-  ) => EgressChannel<S, Success>
-  readonly payload: (input: FactoryInput) => Schema.Schema.Type<S>
-}): RuntimeChannelRoute<Success, unknown> => ({
-  descriptor: {
-    target: options.target,
-    direction: "egress",
-    verbs: ["send"],
-    inputSchema: options.inputSchema,
-    metadata: {
-      target: options.target,
-      direction: "egress",
-      verbs: ["send"],
-      schema: {
-        direction: "egress",
-        schema: options.inputSchema,
-      },
-      completion: acknowledgementCompletion,
-    },
-  },
-  invoke: input => {
-    const request = input as FactoryInput
-    return options.channel(request[options.field]).binding.append(
-      options.payload(request),
-    )
-  },
-})
-
 /**
- * Ingress analogue of {@link runtimeRouteFromFactoryChannel}: a factory-keyed
- * READ route. The route input carries the key field (e.g. `sessionId`) plus a
+ * Factory-keyed READ route over a per-key ingress channel. The route input
+ * carries the key field (e.g. `sessionId`) plus a
  * cursor; `channel(key)` resolves the per-key ingress channel and the optional
  * `seek` predicate seeds the stream past the cursor before taking the next row.
  *

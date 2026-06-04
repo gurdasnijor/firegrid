@@ -55,7 +55,8 @@ const _launchabilityGate = () => {
   >()
 
   // NEGATIVE (`@ts-expect-error` corpus): without the CLI composition the edge
-  // still requires HostPlaneChannelRouter | AcpContextRows |
+  // still requires the host channels it binds directly — HostSessionsCreateOrLoad
+  // | SessionPrompt | HostPermissionRespond | AcpContextRows |
   // SessionAgentOutputChannel (R ≠ never), so it is NOT the launchable shape and
   // the structural comparison must fail.
   const underProvided = AcpStdioEdgeLive({
