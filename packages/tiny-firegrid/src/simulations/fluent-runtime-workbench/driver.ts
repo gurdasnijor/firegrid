@@ -61,6 +61,27 @@ export const fluentRuntimeWorkbenchDriver = Effect.gen(function* () {
       "fluent_runtime.fork.result": fork._tag,
       ...(fork._tag === "Unsupported" ? { "fluent_runtime.fork.reason": fork.reason } : {}),
     })
+    if (fork._tag === "Forked") {
+      yield* store.appendSessionEvent({
+        sessionId: parentSessionId,
+        name: "parent.after_fork",
+        payload: { visibleToChild: false },
+      })
+      yield* store.appendSessionEvent({
+        sessionId: childSessionId,
+        name: "child.diverged",
+        payload: { inheritedParentPrefix: true },
+      })
+      const parentAfterFork = yield* store.collectSession(parentSessionId)
+      const childAfterFork = yield* store.collectSession(childSessionId)
+      yield* Effect.annotateCurrentSpan({
+        "fluent_runtime.fork.parent_events_after": parentAfterFork.length,
+        "fluent_runtime.fork.child_events_after": childAfterFork.length,
+        "fluent_runtime.fork.child_event_names": childAfterFork
+          .map((event) => event.type === "session.event_appended" ? event.name : event.type)
+          .join(","),
+      })
+    }
 
     const turn = yield* store.startTurn({
       sessionId: parentSessionId,

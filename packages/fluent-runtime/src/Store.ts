@@ -130,6 +130,8 @@ const streamUrl = (
 
 const endpoint = (url: string): Endpoint => ({ url })
 
+const streamPathname = (url: string): string => new URL(url).pathname
+
 const sessionStream = (url: string) =>
   DurableStream.define({
     endpoint: endpoint(url),
@@ -355,7 +357,7 @@ export const makeFluentStore = (
     return sessionStream(child.eventsUrl).create({
       contentType: "application/json",
       headers: {
-        "Stream-Forked-From": parent.eventsUrl,
+        "Stream-Forked-From": streamPathname(parent.eventsUrl),
         "Stream-Fork-Offset": input.forkOffset,
       },
     }).pipe(
