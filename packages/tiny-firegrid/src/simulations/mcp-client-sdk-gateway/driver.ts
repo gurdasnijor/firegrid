@@ -1,8 +1,4 @@
-import {
-  Firegrid,
-  FiregridConfig,
-  local,
-} from "@firegrid/client-sdk/firegrid"
+import { FiregridConfig } from "@firegrid/client-sdk/config"
 import {
   makeFiregridMcpClient,
   type FiregridMcpTask,
@@ -19,13 +15,10 @@ const anthropicKeyConfig = Config.redacted("ANTHROPIC_API_KEY").pipe(
   Config.option,
 )
 
-const gatewayExternalKey = {
-  source: "tiny-firegrid",
-  id: "mcp-production-task-projection-parent",
-} as const
-
-const gatewayContextId = `session:${gatewayExternalKey.source}:${gatewayExternalKey.id}`
-const streamId = "mcp-production-task-projection"
+// The parent gateway context is now seeded by firegridHost (host.ts) — its
+// externalKey is { source: "tiny-firegrid", id: "mcp-client-sdk-gateway-gateway" }.
+const gatewayContextId = "session:tiny-firegrid:mcp-client-sdk-gateway-gateway"
+const streamId = "mcp-client-sdk-gateway"
 const marker = "MCP_CLIENT_SDK_GATEWAY_DONE"
 
 interface WatchedTask {
@@ -97,7 +90,7 @@ const watchPromptTask = (
     }),
   )
 
-export const mcpClientSdkGatewayDriver: Effect.Effect<void, unknown, Firegrid | FiregridConfig> =
+export const mcpClientSdkGatewayDriver: Effect.Effect<void, unknown, FiregridConfig> =
   Effect.scoped(Effect.gen(function*() {
     const anthropicKey = yield* anthropicKeyConfig
     if (Option.isNone(anthropicKey)) {
@@ -109,25 +102,10 @@ export const mcpClientSdkGatewayDriver: Effect.Effect<void, unknown, Firegrid | 
       return
     }
 
-    const firegrid = yield* Firegrid
     const config = yield* FiregridConfig
     if (config.durableStreamsBaseUrl === undefined || config.namespace === undefined) {
       return yield* Effect.fail(new Error("mcp client-sdk gateway requires durableStreamsBaseUrl and namespace"))
     }
-
-    yield* firegrid.sessions.createOrLoad({
-      externalKey: gatewayExternalKey,
-      runtime: local.jsonl({
-        argv: [...claudeAcpArgv],
-        agent: "claude-acp",
-        agentProtocol: "acp",
-        cwd: globalThis.process.cwd(),
-        envBindings: [
-          { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
-        ],
-      }),
-      createdBy: "tiny-firegrid-simulation",
-    })
 
     const mcp = yield* makeFiregridMcpClient({
       durableStreamsBaseUrl: config.durableStreamsBaseUrl,

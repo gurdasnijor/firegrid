@@ -1,134 +1,83 @@
-import {
-  SessionAgentOutputChannel,
-  SessionAgentOutputChannelTarget,
-  makeIngressChannel,
-} from "@firegrid/protocol/channels"
-import {
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
-  runtimeContextsView,
-  runtimeEventsForContextView,
-} from "@firegrid/protocol/launch"
-import {
-  RuntimeAgentOutputObservationSchema,
-  runtimeAgentOutputObservationFromRow,
-} from "@firegrid/protocol/session-facade"
-import { HostPlaneSessionControlRouterLive } from "@firegrid/runtime/channels"
-import { AcpContextRows } from "@firegrid/runtime/sources/codecs/acp/stdio-edge"
+/**
+ * mcp-production-task-projection host — composes through the single Firegrid
+ * host composition root (tf-ll90.8.4). `firegridHost(options)` provides the MCP
+ * ingress (server + tool-dispatch + host-plane router + context-resolver +
+ * agent-output/contexts views) and the `FiregridRuntime`; the gateway carries
+ * the production claude-acp agent so `session_new` children inherit it. There is
+ * no per-sim layer assembly — prod == sim, differing only by the options data.
+ *
+ * NOTE: this host was previously REUSED by the mcp-client-sdk-gateway and
+ * mcp-client-sdk-observations sims; those now own their own hosts, so this is
+ * self-contained and serves THIS sim only. Both exported symbols are retained.
+ *
+ * Imports: firegridHost from "@firegrid/host-sdk", DurableStreamsLive + local
+ * from "@firegrid/protocol/launch", defaultProductionAdapterLayer from
+ * "@firegrid/runtime/unified".
+ */
+
+import { firegridHost } from "@firegrid/host-sdk"
+import { DurableStreamsLive, local } from "@firegrid/protocol/launch"
+import { defaultProductionAdapterLayer } from "@firegrid/runtime/unified"
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
-import {
-  ContextResolverTag,
-  defaultProductionAdapterLayer,
-  DurableStreamsLive,
-  ensurePathInput,
-  FiregridMcpServerLayer,
-  FiregridRuntime,
-  ToolDispatchLive,
-} from "@firegrid/runtime/unified"
-import { Effect, Layer, Stream } from "effect"
+import type { Layer } from "effect"
 import type {
   FiregridHost,
   TinyFiregridHostEnv,
 } from "../../types.ts"
 
-const gatewayContextId = "session:tiny-firegrid:mcp-production-task-projection-parent"
 const streamId = "mcp-production-task-projection"
 
+const claudeAcpArgv = [
+  "npx",
+  "-y",
+  "@agentclientprotocol/claude-agent-acp@0.36.1",
+] as const
+
 interface McpProductionTaskProjectionHostOptions {
-  readonly gatewayContextId: string
   readonly streamId: string
 }
 
-const ContextResolverFromControlPlaneTableLive = Layer.effect(
-  ContextResolverTag,
-  Effect.gen(function*() {
-    const control = yield* RuntimeControlPlaneTable
-    return {
-      resolve: (contextId: string) => control.contexts.get(contextId),
-    }
-  }),
-)
-
-const GlobalSessionAgentOutputChannelLive = Layer.effect(
-  SessionAgentOutputChannel,
-  RuntimeOutputTable.pipe(
-    Effect.map(output =>
-      SessionAgentOutputChannel.of({
-        forContext: contextId =>
-          makeIngressChannel({
-            target: SessionAgentOutputChannelTarget,
-            schema: RuntimeAgentOutputObservationSchema,
-            sourceClass: "static-source",
-            stream: runtimeEventsForContextView(output.events.rows(), contextId).pipe(
-              Stream.filterMap(runtimeAgentOutputObservationFromRow),
-            ),
-          }),
-      })),
-  ),
-)
-
-const AcpContextRowsLive = Layer.effect(
-  AcpContextRows,
-  RuntimeControlPlaneTable.pipe(
-    Effect.map(control => runtimeContextsView(control.contexts.rows())),
-  ),
-)
-
-export const makeMcpProductionTaskProjectionHost = (
+const makeMcpProductionTaskProjectionHost = (
   options: McpProductionTaskProjectionHostOptions,
 ): ((
   env: TinyFiregridHostEnv,
 ) => Layer.Layer<FiregridHost, unknown>) =>
-  (env: TinyFiregridHostEnv): Layer.Layer<FiregridHost, unknown> => {
-    const runtime = FiregridRuntime(
-      {
-        namespace: env.namespace,
-      },
-      defaultProductionAdapterLayer(
+  (env: TinyFiregridHostEnv): Layer.Layer<FiregridHost, unknown> =>
+    firegridHost({
+      spec: { namespace: env.namespace },
+      adapter: defaultProductionAdapterLayer(
         RuntimeEnvResolverPolicy.withPolicy({
-          authorizedBindings: [
-            ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
-          ],
+          authorizedBindings: [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
           lookupEnv: name => env.processEnv[name],
         }),
       ),
-    ).pipe(
-      Layer.provide(
-        DurableStreamsLive.configuredWith({
-          baseUrl: env.durableStreamsBaseUrl,
-          namespace: env.namespace,
-        }),
-      ),
-    )
-
-    const support = Layer.mergeAll(
-      ContextResolverFromControlPlaneTableLive,
-      GlobalSessionAgentOutputChannelLive,
-      AcpContextRowsLive,
-    )
-
-    const mcp = FiregridMcpServerLayer({
-      host: "127.0.0.1",
-      port: 0,
-      path: ensurePathInput("/mcp"),
-      durableStreams: {
+      backend: DurableStreamsLive.configuredWith({
+        baseUrl: env.durableStreamsBaseUrl,
+        namespace: env.namespace,
+      }),
+      ingress: {
+        transport: "durable-streams",
         baseUrl: env.durableStreamsBaseUrl,
         namespace: env.namespace,
         streamId: options.streamId,
-        contextId: options.gatewayContextId,
+        gatewayExternalKey: {
+          source: "tiny-firegrid",
+          id: "mcp-production-task-projection-gateway",
+        },
+        gatewayRuntime: local.jsonl({
+          argv: [...claudeAcpArgv],
+          agent: "claude-acp",
+          agentProtocol: "acp",
+          cwd: globalThis.process.cwd(),
+          envBindings: [
+            { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
+          ],
+          runtimeContextMcp: { enabled: true },
+        }),
       },
-    }).pipe(Layer.discard)
-
-    return mcp.pipe(
-      Layer.provideMerge(ToolDispatchLive),
-      Layer.provideMerge(HostPlaneSessionControlRouterLive),
-      Layer.provideMerge(support),
-      Layer.provideMerge(runtime),
-    )
-  }
+    })
 
 export const mcpProductionTaskProjectionHost =
   makeMcpProductionTaskProjectionHost({
-    gatewayContextId,
     streamId,
   })

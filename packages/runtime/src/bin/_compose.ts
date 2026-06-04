@@ -1,34 +1,15 @@
 import { FiregridOtelLive, resolveFiregridOtelActiveExporter, resolveFiregridOtelFileDestination } from "@firegrid/observability/node"
 import {
-  makeIngressChannel,
-  SessionAgentOutputChannel,
-  SessionAgentOutputChannelTarget,
-} from "@firegrid/protocol/channels"
-import {
   DurableStreamsLive,
   type LaunchAuthorizedBinding,
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
-  runtimeContextsView,
-  runtimeEventsForContextView,
 } from "@firegrid/protocol/launch"
-import {
-  RuntimeAgentOutputObservationSchema,
-  runtimeAgentOutputObservationFromRow,
-} from "@firegrid/protocol/session-facade"
-import { Data, Effect, Layer, Logger, Stream } from "effect"
+import { Data, Effect, Layer, Logger } from "effect"
 import * as DevTools from "@effect/experimental/DevTools"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import path from "node:path"
-import {
-  HostPlaneSessionControlRouterLive,
-} from "../channels/host-plane-router.ts"
-import { defaultProductionAdapterLayer, FiregridRuntime } from "../unified/host.ts"
-import { FiregridMcpServerLayer } from "../unified/mcp-host/mcp-host.ts"
-import { ToolDispatchLive } from "../unified/mcp-host/tool-dispatch.ts"
-import { ContextResolverFromControlPlaneTableLive } from "../tables/codec-adapter-providers.ts"
+import { defaultProductionAdapterLayer } from "../unified/host.ts"
+import { firegridHost } from "../unified/host-entry.ts"
 import { RuntimeEnvResolverPolicy } from "../sources/sandbox/secrets.ts"
-import { AcpContextRows } from "../sources/codecs/acp/stdio-edge.ts"
 
 export class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
   readonly message: string
@@ -124,31 +105,6 @@ const envPolicyLayer = (
     lookupEnv: (name) => process.env[name],
   })
 
-const GlobalSessionAgentOutputChannelLive = Layer.effect(
-  SessionAgentOutputChannel,
-  RuntimeOutputTable.pipe(
-    Effect.map((output) =>
-      SessionAgentOutputChannel.of({
-      forContext: (contextId) =>
-        makeIngressChannel({
-          target: SessionAgentOutputChannelTarget,
-          schema: RuntimeAgentOutputObservationSchema,
-          sourceClass: "static-source",
-          stream: runtimeEventsForContextView(output.events.rows(), contextId).pipe(
-            Stream.filterMap(runtimeAgentOutputObservationFromRow),
-          ),
-        }),
-    })),
-  ),
-)
-
-const GlobalAcpContextRowsLive = Layer.effect(
-  AcpContextRows,
-  RuntimeControlPlaneTable.pipe(
-    Effect.map(control => runtimeContextsView(control.contexts.rows())),
-  ),
-)
-
 export const FiregridCliCompositionLive = (
   options: FiregridCliCompositionOptions,
 ) =>
@@ -156,39 +112,16 @@ export const FiregridCliCompositionLive = (
     Effect.gen(function*() {
       const durableStreamsBaseUrl = yield* embeddedOrConfiguredDurableStreamsBaseUrl
       const namespace = options.namespace ?? nonEmptyEnv("FIREGRID_RUNTIME_NAMESPACE") ?? defaultNamespace()
-      // §12 Seam 1: FiregridRuntime's floor is the DurableStreams hole; the bin
-      // closes it with the resolved base URL (already accounts for the CLI's
-      // embedded-or-configured durable-streams resolution above).
-      const host = FiregridRuntime(
-        { namespace },
-        defaultProductionAdapterLayer(envPolicyLayer(options.authorizedBindings)),
-      ).pipe(
-        Layer.provide(
-          DurableStreamsLive.configuredWith({ baseUrl: durableStreamsBaseUrl, namespace }),
-        ),
-      )
-      const mcp = FiregridMcpServerLayer({
-        host: "127.0.0.1",
-        port: options.mcpPort ?? 0,
-        path: "/mcp",
-      }).pipe(
-        Layer.provideMerge(ContextResolverFromControlPlaneTableLive),
-        Layer.provideMerge(
-          ToolDispatchLive.pipe(
-            Layer.provideMerge(ContextResolverFromControlPlaneTableLive),
-            Layer.provideMerge(HostPlaneSessionControlRouterLive),
-          ),
-        ),
-      )
-      const services = Layer.mergeAll(
-        mcp,
-        GlobalAcpContextRowsLive,
-        GlobalSessionAgentOutputChannelLive,
-      ).pipe(
-        Layer.provideMerge(HostPlaneSessionControlRouterLive),
-        Layer.provideMerge(host),
-      )
-      return services.pipe(
+      // The single composition root composes FiregridRuntime + MCP ingress +
+      // backend from data; the bin only resolves config and wraps the launchable
+      // host with its observability edge.
+      const host = firegridHost({
+        spec: { namespace },
+        adapter: defaultProductionAdapterLayer(envPolicyLayer(options.authorizedBindings)),
+        backend: DurableStreamsLive.configuredWith({ baseUrl: durableStreamsBaseUrl, namespace }),
+        ingress: { transport: "http", port: options.mcpPort ?? 0, path: "/mcp" },
+      })
+      return host.pipe(
         Layer.provideMerge(devToolsLayer()),
         Layer.provideMerge(otelLayer(options)),
         Layer.provide(Logger.remove(Logger.defaultLogger)),

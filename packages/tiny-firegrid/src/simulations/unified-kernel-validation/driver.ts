@@ -1,235 +1,90 @@
-import {
-  Firegrid,
-  local,
-} from "@firegrid/client-sdk/firegrid"
-import { Effect } from "effect"
+/**
+ * unified-kernel-validation driver — drives the full production kernel path
+ * PURELY over `@firegrid/client-sdk/mcp` (tf-ll90.8.4). No firegrid.ts client:
+ * the host owns the gateway RuntimeContext (see ./host.ts); the driver
+ * provisions one session via the `session_new` MCP tool (which inherits the
+ * gateway's creds-free official-ACP-example agent, prompts it, and starts it),
+ * lets the agent turn run (the fixture always emits a tool_call → the ACP
+ * ToolUse journal seam), then closes it (terminal → adapter deregister).
+ *
+ * The `trace:seams:ukv` gate asserts the HOST/substrate spans this elicits;
+ * `FiregridConfig` is the only client-sdk import (read-only config Tag).
+ */
 
-const fixtureArgv: ReadonlyArray<string> = [
-  process.execPath,
-  "--import",
-  "tsx",
-  "src/bin/fake-acp-agent-process.ts",
-]
+import { FiregridConfig } from "@firegrid/client-sdk/config"
+import { makeFiregridMcpClient } from "@firegrid/client-sdk/mcp"
+import { Duration, Effect, Option, Stream } from "effect"
 
-type ProbeStatus = "observed" | "surfaced-gap" | "public-surface-blocked"
+// Airgapped driver — MIRRORS ./host.ts literals (kept in sync).
+const gatewayContextId = "session:tiny-firegrid:unified-kernel-validation-gateway"
+const streamId = "unified-kernel-validation"
 
-interface MigratedProbe {
-  readonly id: string
-  readonly legacyProbe: string
-  readonly status: ProbeStatus
-  readonly evidence: string
-}
-
-const migratedProbe = (
-  id: string,
-  legacyProbe: string,
-  status: ProbeStatus,
-  evidence: string,
-): MigratedProbe => ({
-  id,
-  legacyProbe,
-  status,
-  evidence,
-})
-
-const probeAttributes = (
-  probes: ReadonlyArray<MigratedProbe>,
-): Record<string, string | number> => {
-  const attributes: Record<string, string | number> = {
-    "firegrid.ukv.migrated_probe_count": probes.length,
-    "firegrid.ukv.migrated_probe_observed_count": probes.filter((probe) =>
-      probe.status === "observed",
-    ).length,
-    "firegrid.ukv.migrated_probe_gap_count": probes.filter((probe) =>
-      probe.status === "surfaced-gap",
-    ).length,
-    "firegrid.ukv.migrated_probe_public_surface_blocked_count": probes.filter((probe) =>
-      probe.status === "public-surface-blocked",
-    ).length,
-  }
-  probes.forEach((probe, index) => {
-    const prefix = `firegrid.ukv.migrated_probe.${index + 1}`
-    attributes[`${prefix}.id`] = probe.id
-    attributes[`${prefix}.legacy_probe`] = probe.legacyProbe
-    attributes[`${prefix}.status`] = probe.status
-    attributes[`${prefix}.evidence`] = probe.evidence
-  })
-  return attributes
-}
-
-const runExampleAgentScenario =
-  Effect.scoped(Effect.gen(function*() {
-    const firegrid = yield* Firegrid
-    const launched = yield* firegrid.launch({
-      requestedBy: "tiny-firegrid:official-acp-example",
-      runtime: local.jsonl({
-        agent: "official-acp-typescript-sdk-example",
-        argv: fixtureArgv,
-        cwd: process.cwd(),
-        agentProtocol: "acp",
-      }),
-    })
-    const session = yield* firegrid.sessions.attach({
-      sessionId: launched.contextId,
-    })
-    const startOffset = yield* session.start()
-    const promptOffset = yield* session.prompt({
-      idempotencyKey: "tiny-firegrid-unified-kernel-validation-official-acp-example",
-      payload: {
-        text: "Validate the production ACP path through the official SDK example agent.",
-      },
-    })
-    yield* Effect.sleep("2500 millis")
-    const outputTags: Array<string> = []
-    const toolUseCount = outputTags.filter((tag) => tag === "ToolUse").length
-    const turnCompleteCount = outputTags.filter((tag) => tag === "TurnComplete").length
-    const textChunkCount = outputTags.filter((tag) => tag === "TextChunk").length
-    const permissionRequestCount = outputTags.filter((tag) =>
-      tag === "PermissionRequest",
-    ).length
-    const terminalCleanupContext = yield* firegrid.launch({
-      requestedBy: "tiny-firegrid:terminal-cleanup",
-      runtime: local.jsonl({
-        agent: "official-acp-typescript-sdk-example-terminal-cleanup",
-        argv: fixtureArgv,
-        cwd: process.cwd(),
-        agentProtocol: "acp",
-      }),
-    })
-    const terminalCleanupSession = yield* firegrid.sessions.attach({
-      sessionId: terminalCleanupContext.contextId,
-    })
-    yield* terminalCleanupSession.start()
-    const closeResult = yield* terminalCleanupSession.close({
-      reason: "unified-kernel-validation terminal cleanup proof",
-    })
-    yield* Effect.sleep("3500 millis")
-    const startRecorded = startOffset.offset.length > 0
-    const promptRecorded = promptOffset.offset.length > 0
-    const permissionWaitMatched = false
-    const migratedProbes: ReadonlyArray<MigratedProbe> = [
-      migratedProbe(
-        "P1A",
-        "probeP1A signal happy path",
-        promptRecorded ? "observed" : "surfaced-gap",
-        `public session.prompt returned durable offset ${promptOffset.offset}`,
-      ),
-      migratedProbe(
-        "P1B",
-        "probeP1B signal crash recovery",
-        "public-surface-blocked",
-        "old probe required generation teardown/recovery controls; driver airgap exposes only public SDK operations",
-      ),
-      migratedProbe(
-        "P1C",
-        "probeP1C bounded signal ownership",
-        "public-surface-blocked",
-        "old probe required a DurableDeferred-only workflow outside the public Firegrid surface",
-      ),
-      migratedProbe(
-        "P2A",
-        "probeP2A concurrent session executes admit one body",
-        startRecorded ? "observed" : "surfaced-gap",
-        `public session.start returned durable offset ${startOffset.offset}; trace must show one start_or_attach for one launch`,
-      ),
-      migratedProbe(
-        "P2B",
-        "probeP2B input arrival after body parks",
-        promptRecorded ? "observed" : "surfaced-gap",
-        `prompt delivered after start via session.prompt offset ${promptOffset.offset}`,
-      ),
-      migratedProbe(
-        "P2C",
-        "probeP2C session crash recovery",
-        closeResult.closed ? "observed" : "surfaced-gap",
-        `public session.close returned closed=${closeResult.closed} for terminal cleanup session; trace must show terminal_signal before adapter.deregister`,
-      ),
-      migratedProbe(
-	        "P3A",
-	        "probeP3A permission roundtrip",
-	        permissionWaitMatched || permissionRequestCount > 0 ? "observed" : "surfaced-gap",
-	        `permission wait matched=${permissionWaitMatched}; observed PermissionRequest count=${permissionRequestCount}`,
-	      ),
-      migratedProbe(
-	        "P3B",
-	        "probeP3B tool dispatch idempotency",
-	        toolUseCount > 0 ? "observed" : "surfaced-gap",
-	        `observed ToolUse count=${toolUseCount}; trace gate asserts ACP provider-executed ToolUse does not relay ToolResult`,
-	      ),
-      migratedProbe(
-        "P4A",
-        "probeP4A scheduled prompt",
-        "public-surface-blocked",
-        "no public scheduled-prompt operation is exposed to this airgapped driver",
-      ),
-      migratedProbe(
-        "P4B",
-        "probeP4B webhook observer",
-        "public-surface-blocked",
-        "no public webhook ingest/observer operation is exposed to this airgapped driver",
-      ),
-      migratedProbe(
-        "P4C",
-        "probeP4C webhook bad HMAC rejection",
-        "public-surface-blocked",
-        "no public webhook ingest operation is exposed to this airgapped driver",
-      ),
-      migratedProbe(
-        "P4D",
-        "probeP4D peer event observer",
-        "public-surface-blocked",
-        "no public peer event operation is exposed to this airgapped driver",
-      ),
-      migratedProbe(
-	        "P5",
-	        "probeP5E2E full product surface",
-	        turnCompleteCount > 0 && textChunkCount > 0
-	          ? "observed"
-	          : "surfaced-gap",
-	        `TextChunk count=${textChunkCount}; ToolUse count=${toolUseCount}; TurnComplete count=${turnCompleteCount}`,
-	      ),
-	    ]
-    return {
-      contextId: launched.contextId,
-      matched: false,
-      runCount: 0,
-      eventCount: 0,
-      outputCount: outputTags.length,
-      outputTags: outputTags.join(","),
-      textChunkCount,
-      toolUseCount,
-      turnCompleteCount,
-      permissionRequestCount,
-      permissionWaitMatched,
-      closeRecorded: closeResult.closed,
-      migratedProbes,
-    }
-  }))
+const promptText =
+  "Validate the production ACP path through the official SDK example agent."
 
 export const unifiedKernelValidationDriver = Effect.gen(function*() {
-  const firegrid = yield* Firegrid
-  const scenario = yield* runExampleAgentScenario
+  const config = yield* FiregridConfig
+  if (config.durableStreamsBaseUrl === undefined || config.namespace === undefined) {
+    return yield* Effect.fail(
+      new Error("unified-kernel-validation requires durableStreamsBaseUrl and namespace"),
+    )
+  }
+
+  const mcp = yield* makeFiregridMcpClient({
+    durableStreamsBaseUrl: config.durableStreamsBaseUrl,
+    namespace: config.namespace,
+    streamId,
+    clientId: 2,
+    pollIntervalMs: 250,
+  })
+
+  yield* mcp.initialize
+
+  // Wait for the host-seeded gateway context before provisioning off it.
+  yield* mcp.observations.watchContexts(
+    context => context.contextId === gatewayContextId,
+  ).pipe(
+    Stream.runHead,
+    Effect.timeoutFail({
+      duration: Duration.seconds(30),
+      onTimeout: () => new Error("host gateway context did not appear over MCP"),
+    }),
+  )
+
+  // Provision a child session over MCP — session_new inherits the gateway
+  // runtime, sends the initial prompt, and starts it. The fixture agent's turn
+  // emits a tool_call (the ACP ToolUse journal seam the gate asserts).
+  const session = yield* mcp.sessions.createOrLoad({
+    agentKind: "official-acp-typescript-sdk-example",
+    prompt: promptText,
+  })
+
+  // Let the agent turn complete and reach the journal before closing.
+  yield* Effect.sleep("3500 millis")
+
+  const snapshot = yield* Effect.option(mcp.observations.snapshot(session.contextId))
+  const snapshotRunCount = Option.match(snapshot, {
+    onNone: () => 0,
+    onSome: value => value.runs.length,
+  })
+
+  // Terminal close → adapter deregister, terminal ordering recorded first.
+  yield* mcp.callTool("session_close", {
+    sessionId: session.sessionId,
+    reason: "unified-kernel-validation terminal cleanup proof",
+  })
+
+  yield* Effect.sleep("1000 millis")
 
   yield* Effect.annotateCurrentSpan({
-    "firegrid.ukv.client_metadata_count": firegrid.channels.metadata.length,
-    "firegrid.ukv.context_id": scenario.contextId,
-    "firegrid.ukv.output_matched": scenario.matched,
-    "firegrid.ukv.snapshot_run_count": scenario.runCount,
-    "firegrid.ukv.snapshot_event_count": scenario.eventCount,
-    "firegrid.ukv.snapshot_output_count": scenario.outputCount,
-    "firegrid.ukv.snapshot_output_tags": scenario.outputTags,
-    "firegrid.ukv.snapshot_text_chunk_count": scenario.textChunkCount,
-    "firegrid.ukv.snapshot_tool_use_count": scenario.toolUseCount,
-    "firegrid.ukv.snapshot_turn_complete_count": scenario.turnCompleteCount,
-    "firegrid.ukv.snapshot_permission_request_count": scenario.permissionRequestCount,
-    "firegrid.ukv.permission_wait_matched": scenario.permissionWaitMatched,
-    "firegrid.ukv.close_recorded": scenario.closeRecorded,
-    "firegrid.ukv.factory_host": true,
+    "firegrid.ukv.context_id": session.contextId,
+    "firegrid.ukv.session_id": session.sessionId,
+    "firegrid.ukv.snapshot_run_count": snapshotRunCount,
     "firegrid.ukv.codec": "acp",
+    "firegrid.ukv.transport": "mcp",
     "firegrid.ukv.spawn_target": "src/bin/fake-acp-agent-process.ts",
     "firegrid.ukv.agent_source":
       "agentclientprotocol/typescript-sdk/src/examples/agent.ts",
-    ...probeAttributes(scenario.migratedProbes),
   })
 }).pipe(
   Effect.withSpan("tiny_firegrid.unified_kernel_validation.driver", {

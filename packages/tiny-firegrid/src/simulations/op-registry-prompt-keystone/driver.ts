@@ -1,19 +1,29 @@
+/**
+ * op-registry-prompt-keystone driver — prompt-delivery keystone PURELY over
+ * `@firegrid/client-sdk/mcp` (tf-ll90.8.4). No firegrid.ts client: the host owns
+ * the gateway RuntimeContext (carrying the creds-gated claude-acp agent) and
+ * binds the op-registry-projected `GeneratedSessionPromptChannelLive` as the
+ * `SessionPromptChannel` (the thing under test). The driver provisions one child
+ * session via `session_new` (which delivers the initial prompt THROUGH the
+ * generated channel + starts it) and waits for the agent to echo the marker.
+ *
+ * The generated op-registry channel is exercised end-to-end via the standard MCP
+ * `session_new`/`session_prompt` path — host-plane dispatch resolves the
+ * `SessionPromptChannel` Tag the sim overrode. `FiregridConfig` is the only
+ * client-sdk import (read-only config Tag). Creds-gated; the marker round-trip
+ * requires a real ANTHROPIC_API_KEY in the host env.
+ */
+
+import { FiregridConfig } from "@firegrid/client-sdk/config"
 import {
-  Firegrid,
-  local,
-  type FiregridSessionHandle,
-} from "@firegrid/client-sdk/firegrid"
-import { Config, Effect, Option } from "effect"
+  makeFiregridMcpClient,
+  type FiregridMcpSessionHandle,
+} from "@firegrid/client-sdk/mcp"
+import { Duration, Effect, Stream } from "effect"
 
-const claudeAcpArgv = [
-  "npx",
-  "-y",
-  "@agentclientprotocol/claude-agent-acp@0.36.1",
-] as const
-
-const anthropicKeyConfig = Config.redacted("ANTHROPIC_API_KEY").pipe(
-  Config.option,
-)
+// Airgapped driver — MIRRORS ./host.ts literals (kept in sync).
+const gatewayContextId = "session:tiny-firegrid:op-registry-prompt-keystone-gateway"
+const streamId = "op-registry-prompt-keystone"
 
 const marker = "OP_REGISTRY_PROMPT_KEYSTONE_ACK"
 const promptText = [
@@ -22,21 +32,8 @@ const promptText = [
   "Do not call tools. Do not inspect files.",
 ].join("\n")
 
-interface ExternalKey {
-  readonly source: string
-  readonly id: string
-}
-
-const externalKey: ExternalKey = {
-  source: "tiny-firegrid",
-  id: "op-registry-prompt-keystone",
-}
-
-const sessionContextIdForExternalKey = (key: ExternalKey): string =>
-  `session:${key.source}:${key.id}`
-
 const waitForMarker = (
-  session: FiregridSessionHandle,
+  session: FiregridMcpSessionHandle,
 ) =>
   Effect.gen(function*() {
     let afterSequence: number | undefined
@@ -79,61 +76,64 @@ const waitForMarker = (
     }
   })
 
-export const opRegistryPromptKeystoneDriver: Effect.Effect<void, unknown, Firegrid> =
-  Effect.scoped(Effect.gen(function*() {
-    const anthropicKey = yield* anthropicKeyConfig
-    if (Option.isNone(anthropicKey)) {
-      yield* Effect.annotateCurrentSpan({
-        "firegrid.op_registry_prompt.status": "blocked",
-        "firegrid.op_registry_prompt.blocked_reason": "ANTHROPIC_API_KEY is absent",
-        "firegrid.op_registry_prompt.anthropic_api_key_present": false,
-      })
-      return
+export const opRegistryPromptKeystoneDriver: Effect.Effect<void, unknown, FiregridConfig> =
+  Effect.gen(function*() {
+    const config = yield* FiregridConfig
+    if (config.durableStreamsBaseUrl === undefined || config.namespace === undefined) {
+      return yield* Effect.fail(
+        new Error("op-registry-prompt-keystone requires durableStreamsBaseUrl and namespace"),
+      )
     }
 
-    const firegrid = yield* Firegrid
-    const contextId = sessionContextIdForExternalKey(externalKey)
-    const session = yield* firegrid.sessions.createOrLoad({
-      externalKey,
-      runtime: local.jsonl({
-        argv: [...claudeAcpArgv],
-        agent: "claude-acp",
-        agentProtocol: "acp",
-        cwd: globalThis.process.cwd(),
-        envBindings: [
-          { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
-        ],
-      }),
-      createdBy: "tiny-firegrid-simulation",
+    const mcp = yield* makeFiregridMcpClient({
+      durableStreamsBaseUrl: config.durableStreamsBaseUrl,
+      namespace: config.namespace,
+      streamId,
+      clientId: 2,
+      pollIntervalMs: 250,
     })
 
-    const promptOffset = yield* session.prompt({
-      payload: {
-        text: promptText,
-      },
-      idempotencyKey: "tiny-firegrid-op-registry-prompt-turn-1",
+    yield* mcp.initialize
+
+    // Wait for the host-seeded gateway context before provisioning off it.
+    yield* mcp.observations.watchContexts(
+      context => context.contextId === gatewayContextId,
+    ).pipe(
+      Stream.runHead,
+      Effect.timeoutFail({
+        duration: Duration.seconds(30),
+        onTimeout: () => new Error("host gateway context did not appear over MCP"),
+      }),
+    )
+
+    // Provision a child session over MCP — session_new delivers the initial
+    // prompt THROUGH the op-registry GeneratedSessionPromptChannel (the keystone
+    // under test) and starts the agent, which inherits the gateway claude-acp
+    // runtime.
+    const session = yield* mcp.sessions.createOrLoad({
+      agentKind: "claude-acp",
+      prompt: promptText,
     })
-    const startOffset = yield* session.start()
+
     const result = yield* waitForMarker(session)
 
     yield* Effect.annotateCurrentSpan({
       "firegrid.op_registry_prompt.status": result.markerObserved
         ? "marker_observed"
         : "incomplete",
-      "firegrid.op_registry_prompt.anthropic_api_key_present": true,
-      "firegrid.op_registry_prompt.context_id": contextId,
+      "firegrid.op_registry_prompt.context_id": session.contextId,
       "firegrid.op_registry_prompt.session_id": session.sessionId,
-      "firegrid.op_registry_prompt.start_offset": startOffset.offset,
-      "firegrid.op_registry_prompt.prompt_offset": promptOffset.offset,
       "firegrid.op_registry_prompt.output_count": result.outputCount,
       "firegrid.op_registry_prompt.output_tags": result.outputTags,
       "firegrid.op_registry_prompt.text_length": result.textLength,
       "firegrid.op_registry_prompt.timed_out": result.timedOut,
       "firegrid.op_registry_prompt.marker_observed": result.markerObserved,
       "firegrid.op_registry_prompt.last_sequence": result.lastSequence,
-      "firegrid.op_registry_prompt.spawn_target": claudeAcpArgv.join(" "),
+      "firegrid.op_registry_prompt.transport": "mcp",
+      "firegrid.op_registry_prompt.spawn_target":
+        "npx -y @agentclientprotocol/claude-agent-acp@0.36.1",
     })
-  })).pipe(
+  }).pipe(
     Effect.withSpan("tiny_firegrid.op_registry_prompt.driver", {
       kind: "client",
     }),

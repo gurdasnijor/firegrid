@@ -1,8 +1,4 @@
-import {
-  Firegrid,
-  FiregridConfig,
-  local,
-} from "@firegrid/client-sdk/firegrid"
+import { FiregridConfig } from "@firegrid/client-sdk/config"
 import {
   makeFiregridMcpClient,
   type FiregridMcpTask,
@@ -19,12 +15,8 @@ const anthropicKeyConfig = Config.redacted("ANTHROPIC_API_KEY").pipe(
   Config.option,
 )
 
-const gatewayExternalKey = {
-  source: "tiny-firegrid",
-  id: "mcp-client-sdk-observations-parent",
-} as const
-
-const gatewayContextId = `session:${gatewayExternalKey.source}:${gatewayExternalKey.id}`
+const gatewayContextId =
+  "session:tiny-firegrid:mcp-client-sdk-observations-gateway"
 const streamId = "mcp-client-sdk-observations"
 const marker = "MCP_CLIENT_SDK_OBSERVATIONS_DONE"
 
@@ -116,7 +108,7 @@ const watchPromptTask = (
     }),
   )
 
-export const mcpClientSdkObservationsDriver: Effect.Effect<void, unknown, Firegrid | FiregridConfig> =
+export const mcpClientSdkObservationsDriver: Effect.Effect<void, unknown, FiregridConfig> =
   Effect.scoped(Effect.gen(function*() {
     const anthropicKey = yield* anthropicKeyConfig
     if (Option.isNone(anthropicKey)) {
@@ -128,25 +120,10 @@ export const mcpClientSdkObservationsDriver: Effect.Effect<void, unknown, Firegr
       return
     }
 
-    const firegrid = yield* Firegrid
     const config = yield* FiregridConfig
     if (config.durableStreamsBaseUrl === undefined || config.namespace === undefined) {
       return yield* Effect.fail(new Error("mcp client-sdk observations requires durableStreamsBaseUrl and namespace"))
     }
-
-    yield* firegrid.sessions.createOrLoad({
-      externalKey: gatewayExternalKey,
-      runtime: local.jsonl({
-        argv: [...claudeAcpArgv],
-        agent: "claude-acp",
-        agentProtocol: "acp",
-        cwd: globalThis.process.cwd(),
-        envBindings: [
-          { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
-        ],
-      }),
-      createdBy: "tiny-firegrid-simulation",
-    })
 
     const mcp = yield* makeFiregridMcpClient({
       durableStreamsBaseUrl: config.durableStreamsBaseUrl,

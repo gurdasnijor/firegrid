@@ -1,5 +1,6 @@
 import { Prompt } from "@effect/ai"
 import { WorkflowEngine } from "@effect/workflow"
+import { firegridHost } from "@firegrid/host-sdk"
 import {
   EventOffsetSchema,
   SessionPromptChannel,
@@ -8,13 +9,12 @@ import {
   makeDurableEventChannel,
   type DurableEventChannel,
 } from "@firegrid/protocol/channels"
+import { DurableStreamsLive, local } from "@firegrid/protocol/launch"
 import { firegridProjection } from "@firegrid/protocol/projection"
 import { AgentInputEventSchema, type AgentInputEvent } from "@firegrid/runtime/events"
 import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import {
   defaultProductionAdapterLayer,
-  DurableStreamsLive,
-  FiregridRuntime,
   RuntimeContextSessionWorkflow,
   type SessionInputPayload,
 } from "@firegrid/runtime/unified"
@@ -198,29 +198,50 @@ const GeneratedSessionPromptChannelLive = Layer.effect(
   }),
 )
 
+const claudeAcpArgv = [
+  "npx",
+  "-y",
+  "@agentclientprotocol/claude-agent-acp@0.36.1",
+] as const
+
 export const opRegistryPromptKeystoneHost = (
   env: TinyFiregridHostEnv,
-): Layer.Layer<FiregridHost, unknown> => {
-  const runtime = FiregridRuntime(
-    {
-      namespace: env.namespace,
-    },
-    defaultProductionAdapterLayer(
-      RuntimeEnvResolverPolicy.withPolicy({
-        authorizedBindings: [
-          ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
-        ],
-        lookupEnv: name => env.processEnv[name],
-      }),
-    ),
-  ).pipe(
-    Layer.provide(
-      DurableStreamsLive.configuredWith({
-        baseUrl: env.durableStreamsBaseUrl,
-        namespace: env.namespace,
+): Layer.Layer<FiregridHost, unknown> =>
+  GeneratedSessionPromptChannelLive.pipe(
+    Layer.provideMerge(
+      firegridHost({
+        spec: { namespace: env.namespace },
+        adapter: defaultProductionAdapterLayer(
+          RuntimeEnvResolverPolicy.withPolicy({
+            authorizedBindings: [
+              ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
+            ],
+            lookupEnv: name => env.processEnv[name],
+          }),
+        ),
+        backend: DurableStreamsLive.configuredWith({
+          baseUrl: env.durableStreamsBaseUrl,
+          namespace: env.namespace,
+        }),
+        ingress: {
+          transport: "durable-streams",
+          baseUrl: env.durableStreamsBaseUrl,
+          namespace: env.namespace,
+          streamId: "op-registry-prompt-keystone",
+          gatewayExternalKey: {
+            source: "tiny-firegrid",
+            id: "op-registry-prompt-keystone-gateway",
+          },
+          gatewayRuntime: local.jsonl({
+            argv: [...claudeAcpArgv],
+            agent: "claude-acp",
+            agentProtocol: "acp",
+            cwd: globalThis.process.cwd(),
+            envBindings: [
+              { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
+            ],
+          }),
+        },
       }),
     ),
   )
-
-  return GeneratedSessionPromptChannelLive.pipe(Layer.provideMerge(runtime))
-}

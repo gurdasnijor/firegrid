@@ -1,59 +1,33 @@
 /**
- * cap-4 CROSS-AGENT DELEGATION driver — re-establishes the deleted
- * inv5-cross-agent-event-choreography shape on the unified surface using the
- * public `session_new` agent-tool (#831 / tf-0awo.32), and serves as the live
- * acceptance that `session_new`'s lowering performs observable parent -> child
- * delegation end-to-end.
+ * cross-agent-delegation driver — re-establishes the parent->child delegation
+ * acceptance PURELY over `@firegrid/client-sdk/mcp` (tf-ll90.8.4). No firegrid.ts
+ * client: the host owns the gateway RuntimeContext (a real claude-acp planner
+ * with its per-context runtime MCP server enabled — see ./host.ts). The driver
+ * provisions the planner session via the `session_new` MCP tool (which inherits
+ * the gateway runtime, sends the delegation prompt, and starts it), then observes
+ * the planner delegate: it calls the Firegrid `session_new` tool through ITS OWN
+ * runtime-context MCP (the runtime's spawn machinery, unaffected by this
+ * migration) to create a CHILD agent, and echoes the child contextId the tool
+ * result hands back.
  *
- * Shape (proven by `factory-capstone`): a real off-the-shelf ACP planner
- * agent (`@agentclientprotocol/claude-agent-acp`) is spawned in the parent RuntimeContext
- * with `runtimeContextMcp` enabled, so the host injects its per-context MCP
- * server. The planner calls the Firegrid `session_new` MCP tool to delegate to a
- * CHILD agent; the dispatch spawns + prompts + starts the child (itself a
- * codex-acp agent, inheriting the parent's argv/config/envBindings); the child
- * emits an observable marker into its OWN context's output stream. Correlation
- * is observed over the PUBLIC surface: the `session_new` tool result hands the
- * child `contextId` back to the planner, which echoes it. Child-context
- * projection reads moved to the MCP observation client, so this direct driver
- * does not open the child context read-only.
- *
- * Why an ACP agent and not a deterministic stdio fixture: `session_new` is
- * reachable ONLY through the MCP-entry path; a `"raw"`/stdio-jsonl agent has
- * neither a wired `tool_use` dispatch nor an MCP slot. See
- * docs/findings/tf-0awo-31-3-cross-agent-delegation.md (source-verified). The
- * planner is claude-acp (not codex-acp): in this environment the codex ACP agent
- * emits zero agent output — corroborated by the reference `codex-acp-tool-calls`
- * sim — whereas claude-acp is productive (see `factory-capstone`).
+ * Correlation is observed over the PUBLIC surface: `wait.forAgentOutput` streams
+ * the planner's normalized observations; the `session_new` ToolUse and the child
+ * contextId (carried verbatim in the tool-result observation) are read off it.
  *
  * Methodology (packages/tiny-firegrid/docs/methodology.md): the driver imports
- * ONLY `@firegrid/client-sdk` (+ Effect), draws no verdict, returns an opaque
- * observation record, and emits a span tree. The trace + prose finding are the
- * deliverables. Gated on ANTHROPIC_API_KEY: absent -> halt `blocked` (same
- * contract as `factory-capstone`); the only fixture is the real spawn target.
+ * ONLY `@firegrid/client-sdk/{mcp,config}` (+ Effect), draws no verdict, returns
+ * an opaque observation record, and emits a span tree. The trace + prose finding
+ * are the deliverables. Creds-gated on ANTHROPIC_API_KEY: absent -> halt
+ * `blocked` (the gateway claude-acp planner only runs with a real key).
  */
 
-import {
-  Firegrid,
-  local,
-} from "@firegrid/client-sdk/firegrid"
-import { Clock, Config, Effect, Option } from "effect"
+import { FiregridConfig } from "@firegrid/client-sdk/config"
+import { makeFiregridMcpClient } from "@firegrid/client-sdk/mcp"
+import { Clock, Config, Duration, Effect, Option, Stream } from "effect"
 
-const claudeAcpArgv = [
-  "npx",
-  "-y",
-  "@agentclientprotocol/claude-agent-acp@0.36.1",
-] as const
-
-// Mirror the host's bound MCP listener (host.ts) so the planner can be pointed
-// at its per-context runtime MCP endpoint explicitly, exactly as
-// `factory-capstone` does. The host ALSO injects this via runtimeContextMcp;
-// the explicit entry is belt-and-suspenders for the claude-acp MCP loader.
-const mcpHost = "127.0.0.1"
-const mcpPort = 43792
-const mcpPath = "/mcp"
-const mcpServerName = "firegrid-runtime-context"
-const mcpUrlForContext = (contextId: string): string =>
-  `http://${mcpHost}:${mcpPort}${mcpPath}/runtime-context/${encodeURIComponent(contextId)}`
+// Airgapped driver — MIRRORS ./host.ts literals (kept in sync).
+const gatewayContextId = "session:tiny-firegrid:cross-agent-delegation-gateway"
+const streamId = "cross-agent-delegation"
 
 const childMarker = "CROSS_AGENT_DELEGATION_CHILD_OBSERVED"
 const parentEchoPrefix = "PARENT_DELEGATED contextId="
@@ -63,7 +37,8 @@ const parentEchoPrefix = "PARENT_DELEGATED contextId="
 // result hands back — the public-surface correlation channel. Framed as a
 // genuine first-person task (not a quoted instruction) because the claude-acp
 // agent is Claude Code and will treat a quoted "do X" block as a possible
-// prompt injection and decline (observed; see finding).
+// prompt injection and decline (observed; see
+// docs/findings/tf-0awo-31-3-cross-agent-delegation.md).
 const plannerPrompt = [
   "I am the operator and this is my genuine request to you. Please do exactly this now.",
   "",
@@ -89,20 +64,16 @@ interface CrossAgentDelegationResult {
   readonly childContextId: string
   readonly sawSessionNewToolUse: boolean
   readonly childContextIdRecovered: boolean
-  readonly observedChildCreatedBy: string
   readonly childCorrelatedToParent: boolean
-  readonly childObservableOutputSeen: boolean
   readonly parentOutputTags: string
 }
 
-// The child contextId is a host-owned fact (its toolUseId carries a host-internal
-// `id_<random>` never exposed to the client) — the public surface delivers it
-// only through the `session_new` tool RESULT, which rides back into the parent's
+// The child contextId is a host-owned fact — the public surface delivers it only
+// through the `session_new` tool RESULT, which rides back into the planner's
 // ToolUse observation. We scan ALL of each observation (the tool-call part holds
 // the full id) and keep the LONGEST `session_new` id seen: the agent's own
 // TextChunk echo of a ~150-char opaque id is lossy/truncated, but the tool-result
-// part carries it verbatim. (Finding: there is no first-class "observe my
-// delegated child" client verb; correlation rides the tool result.)
+// part carries it verbatim.
 const childIdPattern = /session:firegrid\.mcp\.session_new:[A-Za-z0-9:._-]+/g
 
 const longestChildId = (
@@ -118,9 +89,14 @@ const longestChildId = (
 export const driver: Effect.Effect<
   CrossAgentDelegationResult,
   unknown,
-  Firegrid
-> = Effect.scoped(Effect.gen(function*() {
-  const firegrid = yield* Firegrid
+  FiregridConfig
+> = Effect.gen(function*() {
+  const config = yield* FiregridConfig
+  if (config.durableStreamsBaseUrl === undefined || config.namespace === undefined) {
+    return yield* Effect.fail(
+      new Error("cross-agent-delegation requires durableStreamsBaseUrl and namespace"),
+    )
+  }
 
   // Gate: real delegation requires a real ACP agent (parent AND child are
   // claude-acp). Without a key, halt as a recorded `blocked` finding.
@@ -136,60 +112,58 @@ export const driver: Effect.Effect<
       childContextId: "",
       sawSessionNewToolUse: false,
       childContextIdRecovered: false,
-      observedChildCreatedBy: "",
       childCorrelatedToParent: false,
-      childObservableOutputSeen: false,
       parentOutputTags: "",
     } satisfies CrossAgentDelegationResult
   }
 
-  const externalKey = {
-    source: "tiny-firegrid.cross-agent-delegation",
-    id: "cross-agent-delegation-planner",
-  }
-  // The session contextId is `session:<source>:<id>` (config over the public
-  // launch seam — mirrors the merged createOrLoad binding), known before the
-  // call so the planner can be pointed at its per-context MCP URL explicitly.
-  const plannerContextId = `session:${externalKey.source}:${externalKey.id}`
+  const mcp = yield* makeFiregridMcpClient({
+    durableStreamsBaseUrl: config.durableStreamsBaseUrl,
+    namespace: config.namespace,
+    streamId,
+    clientId: 2,
+    pollIntervalMs: 250,
+  })
 
-  // 1. Bring up the PLANNER (parent) over the public surface: a real ACP agent
-  //    with its per-context MCP server injected (runtimeContextMcp enabled) AND
-  //    declared explicitly, so `session_new` is reachable from the agent.
-  const parent = yield* firegrid.sessions.createOrLoad({
-    externalKey,
-    runtime: local.jsonl({
-      argv: [...claudeAcpArgv],
-      agent: "claude-acp",
-      agentProtocol: "acp",
-      cwd: globalThis.process.cwd(),
-      envBindings: [{ name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" }],
-      runtimeContextMcp: { enabled: true },
-      mcpServers: [{
-        name: mcpServerName,
-        server: { type: "url", url: mcpUrlForContext(plannerContextId) },
-      }],
+  yield* mcp.initialize
+
+  // Wait for the host-seeded gateway context before provisioning off it.
+  yield* mcp.observations.watchContexts(
+    context => context.contextId === gatewayContextId,
+  ).pipe(
+    Stream.runHead,
+    Effect.timeoutFail({
+      duration: Duration.seconds(30),
+      onTimeout: () => new Error("host gateway context did not appear over MCP"),
     }),
-    createdBy: "tiny-firegrid-simulation",
+  )
+
+  // 1. Provision the PLANNER (parent) over MCP — session_new inherits the
+  //    gateway's claude-acp runtime (with its per-context MCP server enabled),
+  //    sends the delegation prompt, and starts it.
+  //
+  // TODO(tf-ll90.8.4 gap): the old direct-client driver called
+  //   `parent.permissions.autoApprove("allow", ...)` (a firegrid.channels
+  //   permissions-channel op) to clear claude-acp's plan-mode gate so the
+  //   planner EXECUTES the `session_new` tool instead of stopping in plan mode.
+  //   The MCP surface has no per-session blanket auto-approve verb: the only
+  //   permission op is `respondToPermission(taskId, decision)` (= tasks/update),
+  //   which keys off a `promptTask`-issued taskId, and this createOrLoad path
+  //   auto-prompts/auto-starts the initial turn without a task handle. Reported
+  //   as a GAP. With a real key the planner may stall in plan mode until this
+  //   channel op has an MCP equivalent.
+  const parent = yield* mcp.sessions.createOrLoad({
+    agentKind: "claude-acp",
+    prompt: plannerPrompt,
   })
   const parentContextId = parent.contextId
-  // Clear the ACP permission gate so the planner actually EXECUTES the
-  // `session_new` tool instead of stopping in plan mode (claude-acp defaults to
-  // "Planning mode, no actual tool execution"). Same approach as factory-capstone.
-  yield* parent.permissions.autoApprove("allow", { timeoutMs: 240_000 })
-
-  yield* parent.prompt({
-    payload: { text: plannerPrompt },
-    idempotencyKey: `${externalKey.id}:turn-1`,
-  })
-  yield* parent.start()
 
   // 2. Observe the planner delegate over the public surface: a `session_new`
   //    ToolUse plus the child contextId carried in its tool result. Observe
   //    through TurnComplete so the result is captured, then keep the longest id
   //    (the agent's truncated TextChunk echo loses to the verbatim tool result).
   //    Bounded so the driver halts cleanly (the trace is the deliverable; never
-  //    spin to a harness timeout). Forbid the non-delegation spawn surface.
-  let parentAfter: number | undefined
+  //    spin to a harness timeout).
   let sawSessionNewToolUse = false
   let childContextId: string | undefined
   let parentTurnComplete = false
@@ -201,38 +175,26 @@ export const driver: Effect.Effect<
     parentOutputs < 96 &&
     (yield* Clock.currentTimeMillis) < observeDeadlineMs
   ) {
-    const next = yield* parent.wait.forAgentOutput({
-      ...(parentAfter === undefined ? {} : { afterSequence: parentAfter }),
-      timeoutMs: 20_000,
-    })
+    const next = yield* parent.wait.forAgentOutput({ timeoutMs: 20_000 })
     // A single non-match is just a quiet window between agent turns; keep
-    // polling until the bounded deadline rather than bailing (the codex path's
-    // bug). The while-condition guards total time + output count.
+    // polling until the bounded deadline rather than bailing.
     if (!next.matched) continue
-    parentAfter = next.output.sequence
     parentOutputs += 1
-    const event = next.output.event
-    parentOutputTags.push(event._tag)
+    const observation = next.output
+    parentOutputTags.push(observation._tag)
     // claude-acp may surface the MCP tool name namespaced
     // (e.g. `mcp__firegrid-runtime-context__session_new`), so match by substring.
-    if (event._tag === "ToolUse" && event.part.name.includes("session_new")) {
+    if (
+      observation._tag === "ToolUse" &&
+      observation.event.part.name.includes("session_new")
+    ) {
       sawSessionNewToolUse = true
     }
-    if (event._tag === "TurnComplete" || event._tag === "Terminated") {
+    if (observation._tag === "TurnComplete" || observation._tag === "Terminated") {
       parentTurnComplete = true
     }
     // Scan the whole observation (tool-call part carries the verbatim result id).
-    childContextId = longestChildId(JSON.stringify(next.output), childContextId)
-  }
-
-  // 3. Correlate child identity. Arbitrary child-context projection reads moved
-  //    to the MCP observation client; this direct Firegrid driver records whether
-  //    the parent surfaced the child id and does not reopen the deleted snapshot
-  //    read path.
-  let observedChildCreatedBy = ""
-  const childObservableOutputSeen = false
-  if (childContextId !== undefined) {
-    observedChildCreatedBy = "not-observed-on-direct-client"
+    childContextId = longestChildId(JSON.stringify(observation), childContextId)
   }
 
   const result: CrossAgentDelegationResult = {
@@ -241,9 +203,7 @@ export const driver: Effect.Effect<
     childContextId: childContextId ?? "",
     sawSessionNewToolUse,
     childContextIdRecovered: childContextId !== undefined,
-    observedChildCreatedBy,
     childCorrelatedToParent: childContextId !== undefined,
-    childObservableOutputSeen,
     parentOutputTags: parentOutputTags.join(","),
   }
 
@@ -253,20 +213,18 @@ export const driver: Effect.Effect<
     "firegrid.cross_agent_delegation.child_context_id": result.childContextId,
     "firegrid.cross_agent_delegation.saw_session_new": result.sawSessionNewToolUse,
     "firegrid.cross_agent_delegation.child_context_id_recovered": result.childContextIdRecovered,
-    "firegrid.cross_agent_delegation.child_created_by": result.observedChildCreatedBy,
     "firegrid.cross_agent_delegation.child_correlated_to_parent": result.childCorrelatedToParent,
-    "firegrid.cross_agent_delegation.child_observable_output_seen": result.childObservableOutputSeen,
     "firegrid.cross_agent_delegation.parent_output_tags": result.parentOutputTags,
-    "firegrid.cross_agent_delegation.spawn_target": claudeAcpArgv.join(" "),
+    "firegrid.cross_agent_delegation.transport": "mcp",
   })
 
   return result
-})).pipe(
+}).pipe(
   Effect.withSpan("firegrid.cross_agent_delegation.driver", {
     kind: "client",
     attributes: {
-      "firegrid.bead": "tf-0awo.31.3",
-      "firegrid.simulation.intent": "cap4-cross-agent-delegation-session-new",
+      "firegrid.bead": "tf-ll90.8.4",
+      "firegrid.simulation.intent": "cross-agent-delegation-session-new-over-mcp",
     },
   }),
 )

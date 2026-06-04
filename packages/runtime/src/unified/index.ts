@@ -44,3 +44,12 @@ export * from "./mcp-host/tool-dispatch.ts"
 export * from "./mcp-host/tool-error.ts"
 export * from "./mcp-host/toolkit.ts"
 export * from "./mcp-host/toolkit-layer.ts"
+// The single host composition root (re-exported by @firegrid/host-sdk). Its
+// options type is aliased to avoid colliding with the legacy `FiregridHost`
+// factory's `FiregridHostOptions`.
+export {
+  firegridHost,
+  runFiregridHost,
+  type FiregridHostOptions as FiregridHostEntryOptions,
+  type FiregridIngressOptions,
+} from "./host-entry.ts"

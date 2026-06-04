@@ -734,23 +734,24 @@ const local = {
         type: "problem",
         docs: {
           description:
-            "Require tiny-firegrid simulation hosts to compose the real @firegrid/runtime FiregridRuntime factory.",
+            "Require tiny-firegrid simulation hosts to compose through the single Firegrid host composition root (firegridHost / runFiregridHost), so sim == prod and no per-sim layer assembly creeps back in.",
         },
         schema: [],
         messages: {
           missingFactoryImport:
-            "Simulation host.ts must import FiregridRuntime from @firegrid/runtime/unified and compose that real factory.",
+            "Simulation host.ts must import firegridHost (or runFiregridHost) from @firegrid/host-sdk and compose through that single root — not hand-assemble FiregridRuntime + ingress per sim.",
           missingFactoryCall:
-            "Simulation host.ts must call the imported @firegrid/runtime/unified FiregridRuntime factory.",
+            "Simulation host.ts must call the imported @firegrid/host-sdk firegridHost / runFiregridHost composition root.",
         },
       },
       create(context) {
+        const factoryNames = new Set(["firegridHost", "runFiregridHost"])
         let importedFactoryLocalName
         let calledFactory = false
 
         return {
           ImportDeclaration(node) {
-            if (node.source.value !== "@firegrid/runtime/unified") {
+            if (node.source.value !== "@firegrid/host-sdk") {
               return
             }
 
@@ -758,7 +759,7 @@ const local = {
               if (
                 specifier.type === "ImportSpecifier" &&
                 specifier.imported.type === "Identifier" &&
-                specifier.imported.name === "FiregridRuntime"
+                factoryNames.has(specifier.imported.name)
               ) {
                 importedFactoryLocalName = specifier.local.name
               }

@@ -1,9 +1,6 @@
 import { defineSimulation } from "../../types.ts"
 import { shapeCTerminalOrderingDriver } from "./driver.ts"
-import {
-  shapeCTerminalOrderingChannels,
-  shapeCTerminalOrderingHost,
-} from "./host.ts"
+import { shapeCTerminalOrderingHost } from "./host.ts"
 
 export default defineSimulation({
   id: "shape-c-terminal-ordering",
@@ -16,6 +13,5 @@ export default defineSimulation({
     + "firegrid.unified.adapter.deregister for the same context.id — not a raw "
     + "agent_output. The trace is the deliverable.",
   host: shapeCTerminalOrderingHost,
-  channels: shapeCTerminalOrderingChannels,
   driver: shapeCTerminalOrderingDriver,
 })

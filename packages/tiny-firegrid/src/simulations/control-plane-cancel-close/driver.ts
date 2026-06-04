@@ -1,11 +1,21 @@
-import { Firegrid, local } from "@firegrid/client-sdk/firegrid"
-import { Cause, Effect, Exit } from "effect"
+/**
+ * control-plane-cancel-close driver — cancel/close lifecycle PURELY over
+ * `@firegrid/client-sdk/mcp` (tf-ll90.8.4). No firegrid.ts client: the host owns
+ * the gateway RuntimeContext (see ./host.ts); the driver provisions two child
+ * sessions via `session_new` (they inherit the gateway's creds-free fake ACP
+ * agent), then exercises `session_cancel` / `session_close` as MCP tool-calls
+ * and records whether each reaches a terminal consumer.
+ *
+ * `FiregridConfig` is the only client-sdk import — a read-only config Tag.
+ */
 
-const pathFromHere = (relative: string): string =>
-  decodeURIComponent(new URL(relative, import.meta.url).pathname)
+import { FiregridConfig } from "@firegrid/client-sdk/config"
+import { makeFiregridMcpClient } from "@firegrid/client-sdk/mcp"
+import { Cause, Duration, Effect, Exit, Stream } from "effect"
 
-const fakeAgentBin = pathFromHere("../../bin/fake-acp-agent-process.ts")
-const tsxBin = pathFromHere("../../../../../node_modules/tsx/dist/cli.mjs")
+// Airgapped driver — MIRRORS ./host.ts literals (kept in sync).
+const gatewayContextId = "session:tiny-firegrid:control-plane-cancel-close-gateway"
+const streamId = "control-plane-cancel-close"
 
 interface ExitSummary {
   readonly tag: "Success" | "Failure"
@@ -16,8 +26,6 @@ interface ExitSummary {
 interface ControlPlaneCancelCloseResult {
   readonly cancelSessionId: string
   readonly closeSessionId: string
-  readonly cancelStartOffset: string
-  readonly closeStartOffset: string
   readonly cancel: ExitSummary
   readonly close: ExitSummary
 }
@@ -30,72 +38,94 @@ const errorTag = (error: unknown): string | undefined =>
 const errorMessage = (error: unknown): string | undefined =>
   error instanceof Error ? error.message : undefined
 
-const failureSummary = (error: unknown): ExitSummary => {
-  const tag = errorTag(error)
-  const message = errorMessage(error)
-  return {
-    tag: "Failure",
-    ...(tag === undefined ? {} : { errorTag: tag }),
-    ...(message === undefined ? {} : { message }),
-  }
-}
-
 const summarizeExit = <A>(
   exit: Exit.Exit<A, unknown>,
 ): ExitSummary => {
   if (Exit.isSuccess(exit)) return { tag: "Success" }
   const failure = Cause.failureOption(exit.cause)
   if (failure._tag === "Some") {
-    return failureSummary(failure.value)
+    const tag = errorTag(failure.value)
+    const message = errorMessage(failure.value)
+    return {
+      tag: "Failure",
+      ...(tag === undefined ? {} : { errorTag: tag }),
+      ...(message === undefined ? {} : { message }),
+    }
   }
-  return {
-    tag: "Failure",
-    message: Cause.pretty(exit.cause),
-  }
+  return { tag: "Failure", message: Cause.pretty(exit.cause) }
 }
 
-export const driver: Effect.Effect<ControlPlaneCancelCloseResult, unknown, Firegrid> =
+const cancelClosePrompt =
+  "Stand by — this session is a control-plane cancel/close probe."
+
+export const driver: Effect.Effect<ControlPlaneCancelCloseResult, unknown, FiregridConfig> =
   Effect.gen(function*() {
-    const firegrid = yield* Firegrid
+    const config = yield* FiregridConfig
+    if (config.durableStreamsBaseUrl === undefined || config.namespace === undefined) {
+      return yield* Effect.fail(
+        new Error("control-plane-cancel-close requires durableStreamsBaseUrl and namespace"),
+      )
+    }
 
-    const launchSession = (operation: "cancel" | "close") =>
-      Effect.gen(function*() {
-        const context = yield* firegrid.launch({
-          runtime: local.jsonl({
-            argv: [process.execPath, tsxBin, fakeAgentBin],
-            agentProtocol: "acp",
-          }),
-          requestedBy: `tf-ll90.4:${operation}`,
-        })
-        const session = yield* firegrid.sessions.attach({ sessionId: context.contextId })
-        const startOffset = yield* session.start()
-        return { session, startOffset }
-      })
+    const mcp = yield* makeFiregridMcpClient({
+      durableStreamsBaseUrl: config.durableStreamsBaseUrl,
+      namespace: config.namespace,
+      streamId,
+      clientId: 2,
+      pollIntervalMs: 250,
+    })
 
-    const cancelProbe = yield* launchSession("cancel")
-    const closeProbe = yield* launchSession("close")
+    yield* mcp.initialize
+
+    // Wait for the host-seeded gateway context before provisioning off it.
+    yield* mcp.observations.watchContexts(
+      context => context.contextId === gatewayContextId,
+    ).pipe(
+      Stream.runHead,
+      Effect.timeoutFail({
+        duration: Duration.seconds(30),
+        onTimeout: () => new Error("host gateway context did not appear over MCP"),
+      }),
+    )
+
+    // Provision two child sessions over MCP; cancel one, close the other.
+    const cancelChild = yield* mcp.sessions.createOrLoad({
+      agentKind: "fake-acp",
+      prompt: cancelClosePrompt,
+    })
+    const closeChild = yield* mcp.sessions.createOrLoad({
+      agentKind: "fake-acp",
+      prompt: cancelClosePrompt,
+    })
+
     yield* Effect.sleep("500 millis")
 
     const cancelExit = yield* Effect.exit(
-      cancelProbe.session.cancel({ reason: "tf-ll90.4 cancel probe" }).pipe(
+      mcp.callTool("session_cancel", {
+        sessionId: cancelChild.sessionId,
+        reason: "tf-ll90.8.4 cancel probe",
+      }).pipe(
         Effect.withSpan("firegrid.cancel_close.driver.session_cancel", {
           attributes: {
-            "firegrid.session.id": cancelProbe.session.sessionId,
-            "firegrid.context.id": cancelProbe.session.sessionId,
+            "firegrid.session.id": cancelChild.sessionId,
+            "firegrid.context.id": cancelChild.contextId,
             "firegrid.cancel_close.operation": "cancel",
-            "firegrid.channel.target": "session.cancel",
+            "firegrid.mcp.tool": "session_cancel",
           },
         }),
       ),
     )
     const closeExit = yield* Effect.exit(
-      closeProbe.session.close({ reason: "tf-ll90.4 close probe" }).pipe(
+      mcp.callTool("session_close", {
+        sessionId: closeChild.sessionId,
+        reason: "tf-ll90.8.4 close probe",
+      }).pipe(
         Effect.withSpan("firegrid.cancel_close.driver.session_close", {
           attributes: {
-            "firegrid.session.id": closeProbe.session.sessionId,
-            "firegrid.context.id": closeProbe.session.sessionId,
+            "firegrid.session.id": closeChild.sessionId,
+            "firegrid.context.id": closeChild.contextId,
             "firegrid.cancel_close.operation": "close",
-            "firegrid.channel.target": "session.close",
+            "firegrid.mcp.tool": "session_close",
           },
         }),
       ),
@@ -106,27 +136,26 @@ export const driver: Effect.Effect<ControlPlaneCancelCloseResult, unknown, Fireg
     const close = summarizeExit(closeExit)
 
     yield* Effect.annotateCurrentSpan({
-      "firegrid.cancel_close.cancel.session_id": cancelProbe.session.sessionId,
-      "firegrid.cancel_close.close.session_id": closeProbe.session.sessionId,
+      "firegrid.cancel_close.cancel.session_id": cancelChild.sessionId,
+      "firegrid.cancel_close.close.session_id": closeChild.sessionId,
       "firegrid.cancel_close.cancel.exit": cancel.tag,
       "firegrid.cancel_close.cancel.error_tag": cancel.errorTag ?? "",
       "firegrid.cancel_close.close.exit": close.tag,
       "firegrid.cancel_close.close.error_tag": close.errorTag ?? "",
+      "firegrid.cancel_close.transport": "mcp",
     })
 
     return {
-      cancelSessionId: cancelProbe.session.sessionId,
-      closeSessionId: closeProbe.session.sessionId,
-      cancelStartOffset: cancelProbe.startOffset.offset,
-      closeStartOffset: closeProbe.startOffset.offset,
+      cancelSessionId: cancelChild.sessionId,
+      closeSessionId: closeChild.sessionId,
       cancel,
       close,
     }
   }).pipe(
     Effect.withSpan("firegrid.cancel_close.driver", {
       attributes: {
-        "firegrid.bead": "tf-ll90.4",
-        "firegrid.simulation.intent": "cancel-close-current-state",
+        "firegrid.bead": "tf-ll90.8.4",
+        "firegrid.simulation.intent": "cancel-close-over-mcp",
       },
     }),
   )
