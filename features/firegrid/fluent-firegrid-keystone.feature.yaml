@@ -1,7 +1,7 @@
 feature:
   name: fluent-firegrid-keystone
   product: firegrid
-  description: Prove a Restate-shaped Firegrid handler API can journal one durable step directly over Durable Streams without Workflow, DurableTable, or runtime dependencies.
+  description: Prove a Restate sdk-gen-shaped Firegrid Operation/Future API can journal one durable step directly over Durable Streams without Workflow, DurableTable, or runtime dependencies.
 
 components:
   PACKAGE:
@@ -9,13 +9,14 @@ components:
       1: "`@firegrid/fluent-firegrid` is a self-contained workspace package whose runtime dependencies are limited to `effect` and `effect-durable-streams`."
       2: "The package exports a Restate-shaped `service({ name, handlers })` builder."
       3: "The package exports a client/invocation helper that can call a named service handler against a caller-supplied durable journal endpoint."
+      4: "The package exports sdk-gen-shaped `gen`, `execute`, `run`, `Operation<T>`, and `Future<T>` primitives."
 
   DURABLE_RUN:
     requirements:
-      1: "A handler context exposes `ctx.run(name, fn)` for a durable side-effect step."
-      2: "`ctx.run` records a successful step result as an append-only journal event in a Durable Stream."
-      3: "On re-invocation with the same journal endpoint, `ctx.run` replays the journaled result and does not execute `fn` again."
-      4: "`ctx.run` step identity is deterministic for a handler invocation by combining generator order with the caller-provided step name."
+      1: "The free-standing `run(action, options?)` primitive returns a yieldable `Future<T>` when called inside `execute(ctx, gen(...))`."
+      2: "`run` records a successful step result as an append-only journal event in a Durable Stream."
+      3: "On re-invocation with the same journal endpoint, `run` replays the journaled result and does not execute `action` again."
+      4: "`run` step identity is deterministic for a handler invocation by combining generator order with the caller-provided step name."
 
 constraints:
   SUBSTRATE:

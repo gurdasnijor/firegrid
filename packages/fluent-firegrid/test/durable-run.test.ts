@@ -5,7 +5,7 @@
 import { FetchHttpClient, type HttpClient } from "@effect/platform"
 import { Effect, Layer, type Scope } from "effect"
 import { describe, expect, it } from "vitest"
-import { client, service } from "../src/index.ts"
+import { client, execute, gen, run, service } from "../src/index.ts"
 
 type Reqs = FetchHttpClient.Fetch | HttpClient.HttpClient | Scope.Scope
 
@@ -87,18 +87,24 @@ const runtimeWith = <A, E>(
     ),
   )
 
-describe("@firegrid/fluent-firegrid durable ctx.run keystone", () => {
-  it("fluent-firegrid-keystone.DURABLE_RUN.3 replays a journaled ctx.run result after restart", async () => {
+describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
+  it("fluent-firegrid-keystone.PACKAGE.4 fluent-firegrid-keystone.DURABLE_RUN.1 fluent-firegrid-keystone.DURABLE_RUN.3 replays a journaled run Future after restart", async () => {
     const fakeFetch = makeMemoryDurableStreamsFetch()
     const executions = { count: 0 }
     const greeter = service({
       name: "greeter",
       handlers: {
         greet: (ctx, name: string) =>
-          ctx.run("compose", () => {
-            executions.count += 1
-            return `Hello, ${name}! run=${executions.count}`
-          }),
+          execute(
+            ctx,
+            gen(function* () {
+              const greeting = yield* run(() => {
+                executions.count += 1
+                return `Hello, ${name}! run=${executions.count}`
+              }, { name: "compose" })
+              return greeting
+            }),
+          ),
       },
     })
     const invocation = {
