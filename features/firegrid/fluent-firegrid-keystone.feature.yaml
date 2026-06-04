@@ -1,0 +1,24 @@
+feature:
+  name: fluent-firegrid-keystone
+  product: firegrid
+  description: Prove a Restate-shaped Firegrid handler API can journal one durable step directly over Durable Streams without Workflow, DurableTable, or runtime dependencies.
+
+components:
+  PACKAGE:
+    requirements:
+      1: "`@firegrid/fluent-firegrid` is a self-contained workspace package whose runtime dependencies are limited to `effect` and `effect-durable-streams`."
+      2: "The package exports a Restate-shaped `service({ name, handlers })` builder."
+      3: "The package exports a client/invocation helper that can call a named service handler against a caller-supplied durable journal endpoint."
+
+  DURABLE_RUN:
+    requirements:
+      1: "A handler context exposes `ctx.run(name, fn)` for a durable side-effect step."
+      2: "`ctx.run` records a successful step result as an append-only journal event in a Durable Stream."
+      3: "On re-invocation with the same journal endpoint, `ctx.run` replays the journaled result and does not execute `fn` again."
+      4: "`ctx.run` step identity is deterministic for a handler invocation by combining generator order with the caller-provided step name."
+
+constraints:
+  SUBSTRATE:
+    requirements:
+      1: "The keystone implementation does not import `@effect/workflow`, `effect-durable-operators`, `@firegrid/runtime`, `@firegrid/protocol`, or DurableTable."
+      2: "Durable execution state for the keystone slice is represented by append-only Durable Stream journal events."
