@@ -25,8 +25,7 @@
     "simulate:seams": "tsx src/index.ts seams",
     "simulate:show": "tsx src/index.ts show",
     "simulate:runs": "tsx src/index.ts runs",
-    "trace:seams": "tsx src/bin/trace-seams.ts",
-    "trace:seams:ukv": "tsx src/bin/ukv-production-trace-gate.ts",
+    "coverage:gate": "tsx src/index.ts run unified-kernel-validation --timeout-ms 120000",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

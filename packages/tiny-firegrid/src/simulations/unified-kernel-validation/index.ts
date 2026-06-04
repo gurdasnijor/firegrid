@@ -10,10 +10,10 @@ export default defineSimulation({
     + "uses only the public @firegrid/client-sdk surface.",
   host: unifiedKernelValidationHost,
   driver: unifiedKernelValidationDriver,
-  // The computed verdict. These gates are the CEL port of the gating
-  // host-substrate assertions formerly hardcoded in runner/seam-coverage.ts —
-  // each names a span the production runtime emits server-side that the
-  // public-surface driver cannot forge.
+  // The computed verdict. These gates are the CEL form of the gating
+  // host-substrate assertions that previously lived as a hardcoded imperative
+  // trace gate — each names a span the production runtime emits server-side that
+  // the public-surface driver cannot forge.
   coverage: {
     gates: [
       {

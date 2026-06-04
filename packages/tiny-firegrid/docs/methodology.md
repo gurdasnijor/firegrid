@@ -1,22 +1,32 @@
 # tiny-firegrid methodology
 
-Tiny-firegrid is a discovery tool. Its deliverables are **findings** — prose
-files in `docs/findings/tf-*.md` (and beads with the `tfind:NNN` join key) that
-name a specific public-surface gap, divergence, or behavior of the production
-Firegrid system. Simulations exist to produce evidence (traces) for findings;
-the runner exists to produce simulations.
+Tiny-firegrid is a discovery tool. Its deliverable is a **computed verdict**: a
+simulation drives the real Firegrid public surface, and a **trace-coverage
+oracle** judges the run from the host-substrate OTel spans the driver cannot
+forge (`runner/coverage.ts`). A green run means the real production path ran —
+not that a driver asserted it did. Prose **findings** (`docs/findings/tf-*.md`,
+beads with the `tfind:NNN` join key) still capture gaps, divergences, and
+designs, but they now *cite a covered (or not-covered) run* rather than
+substituting human prose for a verdict.
+
+> Heritage note: this model is ported from flamelab (flamecast-v5). It replaces
+> tiny-firegrid's earlier "halts = success; NEVER a computed verdict" stance.
+> The refinement that makes the reversal honest: the **driver** still draws no
+> verdict — drive and judge are different jobs — but a separate oracle now
+> computes one from forge-proof spans. See "The trace-coverage oracle" below.
 
 This document describes the discipline the package follows so that when you
-write a sim, read a trace, or file a finding, you know which job you're doing.
+write a sim, author its coverage spec, read a trace, or file a finding, you know
+which job you're doing.
 
-## Three jobs, three boundaries
+## Four jobs, four boundaries
 
 1. **The simulation** drives the public Firegrid client/host seam through some
-   scenario and instruments what it observes. **It does not draw conclusions.**
-   A sim that returns `{ claimStatus: "passed", findings: [...] }` is the wrong
-   shape — it pre-commits to its own verdict and hides where the human judgment
-   lives. A sim that returns `void` (or an opaque value the next caller needs)
-   and emits a well-named tree of spans is the right shape.
+   scenario and instruments what it observes. **The driver does not draw the
+   verdict.** A driver that returns `{ claimStatus: "passed", ... }` is the
+   wrong shape — judging is the oracle's job, over the trace, after the driver
+   completes. A driver that drives the public surface and returns `void` (or an
+   opaque value the next caller needs) is the right shape.
 
 2. **The trace** is the durable artifact and the source of truth. One
    `trace.jsonl` per run, one JSON object per span, including resource
@@ -25,11 +35,20 @@ write a sim, read a trace, or file a finding, you know which job you're doing.
    and span attributes that describe what happened. Nothing else in the
    `runs/<runId>/` directory is "the answer"; that file is.
 
-3. **The finding** is prose with citations. It names the public surface that
-   was probed, points at the trace evidence (`runs/<runId>/trace.jsonl`, line
-   N, span name X), states what the production code does today vs. what the
-   author expected, and classifies the gap. Findings live in
-   `docs/findings/tf-<short>.md` and are tracked via beads with `tfind:NNN`.
+3. **The coverage spec + oracle** compute the verdict. Each sim carries a
+   `coverage: { gates, corroborations }` of CEL claims over the trace
+   (`runner/coverage.ts`). `gates` decide the verdict and are lint-restricted to
+   forge-proof host-substrate span names; `corroborations` are report-only. The
+   runner computes and prints the verdict after the run; `simulate seams <id>
+   [run]` re-judges a stored trace. **The verdict is data + a projection, never
+   a number the driver hand-wrote.**
+
+4. **The finding** is prose with citations. It names the public surface that
+   was probed, points at the trace evidence (`runs/<runId>/trace.jsonl`, span
+   name X) *and the covered/not-covered verdict*, states what the production
+   code does today vs. what the author expected, and classifies the gap.
+   Findings live in `docs/findings/tf-<short>.md` and are tracked via beads with
+   `tfind:NNN`.
 
 ## What counts as a simulation
 
@@ -37,8 +56,11 @@ write a sim, read a trace, or file a finding, you know which job you're doing.
   (split is preferred for navigability; flatter shapes are fine for very small
   sims).
 - A default export that satisfies `TinyFiregridSimulation<A>`: an `id` (must
-  match the folder), `description`, `host(env): Layer<FiregridHost>`, and
-  `driver: Effect<A, _, Firegrid>`.
+  match the folder), `description`, `host(env): Layer<FiregridHost>`,
+  `driver: Effect<A, _, Firegrid>`, and a `coverage: { gates, corroborations }`
+  spec (the computed verdict; see "The trace-coverage oracle" below). `coverage`
+  is optional only during migration — a sim without it runs but yields no
+  verdict.
 - The driver imports **only** from `@firegrid/client-sdk` (and Effect). It
   should use public session APIs such as `sessions.createOrLoad`,
   `session.wait.forAgentOutput`, `session.wait.forPermissionRequest`,
@@ -52,6 +74,48 @@ write a sim, read a trace, or file a finding, you know which job you're doing.
   test adapters, but only as host composition. Host-only stop conditions are
   harness-private instrumentation, not API examples, and should not be imported
   from host-sdk public barrels.
+
+## The trace-coverage oracle (the verdict)
+
+The verdict is computed in `runner/coverage.ts`, not asserted by the driver. A
+`coverage` spec is **data**: each claim is a [CEL](https://github.com/google/cel-spec)
+string over the run's spans, using a fixed vocabulary — `named(s,"x")`,
+`hasChild(s,"x")`, `hasDescendant(s,"x")`, `errored(s)`, `attr(s,"k")`,
+`statusMessage(s)` + CEL built-ins (`exists`/`all`/`filter`/`size`/`.startsWith`).
+Two buckets:
+
+- **`gates`** decide the verdict. A lint walks each gate's parsed CEL AST and
+  rejects any gate that names a span outside the host-substrate set
+  (`HOST_SUBSTRATE_NAMES`/`_PREFIXES`) — the forge-proof rule is a mechanical
+  check, not a comment. A gate may name only spans the real runtime emits
+  server-side.
+- **`corroborations`** never gate; they may reference any span (driver-side
+  `firegrid.side="driver"` edge spans included), and are report-only.
+
+Three properties keep a green verdict honest:
+
+1. **Forge-proof by name AND by side.** A gate names only host-substrate spans
+   (the static lint), and additionally a passing gate must have a referenced
+   span that actually fired with `firegrid.side != "driver"` (the runtime lock —
+   firegrid annotates every host-side span via `runner/side.ts`). A driver that
+   echoes a host span *name* on its own side cannot satisfy a gate.
+2. **No vacuous passes.** A universal (`.all`) gate that evaluates true on an
+   empty set proves nothing; the oracle flags it `⚠ VACUOUS` and counts it as
+   NOT-covered. Anchor a safety/absence claim to a liveness precondition (e.g.
+   `spans.exists(s, named(s,"…adapter.send")) && spans.filter(…).all(…)`) so it
+   is non-vacuous; a pure absence property with no liveness anchor belongs in a
+   `corroboration` (a report-only regression sentinel), not a gate.
+3. **Negative controls.** Every gating claim should ship a verified negative
+   control: tamper the real behavior (break the spawn target, drop a tool call,
+   corrupt a signature), leave the driver byte-for-byte unchanged, and confirm
+   the verdict flips to not-covered. A gate with no negative control is suspect.
+   (Negative controls are run manually today — tamper, run, revert.)
+
+Read the **instrumentation map** the oracle prints (`simulate gaps [run]`) on
+every run: an `unknown` host span is new instrumentation to classify in
+`HOST_SUBSTRATE_*`; an unfired host-substrate span you expected, or a behavior
+provable only indirectly (no span at the write site), is the next thing to
+instrument in the runtime — surface it, don't gate around it.
 
 ## The workbench pattern
 
@@ -72,9 +136,11 @@ loop:
 3. **Drive it through the public client surface in `driver.ts`** —
    `@firegrid/client-sdk` only. The driver proves an agent/consumer reaches the
    capability through the *public* seam, not by poking the stub directly.
-4. **Verify dynamics + invariants from the trace** (`simulate show` / `simulate
-   perf` over `trace.jsonl`) and write a **prose finding** (`docs/findings/
-   tf-*.md`). Do not compute a verdict object in-script (see "Three jobs").
+4. **Encode the dynamics as `coverage` gates** over the trace and let the oracle
+   judge (`simulate run` / `simulate seams`; inspect with `simulate show` /
+   `simulate perf`), then write a **prose finding** (`docs/findings/tf-*.md`)
+   that cites the verdict. The driver still computes nothing — the gates are
+   data, judged by the oracle (see "The trace-coverage oracle").
 
 Worked example: the **MCP-host discovery sim** (`tf-r06u.23`, converting the
 retired `mcp-reach` spike). It designs an `McpHost` `Context.Tag` (the contract
@@ -189,5 +255,7 @@ not verified ground-truth.
   codec → SDK diagnostic span). Those changes live in `@firegrid/host-sdk`,
   `@firegrid/runtime`, `@firegrid/client-sdk`, and `effect-durable-operators`,
   and they are tracked separately from tiny-firegrid's runner work.
-- Conclusion-shaped artifacts (`run.json` with `claimStatus`, `findings: [...]`
-  arrays in TypeScript). The trace is the output; findings are prose.
+- Driver-drawn verdicts (a driver returning `{ claimStatus }`, or `findings:
+  [...]` arrays the driver builds). Judging is the oracle's job, over the trace.
+  The verdict belongs in the `coverage` spec (data) — CEL gates the oracle
+  evaluates — never in driver code.

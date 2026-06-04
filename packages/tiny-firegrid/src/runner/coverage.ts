@@ -43,7 +43,7 @@ const sideOf = (s: SpanRecord): string => {
 }
 
 // ── the contract — a claim is data (a CEL string), not a closure ─────────────
-export interface ClaimDef {
+interface ClaimDef {
   readonly id: string
   readonly description: string
   /** A CEL boolean expression over `spans` (see the vocabulary above). */
@@ -58,11 +58,12 @@ export interface CoverageSpec {
 }
 
 // ── the forge-proof core spans — a gate may name only these ──────────────────
-// Seeded from runner/seam-coverage.ts SEAMS (the canonical firegrid host-side
-// vocabulary). Exact names plus dynamic-suffix prefixes (`unified.tool.execute/<id>`
-// etc.). `gaps` on a real run surfaces any host span absent here as `unknown` —
-// that is the signal to add it, not to gate around it.
-export const HOST_SUBSTRATE_NAMES: ReadonlySet<string> = new Set([
+// The canonical firegrid host-side span vocabulary (the names the runtime emits
+// server-side, the driver cannot forge). Exact names plus dynamic-suffix
+// prefixes (`unified.tool.execute/<id>` etc.). `gaps` on a real run surfaces any
+// host span absent here as `unknown` — that is the signal to add it, not to gate
+// around it.
+const HOST_SUBSTRATE_NAMES: ReadonlySet<string> = new Set([
   // channel + signal
   "firegrid.channel.dispatch",
   "firegrid.unified.signal.send",
@@ -132,7 +133,7 @@ export const HOST_SUBSTRATE_NAMES: ReadonlySet<string> = new Set([
 
 // Dynamic-suffix host spans: `unified.tool.execute/<contextId>` etc. A gate that
 // names the stable prefix-form is host-substrate; the run emits the suffixed name.
-export const HOST_SUBSTRATE_PREFIXES: ReadonlyArray<string> = [
+const HOST_SUBSTRATE_PREFIXES: ReadonlyArray<string> = [
   "firegrid.workflow_engine.execution.resume",
   // sim host-side probe spans (emitted by a sim's host composition; forge-proof
   // because they fire host-side, side != "driver"). Lets a sim gate on a
@@ -149,7 +150,7 @@ export const HOST_SUBSTRATE_PREFIXES: ReadonlyArray<string> = [
   "unified.session.deregister/",
 ]
 
-export const isHostSubstrate = (name: string): boolean =>
+const isHostSubstrate = (name: string): boolean =>
   HOST_SUBSTRATE_NAMES.has(name) ||
   HOST_SUBSTRATE_PREFIXES.some((p) => name.startsWith(p))
 
@@ -164,11 +165,6 @@ export const adapterStartedAgent: ClaimDef = {
   id: "adapter.started_agent",
   description: "the production codec adapter started or attached the agent",
   claim: "spans.exists(s, named(s, \"firegrid.unified.adapter.start_or_attach\"))",
-}
-export const sessionBodyDidNotError: ClaimDef = {
-  id: "session.body_did_not_error",
-  description: "no session-body span ended in error",
-  claim: "spans.filter(s, named(s, \"firegrid.unified.session.body\")).all(t, !errored(t))",
 }
 
 // the ONLY functions that name a span — so the lint/witness is capture-complete.
@@ -286,7 +282,7 @@ const referencedSpanNames = (claim: string): ReadonlyArray<string> => {
 }
 
 // ── results ──────────────────────────────────────────────────────────────────
-export interface ClaimResult {
+interface ClaimResult {
   readonly id: string
   readonly description: string
   readonly gating: boolean
@@ -323,7 +319,7 @@ interface TraceGaps {
   readonly vacuousGates: ReadonlyArray<string>
 }
 
-export interface CoverageReport {
+interface CoverageReport {
   readonly totalSpans: number
   readonly gates: ReadonlyArray<ClaimResult>
   readonly corroborations: ReadonlyArray<ClaimResult>
