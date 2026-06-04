@@ -91,6 +91,10 @@ export class SessionLifecycleChannel extends Context.Tag(
   "firegrid/protocol/channels/session.lifecycle",
 )<SessionLifecycleChannel, SessionLifecycleChannelService>() {}
 
+// tf-vqv5: the `host.permissions.respond` callable Tag was collapsed — permission
+// decisions resolve via the `respondPermissionDecision` durable op in
+// `@firegrid/runtime` (WorkflowEngine-backed DurableDeferred). Only the target +
+// request schema survive (consumed by that op + its callers).
 export const HostPermissionRespondChannelTarget = makeChannelTarget(
   "host.permissions.respond",
 )
@@ -99,10 +103,3 @@ export const HostPermissionRespondChannelRequestSchema =
 export type HostPermissionRespondChannelRequest = Schema.Schema.Type<
   typeof HostPermissionRespondChannelRequestSchema
 >
-export type HostPermissionRespondChannelService = DurableEventChannel<
-  typeof HostPermissionRespondChannelRequestSchema
->
-
-export class HostPermissionRespondChannel extends Context.Tag(
-  "firegrid/protocol/channels/host.permissions.respond",
-)<HostPermissionRespondChannel, HostPermissionRespondChannelService>() {}

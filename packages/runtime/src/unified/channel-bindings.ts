@@ -17,9 +17,8 @@
 
 import {
   HostContextsCreateRequestSchema,
-  HostPermissionRespondChannel,
-  HostPermissionRespondChannelRequestSchema,
   HostPermissionRespondChannelTarget,
+  type HostPermissionRespondChannelRequest,
   HostPromptChannel,
   HostPromptChannelTarget,
   HostSessionsCreateOrLoadRequestSchema,
@@ -205,57 +204,52 @@ export const SessionPromptChannelSignalingLive = Layer.effect(
 )
 
 /**
- * Production HostPermissionRespondChannel — resolves the
- * PermissionRoundtripWorkflow's decision `DurableDeferred` for the matching
- * execution (tf-k00i: replaces `sendSignal`).
+ * Resolve a permission decision by completing the `PermissionRoundtripWorkflow`'s
+ * decision `DurableDeferred` for the matching execution (tf-k00i: replaces
+ * `sendSignal`). tf-vqv5: the durable op DIRECTLY — no `HostPermissionRespondChannel`
+ * Tag; the binding was a thin wrapper over this. Backed by `WorkflowEngine` only
+ * (no DurableTable), so callers resolve the engine themselves.
  *
  * Note: `toolUseId` is best-effort here. The roundtrip workflow's
  * `idempotencyKey` is `(contextId, permissionRequestId)` so the executionId is
  * deterministic across both the observer-triggered and respond call sites.
  */
-export const HostPermissionRespondChannelSignalingLive = Layer.effect(
-  HostPermissionRespondChannel,
-  Effect.gen(function*() {
-    const engine = yield* WorkflowEngine.WorkflowEngine
-    return makeDurableEventChannel({
-      target: HostPermissionRespondChannelTarget,
-      schema: HostPermissionRespondChannelRequestSchema,
-      append: (request) => {
-        const decision: "allow" | "deny" | "cancelled" = request.decision._tag === "Allow"
-          ? "allow"
-          : request.decision._tag === "Deny"
-            ? "deny"
-            : "cancelled"
-        return Effect.gen(function*() {
-          const executionId = yield* PermissionRoundtripWorkflow.executionId({
-            contextId: request.contextId,
-            attempt: DEFAULT_ATTEMPT,
-            permissionRequestId: request.permissionRequestId,
-            toolUseId: `tool-${request.permissionRequestId}`,
-          })
-          const token = DurableDeferred.tokenFromExecutionId(permissionDecisionDeferred, {
-            workflow: PermissionRoundtripWorkflow,
-            executionId,
-          })
-          yield* DurableDeferred.succeed(permissionDecisionDeferred, {
-            token,
-            value: { decision },
-          }).pipe(Effect.orDie)
-          return eventOffset(
-            `${String(HostPermissionRespondChannelTarget)}:${request.contextId}:${request.permissionRequestId}`,
-          )
-        }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, engine))
-      },
+export const respondPermissionDecision = (options: {
+  readonly engine: WorkflowEngine.WorkflowEngine["Type"]
+  readonly request: HostPermissionRespondChannelRequest
+}) => {
+  const { request } = options
+  const decision: "allow" | "deny" | "cancelled" = request.decision._tag === "Allow"
+    ? "allow"
+    : request.decision._tag === "Deny"
+      ? "deny"
+      : "cancelled"
+  return Effect.gen(function*() {
+    const executionId = yield* PermissionRoundtripWorkflow.executionId({
+      contextId: request.contextId,
+      attempt: DEFAULT_ATTEMPT,
+      permissionRequestId: request.permissionRequestId,
+      toolUseId: `tool-${request.permissionRequestId}`,
     })
-  }),
-)
+    const token = DurableDeferred.tokenFromExecutionId(permissionDecisionDeferred, {
+      workflow: PermissionRoundtripWorkflow,
+      executionId,
+    })
+    yield* DurableDeferred.succeed(permissionDecisionDeferred, {
+      token,
+      value: { decision },
+    }).pipe(Effect.orDie)
+    return eventOffset(
+      `${String(HostPermissionRespondChannelTarget)}:${request.contextId}:${request.permissionRequestId}`,
+    )
+  }).pipe(Effect.provideService(WorkflowEngine.WorkflowEngine, options.engine))
+}
 
 /**
  * Production signaling channel bindings. Requires `WorkflowEngine` from the
- * substrate; `session.start` remains the explicit no-op acknowledgement
- * channel because there is no parked body to arm under per-event delivery.
+ * substrate. tf-vqv5: permission-respond collapsed to `respondPermissionDecision`
+ * (called directly by its consumers), so only the prompt channels remain as Tags.
  */
 export const UnifiedSignalingChannelBindingsLive = HostPromptChannelSignalingLive.pipe(
   Layer.provideMerge(SessionPromptChannelSignalingLive),
-  Layer.provideMerge(HostPermissionRespondChannelSignalingLive),
 )

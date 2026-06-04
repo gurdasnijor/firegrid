@@ -1,6 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
+import { WorkflowEngine } from "@effect/workflow"
 import {
-  HostPermissionRespondChannel,
   HostSessionsCreateOrLoadChannel,
   SessionAgentOutputChannel,
   SessionPromptChannel,
@@ -9,6 +9,7 @@ import {
   type PublicLaunchRuntimeIntent,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
+import { respondPermissionDecision } from "../../../unified/channel-bindings.ts"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
 import type { RuntimeAgentOutputObservation } from "@firegrid/protocol/session-facade"
 import { Clock, Context, Duration, Effect, Layer, Option, Runtime, Stream } from "effect"
@@ -225,7 +226,7 @@ class FiregridAcpStdioAgent implements acp.Agent {
     private readonly connection: acp.AgentSideConnection,
     private readonly createOrLoad: HostSessionsCreateOrLoadChannel["Type"],
     private readonly sessionPrompt: SessionPromptChannel["Type"],
-    private readonly permissionRespond: HostPermissionRespondChannel["Type"],
+    private readonly engine: WorkflowEngine.WorkflowEngine["Type"],
     private readonly contexts: AcpContextRows["Type"],
     private readonly sessionAgentOutput: SessionAgentOutputChannel["Type"],
     private readonly run: RunEffect,
@@ -545,10 +546,13 @@ class FiregridAcpStdioAgent implements acp.Agent {
         ? { _tag: "Deny" }
         : await this.requestPermissionFromClient(acpSessionId, output)
     await this.run(
-      this.permissionRespond.binding.append({
-        contextId: output.contextId,
-        permissionRequestId: output.event.permissionRequestId,
-        decision,
+      respondPermissionDecision({
+        engine: this.engine,
+        request: {
+          contextId: output.contextId,
+          permissionRequestId: output.event.permissionRequestId,
+          decision,
+        },
       }),
     )
   }
@@ -597,7 +601,7 @@ export const AcpStdioEdgeLive = (
   never,
   | HostSessionsCreateOrLoadChannel
   | SessionPromptChannel
-  | HostPermissionRespondChannel
+  | WorkflowEngine.WorkflowEngine
   | AcpContextRows
   | SessionAgentOutputChannel
 > =>
@@ -606,7 +610,7 @@ export const AcpStdioEdgeLive = (
     Effect.gen(function*() {
       const createOrLoad = yield* HostSessionsCreateOrLoadChannel
       const sessionPrompt = yield* SessionPromptChannel
-      const permissionRespond = yield* HostPermissionRespondChannel
+      const engine = yield* WorkflowEngine.WorkflowEngine
       const contexts = yield* AcpContextRows
       const sessionAgentOutput = yield* SessionAgentOutputChannel
       const runtime = yield* Effect.runtime<never>()
@@ -619,7 +623,7 @@ export const AcpStdioEdgeLive = (
               client,
               createOrLoad,
               sessionPrompt,
-              permissionRespond,
+              engine,
               contexts,
               sessionAgentOutput,
               runPromise,

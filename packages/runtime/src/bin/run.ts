@@ -1,9 +1,10 @@
+import { WorkflowEngine } from "@effect/workflow"
 import {
-  HostPermissionRespondChannel,
   HostSessionsCreateOrLoadChannel,
   SessionAgentOutputChannel,
   SessionPromptChannel,
 } from "@firegrid/protocol/channels"
+import { respondPermissionDecision } from "../unified/channel-bindings.ts"
 import { Effect, Stream } from "effect"
 import { pathToFileURL } from "node:url"
 import { FiregridCliCompositionLive } from "./_compose.ts"
@@ -60,7 +61,7 @@ const writeStderr = (text: string): Effect.Effect<void> =>
 
 const renderObservation = (
   output: RuntimeAgentOutputObservation,
-): Effect.Effect<void, unknown, HostPermissionRespondChannel> =>
+): Effect.Effect<void, unknown, WorkflowEngine.WorkflowEngine> =>
   Effect.gen(function*() {
     switch (output._tag) {
       case "TextChunk":
@@ -70,12 +71,15 @@ const renderObservation = (
         yield* writeStderr(`firegrid run: tool ${output.event.part.name}\n`)
         return
       case "PermissionRequest": {
-        const permission = yield* HostPermissionRespondChannel
+        const engine = yield* WorkflowEngine.WorkflowEngine
         yield* writeStderr(`firegrid run: allowing permission ${output.permissionRequestId}\n`)
-        yield* permission.binding.append({
-          contextId: output.contextId,
-          permissionRequestId: output.event.permissionRequestId,
-          decision: { _tag: "Allow" },
+        yield* respondPermissionDecision({
+          engine,
+          request: {
+            contextId: output.contextId,
+            permissionRequestId: output.event.permissionRequestId,
+            decision: { _tag: "Allow" },
+          },
         })
         return
       }

@@ -20,11 +20,8 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
   eventOffset,
-  HostPermissionRespondChannel,
-  HostPermissionRespondChannelRequestSchema,
   HostPromptChannel,
   HostPromptChannelTarget,
-  HostPermissionRespondChannelTarget,
   makeCallableChannel,
   makeDurableEventChannel,
   makeEgressChannel,
@@ -112,32 +109,19 @@ const contextResolverFromControlPlaneTable = Layer.effect(
   }),
 )
 
-const hostPlaneNoopEventChannelsLayer = Layer.mergeAll(
-  Layer.succeed(
-    SessionPromptChannel,
-    SessionPromptChannel.of({
-      forSession: sessionId =>
-        makeDurableEventChannel({
-          target: SessionPromptChannelTarget,
-          schema: SessionHandlePromptInputSchema,
-          append: request =>
-            Effect.succeed(
-              eventOffset(`session.prompt:${sessionId}:${request.idempotencyKey}`),
-            ),
-        }),
-    }),
-  ),
-  Layer.succeed(
-    HostPermissionRespondChannel,
-    makeDurableEventChannel({
-      target: HostPermissionRespondChannelTarget,
-      schema: HostPermissionRespondChannelRequestSchema,
-      append: request =>
-        Effect.succeed(
-          eventOffset(`host.permissions.respond:${request.contextId}:${request.permissionRequestId}`),
-        ),
-    }),
-  ),
+const hostPlaneNoopEventChannelsLayer = Layer.succeed(
+  SessionPromptChannel,
+  SessionPromptChannel.of({
+    forSession: sessionId =>
+      makeDurableEventChannel({
+        target: SessionPromptChannelTarget,
+        schema: SessionHandlePromptInputSchema,
+        append: request =>
+          Effect.succeed(
+            eventOffset(`session.prompt:${sessionId}:${request.idempotencyKey}`),
+          ),
+      }),
+  }),
 )
 
 // The fixed-target session-control arms resolve the host-control channel
