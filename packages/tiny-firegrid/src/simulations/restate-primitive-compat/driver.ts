@@ -35,10 +35,57 @@ const ClaimRowSchema = Schema.Struct({
   status: Schema.String,
 })
 
+const StateRowSchema = Schema.Struct({
+  stateKey: Schema.String.pipe(DurableTable.primaryKey),
+  executionId: Schema.String,
+  scope: Schema.String,
+  name: Schema.String,
+  valueJson: Schema.String,
+})
+
+const ChannelRowSchema = Schema.Struct({
+  channelId: Schema.String.pipe(DurableTable.primaryKey),
+  executionId: Schema.String,
+  name: Schema.String,
+  status: Schema.String,
+  valueJson: Schema.String,
+})
+
+const RoutineRowSchema = Schema.Struct({
+  routineId: Schema.String.pipe(DurableTable.primaryKey),
+  executionId: Schema.String,
+  name: Schema.String,
+  status: Schema.String,
+  resultJson: Schema.String,
+})
+
+const CancellationRowSchema = Schema.Struct({
+  cancellationId: Schema.String.pipe(DurableTable.primaryKey),
+  executionId: Schema.String,
+  targetFutureId: Schema.String,
+  status: Schema.String,
+  reasonJson: Schema.String,
+})
+
+const ServiceCallRowSchema = Schema.Struct({
+  invocationId: Schema.String.pipe(DurableTable.primaryKey),
+  executionId: Schema.String,
+  kind: Schema.String,
+  target: Schema.String,
+  status: Schema.String,
+  payloadJson: Schema.String,
+  resultJson: Schema.String,
+})
+
 class RestateCompatSchedulerTable extends DurableTable("tiny.firegrid.restatePrimitiveCompat", {
   futures: FutureRowSchema,
   waiters: WaiterRowSchema,
   claims: ClaimRowSchema,
+  stateRows: StateRowSchema,
+  channels: ChannelRowSchema,
+  routines: RoutineRowSchema,
+  cancellations: CancellationRowSchema,
+  serviceCalls: ServiceCallRowSchema,
 }) {}
 
 type SchedulerEnv =
@@ -66,6 +113,23 @@ type RunAction<T> = (
 type SelectResult<B extends Record<string, Future<unknown>>> = {
   [K in keyof B]: { readonly tag: K; readonly future: B[K] }
 }[keyof B]
+
+interface StateCell<T> {
+  readonly get: () => Future<T>
+  readonly set: (value: T) => Future<void>
+}
+
+interface CompatChannel<T> {
+  readonly id: string
+  readonly send: (value: T) => Future<void>
+  readonly receive: Future<T>
+}
+
+interface WorkflowPromiseHandle<T> {
+  readonly id: DurableDeferred.Token
+  readonly promise: Future<T>
+  readonly resolve: (value: T) => Future<void>
+}
 
 // eslint-disable-next-line local/no-module-durable-cache -- sdk-gen free functions use a synchronous current scheduler slot.
 let currentScheduler: RestateGenScheduler | undefined
@@ -278,6 +342,7 @@ class RestateGenScheduler {
       ),
       [Symbol.iterator]: () => makeFutureIterator(future),
     }
+    this.pendingStarts.push(start)
     return future
   }
 
@@ -397,6 +462,268 @@ class RestateGenScheduler {
       >,
     })
 
+  readonly state = <T>(
+    name: string,
+    initial: T,
+    shared: boolean,
+  ): StateCell<T> => {
+    const stateKey = shared
+      ? `shared:${name}`
+      : `${this.instance.executionId}:state:${name}`
+    const scope = shared ? "shared" : "workflow"
+
+    return {
+      get: () =>
+        this.makeFuture({
+          name: `${scope}-state/${name}/get`,
+          backing: "combinator",
+          effect: this.table.stateRows.get(stateKey).pipe(
+            Effect.orDie,
+            Effect.map(option => option._tag === "Some"
+              ? parseJson<T>(option.value.valueJson)
+              : initial),
+            Effect.withSpan("tiny_firegrid.restate_primitive_compat.state.get", {
+              kind: "internal",
+              attributes: {
+                "firegrid.restate_compat.state_name": name,
+                "firegrid.restate_compat.state_scope": scope,
+              },
+            }),
+          ),
+        }),
+      set: (value: T) =>
+        this.makeFuture({
+          name: `${scope}-state/${name}/set`,
+          backing: "combinator",
+          effect: this.table.stateRows.upsert({
+            stateKey,
+            executionId: this.instance.executionId,
+            scope,
+            name,
+            valueJson: stringifyResult(value),
+          }).pipe(
+            Effect.orDie,
+            Effect.withSpan("tiny_firegrid.restate_primitive_compat.state.set", {
+              kind: "internal",
+              attributes: {
+                "firegrid.restate_compat.state_name": name,
+                "firegrid.restate_compat.state_scope": scope,
+              },
+            }),
+          ),
+        }),
+    }
+  }
+
+  readonly channel = <T>(name: string): CompatChannel<T> => {
+    const channelId = `${this.instance.executionId}:channel:${name}:${++this.waiterCounter}`
+    const deferredEffect = Deferred.make<T, never>()
+    let deferred: Deferred.Deferred<T, never> | undefined
+
+    const ensureDeferred = Effect.gen(function*() {
+      if (deferred === undefined) {
+        deferred = yield* deferredEffect
+      }
+      return deferred
+    })
+
+    return {
+      id: channelId,
+      receive: this.makeFuture({
+        name: `channel/${name}/receive`,
+        backing: "combinator",
+        effect: ensureDeferred.pipe(
+          Effect.flatMap(Deferred.await),
+          Effect.withSpan("tiny_firegrid.restate_primitive_compat.channel.receive", {
+            kind: "internal",
+            attributes: {
+              "firegrid.restate_compat.channel_id": channelId,
+              "firegrid.restate_compat.channel_name": name,
+            },
+          }),
+        ),
+      }),
+      send: (value: T) =>
+        this.makeFuture({
+          name: `channel/${name}/send`,
+          backing: "combinator",
+          effect: ensureDeferred.pipe(
+            Effect.flatMap(deferredValue => Deferred.succeed(deferredValue, value)),
+            Effect.zipRight(this.table.channels.upsert({
+              channelId,
+              executionId: this.instance.executionId,
+              name,
+              status: "sent",
+              valueJson: stringifyResult(value),
+            }).pipe(Effect.orDie)),
+            Effect.withSpan("tiny_firegrid.restate_primitive_compat.channel.send", {
+              kind: "internal",
+              attributes: {
+                "firegrid.restate_compat.channel_id": channelId,
+                "firegrid.restate_compat.channel_name": name,
+              },
+            }),
+          ),
+        }),
+    }
+  }
+
+  readonly workflowPromise = <T>(
+    name: string,
+    schema: Schema.Schema<T>,
+  ): WorkflowPromiseHandle<T> => {
+    const awake = this.awakeable(`workflow-promise/${name}`, schema)
+    return {
+      id: awake.id,
+      promise: awake.promise,
+      resolve: (value: T) => {
+        this.resolveAwakeable(awake.id, `workflow-promise/${name}`, schema, value)
+        return this.makeFuture({
+          name: `workflow-promise/${name}/resolve`,
+          backing: "awakeable",
+          effect: Effect.void,
+        })
+      },
+    }
+  }
+
+  readonly serviceCall = <T>(
+    kind: string,
+    target: string,
+    payload: unknown,
+    effect: Effect.Effect<T, unknown, SchedulerEnv>,
+  ): Future<T> =>
+    this.makeFuture({
+      name: `${kind}/${target}`,
+      backing: "routine",
+      effect: Effect.gen(this, function*() {
+        const invocationId = `${this.instance.executionId}:invoke:${kind}:${target}:${++this.waiterCounter}`
+        yield* this.table.serviceCalls.upsert({
+          invocationId,
+          executionId: this.instance.executionId,
+          kind,
+          target,
+          status: "running",
+          payloadJson: stringifyResult(payload),
+          resultJson: "",
+        }).pipe(Effect.orDie)
+        const result = yield* effect
+        yield* this.table.serviceCalls.upsert({
+          invocationId,
+          executionId: this.instance.executionId,
+          kind,
+          target,
+          status: "succeeded",
+          payloadJson: stringifyResult(payload),
+          resultJson: stringifyResult(result),
+        }).pipe(
+          Effect.orDie,
+          Effect.withSpan("tiny_firegrid.restate_primitive_compat.client.call", {
+            kind: "internal",
+            attributes: {
+              "firegrid.restate_compat.invocation_id": invocationId,
+              "firegrid.restate_compat.invocation_kind": kind,
+              "firegrid.restate_compat.invocation_target": target,
+            },
+          }),
+        )
+        return result
+      }),
+    })
+
+  readonly send = (
+    kind: string,
+    target: string,
+    payload: unknown,
+  ): Future<string> =>
+    this.makeFuture({
+      name: `${kind}-send/${target}`,
+      backing: "routine",
+      effect: Effect.gen(this, function*() {
+        const invocationId = `${this.instance.executionId}:send:${kind}:${target}:${++this.waiterCounter}`
+        yield* this.table.serviceCalls.upsert({
+          invocationId,
+          executionId: this.instance.executionId,
+          kind: `${kind}-send`,
+          target,
+          status: "accepted",
+          payloadJson: stringifyResult(payload),
+          resultJson: "",
+        }).pipe(
+          Effect.orDie,
+          Effect.withSpan("tiny_firegrid.restate_primitive_compat.client.send", {
+            kind: "internal",
+            attributes: {
+              "firegrid.restate_compat.invocation_id": invocationId,
+              "firegrid.restate_compat.invocation_kind": kind,
+              "firegrid.restate_compat.invocation_target": target,
+            },
+          }),
+        )
+        return invocationId
+      }),
+    })
+
+  readonly cancel = (
+    future: Future<unknown>,
+    reason: unknown,
+  ): Future<string> =>
+    this.makeFuture({
+      name: `cancel/${future.name}`,
+      backing: "combinator",
+      effect: Effect.gen(this, function*() {
+        const cancellationId = `${this.instance.executionId}:cancel:${++this.waiterCounter}`
+        this.abortController.abort(errorFromUnknown(reason))
+        yield* this.table.cancellations.upsert({
+          cancellationId,
+          executionId: this.instance.executionId,
+          targetFutureId: future.futureId,
+          status: "requested",
+          reasonJson: stringifyResult(reason),
+        }).pipe(
+          Effect.orDie,
+          Effect.withSpan("tiny_firegrid.restate_primitive_compat.cancel", {
+            kind: "internal",
+            attributes: {
+              "firegrid.restate_compat.cancellation_id": cancellationId,
+              "firegrid.restate_compat.cancel_target_future_id": future.futureId,
+            },
+          }),
+        )
+        return cancellationId
+      }),
+    })
+
+  readonly longClockProbe = (
+    name: string,
+    duration: Duration.DurationInput,
+  ): Future<string> =>
+    this.makeFuture({
+      name: `long-clock-probe/${name}`,
+      backing: "timer",
+      effect: Effect.gen(this, function*() {
+        const engine = yield* WorkflowEngine.WorkflowEngine
+        const clock = DurableClock.make({
+          name: `restate-gen/sleep/${name}`,
+          duration,
+        })
+        yield* engine.scheduleClock(this.instance.workflow, {
+          executionId: this.instance.executionId,
+          clock,
+        })
+        yield* Effect.void.pipe(
+          Effect.withSpan("tiny_firegrid.restate_primitive_compat.long_clock_probe", {
+            kind: "internal",
+            attributes: {
+              "firegrid.restate_compat.clock_name": name,
+              "firegrid.restate_compat.long_clock_probe": "scheduled_without_await",
+            },
+          }),
+        )
+        return "long-durable-clock-scheduled"
+      }),
+    })
+
   readonly run = <T>(
     action: RunAction<T>,
     options: { readonly name: string },
@@ -423,15 +750,18 @@ class RestateGenScheduler {
 
   readonly sleep = (
     duration: Duration.DurationInput,
-    name: string,
+    options: {
+      readonly name: string
+      readonly inMemoryThreshold?: Duration.DurationInput
+    },
   ): Future<void> =>
     this.makeFuture({
-      name,
+      name: options.name,
       backing: "timer",
       effect: DurableClock.sleep({
-        name: `restate-gen/sleep/${name}`,
+        name: `restate-gen/sleep/${options.name}`,
         duration,
-        inMemoryThreshold: Duration.seconds(30),
+        inMemoryThreshold: options.inMemoryThreshold ?? Duration.seconds(30),
       }),
     })
 
@@ -479,7 +809,34 @@ class RestateGenScheduler {
     this.makeFuture({
       name,
       backing: "routine",
-      effect: this.runOperation(operation, { waitForStarted: false }),
+      effect: Effect.gen(this, function*() {
+        const routineId = `${this.instance.executionId}:routine:${++this.waiterCounter}:${name}`
+        yield* this.table.routines.upsert({
+          routineId,
+          executionId: this.instance.executionId,
+          name,
+          status: "running",
+          resultJson: "",
+        }).pipe(Effect.orDie)
+        const result = yield* this.runOperation(operation, { waitForStarted: false })
+        yield* this.table.routines.upsert({
+          routineId,
+          executionId: this.instance.executionId,
+          name,
+          status: "succeeded",
+          resultJson: stringifyResult(result),
+        }).pipe(
+          Effect.orDie,
+          Effect.withSpan("tiny_firegrid.restate_primitive_compat.spawn.routine_row", {
+            kind: "internal",
+            attributes: {
+              "firegrid.restate_compat.routine_id": routineId,
+              "firegrid.restate_compat.routine_name": name,
+            },
+          }),
+        )
+        return result
+      }),
     })
 
   private readonly drainStarts = (): Effect.Effect<void, never, SchedulerEnv> =>
@@ -505,8 +862,41 @@ const stringifyResult = (value: unknown): string => {
   return json === undefined ? "undefined" : json
 }
 
+const parseJson = <T>(value: string): T => JSON.parse(value) as T
+
 const errorFromUnknown = (error: unknown): Error =>
   error instanceof Error ? error : new Error(stringifyResult(error))
+
+const probePullWakeClaimEndpoint = (
+  url: string,
+): Effect.Effect<string, never, never> =>
+  Effect.tryPromise({
+    try: async () => {
+      const response = await fetch(`${url}/__ds/subscriptions/restate-compat/claim`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer tiny-firegrid-spike",
+        },
+        body: JSON.stringify({ worker: "tiny-firegrid-spike" }),
+      })
+      return `${response.status} ${response.statusText}`
+    },
+    catch: error => error,
+  }).pipe(
+    Effect.catchAll(error => Effect.succeed(`request-error:${stringifyResult(error)}`)),
+    Effect.tap(status =>
+      Effect.void.pipe(
+        Effect.withSpan("tiny_firegrid.restate_primitive_compat.pull_wake.raw_probe", {
+          kind: "client",
+          attributes: {
+            "firegrid.restate_compat.pull_wake_probe_url": url,
+            "firegrid.restate_compat.pull_wake_probe_status": status,
+          },
+        }),
+      ),
+    ),
+  )
 
 const execute = <T>(
   operation: Operation<T>,
@@ -528,8 +918,11 @@ const run = <T>(
 
 const sleep = (
   duration: Duration.DurationInput,
-  options: { readonly name: string },
-): Future<void> => getCurrentScheduler().sleep(duration, options.name)
+  options: {
+    readonly name: string
+    readonly inMemoryThreshold?: Duration.DurationInput
+  },
+): Future<void> => getCurrentScheduler().sleep(duration, options)
 
 const awakeable = <T>(
   name: string,
@@ -560,6 +953,71 @@ const race = <const T extends readonly Future<unknown>[]>(
   options: { readonly name: string },
 ): Future<T[number] extends Future<infer U> ? U : never> =>
   getCurrentScheduler().race(futures, options.name)
+
+const state = <T>(
+  name: string,
+  initial: T,
+): StateCell<T> => getCurrentScheduler().state(name, initial, false)
+
+const sharedState = <T>(
+  name: string,
+  initial: T,
+): StateCell<T> => getCurrentScheduler().state(name, initial, true)
+
+const channel = <T>(
+  name: string,
+): CompatChannel<T> => getCurrentScheduler().channel(name)
+
+const workflowPromise = <T>(
+  name: string,
+  schema: Schema.Schema<T>,
+): WorkflowPromiseHandle<T> =>
+  getCurrentScheduler().workflowPromise(name, schema)
+
+const serviceClient = <I, O>(
+  target: string,
+  handler: (input: I) => Effect.Effect<O, unknown, SchedulerEnv>,
+): { readonly call: (input: I) => Future<O>; readonly send: (input: I) => Future<string> } => ({
+  call: input => getCurrentScheduler().serviceCall("service", target, input, handler(input)),
+  send: input => getCurrentScheduler().send("service", target, input),
+})
+
+const objectClient = <I, O>(
+  target: string,
+  handler: (input: I) => Effect.Effect<O, unknown, SchedulerEnv>,
+): { readonly call: (input: I) => Future<O>; readonly send: (input: I) => Future<string> } => ({
+  call: input => getCurrentScheduler().serviceCall("object", target, input, handler(input)),
+  send: input => getCurrentScheduler().send("object", target, input),
+})
+
+const workflowClient = <I, O>(
+  target: string,
+  handler: (input: I) => Effect.Effect<O, unknown, SchedulerEnv>,
+): { readonly call: (input: I) => Future<O>; readonly send: (input: I) => Future<string> } => ({
+  call: input => getCurrentScheduler().serviceCall("workflow", target, input, handler(input)),
+  send: input => getCurrentScheduler().send("workflow", target, input),
+})
+
+const genericCall = <O>(
+  target: string,
+  payload: unknown,
+  handler: Effect.Effect<O, unknown, SchedulerEnv>,
+): Future<O> => getCurrentScheduler().serviceCall("generic", target, payload, handler)
+
+const genericSend = (
+  target: string,
+  payload: unknown,
+): Future<string> => getCurrentScheduler().send("generic", target, payload)
+
+const cancel = (
+  future: Future<unknown>,
+  reason: unknown,
+): Future<string> => getCurrentScheduler().cancel(future, reason)
+
+const longClockProbe = (
+  name: string,
+  duration: Duration.DurationInput,
+): Future<string> => getCurrentScheduler().longClockProbe(name, duration)
 
 const selectByTag = <B extends Record<string, Future<unknown>>>(
   branches: B,
@@ -599,6 +1057,14 @@ const CompatOutputSchema = Schema.Struct({
   selectValue: Schema.String,
   spawnedValue: Schema.String,
   awakeableValue: Schema.String,
+  stateValue: Schema.String,
+  sharedStateValue: Schema.String,
+  channelValue: Schema.String,
+  workflowPromiseValue: Schema.String,
+  clientValues: Schema.String,
+  sendIds: Schema.String,
+  cancellationId: Schema.String,
+  longSleepValue: Schema.String,
   runCount: Schema.Number,
 })
 
@@ -658,6 +1124,87 @@ const compatWorkflowLayer = (
         [spawned, awake.promise],
         { name: "spawn-and-awakeable" },
       )
+
+      const localState = state("local-counter", "unset")
+      yield* localState.set("local-state-ok")
+      const stateValue = yield* localState.get()
+
+      const globalState = sharedState("global-flag", "unset")
+      yield* globalState.set("shared-state-ok")
+      const sharedStateValue = yield* globalState.get()
+
+      const inbox = channel<string>("single-shot-inbox")
+      const channelSend = inbox.send("channel-ok")
+      const [channelValue] = yield* all(
+        [inbox.receive, channelSend],
+        { name: "channel-send-receive" },
+      )
+
+      const approval = workflowPromise("approval", Schema.String)
+      yield* approval.resolve("workflow-promise-ok")
+      const workflowPromiseValue = yield* approval.promise
+
+      const greeter = serviceClient<string, string>(
+        "greeter.greet",
+        name => Effect.succeed(`service:${name}`),
+      )
+      const keyedObject = objectClient<string, string>(
+        "counter[demo].add",
+        value => Effect.succeed(`object:${value}`),
+      )
+      const workflow = workflowClient<string, string>(
+        "workflow.transform",
+        value => Effect.succeed(`workflow:${value}`),
+      )
+      const [serviceValue, objectValue, workflowValue, genericValue] = yield* all(
+        [
+          greeter.call("firegrid"),
+          keyedObject.call("keyed"),
+          workflow.call("flow"),
+          genericCall("raw.echo", { value: "generic" }, Effect.succeed("generic:ok")),
+        ],
+        { name: "client-calls" },
+      )
+      const sendIds = yield* all(
+        [
+          greeter.send("fire-and-forget"),
+          keyedObject.send("fire-and-forget"),
+          workflow.send("fire-and-forget"),
+          genericSend("raw.notify", { value: "sent" }),
+        ],
+        { name: "client-sends" },
+      )
+
+      const longSleepValue = yield* longClockProbe(
+        `${payload.scenarioId}/long-durable-clock`,
+        Duration.millis(5),
+      )
+      yield* run(
+        () => Effect.sleep(Duration.millis(20)),
+        { name: `${payload.scenarioId}/long-clock-settle` },
+      )
+
+      const cancelTarget = run(
+        ({ signal }) =>
+          Effect.tryPromise({
+            try: () =>
+              new Promise<string>((resolve) => {
+                if (signal.aborted) {
+                  resolve("abort-signal-observed")
+                  return
+                }
+                signal.addEventListener(
+                  "abort",
+                  () => resolve("abort-signal-observed"),
+                  { once: true },
+                )
+              }),
+            catch: error => error,
+          }),
+        { name: `${payload.scenarioId}/cancel-target` },
+      )
+      const cancellationId = yield* cancel(cancelTarget, "sim cancellation")
+
       const observedRunCount = yield* run(
         () => Ref.get(runCount),
         { name: `${payload.scenarioId}/observe-run-count` },
@@ -670,6 +1217,14 @@ const compatWorkflowLayer = (
         selectValue: String(selectValue),
         spawnedValue,
         awakeableValue,
+        stateValue,
+        sharedStateValue,
+        channelValue,
+        workflowPromiseValue,
+        clientValues: [serviceValue, objectValue, workflowValue, genericValue].join("|"),
+        sendIds: sendIds.join("|"),
+        cancellationId,
+        longSleepValue,
         runCount: observedRunCount,
       }
     })).pipe(
@@ -747,21 +1302,23 @@ export const restatePrimitiveCompatDriver = Effect.gen(function*() {
       new Error("restate-primitive-compat requires durableStreamsBaseUrl and namespace"),
     )
   }
+  const durableStreamsBaseUrl = config.durableStreamsBaseUrl
+  const namespace = config.namespace
 
   const runCount = yield* Ref.make(0)
   const schedulerTableLayer = RestateCompatSchedulerTable.layer({
     streamOptions: {
       url: durableStreamUrl(
-        config.durableStreamsBaseUrl,
-        `${config.namespace}.tiny-firegrid.restate-compat.scheduler-ledger`,
+        durableStreamsBaseUrl,
+        `${namespace}.tiny-firegrid.restate-compat.scheduler-ledger`,
       ),
       contentType: "application/json",
     },
   })
   const workflowEngineLayer = DurableStreamsWorkflowEngine.layer({
     streamUrl: durableStreamUrl(
-      config.durableStreamsBaseUrl,
-      `${config.namespace}.tiny-firegrid.restate-compat.workflow-engine`,
+      durableStreamsBaseUrl,
+      `${namespace}.tiny-firegrid.restate-compat.workflow-engine`,
     ),
   })
   const workflowLayer = compatWorkflowLayer(runCount).pipe(
@@ -771,12 +1328,23 @@ export const restatePrimitiveCompatDriver = Effect.gen(function*() {
   return yield* Effect.gen(function*() {
     const scenarioId = `gen-${globalThis.crypto.randomUUID()}`
     yield* emitMappingSpans
+    const pullWakeProbeStatus = yield* probePullWakeClaimEndpoint(
+      durableStreamUrl(
+        durableStreamsBaseUrl,
+        `${namespace}.tiny-firegrid.restate-compat.pull-wake-probe`,
+      ),
+    )
     const first = yield* CompatWorkflow.execute({ scenarioId })
     const second = yield* CompatWorkflow.execute({ scenarioId })
     const schedulerTable = yield* RestateCompatSchedulerTable
     const futureRows = yield* schedulerTable.futures.query(collection => collection.toArray)
     const waiterRows = yield* schedulerTable.waiters.query(collection => collection.toArray)
     const claimRows = yield* schedulerTable.claims.query(collection => collection.toArray)
+    const stateRows = yield* schedulerTable.stateRows.query(collection => collection.toArray)
+    const channelRows = yield* schedulerTable.channels.query(collection => collection.toArray)
+    const routineRows = yield* schedulerTable.routines.query(collection => collection.toArray)
+    const cancellationRows = yield* schedulerTable.cancellations.query(collection => collection.toArray)
+    const serviceCallRows = yield* schedulerTable.serviceCalls.query(collection => collection.toArray)
     const succeededLosers = futureRows.filter(row =>
       row.status === "succeeded" &&
       (row.name.includes("slow-loser") || row.name.includes("done")),
@@ -785,21 +1353,28 @@ export const restatePrimitiveCompatDriver = Effect.gen(function*() {
       Effect.withSpan("tiny_firegrid.restate_primitive_compat.exercise_summary", {
         kind: "internal",
         attributes: {
-          "firegrid.restate_compat.scenario_count": 7,
+          "firegrid.restate_compat.scenario_count": 15,
           "firegrid.restate_compat.free_functions":
-            "gen,execute,run,sleep,awakeable,resolveAwakeable,all,race,select,spawn",
+            "gen,execute,run,sleep,awakeable,workflowPromise,all,race,select,spawn,state,sharedState,channel,serviceClient,objectClient,workflowClient,genericCall,genericSend,cancel",
           "firegrid.restate_compat.first_result": JSON.stringify(first),
           "firegrid.restate_compat.second_result": JSON.stringify(second),
           "firegrid.restate_compat.activity_runs_after_duplicate_execute": first.runCount,
           "firegrid.restate_compat.future_row_count": futureRows.length,
           "firegrid.restate_compat.waiter_row_count": waiterRows.length,
           "firegrid.restate_compat.claim_row_count": claimRows.length,
+          "firegrid.restate_compat.state_row_count": stateRows.length,
+          "firegrid.restate_compat.channel_row_count": channelRows.length,
+          "firegrid.restate_compat.routine_row_count": routineRows.length,
+          "firegrid.restate_compat.cancellation_row_count": cancellationRows.length,
+          "firegrid.restate_compat.service_call_row_count": serviceCallRows.length,
           "firegrid.restate_compat.race_select_loser_success_count": succeededLosers,
+          "firegrid.restate_compat.pull_wake_raw_probe_status": pullWakeProbeStatus,
           "firegrid.restate_compat.major_gap_1":
-            "scheduler ledger is sim-local; pull-wake claim/ack/release is represented as rows/spans, not a product worker",
-          "firegrid.restate_compat.major_gap_2": "routine-backed spawn is not durable across process restart",
-          "firegrid.restate_compat.major_gap_3": "cancellation fan-out and AbortSignal hygiene are only sketched",
-          "firegrid.restate_compat.major_gap_4": "state/sharedState/client/channel primitives not implemented in this pass",
+            "raw Durable Streams HTTP probe is not the product scheduler surface; Firegrid's DurableStreamsWorkflowEngine already provides workflow-level claim/recovery semantics",
+          "firegrid.restate_compat.major_gap_2":
+            "routine-backed spawn writes sim rows but is not yet mapped onto WorkflowEngine execution/deferred recovery as a restart-safe routine Future",
+          "firegrid.restate_compat.major_gap_3": "cancellation writes rows and aborts run signals but is not invocation-level TerminalError semantics",
+          "firegrid.restate_compat.major_gap_4": "typed codegen/service/object/workflow descriptors are represented only by thin sim helpers",
         },
       }),
     )
