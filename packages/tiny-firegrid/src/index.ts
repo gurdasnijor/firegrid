@@ -72,11 +72,21 @@ const runCommand = Command.make(
     Effect.flatMap(
       selectedSimulation(simulationId),
       simulation =>
-        runSimulation(simulation, {
-          timeoutMs,
-          console: consoleExporter,
-          watch,
-        }),
+        Effect.flatMap(
+          runSimulation(simulation, {
+            timeoutMs,
+            console: consoleExporter,
+            watch,
+          }),
+          report =>
+            // Gate the process exit code on the computed verdict. Setting
+            // exitCode (not process.exit) lets the runtime finish gracefully.
+            report !== undefined && report.gatingFailing > 0
+              ? Effect.sync(() => {
+                process.exitCode = 1
+              })
+              : Effect.void,
+        ),
     ),
 )
 

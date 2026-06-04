@@ -332,6 +332,9 @@ importers:
       '@firegrid/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@marcbachmann/cel-js':
+        specifier: 7.6.1
+        version: 7.6.1
       effect:
         specifier: ^3.21.2
         version: 3.21.2
@@ -1198,6 +1201,11 @@ packages:
     resolution: {integrity: sha512-JF1BmLCm9kGEVZgYmJq43zeQVdHVgAJnTi/NURWEsy6L1ZrrlSmdltS+D17QN4LODwf+1LMXAA9auIZVXtWwzw==}
     cpu: [x64]
     os: [win32]
+
+  '@marcbachmann/cel-js@7.6.1':
+    resolution: {integrity: sha512-YyY8yiDU07ByKb2rJUoNgMAkYeeDvkdrONBREV2MP9siAW7yNft0KfbIoonWTIMY0fGtv8og0EhzKx3Xsi1Nmg==}
+    engines: {node: '>=20.19.0'}
+    hasBin: true
 
   '@microsoft/fetch-event-source@2.0.1':
     resolution: {integrity: sha512-W6CLUJ2eBMw3Rec70qrsEW0jOm/3twwJv21mrmj2yORiaVmVYGS4sSS5yUwvQc1ZlDLYGPnClVWmUUMagKNsfA==}
@@ -4473,6 +4481,8 @@ snapshots:
 
   '@lmdb/lmdb-win32-x64@3.5.4':
     optional: true
+
+  '@marcbachmann/cel-js@7.6.1': {}
 
   '@microsoft/fetch-event-source@2.0.1': {}
 

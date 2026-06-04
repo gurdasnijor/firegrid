@@ -19,8 +19,13 @@ import {
   type TinyFiregridHostEnv,
   type TinyFiregridSimulation,
 } from "../types.ts"
+import {
+  analyzeCoverage,
+  printSummary as printCoverage,
+} from "./coverage.ts"
 import { makeHeartbeat } from "./heartbeat.ts"
 import { annotateSide } from "./side.ts"
+import { readTraceSpans } from "./trace.ts"
 import { TelemetryLive, type TelemetryDestination } from "./telemetry.ts"
 
 const defaultNamespace = "tiny-firegrid"
@@ -278,4 +283,24 @@ export const runSimulation = (
         ),
       ),
     )
+
+    // The trace oracle. Telemetry was released with the block above, so the
+    // exporter has flushed trace.jsonl — read it back and compute the verdict
+    // from host-substrate spans the driver cannot forge. A sim without a
+    // coverage spec runs but produces no computed verdict (migration window).
+    if (simulation.coverage === undefined) {
+      yield* Console.log(
+        "coverage: (none) — simulation has no coverage spec; no computed verdict",
+      )
+      return undefined
+    }
+    const spans = yield* readTraceSpans(runDir).pipe(
+      Effect.orElseSucceed(() => []),
+    )
+    const report = analyzeCoverage(simulation.coverage, spans)
+    yield* printCoverage(report)
+    yield* Console.log(
+      `       simulate gaps ${runId}   ·   simulate seams ${simulation.id} ${runId}`,
+    )
+    return report
   }).pipe(Effect.scoped)
