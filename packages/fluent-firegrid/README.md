@@ -1,6 +1,9 @@
 # @firegrid/fluent-firegrid
 
-Restate-shaped Firegrid primitives directly over Effect and Durable Streams.
+Restate sdk-gen-shaped Firegrid primitives directly over Effect and Durable
+Streams.
 
-This package is currently a keystone slice: `service`, `client`, and a handler
-context with durable `ctx.run(name, fn)` replayed from an append-only journal.
+This package is a keystone slice for a generator-based Operation/Future API:
+`gen`, `execute`, `run`, `sleep`, `all`, `race`, `any`, `allSettled`, `select`,
+and `spawn` run through a scheduler backed by an append-only Durable Streams
+journal.

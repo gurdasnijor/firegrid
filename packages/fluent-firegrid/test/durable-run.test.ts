@@ -211,7 +211,7 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
       handlers: {
         pause: (label: string) =>
           gen(function* () {
-            yield* sleep(5, "settle")
+            yield* sleep(500, "settle")
             return `paused:${label}`
           }),
       },
@@ -224,14 +224,17 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
       },
     }
 
+    const firstStarted = performance.now()
     const first = await runtimeWith(fakeFetch, client(timer, invocation).pause("first"))
+    const firstElapsedMs = performance.now() - firstStarted
     const started = performance.now()
     const replayed = await runtimeWith(fakeFetch, client(timer, invocation).pause("first"))
     const replayElapsedMs = performance.now() - started
 
     expect(first).toBe("paused:first")
     expect(replayed).toBe("paused:first")
-    expect(replayElapsedMs).toBeLessThan(5)
+    expect(firstElapsedMs).toBeGreaterThanOrEqual(250)
+    expect(replayElapsedMs).toBeLessThan(firstElapsedMs / 2)
   })
 
   it("fluent-firegrid-keystone.DEFINITIONS.1 fluent-firegrid-keystone.DEFINITIONS.2 fluent-firegrid-keystone.DEFINITIONS.3 invokes a direct workflow definition", async () => {

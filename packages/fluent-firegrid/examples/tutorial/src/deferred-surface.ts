@@ -1,15 +1,5 @@
 export const deferredSurface = [
   {
-    family: "spawn",
-    tutorialTier: "02-spawn",
-    missing: "routine-backed Future handles and restart/reclaim worker rows",
-  },
-  {
-    family: "timeout-select",
-    tutorialTier: "03-timeout",
-    missing: "select/race semantics and durable wake integration for deadlines",
-  },
-  {
     family: "retry",
     tutorialTier: "04-retry",
     missing: "journaled retry policy and attempt classification",
@@ -17,7 +7,7 @@ export const deferredSurface = [
   {
     family: "saga",
     tutorialTier: "05-saga",
-    missing: "generator.throw failure delivery plus durable compensation steps",
+    missing: "durable compensation steps and compensation ordering helpers",
   },
   {
     family: "cancellation",

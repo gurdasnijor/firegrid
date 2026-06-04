@@ -1,4 +1,4 @@
-import { Data, Effect, Schema } from "effect"
+import { Data, Deferred, Effect, Either, Schema } from "effect"
 import { DurableStream, type Endpoint } from "effect-durable-streams"
 
 // fluent-firegrid-keystone.SUBSTRATE.1
@@ -29,16 +29,25 @@ const SleepCompletedEventSchema = Schema.Struct({
   durationMs: Schema.Number,
 })
 
+const RaceCompletedEventSchema = Schema.Struct({
+  type: Schema.Literal("RaceCompleted"),
+  raceKey: Schema.String,
+  name: Schema.String,
+  winnerIndex: Schema.Number,
+})
+
 const JournalEventSchema = Schema.Union(
   StepSucceededEventSchema,
   StepFailedEventSchema,
   SleepCompletedEventSchema,
+  RaceCompletedEventSchema,
 )
 
 type JournalEvent = Schema.Schema.Type<typeof JournalEventSchema>
 type StepSucceededEvent = Schema.Schema.Type<typeof StepSucceededEventSchema>
 type StepFailedEvent = Schema.Schema.Type<typeof StepFailedEventSchema>
 type SleepCompletedEvent = Schema.Schema.Type<typeof SleepCompletedEventSchema>
+type RaceCompletedEvent = Schema.Schema.Type<typeof RaceCompletedEventSchema>
 type JournalRequirements =
   ReturnType<DurableStream.Bound<JournalEvent, JournalEvent>["append"]> extends
     Effect.Effect<unknown, unknown, infer Requirements> ? Requirements : never
@@ -84,7 +93,10 @@ const isPrimitiveOperation = (
 
 export class Future<T> implements Operation<T> {
   private readonly leaf: PrimitiveOperation<T>
-  private memo: { readonly value: T } | undefined
+  private memo:
+    | { readonly _tag: "Success"; readonly value: T }
+    | { readonly _tag: "Failure"; readonly error: FluentFiregridError }
+    | undefined
   readonly effect: Effect.Effect<T, FluentFiregridError, JournalRequirements>
 
   constructor(
@@ -92,14 +104,21 @@ export class Future<T> implements Operation<T> {
   ) {
     this.leaf = makePrimitive({ _tag: "Leaf", future: this })
     this.effect = Effect.suspend(() => {
-      if (this.memo !== undefined) return Effect.succeed(this.memo.value)
-      return backing.pipe(
-        Effect.tap((value) =>
+      if (this.memo !== undefined) {
+        return this.memo._tag === "Success"
+          ? Effect.succeed(this.memo.value)
+          : Effect.fail(this.memo.error)
+      }
+      return Effect.matchEffect(backing, {
+        onFailure: (error) =>
           Effect.sync(() => {
-            this.memo = { value }
-          }),
-        ),
-      )
+            this.memo = { _tag: "Failure", error }
+          }).pipe(Effect.andThen(Effect.fail(error))),
+        onSuccess: (value) =>
+          Effect.sync(() => {
+            this.memo = { _tag: "Success", value }
+          }).pipe(Effect.andThen(Effect.succeed(value))),
+      })
     })
   }
 
@@ -111,6 +130,21 @@ export class Future<T> implements Operation<T> {
 export type FutureValues<T extends readonly Future<unknown>[] | []> = {
   -readonly [P in keyof T]: T[P] extends Future<infer Value> ? Value : never
 }
+
+export type FutureValue<T> = T extends Future<infer Value> ? Value : never
+
+export type FutureSettledResult<T> =
+  | { readonly status: "fulfilled"; readonly value: T }
+  | { readonly status: "rejected"; readonly reason: unknown }
+
+export type SelectBranches = Record<string, Future<unknown>>
+
+export type SelectResult<Branches extends SelectBranches> = {
+  readonly [Key in keyof Branches]: {
+    readonly tag: Key
+    readonly future: Branches[Key]
+  }
+}[keyof Branches]
 
 // fluent-firegrid-keystone.DURABLE_RUN.1
 export type RunAction<T> = (
@@ -203,6 +237,12 @@ const isSleepCompleted = (
 ): event is SleepCompletedEvent =>
   event.type === "SleepCompleted" && event.sleepKey === sleepKey
 
+const isRaceCompleted = (
+  event: JournalEvent,
+  raceKey: string,
+): event is RaceCompletedEvent =>
+  event.type === "RaceCompleted" && event.raceKey === raceKey
+
 const effectFromStep = <T>(
   action: RunAction<T>,
 ): Effect.Effect<T, unknown> =>
@@ -220,6 +260,39 @@ const failStep = <T>(
     message: `Journaled step failed: ${stepKey}: ${failed.message}`,
     ...(failed.cause === undefined ? {} : { cause: failed.cause }),
   }))
+
+const toFluentError = (cause: unknown, message: string): FluentFiregridError =>
+  cause instanceof FluentFiregridError ? cause : new FluentFiregridError({
+    message,
+    cause,
+  })
+
+const toSettled = <T>(
+  future: Future<T>,
+): Effect.Effect<FutureSettledResult<T>, never, JournalRequirements> =>
+  Effect.match(future.effect, {
+    onFailure: (reason): FutureSettledResult<T> => ({
+      status: "rejected",
+      reason: reason.cause ?? reason,
+    }),
+    onSuccess: (value): FutureSettledResult<T> => ({ status: "fulfilled", value }),
+  })
+
+const failFromSettled = <T>(
+  settled: FutureSettledResult<T>,
+  message: string,
+): Effect.Effect<T, FluentFiregridError> =>
+  settled.status === "fulfilled"
+    ? Effect.succeed(settled.value)
+    : Effect.fail(toFluentError(settled.reason, message))
+
+const throwableFromFutureFailure = (error: FluentFiregridError): unknown =>
+  error.cause instanceof AggregateError ? error.cause : error
+
+type IndexedSettled = {
+  readonly index: number
+  readonly result: FutureSettledResult<unknown>
+}
 
 class Scheduler {
   private nextStepIndex = 0
@@ -336,6 +409,223 @@ class Scheduler {
       }),
     )
   }
+
+  race<const T extends readonly [Future<unknown>, ...Array<Future<unknown>>]>(
+    futures: T,
+  ): Future<FutureValue<T[number]>> {
+    // fluent-firegrid-keystone.FREE.5
+    const raceKey = `${this.nextStepIndex}:race`
+    this.nextStepIndex += 1
+
+    return new Future(
+      Effect.gen(this, function* () {
+        const winner = yield* this.raceIndexed(
+          futures,
+          { raceKey, name: "race" },
+        ).effect
+        return yield* failFromSettled(
+          winner.result,
+          "race() winner rejected",
+        ) as Effect.Effect<FutureValue<T[number]>, FluentFiregridError>
+      }),
+    )
+  }
+
+  any<const T extends readonly Future<unknown>[] | []>(
+    futures: T,
+  ): Future<FutureValue<T[number]>> {
+    // fluent-firegrid-keystone.FREE.5
+    return new Future(
+      Effect.gen(this, function* () {
+        const remaining = futures.slice()
+        const errors: Array<unknown> = []
+
+        while (remaining.length > 0) {
+          const first = remaining[0]
+          if (first === undefined) break
+          const nonEmptyRemaining: [Future<unknown>, ...Array<Future<unknown>>] = [
+            first,
+            ...remaining.slice(1),
+          ]
+          const winner = yield* this.raceIndexed(nonEmptyRemaining).effect
+          if (winner.result.status === "fulfilled") {
+            return winner.result.value as FutureValue<T[number]>
+          }
+          errors.push(winner.result.reason)
+          remaining.splice(winner.index, 1)
+        }
+
+        return yield* new FluentFiregridError({
+          message: "any() rejected because every Future rejected",
+          cause: new AggregateError(errors),
+        })
+      }),
+    )
+  }
+
+  allSettled<const T extends readonly Future<unknown>[] | []>(
+    futures: T,
+  ): Future<{ -readonly [P in keyof T]: FutureSettledResult<FutureValue<T[P]>> }> {
+    // fluent-firegrid-keystone.FREE.5
+    return new Future(
+      Effect.gen(function* () {
+        const results = yield* Effect.all(
+          futures.map((future) => toSettled(future)),
+          { concurrency: "unbounded" },
+        )
+        return results as { -readonly [P in keyof T]: FutureSettledResult<FutureValue<T[P]>> }
+      }),
+    )
+  }
+
+  select<const Branches extends SelectBranches>(
+    branches: Branches,
+  ): Future<SelectResult<Branches>> {
+    // fluent-firegrid-keystone.FREE.6
+    const raceKey = `${this.nextStepIndex}:select`
+    this.nextStepIndex += 1
+
+    return new Future(
+      Effect.gen(this, function* () {
+        const entries = Object.entries(branches) as Array<
+          [keyof Branches, Branches[keyof Branches]]
+        >
+        if (entries.length === 0) {
+          return yield* new FluentFiregridError({
+            message: "select() requires at least one branch",
+          })
+        }
+        const futures = entries.map((entry) => entry[1])
+        const first = futures[0]
+        if (first === undefined) {
+          return yield* new FluentFiregridError({
+            message: "select() requires at least one branch",
+          })
+        }
+        const nonEmptyFutures: [Future<unknown>, ...Array<Future<unknown>>] = [
+          first,
+          ...futures.slice(1),
+        ]
+        const winner = yield* this.raceIndexed(
+          nonEmptyFutures,
+          { raceKey, name: "select" },
+        ).effect
+        const entry = entries[winner.index]
+        if (entry === undefined) {
+          return yield* new FluentFiregridError({
+            message: `select() winner index ${winner.index} did not match a branch`,
+          })
+        }
+        const selected: SelectResult<Branches> = {
+          tag: entry[0],
+          future: entry[1],
+        }
+        return selected
+      }),
+    )
+  }
+
+  spawn<T>(operation: Operation<T>): Future<T> {
+    // fluent-firegrid-keystone.FREE.7
+    return new Future(this.drive(operation))
+  }
+
+  drive<T>(operation: Operation<T>): Effect.Effect<T, FluentFiregridError, JournalRequirements> {
+    return Effect.gen(this, function* () {
+      const iterator = operation[Symbol.iterator]()
+      let resume: unknown = undefined
+      let failure: unknown = undefined
+
+      while (true) {
+        const next = yield* Effect.sync(() =>
+          withCurrentScheduler(this, () => {
+            if (failure === undefined) return iterator.next(resume)
+            if (iterator.throw === undefined) {
+              throw toFluentError(failure, "Operation failed without generator.throw")
+            }
+            const throwable = failure
+            failure = undefined
+            return iterator.throw(throwable)
+          }),
+        ).pipe(
+          Effect.mapError((cause) =>
+            toFluentError(cause, "Operation failed while advancing generator"),
+          ),
+        )
+        if (next.done === true) return next.value
+        if (!isPrimitiveOperation(next.value)) {
+          return yield* new FluentFiregridError({
+            message: "Unsupported operation yielded by fluent-firegrid scheduler",
+            cause: next.value,
+          })
+        }
+        const node = next.value[operationTag]
+        switch (node._tag) {
+          case "Leaf": {
+            const settled = yield* Effect.either(node.future.effect)
+            if (Either.isRight(settled)) {
+              resume = settled.right
+            } else {
+              resume = undefined
+              failure = throwableFromFutureFailure(settled.left)
+            }
+            break
+          }
+        }
+      }
+    })
+  }
+
+  private raceIndexed(
+    futures: readonly [Future<unknown>, ...Array<Future<unknown>>],
+    replay?: { readonly raceKey: string; readonly name: string },
+  ): Future<IndexedSettled> {
+    return new Future(
+      Effect.gen(this, function* () {
+        if (replay !== undefined) {
+          const completed = this.events.find((event) =>
+            isRaceCompleted(event, replay.raceKey),
+          )
+          const future = completed === undefined
+            ? undefined
+            : futures[completed.winnerIndex]
+          if (future !== undefined && completed !== undefined) {
+            const result = yield* toSettled(future)
+            return { index: completed.winnerIndex, result }
+          }
+        }
+
+        const winner = yield* Deferred.make<IndexedSettled>()
+        yield* Effect.all(
+          futures.map((future, index) =>
+            toSettled(future).pipe(
+              Effect.map((result): IndexedSettled => ({ index, result })),
+              Effect.intoDeferred(winner),
+              Effect.forkDaemon,
+            ),
+          ),
+          { concurrency: "unbounded", discard: true },
+        )
+        const result = yield* Deferred.await(winner)
+        if (replay !== undefined) {
+          yield* this.stream.append({
+            type: "RaceCompleted",
+            raceKey: replay.raceKey,
+            name: replay.name,
+            winnerIndex: result.index,
+          }).pipe(
+            Effect.mapError((cause) =>
+              new FluentFiregridError({
+                message: `Failed to append race event for ${replay.raceKey}`,
+                cause,
+              }),
+            ),
+          )
+        }
+        return result
+      }),
+    )
+  }
 }
 
 // sdk-gen-style synchronous current-fiber slot; not durable replay state.
@@ -387,6 +677,64 @@ export const all = <const T extends readonly Future<unknown>[] | []>(
   return scheduler.all(futures)
 }
 
+export const race = <const T extends readonly [Future<unknown>, ...Array<Future<unknown>>]>(
+  futures: T,
+): Future<FutureValue<T[number]>> => {
+  const scheduler = currentScheduler
+  if (scheduler === undefined) {
+    throw new FluentFiregridError({
+      message: "race() must be called inside execute(ctx, gen(...))",
+    })
+  }
+  return scheduler.race(futures)
+}
+
+export const any = <const T extends readonly Future<unknown>[] | []>(
+  futures: T,
+): Future<FutureValue<T[number]>> => {
+  const scheduler = currentScheduler
+  if (scheduler === undefined) {
+    throw new FluentFiregridError({
+      message: "any() must be called inside execute(ctx, gen(...))",
+    })
+  }
+  return scheduler.any(futures)
+}
+
+export const allSettled = <const T extends readonly Future<unknown>[] | []>(
+  futures: T,
+): Future<{ -readonly [P in keyof T]: FutureSettledResult<FutureValue<T[P]>> }> => {
+  const scheduler = currentScheduler
+  if (scheduler === undefined) {
+    throw new FluentFiregridError({
+      message: "allSettled() must be called inside execute(ctx, gen(...))",
+    })
+  }
+  return scheduler.allSettled(futures)
+}
+
+export const select = <const Branches extends SelectBranches>(
+  branches: Branches,
+): Future<SelectResult<Branches>> => {
+  const scheduler = currentScheduler
+  if (scheduler === undefined) {
+    throw new FluentFiregridError({
+      message: "select() must be called inside execute(ctx, gen(...))",
+    })
+  }
+  return scheduler.select(branches)
+}
+
+export const spawn = <T>(operation: Operation<T>): Future<T> => {
+  const scheduler = currentScheduler
+  if (scheduler === undefined) {
+    throw new FluentFiregridError({
+      message: "spawn() must be called inside execute(ctx, gen(...))",
+    })
+  }
+  return scheduler.spawn(operation)
+}
+
 export const sleep = (
   durationMs: SleepDuration,
   name?: string,
@@ -413,26 +761,7 @@ export const execute = <T>(
     yield* journal.create({ contentType: "application/json" })
     const events = yield* journal.collect
     const scheduler = new Scheduler(journal, events)
-    const iterator = operation[Symbol.iterator]()
-    let resume: unknown = undefined
-
-    while (true) {
-      const next = withCurrentScheduler(scheduler, () => iterator.next(resume))
-      if (next.done === true) return next.value
-      if (!isPrimitiveOperation(next.value)) {
-        return yield* new FluentFiregridError({
-          message: "Unsupported operation yielded by fluent-firegrid scheduler",
-          cause: next.value,
-        })
-      }
-      const node = next.value[operationTag]
-      switch (node._tag) {
-        case "Leaf": {
-          resume = yield* node.future.effect
-          break
-        }
-      }
-    }
+    return yield* scheduler.drive(operation)
   })
 
 const isExecutionHandler = (entry: HandlerEntry): entry is AnyHandler =>

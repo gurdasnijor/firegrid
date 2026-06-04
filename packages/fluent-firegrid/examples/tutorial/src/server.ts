@@ -1,6 +1,6 @@
 import { incidentReview } from "./01-basics.ts"
-import { spawnTutorial } from "./02-spawn.ts"
-import { timeoutTutorial } from "./03-timeout.ts"
+import { incidentFanout, spawnTutorial } from "./02-spawn.ts"
+import { incidentTimeout, timeoutTutorial } from "./03-timeout.ts"
 import { retryTutorial } from "./04-retry.ts"
 import { sagaTutorial } from "./05-saga.ts"
 import { cancelTutorial } from "./06-cancel.ts"
@@ -11,7 +11,12 @@ import { interfacesTutorial } from "./10-ifaces.ts"
 import { serdesTutorial } from "./11-serdes.ts"
 export { deferredSurface } from "./deferred-surface.ts"
 
-export const services = [incidentReview, remediationWorkflow] as const
+export const services = [
+  incidentReview,
+  incidentFanout,
+  incidentTimeout,
+  remediationWorkflow,
+] as const
 
 // fluent-firegrid-keystone.EXAMPLES.2
 export const tutorialTiers = [

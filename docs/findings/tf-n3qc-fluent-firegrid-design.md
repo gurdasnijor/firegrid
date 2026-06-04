@@ -49,11 +49,20 @@ Files:
 Public surface in this slice:
 
 - `service({ name, handlers })`
+- `object({ name, handlers })`
+- `workflow({ name, handlers })`
 - `client(service, ctx)`
 - `invoke(service, handlerName, input, ctx)`
 - `gen(factory)`
 - `execute(ctx, operation)`
 - `run(action, options?)`
+- `sleep(durationMs, name?)`
+- `all(futures)`
+- `race(futures)`
+- `any(futures)`
+- `allSettled(futures)`
+- `select(branches)`
+- `spawn(operation)`
 - `Operation<T>`
 - `Future<T>`
 
@@ -81,11 +90,22 @@ type JournalEvent =
       readonly message: string
       readonly cause?: unknown
     }
+  | {
+      readonly type: "SleepCompleted"
+      readonly sleepKey: string
+      readonly name: string
+      readonly durationMs: number
+    }
+  | {
+      readonly type: "RaceCompleted"
+      readonly raceKey: string
+      readonly name: string
+      readonly winnerIndex: number
+    }
 ```
 
-The keystone currently writes only `StepSucceeded`. The `StepFailed` read shape
-is present so a future slice can choose whether failures are replayed, retried,
-or policy-gated.
+The keystone writes `StepSucceeded`, `SleepCompleted`, and `RaceCompleted`.
+`StepFailed` remains a read shape for a future retry/failure-policy slice.
 
 ## Raw Log Algorithm
 
@@ -123,50 +143,71 @@ table materialization is required for the keystone replay behavior.
 | `yield* future` | Future iterator yields marker and resumes with scheduler value | Implemented |
 | `service({ name, handlers })` | Stores a typed service definition | Implemented minimal wrapper |
 | Client invoke | `client(service, ctx).handler(input)` calls `invoke` | Implemented minimal wrapper |
-| `sleep(duration)` | Timer event plus wake stream append | Not implemented |
+| `sleep(duration)` | Effect timer then `SleepCompleted`; replay skips waiting | Implemented keystone timer |
 | `awakeable<T>()` / `workflowPromise(name)` | Promise-created / promise-resolved events plus waiter keys | Not implemented |
 | `state<T>()` / `sharedState<T>()` | State log events folded by key; optional snapshots later | Not implemented |
-| `all` / `race` / `select` | Waiter events over Future ids; losers must continue | Not implemented |
-| `spawn(op)` | Routine journal plus routine result Future | Not implemented |
+| `all` | Concurrent wait over Futures with ordered tuple results | Implemented |
+| `race` | First-settled Future wins; `RaceCompleted` fixes replay winner; losers continue in daemon fibers | Implemented keystone combinator |
+| `any` | First successful Future wins; all failures throw `AggregateError` through the generator boundary | Implemented keystone combinator |
+| `allSettled` | Ordered settled results without rejecting | Implemented |
+| `select` | Tagged first-settled branch plus winning Future; replay uses `RaceCompleted` | Implemented |
+| `spawn(op)` | Routine-backed Future driven by the current scheduler | Implemented non-restart-safe routine |
 | service/object/workflow clients | Typed descriptors over invocation journals and send rows | Not implemented |
 | Cancellation | Durable cancellation event plus AbortSignal and boundary throw | Not implemented |
 
 ## Next API Surface
 
-1. **Journal read model.** Add a fold over journal events so future steps,
-   state, promises, waiter registration, and cancellation all use one replay
-   snapshot.
-2. **Step failure policy.** Decide whether `StepFailed` is replayed as terminal,
+1. **Step failure policy.** Decide whether `StepFailed` is replayed as terminal,
    retried by policy, or excluded until retry semantics are designed.
-3. **Future lifecycle.** Persist Future ids separately from step keys so
+2. **Future lifecycle.** Persist Future ids separately from step keys so
    combinators can wait on already-created handles.
-4. **`all`.** Implement the first combinator over journal-backed futures.
-5. **`race` / `select`.** Add waiter events with loser-continuation semantics;
-   this is the main Restate semantic constraint from the #914 spike.
-6. **State.** Add `state<T>()` / `sharedState<T>()` as folded log events, not
+3. **State.** Add `state<T>()` / `sharedState<T>()` as folded log events, not
    DurableTable rows.
-7. **Sleep.** Add `SleepScheduled` / `SleepFired` events and a tiny timer worker
-   that appends a wake event. This is the direct-log equivalent of the #914
-   timer-as-append proof.
-8. **Awakeables / workflow promises.** Add promise ids, creation events, and
+4. **Durable timers.** Split the current in-process `sleep` into scheduled/fired
+   rows plus wake delivery for long parks.
+5. **Awakeables / workflow promises.** Add promise ids, creation events, and
    resolver events. External resolver ingress is a separate API.
-9. **Routine-backed spawn.** Append routine-start events and settle a routine
-   result future. Restart safety needs a worker claim/reclaim contract.
-10. **Service/object/workflow clients.** Layer typed descriptors on top after
+6. **Routine-backed spawn durability.** The current spawn composes in-process;
+   restart safety needs routine-start/result rows plus worker claim/reclaim.
+7. **Service/object/workflow clients.** Layer typed descriptors on top after
    the durable journal and future semantics are stable.
 
 ## Known Gaps
 
-- `Future<T>` is yieldable and replay-backed, but not yet eager/backgrounded for
-  parallel construction before `yield* all(...)`.
-- Failure delivery into `generator.throw(...)` is not implemented yet, so
-  user-level `try/catch` around `yield* run(...)` is future work.
+- `spawn(op)` is routine-backed and composable, but not restart-safe yet.
+- `sleep` is journaled for replay but still uses an in-process Effect timer for
+  the first run; it is not a parked durable wake worker.
 - The current client uses one caller-supplied journal endpoint. A product API
   needs an invocation id to stream URL mapping.
 - `run` values are stored as `unknown`; typed result decoding should be added
   before this becomes a public package contract.
 - The current replay snapshot is read at invocation start. Long-running
   handlers that park and resume will need a live follow/wake mechanism.
+
+## E2E Plan From Vendored Restate
+
+Source-checked upstream files:
+
+- `repos/sdk-typescript/packages/libs/restate-sdk-gen/e2e/concurrency.e2e.test.ts`
+- `repos/sdk-typescript/packages/libs/restate-sdk-gen/e2e/polling.e2e.test.ts`
+- `repos/sdk-typescript/packages/libs/restate-sdk-gen/e2e/state.e2e.test.ts`
+- `repos/sdk-typescript/packages/libs/restate-sdk-gen/e2e/terminal-errors.e2e.test.ts`
+
+The nearest Firegrid e2e analog should start with a Durable Streams-backed
+concurrency service and run each handler twice against the same invocation
+journal, matching Restate's default/alwaysReplay split. The first suite should
+cover `all`, `race`, `select`, `spawn`, and mixed journal/routine Futures. The
+current unit test `test/combinators.test.ts` already covers the critical replay
+property locally: `race` returns the original winner on replay and losing
+branches continue far enough to journal.
+
+Later e2e suites line up with missing primitives:
+
+- polling requires durable channel or external wake delivery;
+- state requires `state<T>()` / `sharedState<T>()` log folding;
+- terminal/transient errors require the step failure/retry policy;
+- signal sharing and cancellation require cancellation rows plus AbortSignal
+  fanout.
 
 ## Validation
 
@@ -175,9 +216,10 @@ Focused validation:
 ```text
 pnpm --filter @firegrid/fluent-firegrid typecheck
 pnpm --filter @firegrid/fluent-firegrid test
+pnpm --filter @firegrid/fluent-firegrid diagnostics
 ```
 
-The keystone test:
+The keystone tests:
 
 - first invoke: handler calls `execute(ctx, gen(...))`; inside the generator,
   `yield* run(action, { name: "compose" })` executes `action`, appends
@@ -185,7 +227,9 @@ The keystone test:
 - simulated restart: a new client invokes the same service against the same
   journal endpoint;
 - replay: free-standing `run` returns a `Future` whose scheduler result comes
-  from the journal and does not increment the side-effect counter.
+  from the journal and does not increment the side-effect counter;
+- combinators: `race`, `any`, `allSettled`, `select`, and `spawn` match the
+  Restate-shaped local semantics covered by the vendored unit/e2e examples.
 
 ## Source References
 
