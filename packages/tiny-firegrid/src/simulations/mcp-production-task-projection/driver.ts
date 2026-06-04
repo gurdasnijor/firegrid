@@ -3,7 +3,7 @@
  * path PURELY over `@firegrid/client-sdk/mcp` (tf-ll90.8.4). No firegrid.ts
  * client: the host owns the gateway RuntimeContext (see ./host.ts) carrying the
  * claude-acp agent; the driver waits for that gateway context over MCP, then
- * provisions one child via `session_new` (= mcp.sessions.createOrLoad), prompts
+ * provisions one child via `session_new` (= mcp.sessions.create), prompts
  * it as an MCP Task (session.promptTask), follows the task lifecycle
  * (session.taskStates) answering the input_required permission gate
  * (session.respondToPermission), and reads the terminal result
@@ -101,7 +101,7 @@ export const mcpProductionTaskProjectionDriver: Effect.Effect<void, unknown, Fir
       `After the file operation succeeds, reply with exactly: ${marker}`,
     ].join("\n")
 
-    const session = yield* mcp.sessions.createOrLoad({
+    const session = yield* mcp.sessions.create({
       agentKind: "claude-acp",
       prompt: "Stand by for a task-projection probe.",
     })

@@ -24,6 +24,10 @@
 
 import { IdGenerator, Tool, Toolkit } from "@effect/ai"
 import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
+import {
+  SessionCreateOrLoadInputSchema,
+  SessionHandleReferenceSchema,
+} from "@firegrid/protocol/session-facade"
 import { type RuntimeContext } from "@firegrid/protocol/launch"
 import { getFiregridProjectionMetadata } from "@firegrid/protocol/projection"
 import { Context, Effect, Layer, Option, SchemaAST } from "effect"
@@ -161,6 +165,10 @@ const AGENT_TOOL_GROUPS = [
     input: AgentToolSchemas.CallToolInputSchema,
     output: AgentToolSchemas.CallToolOutputSchema,
   },
+  {
+    input: SessionCreateOrLoadInputSchema,
+    output: SessionHandleReferenceSchema,
+  },
 ] as const
 
 type AgentToolGroup = (typeof AGENT_TOOL_GROUPS)[number]
@@ -189,6 +197,7 @@ type AgentToolNames = [
   "session_close",
   "execute",
   "call",
+  "session_create_or_load",
 ]
 
 type ProjectedTool<
@@ -222,6 +231,7 @@ type ProjectedAgentTools = [
   ProjectedTool<AgentToolNames[8], (typeof AGENT_TOOL_GROUPS)[8]>,
   ProjectedTool<AgentToolNames[9], (typeof AGENT_TOOL_GROUPS)[9]>,
   ProjectedTool<AgentToolNames[10], (typeof AGENT_TOOL_GROUPS)[10]>,
+  ProjectedTool<AgentToolNames[11], (typeof AGENT_TOOL_GROUPS)[11]>,
 ]
 
 // `.map` over the tuple yields a homogeneous array, but the result must be the
@@ -244,6 +254,7 @@ export const [
   SessionCloseTool,
   ExecuteTool,
   CallTool,
+  SessionCreateOrLoadTool,
 ] = AGENT_TOOLS
 
 /**

@@ -33,6 +33,7 @@ const EXPECTED_FULL_TOOL_NAMES = [
   "send",
   "session_cancel",
   "session_close",
+  "session_create_or_load",
   "session_new",
   "session_prompt",
   "sleep",
@@ -332,7 +333,7 @@ describe("firegrid acp CLI", () => {
 
     const registerToolkit = completedSpanNamed(traceRows, "firegrid.mcp.register_toolkit")
     const registerAttributes = traceAttributes(registerToolkit)
-    expect(registerAttributes["firegrid.mcp.tool_count"]).toBe(11)
+    expect(registerAttributes["firegrid.mcp.tool_count"]).toBe(12)
     expect(registerAttributes["firegrid.mcp.tool_names"]).toBe(EXPECTED_FULL_TOOL_NAMES.join(","))
     expect(registerAttributes["firegrid.mcp.tool_profile"]).toBe("full")
 

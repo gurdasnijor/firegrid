@@ -1,4 +1,4 @@
-# tf-ll90.8.4 — comp-sim-idempotent: HELD (real mcp.ts gap, escalated to PO)
+# tf-ll90.8.4 — comp-sim-idempotent: RESTORED (gap filled by tf-focr)
 
 `comp-sim-idempotent` validates **caller-controlled external-key create-or-load
 idempotency**: the same external `[source, id]` arriving repeatedly (redelivery /
@@ -6,25 +6,24 @@ retry / operator replay) must collapse to exactly ONE durable participant
 `contextId`, while a different key stays distinct. It never starts the session —
 it is participant MAPPING, not a run.
 
-It used `firegrid.sessions.createOrLoad({ externalKey, runtime, createdBy })`,
-which keys the context on the **caller's** external key. The MCP surface has no
-equivalent:
+**Status (tf-focr, 2026-06-04): RESTORED.** The PO decided to fill the gap. The
+fix added a `session_create_or_load` MCP tool — the caller-external-key
+create-or-load (insert-or-get on `[source, id]`) projected from the EXISTING
+`session.createOrLoad` protocol operation, dispatching DIRECT to
+`HostSessionsCreateOrLoadChannel` (no router, the tf-s9uj pattern). The
+mislabelled client method was corrected: `mcp.sessions.create` now wraps
+`session_new` (spawn child), and `mcp.sessions.createOrLoad` wraps the new
+idempotent tool. The sim is restored at
+`packages/tiny-firegrid/src/simulations/comp-sim-idempotent/` on `firegridHost`,
+driver over `@firegrid/client-sdk/mcp`. Proven: same key (incl. 4 concurrent
+replays) → one `contextId`; different id and different source → distinct.
 
-- `session_new` (`mcp.sessions.createOrLoad`) is the only creation primitive, and
-  it derives the externalKey **host-side** (`firegrid.mcp.session_new:${parentContextId}:${toolUseId}`),
-  not from a caller-supplied key — so two "same intent" calls get DIFFERENT
-  contexts. It also requires a parent + a prompt + bundles start (this sim wants
-  create-only, no run).
-
-So this sim cannot be migrated onto mcp.ts without a new MCP operation:
-caller-external-key create-or-load (the durable find-or-create participant
-mapping), exposed on `FiregridMcpClient`. That is a genuine surface addition, not
-a mechanical migration.
-
-**Status:** the sim is left DELETED for now (firegrid.ts is gone). Escalated to
-the PO. If the PO decides to fill the gap, that is a follow-up task (add the
-caller-external-key create-or-load MCP operation + restore this sim onto it). Do
-NOT build the gap as part of the firegrid.ts deletion.
+DECISION (reported as the finding before building): `session_new` (spawn+run,
+requires `agentKind`+`prompt`, parent-derived runtime) and create-or-load
+(create-only mapping, caller runtime, no parent) have disjoint required fields
+and opposite spawn behavior — they do NOT reconcile into one clean schema, and
+the protocol already models them as two operations (`session.create` +
+`session.createOrLoad`). Kept separate.
 
 ---
 

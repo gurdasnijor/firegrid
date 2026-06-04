@@ -89,11 +89,11 @@ export const driver: Effect.Effect<ControlPlaneCancelCloseResult, unknown, Fireg
     )
 
     // Provision two child sessions over MCP; cancel one, close the other.
-    const cancelChild = yield* mcp.sessions.createOrLoad({
+    const cancelChild = yield* mcp.sessions.create({
       agentKind: "fake-acp",
       prompt: cancelClosePrompt,
     })
-    const closeChild = yield* mcp.sessions.createOrLoad({
+    const closeChild = yield* mcp.sessions.create({
       agentKind: "fake-acp",
       prompt: cancelClosePrompt,
     })

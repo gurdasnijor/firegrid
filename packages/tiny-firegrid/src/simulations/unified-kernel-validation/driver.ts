@@ -54,7 +54,7 @@ export const unifiedKernelValidationDriver = Effect.gen(function*() {
   // Provision a child session over MCP — session_new inherits the gateway
   // runtime, sends the initial prompt, and starts it. The fixture agent's turn
   // emits a tool_call (the ACP ToolUse journal seam the gate asserts).
-  const session = yield* mcp.sessions.createOrLoad({
+  const session = yield* mcp.sessions.create({
     agentKind: "official-acp-typescript-sdk-example",
     prompt: promptText,
   })

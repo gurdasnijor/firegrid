@@ -20,6 +20,10 @@
 
 import { IdGenerator } from "@effect/ai"
 import type * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
+import type {
+  SessionCreateOrLoadInput,
+  SessionHandleReference,
+} from "@firegrid/protocol/session-facade"
 import { type Context, Effect, Layer } from "effect"
 import { ToolDispatch } from "./tool-dispatch.ts"
 import { type ToolError, toolExecutionFailed } from "./tool-error.ts"
@@ -104,6 +108,8 @@ const makeToolkitHandlers = (
       handleTool<AgentToolSchemas.SessionCancelToolOutput>(captured, "session_cancel", params),
     session_close: (params: AgentToolSchemas.SessionCloseToolInput) =>
       handleTool<AgentToolSchemas.SessionCloseToolOutput>(captured, "session_close", params),
+    session_create_or_load: (params: SessionCreateOrLoadInput) =>
+      handleTool<SessionHandleReference>(captured, "session_create_or_load", params),
     execute: (params: AgentToolSchemas.ExecuteToolInput) =>
       handleTool<AgentToolSchemas.ExecuteToolOutput>(captured, "execute", params),
   })

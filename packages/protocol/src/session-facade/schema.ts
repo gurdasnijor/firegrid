@@ -63,6 +63,7 @@ export const SessionCreateOrLoadInputSchema = Schema.Struct({
     "Create or load a RuntimeContext-backed session from a caller-owned external key.",
   ...firegridProjection({
     operationId: "session.createOrLoad",
+    toolName: "session_create_or_load",
     clientName: "sessions.createOrLoad",
   }),
   parseOptions: {

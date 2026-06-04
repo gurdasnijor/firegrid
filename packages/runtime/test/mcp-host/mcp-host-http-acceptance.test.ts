@@ -150,6 +150,7 @@ const FULL_TOOLS = [
   "send",
   "session_cancel",
   "session_close",
+  "session_create_or_load",
   "session_new",
   "session_prompt",
   "sleep",

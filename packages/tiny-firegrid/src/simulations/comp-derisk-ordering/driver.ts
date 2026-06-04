@@ -49,7 +49,7 @@ export const compDeriskOrderingDriver = Effect.gen(function*() {
   )
 
   // Turn 1 — session_new inherits the gateway runtime, prompts, and starts it.
-  const session = yield* mcp.sessions.createOrLoad({
+  const session = yield* mcp.sessions.create({
     agentKind: "official-acp-typescript-sdk-example",
     prompt: "First turn — emit output.",
   })

@@ -161,7 +161,7 @@ export const factoryCapstoneDriver: Effect.Effect<void, unknown, FiregridConfig>
 
     // Provision the capstone child over MCP — session_new inherits the gateway
     // claude-acp runtime (host-resolved runtime-context MCP).
-    const session = yield* mcp.sessions.createOrLoad({
+    const session = yield* mcp.sessions.create({
       agentKind: "claude-acp",
       prompt: promptForFactoryLoop,
     })
