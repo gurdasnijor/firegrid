@@ -1335,7 +1335,7 @@ Unacceptable beta gaps:
 
 Goal: convert a correct private-beta loop into a robust beta.
 
-1. Run `pnpm --filter @firegrid/firelab simulate:perf` after the loop is
+1. Run `pnpm --filter firelab simulate:perf` after the loop is
    stable.
 2. Compare Firegrid overhead to provider/LLM latency. If internal overhead is
    material, dispatch engine-native `streamWait/streamWaitAny`.

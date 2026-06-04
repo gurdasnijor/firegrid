@@ -3,9 +3,9 @@
 The conformance backbone is a firelab simulation:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run agent-runtime-fixture-replay-harness
-pnpm --filter @firegrid/firelab simulate:show <run-id>
-pnpm --filter @firegrid/firelab simulate:perf <run-id>
+pnpm --filter firelab simulate:run agent-runtime-fixture-replay-harness
+pnpm --filter firelab simulate:show <run-id>
+pnpm --filter firelab simulate:perf <run-id>
 ```
 
 The standard run is deterministic. It replays checked-in ACP, stdio-jsonl,

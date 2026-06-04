@@ -97,7 +97,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Run UKV coverage gate (computed verdict)
-        run: pnpm --filter @firegrid/firelab run coverage:gate
+        run: pnpm --filter firelab run coverage:gate
 
   typecheck:
     name: Typecheck

@@ -93,7 +93,7 @@ The mapping table above is asserted as a structural contract by the
 firelab simulation:
 
 ```
-pnpm --filter @firegrid/firelab test test/shape-c-channel-router-turn/probe.test.ts
+pnpm --filter firelab test test/shape-c-channel-router-turn/probe.test.ts
 ```
 
 (25/25 vitest tests as of the FINDING reference below.) The simulation

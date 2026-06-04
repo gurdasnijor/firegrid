@@ -35,7 +35,7 @@ ACIDs exercised:
 Run:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run codec-stdio-jsonl-live --timeout-ms 240000
+pnpm --filter firelab simulate:run codec-stdio-jsonl-live --timeout-ms 240000
 ```
 
 Trace artifact:

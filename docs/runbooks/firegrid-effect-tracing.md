@@ -29,7 +29,7 @@ The preferred interface is the standalone simulation runner, not Vitest:
 
 ```bash
 OPENAI_API_KEY=... \
-pnpm --filter @firegrid/firelab simulate:run -- codex-acp-tool-call-pipeline
+pnpm --filter firelab simulate:run -- codex-acp-tool-call-pipeline
 ```
 
 By default the runner infers:
@@ -69,17 +69,17 @@ capture separated. New system simulations should be added under
 List available simulations and local runs:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:list
-pnpm --filter @firegrid/firelab simulate:runs
-pnpm --filter @firegrid/firelab simulate:show
+pnpm --filter firelab simulate:list
+pnpm --filter firelab simulate:runs
+pnpm --filter firelab simulate:show
 ```
 
 For token-efficient agent inspection, tail or attach to ended span records:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:tail
-pnpm --filter @firegrid/firelab simulate:attach -- <run-id>
-pnpm --filter @firegrid/firelab simulate:run -- codex-acp-tool-call-pipeline --tail
+pnpm --filter firelab simulate:tail
+pnpm --filter firelab simulate:attach -- <run-id>
+pnpm --filter firelab simulate:run -- codex-acp-tool-call-pipeline --tail
 ```
 
 `tail` and `attach` stream `.simulate/runs/<run-id>/live-spans.jsonl`, which is
@@ -101,7 +101,7 @@ trace exports via `read_otlp_traces(...)`.
 Install DuckDB locally, then load the latest firelab run:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:duckdb
+pnpm --filter firelab simulate:duckdb
 ```
 
 If there is no `latest` run, the command exits with the exact `simulate:run`
@@ -143,7 +143,7 @@ ORDER BY timestamp;
 For one-off queries:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:query -- \
+pnpm --filter firelab simulate:query -- \
   latest \
   "SELECT * FROM firelab_span_summary LIMIT 25;"
 ```

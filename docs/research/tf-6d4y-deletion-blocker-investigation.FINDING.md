@@ -51,7 +51,7 @@ Generated graph files were restored after inspection so this finding carries the
 Representative sim:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run workflow-core-paths --timeout-ms 120000
+pnpm --filter firelab simulate:run workflow-core-paths --timeout-ms 120000
 ```
 
 Run:

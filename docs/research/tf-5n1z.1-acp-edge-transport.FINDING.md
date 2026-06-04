@@ -8,7 +8,7 @@ The firelab `acp-edge-transport` spike validates `firegrid-zed-acp-stdio-externa
 
 Run evidence:
 
-- `pnpm --filter @firegrid/firelab simulate:run -- acp-edge-transport`
+- `pnpm --filter firelab simulate:run -- acp-edge-transport`
 - run id: `2026-05-21T08-06-44-403Z__acp-edge-transport`
 - `simulate:show`: 364 spans, 5 traces, 0 errored, sides `host=351 subprocess=7 driver=3 codec=2`
 - `simulate:perf`: 221.9ms window, no idle gaps above threshold

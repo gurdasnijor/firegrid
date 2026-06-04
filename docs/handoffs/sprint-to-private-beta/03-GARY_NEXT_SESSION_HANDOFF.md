@@ -350,8 +350,8 @@ git grep -n "RuntimeControlRequestWorkflowEngineLive\\|HostRuntimeObservationSub
 git grep -n "durable-tools wait_router\\|@firegrid/client\\|runtime-host\\|@firegrid/runtime/agent-tools" origin/main -- packages docs
 bash scripts/lane-sweep.sh --json
 gh pr list --state open --limit 20 --json number,title,isDraft,mergeStateStatus,statusCheckRollup,url
-pnpm --filter @firegrid/firelab simulate:run acp-sdk-example-agent
-pnpm --filter @firegrid/firelab simulate:perf 2026-05-20T22-03-21-597Z__acp-sdk-example-agent
+pnpm --filter firelab simulate:run acp-sdk-example-agent
+pnpm --filter firelab simulate:perf 2026-05-20T22-03-21-597Z__acp-sdk-example-agent
 ```
 
 ## If Asked To Dispatch

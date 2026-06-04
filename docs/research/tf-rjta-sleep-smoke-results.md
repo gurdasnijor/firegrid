@@ -33,7 +33,7 @@ external provider process, and it does not exercise factory choreography.
 Local targeted validation:
 
 ```bash
-pnpm --filter @firegrid/firelab test -- sleep-only-substrate-smoke.test.ts
+pnpm --filter firelab test -- sleep-only-substrate-smoke.test.ts
 ```
 
 Result: pass.

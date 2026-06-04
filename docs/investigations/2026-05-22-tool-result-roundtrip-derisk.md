@@ -103,6 +103,6 @@ module latch (same pattern as `target-architecture-reference` / `loop-state-tabl
 ## Running
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run tool-result-roundtrip
-pnpm --filter @firegrid/firelab simulate:perf <runId>
+pnpm --filter firelab simulate:run tool-result-roundtrip
+pnpm --filter firelab simulate:perf <runId>
 ```

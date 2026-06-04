@@ -16,7 +16,7 @@ The `unified-kernel-validation` simulation's production-flow scenario closes the
 
 ```bash
 # 1. Run the sim end-to-end.
-pnpm --filter @firegrid/firelab simulate:run unified-kernel-validation
+pnpm --filter firelab simulate:run unified-kernel-validation
 
 # 2. Produce the seam coverage report for the most recent run.
 pnpm trace:seams

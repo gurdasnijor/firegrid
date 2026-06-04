@@ -52,7 +52,7 @@ self-time is dominated by long-lived durable-stream `rows()` subscriptions:
 ```
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:perf \
+pnpm --filter firelab simulate:perf \
   2026-05-20T00-00-43-070Z__codex-acp-tool-calls \
   --top 12 --idle-threshold-ms 1000
 ```

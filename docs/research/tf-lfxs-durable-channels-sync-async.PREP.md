@@ -194,9 +194,9 @@ RED:
    reference the existing ACIDs above in tests and sim assertions.
 3. Implement only the sim-local adapters needed for the two-mode trace.
 4. Run the sim and capture:
-   - `pnpm --filter @firegrid/firelab simulate:run durable-channels-sync-async-spike`
-   - `pnpm --filter @firegrid/firelab simulate:show <run-id>`
-   - `pnpm --filter @firegrid/firelab simulate:perf <run-id>`
+   - `pnpm --filter firelab simulate:run durable-channels-sync-async-spike`
+   - `pnpm --filter firelab simulate:show <run-id>`
+   - `pnpm --filter firelab simulate:perf <run-id>`
 5. Write `docs/research/tf-lfxs-durable-channels-sync-async.FINDING.md` with
    GREEN/YELLOW/RED verdict and trace evidence.
 6. Run `pnpm preflight` before task-exit.

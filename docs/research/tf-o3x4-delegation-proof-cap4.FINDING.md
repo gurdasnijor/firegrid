@@ -64,9 +64,9 @@ sessions, extend the existing session tool shape deliberately.
 ## Evidence commands
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run delegation-proof-cap4 --timeout-ms 240000
-pnpm --filter @firegrid/firelab simulate:show 2026-05-21T05-19-22-981Z__delegation-proof-cap4
-pnpm --filter @firegrid/firelab simulate:perf 2026-05-21T05-19-22-981Z__delegation-proof-cap4
+pnpm --filter firelab simulate:run delegation-proof-cap4 --timeout-ms 240000
+pnpm --filter firelab simulate:show 2026-05-21T05-19-22-981Z__delegation-proof-cap4
+pnpm --filter firelab simulate:perf 2026-05-21T05-19-22-981Z__delegation-proof-cap4
 ```
 
 ## Non-goals held

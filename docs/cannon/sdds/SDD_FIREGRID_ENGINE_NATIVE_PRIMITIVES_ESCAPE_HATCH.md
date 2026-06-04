@@ -412,7 +412,7 @@ conditions.
 
 Measurement shape:
 
-- `pnpm --filter @firegrid/firelab simulate:perf` reports local substrate
+- `pnpm --filter firelab simulate:perf` reports local substrate
   spans, durable writes, replay reads, and scheduler delays.
 - live dark-factory / ACP traces provide the LLM network-latency denominator
   when API keys and subprocesses are available.

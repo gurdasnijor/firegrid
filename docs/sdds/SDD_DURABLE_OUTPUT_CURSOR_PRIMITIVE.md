@@ -326,7 +326,7 @@ channels, host-sdk, or client. One new runtime file + one edited workflow arm.
 ## §3 Validation plan
 
 1. **Clean-room re-gate (no engine).** Re-run the tf-q4uz oracle
-   (`pnpm --filter @firegrid/firelab simulate:run phase0b-output-replay-oracle`)
+   (`pnpm --filter firelab simulate:run phase0b-output-replay-oracle`)
    as the red→green target; confirm the table-cursor candidate holds
    amplification ≈ 1.0 across the D∈{4,8,16,32,64} sweep where the scan specimen
    blows `(D+1)/2`.

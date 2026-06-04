@@ -78,7 +78,7 @@ were dominated by `POST /mcp/runtime-context/:contextId` (7 spans / 291.2ms).
 Idle gaps above 1,000ms were 4,004ms, 1,251ms, 1,013ms, and 1,341ms.
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:perf \
+pnpm --filter firelab simulate:perf \
   2026-05-20T04-41-55-047Z__workflow-core-paths \
   --top 5 --idle-threshold-ms 1000
 ```

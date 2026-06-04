@@ -513,8 +513,8 @@ worth following in production.
 ## Reproduction
 
 ```
-pnpm --filter @firegrid/firelab simulate:run inv2-waitforworkflow
-pnpm --filter @firegrid/firelab simulate:run inv2-waitforworkflow-layered
+pnpm --filter firelab simulate:run inv2-waitforworkflow
+pnpm --filter firelab simulate:run inv2-waitforworkflow-layered
 ```
 
 Requires `ANTHROPIC_API_KEY`. Wall-clock ~18–19 s per run. Traces are

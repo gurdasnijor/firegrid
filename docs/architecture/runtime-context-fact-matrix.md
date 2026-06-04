@@ -145,7 +145,7 @@ for each.
 
 - Simulation:
   `packages/firelab/src/simulations/runtime-context-fact-matrix/`
-- Run: `pnpm --filter @firegrid/firelab exec tsx src/index.ts run runtime-context-fact-matrix`
+- Run: `pnpm --filter firelab exec tsx src/index.ts run runtime-context-fact-matrix`
 - Verdict span: `firegrid.tiny_fact_matrix.verdict` (attribute names match
   the invariants above)
 - Constraints doc: `docs/cannon/architecture/runtime-design-constraints.md`

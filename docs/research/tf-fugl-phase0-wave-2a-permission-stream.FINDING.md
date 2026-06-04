@@ -31,7 +31,7 @@ Sim: `packages/firelab/src/simulations/phase0-wave-2a-permission-stream/`
 Run:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run phase0-wave-2a-permission-stream --timeout-ms 120000 --watch
+pnpm --filter firelab simulate:run phase0-wave-2a-permission-stream --timeout-ms 120000 --watch
 ```
 
 Run id: `2026-05-20T08-30-45-817Z__phase0-wave-2a-permission-stream`

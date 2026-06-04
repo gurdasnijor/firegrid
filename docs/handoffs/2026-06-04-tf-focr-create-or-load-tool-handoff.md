@@ -90,7 +90,7 @@ schema (operation-id-uniqueness.test.ts header).
 
 ## PROVE
 
-Run the restored sim: `pnpm --filter @firegrid/firelab run simulate:run
+Run the restored sim: `pnpm --filter firelab run simulate:run
 comp-sim-idempotent`. Expect `DriverCompleted`; the trace's summary span
 (`firegrid.sim.idempotent_one_intent`) shows first==redeliver==all replays (one
 participant) and distinct_entity/other_source as DISTINCT contextIds. Then full

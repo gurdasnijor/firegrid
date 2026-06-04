@@ -169,7 +169,7 @@ Decisive queries (run against the per-run `trace.jsonl`):
 ```bash
 # codex-acp (current host wiring): needs OPENAI_API_KEY in env
 TINY_FIREGRID_TIMEOUT="300 seconds" \
-  pnpm --filter @firegrid/firelab simulate:run acp-tool-elicitation
+  pnpm --filter firelab simulate:run acp-tool-elicitation
 
 # analyze
 python3 scripts/acp-trace-health.py \

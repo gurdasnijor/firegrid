@@ -42,7 +42,7 @@ For the next **OLA** session (the research / synthesis / review lane that sits a
 - **Instruments built this session (all on `main`):**
   - `scripts/runtime-flow-map.py` — run via `uv run --with networkx --with scipy python3 …`. Modes: `--contracts` (contract-coverage), `--skeleton` (condensation/centrality/k-core), `--coverage`, `--depcruise=`, `--dot=`, `--timeline=`, `--check-baseline=`/`--write-baseline=`.
   - `scripts/acp-trace-health.py` — the 3-axis ACP trace report.
-  - firelab sims (`packages/firelab/src/simulations/`) — the empirical answer machine; `pnpm --filter @firegrid/firelab simulate:run -- <sim>`.
+  - firelab sims (`packages/firelab/src/simulations/`) — the empirical answer machine; `pnpm --filter firelab simulate:run -- <sim>`.
 - **The shrink-loop playbook** (`docs/architecture/runtime-shrink-loop.md`) is Gary's; the metric is `N` (condensation node count) ↓ and `C` (validated contract count) ↑; the checkpoint gate is `--check-baseline` (manual, not CI by request).
 
 ## 5. The meta-lesson

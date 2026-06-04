@@ -25,7 +25,7 @@ Trace:
 `packages/firelab/.simulate/runs/2026-06-04T12-02-40-114Z__fluent-runtime-workbench/trace.jsonl`
 
 Rendered summary:
-`pnpm --filter @firegrid/firelab simulate:show 2026-06-04T12-02-40-114Z__fluent-runtime-workbench`
+`pnpm --filter firelab simulate:show 2026-06-04T12-02-40-114Z__fluent-runtime-workbench`
 
 Key source-verified observations:
 

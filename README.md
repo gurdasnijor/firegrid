@@ -275,9 +275,9 @@ sandbox, with a captured trace — via the local simulations (no credentials
 needed for the default scenario):
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:list
-pnpm --filter @firegrid/firelab simulate:run unified-kernel-validation
-pnpm --filter @firegrid/firelab simulate:show   # inspect the captured trace
+pnpm --filter firelab simulate:list
+pnpm --filter firelab simulate:run unified-kernel-validation
+pnpm --filter firelab simulate:show   # inspect the captured trace
 ```
 
 Run a host that binds to a durable-streams backend and stays alive for clients:
@@ -299,7 +299,7 @@ traces while the public client API is still settling.
 | `@firegrid/runtime` | Durable runtime internals and workflow engine integration |
 | `@firegrid/host-sdk` | Host composition and channel bindings |
 | `@firegrid/client-sdk` | App/client surface over Firegrid sessions and channels |
-| `@firegrid/firelab` | Local simulations and trace artifacts |
+| `firelab` | Local simulations and trace artifacts |
 
 Most users start with the client/session surface. Contributors should read the
 architecture docs before changing package boundaries.

@@ -324,8 +324,8 @@ Firegrid toolset and narrate the correct plan, but do not invoke the tools.
 ### Reproduce / inspect
 
 ```
-pnpm --filter @firegrid/firelab simulate:show  -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
-pnpm --filter @firegrid/firelab simulate:duckdb -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
+pnpm --filter firelab simulate:show  -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
+pnpm --filter firelab simulate:duckdb -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
 # then: SELECT name, count(*) FROM spans GROUP BY 1 ORDER BY 2 DESC;
 ```
 

@@ -39,7 +39,7 @@ engine generation and does not return the later deferred success value.
 Run:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run phase1-lane6-new-shape-replay --timeout-ms 120000 --watch
+pnpm --filter firelab simulate:run phase1-lane6-new-shape-replay --timeout-ms 120000 --watch
 ```
 
 Run id:

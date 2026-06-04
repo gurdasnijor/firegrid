@@ -65,7 +65,7 @@ framework-native simulation, `packages/firelab/src/simulations/acp-tool-elicitat
 harness, replaying a curated prompt matrix (`prompts.ts`) one turn per span. Run:
 ```
 ANTHROPIC_API_KEY=... TINY_FIREGRID_TIMEOUT="300 seconds" \
-  pnpm --filter @firegrid/firelab simulate:run -- acp-tool-elicitation
+  pnpm --filter firelab simulate:run -- acp-tool-elicitation
 ```
 Inherits `simulate:show / perf / duckdb`. (In PR #639.) Drives the edge **in-process** — faithful
 for edge *logic*, not the literal subprocess/stdio boundary.

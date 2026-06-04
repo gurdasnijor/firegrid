@@ -76,6 +76,6 @@ The sim lives at `packages/firelab/src/simulations/phase0-wave-2b-stream-zip-res
 
 ## Validation
 
-- `pnpm --filter @firegrid/firelab typecheck` passed.
-- `pnpm --filter @firegrid/firelab simulate:run phase0-wave-2b-stream-zip-restart-replay` passed with `DriverCompleted`.
+- `pnpm --filter firelab typecheck` passed.
+- `pnpm --filter firelab simulate:run phase0-wave-2b-stream-zip-restart-replay` passed with `DriverCompleted`.
 - `pnpm run verify` passed.

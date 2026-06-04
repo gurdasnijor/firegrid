@@ -31,7 +31,7 @@ Run:
 
 `packages/firelab/.simulate/runs/2026-06-03T10-25-46-724Z__mcp-tasks-gateway/trace.jsonl`
 
-`pnpm --filter @firegrid/firelab simulate -- show 2026-06-03T10-25-46-724Z__mcp-tasks-gateway` reported 500 spans, 1 trace, and 0 errored spans.
+`pnpm --filter firelab simulate -- show 2026-06-03T10-25-46-724Z__mcp-tasks-gateway` reported 500 spans, 1 trace, and 0 errored spans.
 
 Load-bearing trace rows:
 

@@ -19,7 +19,7 @@ source/wait rows; no in-memory gen-1 state is required.
 Run:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run inv3-restart-replay --timeout-ms 120000
+pnpm --filter firelab simulate:run inv3-restart-replay --timeout-ms 120000
 ```
 
 Run id:

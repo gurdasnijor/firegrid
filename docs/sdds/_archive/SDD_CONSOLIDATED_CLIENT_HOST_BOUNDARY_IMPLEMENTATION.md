@@ -336,7 +336,7 @@ pnpm --filter @firegrid/protocol test
 pnpm --filter @firegrid/client-sdk test
 pnpm --filter @firegrid/host-sdk test
 pnpm --filter @firegrid/cli test
-pnpm --filter @firegrid/firelab test
+pnpm --filter firelab test
 pnpm run typecheck
 pnpm run lint
 pnpm run lint:effect-quality

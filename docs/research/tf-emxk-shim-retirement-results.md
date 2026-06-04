@@ -49,8 +49,8 @@ Normal guardrail gate:
 
 ```bash
 pnpm run lint:deps
-pnpm --filter @firegrid/firelab typecheck
+pnpm --filter firelab typecheck
 pnpm --filter @firegrid/host-sdk typecheck
-pnpm --filter @firegrid/firelab test
+pnpm --filter firelab test
 pnpm --filter @firegrid/host-sdk test
 ```

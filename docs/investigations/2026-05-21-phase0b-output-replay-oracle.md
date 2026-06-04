@@ -19,7 +19,7 @@ impossible*, and (c) ships a runnable oracle that gates the O(outputs)
 invariant. Treat today's `runtime-context.ts` output loop as the **failure
 specimen**, not as the design to preserve.
 
-Oracle verdict (`pnpm --filter @firegrid/firelab simulate:run
+Oracle verdict (`pnpm --filter firelab simulate:run
 phase0b-output-replay-oracle`): `GREEN-ORACLE-VALID` — the candidate primitive
 holds `O(outputs)`; the specimen violates it; the specimen's cost scales with
 turn length while the candidate's stays flat at 1.0 read/output.
@@ -185,8 +185,8 @@ Do not:
 ## Running the oracle
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run phase0b-output-replay-oracle
-pnpm --filter @firegrid/firelab simulate:show   # span tree
+pnpm --filter firelab simulate:run phase0b-output-replay-oracle
+pnpm --filter firelab simulate:show   # span tree
 ```
 
 Source: `packages/firelab/src/simulations/phase0b-output-replay-oracle/`.

@@ -6,7 +6,7 @@
 - **Epistemic tier:** observed (3 local runs) + source-read. The canonical committed run refutes "deterministically broken" — see §Divergence.
 
 ## Symptom
-`pnpm --filter @firegrid/firelab simulate:run unified-kernel-validation` completes (`DriverCompleted`) but the agent never runs:
+`pnpm --filter firelab simulate:run unified-kernel-validation` completes (`DriverCompleted`) but the agent never runs:
 - `output_matched=false`; `snapshot_run_count=0`, `snapshot_output_count=0`, all probe output counts 0.
 - Driver probes: 3 observed (only the durable offset writes from `start`/`prompt`), 3 surfaced-gap, 7 public-surface-blocked.
 - **No** `firegrid.unified.adapter.start_or_attach`, **no** `…source.local_process.open_byte_pipe`, **no** `…acp.*` codec spans, **no** `firegrid.unified.session.body`, **no** `firegrid.workflow_engine.execution.execute`.

@@ -1,5 +1,5 @@
 {
-  "name": "@firegrid/firelab",
+  "name": "firelab",
   "version": "0.0.0",
   "private": true,
   "type": "module",

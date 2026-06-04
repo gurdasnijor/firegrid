@@ -286,7 +286,7 @@ the ACP-force-tool shim (`src/bin/acp-force-tool-shim.mjs`, #424 — it proved a
 *protocol-layer* shim can't force model tool-choice; that is itself a data
 point, not a dead end for instrumentation).
 
-Once a planner advances steps: run `pnpm --filter @firegrid/firelab
+Once a planner advances steps: run `pnpm --filter firelab
 demo:s6` and the harness will objectively report which §6 steps are now
 `proven:true`. That — not a doc — is "done".
 
@@ -321,7 +321,7 @@ Investigation/finding docs: `docs/investigations/2026-05-19-s6-dark-factory-live
 
 The sim lives at
 `packages/firelab/src/simulations/dark-factory-pipeline.ts`. Run a sim:
-`pnpm --filter @firegrid/firelab simulate:run -- <id>`; inspect with
+`pnpm --filter firelab simulate:run -- <id>`; inspect with
 `simulate:show` / `simulate:proof` / `simulate:duckdb`. Trace artifacts land
 under `packages/firelab/.simulate/runs/<id>/` (gitignored).
 

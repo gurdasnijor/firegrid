@@ -78,6 +78,6 @@ orderings and replay placement are deterministic.
 ## Running
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run loop-state-table
-pnpm --filter @firegrid/firelab simulate:perf <runId>
+pnpm --filter firelab simulate:run loop-state-table
+pnpm --filter firelab simulate:perf <runId>
 ```

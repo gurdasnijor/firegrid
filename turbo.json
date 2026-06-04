@@ -19,7 +19,7 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@firegrid/firelab#test": {
+    "firelab#test": {
       "dependsOn": ["^build"],
       "outputs": [],
       "cache": false

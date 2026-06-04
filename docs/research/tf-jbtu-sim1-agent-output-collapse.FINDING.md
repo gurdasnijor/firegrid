@@ -31,7 +31,7 @@ Sim source lives under `packages/firelab/src/simulations/spike-channel-deletion/
 Successful run:
 
 ```text
-pnpm --filter @firegrid/firelab simulate:run sim1-agent-output-collapse --timeout-ms 120000
+pnpm --filter firelab simulate:run sim1-agent-output-collapse --timeout-ms 120000
 run: 2026-05-20T23-53-46-473Z__sim1-agent-output-collapse
 trace: packages/firelab/.simulate/runs/2026-05-20T23-53-46-473Z__sim1-agent-output-collapse/trace.jsonl
 ```
@@ -48,9 +48,9 @@ Trace evidence from that run:
 - `pnpm --filter @firegrid/protocol typecheck` passed.
 - `pnpm --filter @firegrid/host-sdk typecheck` passed.
 - `pnpm --filter @firegrid/client-sdk typecheck` passed.
-- `pnpm --filter @firegrid/firelab typecheck` passed.
+- `pnpm --filter firelab typecheck` passed.
 - `pnpm --filter @firegrid/client-sdk exec vitest run test/firegrid.sessions.test.ts test/firegrid.layer-hoisting.test.ts` passed: 13 tests across 2 files.
-- `pnpm --filter @firegrid/firelab simulate:run sim1-agent-output-collapse --timeout-ms 120000` passed with the GREEN trace above.
+- `pnpm --filter firelab simulate:run sim1-agent-output-collapse --timeout-ms 120000` passed with the GREEN trace above.
 - `pnpm run verify` passed end to end after the channel split, product-path rewrite, sim source, and finding were in place.
 
 ## Ergonomic Helper / Cycle 2 API Gap

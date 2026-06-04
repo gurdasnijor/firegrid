@@ -18,8 +18,8 @@ surfaced FINDING — it is never papered.
 
 ```
 # inputs (deterministic, no API key):
-pnpm --filter @firegrid/firelab simulate:run -- stdio-jsonl-tool-execution-pipeline
-pnpm --filter @firegrid/firelab simulate:run -- multi-context-production-consuming-pipeline
+pnpm --filter firelab simulate:run -- stdio-jsonl-tool-execution-pipeline
+pnpm --filter firelab simulate:run -- multi-context-production-consuming-pipeline
 # proof:
 node packages/firelab/scripts/assert-s77-observability.mjs
 # or against a specific run dir / sim-id substring:

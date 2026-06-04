@@ -27,7 +27,7 @@ finding.
 
 ## Experiment Ergonomics
 
-Experiment authors can import `@firegrid/firelab/experiment` for two
+Experiment authors can import `firelab/experiment` for two
 thin helpers:
 
 - participant launch and prompt helpers that use the public Firegrid
@@ -43,20 +43,20 @@ launching participants and leave analysis to native artifacts after the run.
 
 ```bash
 # Catalog (what can I run?)
-pnpm --filter @firegrid/firelab simulate:list
+pnpm --filter firelab simulate:list
 
 # Run a named simulation (no default — the id is required)
-pnpm --filter @firegrid/firelab simulate:run codex-acp-tool-calls
+pnpm --filter firelab simulate:run codex-acp-tool-calls
 
 # History (what have I run?)
-pnpm --filter @firegrid/firelab simulate:runs
+pnpm --filter firelab simulate:runs
 
 # Post-hoc perf summary for a past run
-pnpm --filter @firegrid/firelab simulate:perf 2026-05-19T23-10-46-560Z__codex-acp-tool-calls
+pnpm --filter firelab simulate:perf 2026-05-19T23-10-46-560Z__codex-acp-tool-calls
 
 # Render a past run's trace as a markdown tree (defaults to the latest run)
-pnpm --filter @firegrid/firelab simulate:show
-pnpm --filter @firegrid/firelab simulate:show 2026-05-19T23-10-46-560Z__codex-acp-tool-calls
+pnpm --filter firelab simulate:show
+pnpm --filter firelab simulate:show 2026-05-19T23-10-46-560Z__codex-acp-tool-calls
 ```
 
 `simulate:run` starts an embedded Durable Streams test server unless
@@ -118,7 +118,7 @@ Pass `--watch` to also emit a compact one-line summary per completed span
 (in addition to the heartbeat) — useful for interactive debugging:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run codex-acp-tool-calls --watch
+pnpm --filter firelab simulate:run codex-acp-tool-calls --watch
 ```
 
 The heartbeat fires only when the destination is the JSONL file. Under

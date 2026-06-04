@@ -21,7 +21,7 @@ path. The observer currently wraps the forked workflow execution in
 Command:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run unified-kernel-validation
+pnpm --filter firelab simulate:run unified-kernel-validation
 ```
 
 Run:

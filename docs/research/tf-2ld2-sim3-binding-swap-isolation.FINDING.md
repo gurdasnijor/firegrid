@@ -20,7 +20,7 @@ The sim also contributes the shared protocol-owned channel scaffolding requested
 Command:
 
 ```bash
-pnpm --filter @firegrid/firelab simulate:run sim3-binding-swap-isolation --timeout-ms 120000
+pnpm --filter firelab simulate:run sim3-binding-swap-isolation --timeout-ms 120000
 ```
 
 Run:
