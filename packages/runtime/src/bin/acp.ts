@@ -8,10 +8,11 @@ import {
   defaultAcpPermissionPolicy,
   type AcpPermissionPolicy,
 } from "../sources/codecs/acp/stdio-edge.ts"
+import { firegridNodeHost } from "../node.ts"
 import {
-  FiregridCliCompositionLive,
   FiregridCliUsageError,
-} from "./_compose.ts"
+  resolveNodeHostOptions,
+} from "./_resolve.ts"
 import {
   compositionOptionsFromAgentOptions,
   decodeAgentSecretEnv,
@@ -71,7 +72,7 @@ export const acpProgramFromOptions = (
     // The edge composition is launchable by construction (tf-0awo.21 §6): the
     // CLI composition provides every channel the edge requires (R → never) and
     // its only error — OTel acquisition — is orDie'd at its boundary in
-    // `_compose.ts` (E → never). No `as unknown as` cast. The launchability gate
+    // `firegridNodeHost` (E → never). No `as unknown as` cast. The launchability gate
     // (acp-edge-launchable.type-test.ts) asserts the `never, never` shape.
     const edgeLayer = AcpStdioEdgeLive({
       input,
@@ -80,7 +81,7 @@ export const acpProgramFromOptions = (
       permissionPolicy: options.permission,
     }).pipe(
       Layer.provide(
-        FiregridCliCompositionLive(compositionOptionsFromAgentOptions(options, bindings)),
+        firegridNodeHost(resolveNodeHostOptions(compositionOptionsFromAgentOptions(options, bindings))),
       ),
     )
     yield* Effect.gen(function*() {

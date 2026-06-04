@@ -11,7 +11,8 @@
 
 import { Console, Effect, Layer } from "effect"
 import { pathToFileURL } from "node:url"
-import { FiregridCliCompositionLive } from "./_compose.ts"
+import { firegridNodeHost } from "../node.ts"
+import { resolveNodeHostOptions } from "./_resolve.ts"
 import { runFiregridBinMain } from "./_main.ts"
 
 export interface HostCliOptions {
@@ -27,12 +28,12 @@ export const hostProgramFromOptions = (
   Effect.gen(function*() {
     yield* Console.error("Firegrid host started")
     return yield* Layer.launch(
-      FiregridCliCompositionLive({
+      firegridNodeHost(resolveNodeHostOptions({
         ...(options.namespace === undefined ? {} : { namespace: options.namespace }),
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         ...(options.otelFile === undefined ? {} : { otelFile: options.otelFile }),
         ...(options.mcpPort === undefined ? {} : { mcpPort: options.mcpPort }),
-      }),
+      })),
     ).pipe(Effect.zipRight(Effect.never))
   }).pipe(Effect.scoped)
 

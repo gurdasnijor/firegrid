@@ -10,7 +10,7 @@ import {
   FiregridCliUsageError,
   resolveFiregridCliCwd,
   type FiregridCliCompositionOptions,
-} from "./_compose.ts"
+} from "./_resolve.ts"
 
 export interface AgentProcessCliOptions {
   readonly agent?: string
