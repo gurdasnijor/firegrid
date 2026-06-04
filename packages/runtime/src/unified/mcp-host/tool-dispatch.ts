@@ -53,6 +53,11 @@ import {
   type PublicLaunchRuntimeIntent,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
+import {
+  SessionCreateOrLoadInputSchema,
+  type SessionCreateOrLoadInput,
+  type SessionHandleReference,
+} from "@firegrid/protocol/session-facade"
 import { Clock, Context, Duration, Effect, Layer, Option, ParseResult, Ref, Schema, Stream } from "effect"
 import { RuntimeChannelRouter } from "../../channels/router.ts"
 import { ContextResolverTag } from "../../tables/codec-adapter-tags.ts"
@@ -556,6 +561,28 @@ const runSessionClose = (
   )
 
 /**
+ * `session_create_or_load` — idempotent find-or-create of a participant
+ * RuntimeContext keyed on the CALLER's external `[source, id]` (tf-focr). Unlike
+ * `session_new` (which derives the key host-side and bundles a prompt), this is
+ * create-ONLY: the same external key collapses to one durable `contextId`, a
+ * different key stays distinct. Dispatches DIRECT to the host create-or-load
+ * channel binding (insert-or-get) — no router (tf-s9uj pattern).
+ */
+const runSessionCreateOrLoad = (
+  toolUseId: string,
+  input: SessionCreateOrLoadInput,
+): Effect.Effect<SessionHandleReference, ToolError> =>
+  requireHostChannel(
+    HostSessionsCreateOrLoadChannel,
+    toolUseId,
+    "session_create_or_load",
+  ).pipe(
+    Effect.flatMap(createOrLoad =>
+      createOrLoad.binding.call(input).pipe(
+        Effect.mapError(mapChannelError(toolUseId, "session_create_or_load")))),
+  )
+
+/**
  * Lower a `(toolName, inputJson)` invocation to a typed arm, decode its
  * input against the protocol schema, run it, and JSON-encode the success
  * output. Decode failures become a typed `ToolInvalidInput`; unported tools
@@ -658,6 +685,15 @@ const dispatchArm = (
             ? toolInvalidInputFromParseError(toolUseId, "session_close", cause)
             : toolExecutionFailed(toolUseId, "session_close", cause)),
         Effect.flatMap(input => runSessionClose(toolUseId, input)),
+        Effect.map((output) => JSON.stringify(output)),
+      )
+    case "session_create_or_load":
+      return decodeJson(SessionCreateOrLoadInputSchema)(inputJson).pipe(
+        Effect.mapError((cause): ToolError =>
+          cause instanceof ParseResult.ParseError
+            ? toolInvalidInputFromParseError(toolUseId, "session_create_or_load", cause)
+            : toolExecutionFailed(toolUseId, "session_create_or_load", cause)),
+        Effect.flatMap(input => runSessionCreateOrLoad(toolUseId, input)),
         Effect.map((output) => JSON.stringify(output)),
       )
     default:

@@ -46,7 +46,7 @@ export const naturalExitTerminalDriver = Effect.gen(function*() {
   )
 
   // session_new inherits the self-exiting agent runtime, prompts, and starts it.
-  const session = yield* mcp.sessions.createOrLoad({
+  const session = yield* mcp.sessions.create({
     agentKind: "self-exiting-acp-agent",
     prompt: "Respond once, then exit.",
   })

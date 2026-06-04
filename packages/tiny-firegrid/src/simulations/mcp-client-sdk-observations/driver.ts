@@ -136,7 +136,7 @@ export const mcpClientSdkObservationsDriver: Effect.Effect<void, unknown, Firegr
     yield* mcp.initialize
     yield* mcp.toolsList
 
-    const child = yield* mcp.sessions.createOrLoad({
+    const child = yield* mcp.sessions.create({
       agentKind: "claude-acp",
       prompt: "Stand by for the next Firegrid task. Reply with exactly: MCP_CLIENT_SDK_OBSERVATIONS_READY",
     })

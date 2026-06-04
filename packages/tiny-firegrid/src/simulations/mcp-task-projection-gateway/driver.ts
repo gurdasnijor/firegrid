@@ -8,7 +8,7 @@
  * `runtime/unified/mcp-host/task-projection.ts`).
  *
  * Flow: wait for the host-seeded gateway context over MCP, provision one child
- * via `session_new` (= mcp.sessions.createOrLoad, inheriting the gateway's
+ * via `session_new` (= mcp.sessions.create, inheriting the gateway's
  * claude-acp runtime), prompt it as an MCP Task (session.promptTask), follow the
  * task lifecycle (session.taskStates) answering the input_required permission
  * gate (session.respondToPermission), and read the terminal result
@@ -105,7 +105,7 @@ export const mcpTaskProjectionGatewayDriver: Effect.Effect<void, unknown, Firegr
 
     // Provision a child session over MCP — session_new inherits the gateway's
     // claude-acp runtime.
-    const session = yield* mcp.sessions.createOrLoad({
+    const session = yield* mcp.sessions.create({
       agentKind: "claude-acp",
       prompt: "Stand by for a task-projection probe.",
     })

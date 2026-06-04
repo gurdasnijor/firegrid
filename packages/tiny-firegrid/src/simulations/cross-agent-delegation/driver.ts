@@ -152,7 +152,7 @@ export const driver: Effect.Effect<
   //   auto-prompts/auto-starts the initial turn without a task handle. Reported
   //   as a GAP. With a real key the planner may stall in plan mode until this
   //   channel op has an MCP equivalent.
-  const parent = yield* mcp.sessions.createOrLoad({
+  const parent = yield* mcp.sessions.create({
     agentKind: "claude-acp",
     prompt: plannerPrompt,
   })

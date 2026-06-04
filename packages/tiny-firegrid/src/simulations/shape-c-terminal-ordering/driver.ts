@@ -87,7 +87,7 @@ export const shapeCTerminalOrderingDriver = Effect.gen(function*() {
 
   // Provision a child session over MCP — session_new inherits the gateway's
   // real claude-acp runtime, sends the initial prompt, and starts it.
-  const session = yield* mcp.sessions.createOrLoad({
+  const session = yield* mcp.sessions.create({
     agentKind: "claude-acp",
     prompt: promptText,
   })

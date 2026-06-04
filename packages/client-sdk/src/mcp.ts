@@ -11,10 +11,16 @@ import type {
   RuntimeLogLineRow,
   RuntimeRunEventRow,
 } from "@firegrid/protocol/launch"
+// Re-export the public runtime-intent builder: a `sessions.createOrLoad` caller
+// supplies the participant `runtime` itself (unlike `sessions.create`, which the
+// host derives), so the builder belongs on the public client surface (tf-focr).
+export { local } from "@firegrid/protocol/launch"
 import type {
   RuntimeAgentOutputObservation,
   SessionAgentOutputWaitInput,
   SessionAgentOutputWaitOutput,
+  SessionCreateOrLoadInput,
+  SessionHandleReference,
   SessionPermissionRequestWaitInput,
   SessionPermissionRequestWaitOutput,
 } from "@firegrid/protocol/session-facade"
@@ -125,8 +131,23 @@ export interface FiregridMcpClient extends FiregridMcpTaskReader {
     input: unknown,
   ) => Effect.Effect<unknown, FiregridMcpClientError>
   readonly sessions: {
-    readonly createOrLoad: (
+    /**
+     * Create + spawn a child session (`session_new`): the host derives the
+     * child runtime from the calling context, appends the prompt, and runs the
+     * agent. The participant key is host-derived (unique per call) — use
+     * `createOrLoad` when you need caller-keyed idempotency.
+     */
+    readonly create: (
       request: SessionNewToolInput,
+    ) => Effect.Effect<FiregridMcpSessionHandle, FiregridMcpClientError>
+    /**
+     * Idempotent find-or-create of a participant session keyed on the CALLER's
+     * external `[source, id]` (tf-focr). The same external key resolves to the
+     * same `contextId`; a different key stays distinct. Create-only — it does
+     * NOT prompt or spawn (unlike `create`).
+     */
+    readonly createOrLoad: (
+      request: SessionCreateOrLoadInput,
     ) => Effect.Effect<FiregridMcpSessionHandle, FiregridMcpClientError>
   }
   readonly observations: FiregridMcpObservationClient
@@ -503,7 +524,7 @@ export const makeFiregridMcpClient = (
     }
 
     const makeSessionHandle = (
-      output: SessionNewToolOutput,
+      handle: { readonly sessionId: string; readonly contextId: string },
     ): Effect.Effect<FiregridMcpSessionHandle, FiregridMcpClientError> =>
       Effect.gen(function*() {
         const lastAgentOutputSequence = yield* Ref.make<number | undefined>(undefined)
@@ -516,18 +537,18 @@ export const makeFiregridMcpClient = (
               request?.afterSequence !== undefined || tracked === undefined
                 ? request
                 : { ...request, afterSequence: tracked }
-            const result = yield* waitForAgentOutput(output.session.contextId, effective)
+            const result = yield* waitForAgentOutput(handle.contextId, effective)
             if (result.matched) {
               yield* Ref.set(lastAgentOutputSequence, result.output.sequence)
             }
             return result
           })
         return {
-          sessionId: output.session.sessionId,
-          contextId: output.session.contextId,
+          sessionId: handle.sessionId,
+          contextId: handle.contextId,
           promptTask: request =>
             callToolTask("session_prompt", {
-              sessionId: output.session.sessionId,
+              sessionId: handle.sessionId,
               prompt: request.prompt,
               ...(request.inputId === undefined ? {} : { inputId: request.inputId }),
               ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
@@ -535,16 +556,16 @@ export const makeFiregridMcpClient = (
           taskStates,
           taskResult,
           respondToPermission,
-          snapshot: () => snapshot(output.session.contextId),
+          snapshot: () => snapshot(handle.contextId),
           wait: {
             forAgentOutput,
             forPermissionRequest: request =>
-              waitForPermissionRequest(output.session.contextId, request),
+              waitForPermissionRequest(handle.contextId, request),
           },
         }
       })
 
-    const createOrLoad = (
+    const create = (
       request: SessionNewToolInput,
     ) =>
       callTool("session_new", {
@@ -558,7 +579,29 @@ export const makeFiregridMcpClient = (
             : undefined
           return record?.session?.sessionId === undefined
             ? Effect.fail(clientError("session_new did not return a session handle"))
-            : makeSessionHandle(record)
+            : makeSessionHandle({
+              sessionId: record.session.sessionId,
+              contextId: record.session.contextId,
+            })
+        }),
+      )
+
+    const createOrLoad = (
+      request: SessionCreateOrLoadInput,
+    ) =>
+      callTool("session_create_or_load", {
+        externalKey: request.externalKey,
+        runtime: request.runtime,
+        ...(request.createdBy === undefined ? {} : { createdBy: request.createdBy }),
+        ...(request.parentContextId === undefined ? {} : { parentContextId: request.parentContextId }),
+      }).pipe(
+        Effect.flatMap(value => {
+          const record = typeof value === "object" && value !== null
+            ? value as Partial<SessionHandleReference>
+            : undefined
+          return record?.sessionId === undefined || record.contextId === undefined
+            ? Effect.fail(clientError("session_create_or_load did not return a session handle"))
+            : makeSessionHandle({ sessionId: record.sessionId, contextId: record.contextId })
         }),
       )
 
@@ -571,7 +614,7 @@ export const makeFiregridMcpClient = (
       taskStates,
       taskResult,
       updateTask,
-      sessions: { createOrLoad },
+      sessions: { create, createOrLoad },
       observations,
     }
   })

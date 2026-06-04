@@ -140,6 +140,7 @@ describe("session facade protocol schema", () => {
 
     expect(createOrLoad).toEqual({
       operationId: "session.createOrLoad",
+      toolName: "session_create_or_load",
       clientName: "sessions.createOrLoad",
     })
     expect(waitForAgentOutput).toEqual({

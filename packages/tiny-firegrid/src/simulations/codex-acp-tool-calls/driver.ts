@@ -86,7 +86,7 @@ export const codexAcpToolCallDriver: Effect.Effect<void, unknown, FiregridConfig
     // codex runtime (host-owned runtime-context MCP enabled), sends the initial
     // prompt, and starts it. The agent's turn should call the Firegrid `sleep`
     // tool then emit the marker line.
-    const session = yield* mcp.sessions.createOrLoad({
+    const session = yield* mcp.sessions.create({
       agentKind: "codex-acp",
       prompt: promptForToolCall,
     })

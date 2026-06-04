@@ -110,7 +110,7 @@ export const opRegistryPromptKeystoneDriver: Effect.Effect<void, unknown, Firegr
     // prompt THROUGH the op-registry GeneratedSessionPromptChannel (the keystone
     // under test) and starts the agent, which inherits the gateway claude-acp
     // runtime.
-    const session = yield* mcp.sessions.createOrLoad({
+    const session = yield* mcp.sessions.create({
       agentKind: "claude-acp",
       prompt: promptText,
     })
