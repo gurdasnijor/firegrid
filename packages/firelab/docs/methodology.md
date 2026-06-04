@@ -80,9 +80,23 @@ which job you're doing.
 The verdict is computed in `runner/coverage.ts`, not asserted by the driver. A
 `coverage` spec is **data**: each claim is a [CEL](https://github.com/google/cel-spec)
 string over the run's spans, using a fixed vocabulary — `named(s,"x")`,
-`hasChild(s,"x")`, `hasDescendant(s,"x")`, `errored(s)`, `attr(s,"k")`,
-`statusMessage(s)` + CEL built-ins (`exists`/`all`/`filter`/`size`/`.startsWith`).
+`namedPrefix(s,"x/")`, `hasChild(s,"x")`, `hasDescendant(s,"x")`, `errored(s)`,
+`attr(s,"k")`, `statusMessage(s)`, `startMs(s)`/`endMs(s)` (span start/end as int
+ms) + CEL built-ins (`exists`/`all`/`exists_one`/`filter`/`size`/`.startsWith`).
 Two buckets:
+
+**Temporal ordering** is first-class via `startMs`/`endMs`: a gate can express
+"terminal recorded before its deregister, same session" as stock CEL —
+`spans.exists(t, named(t,"…terminal_signal") && spans.exists(d,
+named(d,"…deregister") && attr(d,"firegrid.context.id") ==
+attr(t,"firegrid.context.id") && startMs(t) <= startMs(d)))` (the shared
+`terminalSignalBeforeDeregister` claim). This strengthens a gate from "both
+fired" to "same session, in order". Forge-proofing holds: `startMs`/`endMs` are
+span-*derived*, not span names, so the capture-complete name lint is untouched and
+both named spans must still fire host-side. **Caveat:** these are OTel hrtime from
+a SINGLE process, so ordering is sound *within one run's trace* (the oracle's only
+scope) but **not** across merged multi-process traces — don't gate cross-process
+order on `startMs`.
 
 - **`gates`** decide the verdict. A lint walks each gate's parsed CEL AST and
   rejects any gate that names a span outside the host-substrate set

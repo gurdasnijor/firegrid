@@ -12,7 +12,10 @@
  *   hasDescendant(s, "x")  — s has any descendant named "x"
  *   errored(s)             — the span ended in error (status.code === 2)
  *   attr(s, "k")           — s.attributes["k"] as a string ("" if absent)
- *   spans.exists/all/filter/size + &&/!/==/>= + .startsWith(...) — CEL built-ins
+ *   statusMessage(s)       — s.status.message as a string ("" if none)
+ *   startMs(s) / endMs(s)  — span start/end as int ms (for ordering + correlation:
+ *                            startMs(t) <= startMs(d), same-process trace only)
+ *   spans.exists/all/exists_one/filter/size + &&/!/==/>= + .startsWith(...) — CEL built-ins
  *
  * Two buckets, and the forge-proof discipline is STRUCTURAL, not a comment:
  *   - gates          — gate the verdict. A LINT walks each gate's parsed AST and
@@ -33,7 +36,7 @@
  */
 import { Console, Effect } from "effect"
 import { Environment, parse } from "@marcbachmann/cel-js"
-import { type SpanRecord } from "./trace.ts"
+import { endNs, type SpanRecord, startNs } from "./trace.ts"
 
 const SIDE_ATTR = "firegrid.side"
 const isErrorSpan = (s: SpanRecord): boolean => s.status.code === 2
@@ -166,6 +169,18 @@ export const adapterStartedAgent: ClaimDef = {
   description: "the production codec adapter started or attached the agent",
   claim: "spans.exists(s, named(s, \"firegrid.unified.adapter.start_or_attach\"))",
 }
+// Temporal ORDERING gate (stock CEL via startMs): a session terminal_signal was
+// recorded no later than its OWN adapter.deregister (correlated by
+// firegrid.context.id). Strengthens "both fired" → "same session, in order" —
+// the forge-proof port of seam-coverage's terminal-before-deregister assertion.
+// Both names are host-substrate (gating); startMs/context.id are span-derived.
+export const terminalSignalBeforeDeregister: ClaimDef = {
+  id: "session.terminal_before_deregister",
+  description:
+    "a session terminal signal was recorded no later than its own adapter deregister (same context.id)",
+  claim:
+    "spans.exists(t, named(t, \"firegrid.unified.session.terminal_signal\") && attr(t, \"firegrid.context.id\") != \"\" && spans.exists(d, named(d, \"firegrid.unified.adapter.deregister\") && attr(d, \"firegrid.context.id\") == attr(t, \"firegrid.context.id\") && startMs(t) <= startMs(d)))",
+}
 
 // the ONLY functions that name a span — so the lint/witness is capture-complete.
 // `namedPrefix` matches dynamic-suffix host spans (`unified.session.spawn/<id>`)
@@ -231,6 +246,20 @@ const buildEnv = (spans: ReadonlyArray<SpanRecord>): Environment => {
       const m = status?.message
       return typeof m === "string" ? m : ""
     })
+    // Span start/end as integer milliseconds (BigInt — no 53-bit overflow), so a
+    // gate can express temporal ORDERING and correlation in stock CEL:
+    //   startMs(t) <= startMs(d), endMs(t) < startMs(d), startMs(d) - endMs(t) < 5000
+    // (cel-js@7.6.1 has no registrable `timestamp` type — smoke-tested — so ms
+    //  int is the route.) Times are OTel hrtime from a SINGLE process: ordering is
+    // sound WITHIN one run's trace (the oracle's only scope), NOT across merged
+    // multi-process traces. start/end are span-DERIVED, not span NAMES, so the
+    // capture-complete name-allowlist lint is untouched and forge-proofing holds.
+    .registerFunction("startMs(dyn): int", (s: unknown) =>
+      s !== null && typeof s === "object" ? startNs(s as SpanRecord) / 1_000_000n : 0n,
+    )
+    .registerFunction("endMs(dyn): int", (s: unknown) =>
+      s !== null && typeof s === "object" ? endNs(s as SpanRecord) / 1_000_000n : 0n,
+    )
 }
 
 // ── the lint/witness — walk the public typed AST, collect the span names a

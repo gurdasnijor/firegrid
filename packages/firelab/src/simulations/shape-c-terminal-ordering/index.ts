@@ -1,5 +1,5 @@
 import { defineSimulation } from "../../types.ts"
-import { adapterStartedAgent } from "../../runner/coverage.ts"
+import { adapterStartedAgent, terminalSignalBeforeDeregister } from "../../runner/coverage.ts"
 import { shapeCTerminalOrderingDriver } from "./driver.ts"
 import { shapeCTerminalOrderingHost } from "./host.ts"
 
@@ -28,14 +28,9 @@ export default defineSimulation({
         description: "session.close() drove a durable terminal signal (not a raw agent_output)",
         claim: "spans.exists(s, named(s, \"firegrid.unified.session.terminal_signal\"))",
       },
-      {
-        // Both terminal_signal and deregister fire host-side; strict precedence
-        // (terminal before deregister, same context.id) needs a relational helper
-        // the CEL vocab does not yet expose — a documented follow-up.
-        id: "lifecycle.deregistered",
-        description: "the terminal signal drove adapter.deregister (durable lifecycle bound)",
-        claim: "spans.exists(s, named(s, \"firegrid.unified.adapter.deregister\"))",
-      },
+      // The headline invariant, now a TRUE ordering gate (was existence-only):
+      // terminal_signal precedes adapter.deregister for the SAME context.id.
+      terminalSignalBeforeDeregister,
     ],
   },
 })

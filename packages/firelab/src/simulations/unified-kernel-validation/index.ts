@@ -1,4 +1,5 @@
 import { defineSimulation } from "../../types.ts"
+import { terminalSignalBeforeDeregister } from "../../runner/coverage.ts"
 import { unifiedKernelValidationDriver } from "./driver.ts"
 import { unifiedKernelValidationHost } from "./host.ts"
 
@@ -37,14 +38,14 @@ export default defineSimulation({
         claim: "spans.exists(s, named(s, \"firegrid.unified.adapter.deregister\"))",
       },
       {
-        // Parity refinement: seam-coverage paired terminal_signal with deregister
-        // by contextId + startTime ordering. Strict temporal ordering needs a
-        // relational helper the CEL vocab does not yet expose; both spans firing
-        // host-side is the forge-proof core. Ordering is a documented follow-up.
         id: "session.terminal_signal",
         description: "a session terminal signal was recorded",
         claim: "spans.exists(s, named(s, \"firegrid.unified.session.terminal_signal\"))",
       },
+      // Full parity with seam-coverage's session.terminal_ordering: terminal_signal
+      // recorded no later than its adapter.deregister, correlated by context.id —
+      // a TRUE ordering gate (the relational follow-up is now shipped, not deferred).
+      terminalSignalBeforeDeregister,
       {
         // Parity with seam-coverage assertion 6 (acp.tool_use_observed): a real
         // provider-executed ACP ToolUse reached the journal path. Liveness +
