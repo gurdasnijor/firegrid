@@ -45,6 +45,7 @@ components:
     requirements:
       1: "The package includes a Vitest benchmark harness modeled on restate-sdk-gen's bench shape."
       2: "The benchmark harness measures baseline awaits, first-run append, and replay for sequential `run` workloads at 10, 100, and 1000 steps."
+      3: "The benchmark harness measures public free primitive composition for `all`, `race`, and `spawn` at 10, 100, and 1000 Futures to catch unexpected scheduler amplification."
 
   EXAMPLES:
     requirements:
