@@ -79,7 +79,7 @@ export type ForkSessionResult =
 
 export type StoreRequirements = never
 
-export class FluentStore extends Context.Tag("@firegrid/fluent-runtime/Store")<
+export class FluentStore extends Context.Tag("@firegrid/fluent-runtime/Store/FluentStore")<
   FluentStore,
   {
     readonly sessionUrl: (sessionId: SessionId) => string
