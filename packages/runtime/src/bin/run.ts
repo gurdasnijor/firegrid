@@ -1,7 +1,6 @@
 import {
   HostPermissionRespondChannel,
   HostSessionsCreateOrLoadChannel,
-  HostSessionsStartChannel,
   SessionAgentOutputChannel,
   SessionPromptChannel,
 } from "@firegrid/protocol/channels"
@@ -102,7 +101,6 @@ export const runProgramFromOptions = (
     const bindings = yield* decodeAgentSecretEnv(options.secretEnv)
     yield* Effect.gen(function*() {
       const createOrLoad = yield* HostSessionsCreateOrLoadChannel
-      const start = yield* HostSessionsStartChannel
       const prompt = yield* SessionPromptChannel
       const output = yield* SessionAgentOutputChannel
       const runtime = localJsonlRuntimeFromAgentOptions(options, bindings)
@@ -114,7 +112,8 @@ export const runProgramFromOptions = (
         runtime,
         createdBy: "firegrid.cli.run",
       })
-      yield* start.binding.append({ sessionId: session.sessionId })
+      // tf-vqv5: the session.start ack was vestigial — the real spawn happens
+      // when the prompt drives the RuntimeContext workflow body's startOrAttach.
       if (options.prompt !== undefined) {
         const inputId = `input_${crypto.randomUUID()}`
         yield* prompt.forSession(session.sessionId).binding.append({

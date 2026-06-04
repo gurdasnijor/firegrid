@@ -2,10 +2,6 @@ import { Context, Schema } from "effect"
 import {
   PermissionRespondInputSchema,
 } from "../agent-tools/schema.ts"
-import type {
-  SessionCancelToolInputSchema,
-  SessionCloseToolInputSchema,
-} from "../agent-tools/schema.ts"
 import {
   PublicLaunchRuntimeIntentSchema,
 } from "../launch/schema.ts"
@@ -81,45 +77,6 @@ export class SessionPromptChannel extends Context.Tag(
   "firegrid/protocol/channels/session.prompt",
 )<SessionPromptChannel, SessionPromptChannelService>() {}
 
-export const HostSessionsStartChannelTarget = makeChannelTarget(
-  "host.sessions.start",
-)
-
-export const HostSessionsStartRequestSchema = Schema.Struct({
-  sessionId: Schema.String.pipe(Schema.minLength(1)),
-}).annotations({
-  identifier: "firegrid.channel.hostSessionsStart.request",
-  title: "Host sessions start request",
-})
-export type HostSessionsStartRequest = Schema.Schema.Type<
-  typeof HostSessionsStartRequestSchema
->
-
-export type HostSessionsStartChannelService = DurableEventChannel<
-  typeof HostSessionsStartRequestSchema
->
-
-export class HostSessionsStartChannel extends Context.Tag(
-  "firegrid/protocol/channels/host.sessions.start",
-)<HostSessionsStartChannel, HostSessionsStartChannelService>() {}
-
-export const SessionCancelChannelTarget = makeChannelTarget("session.cancel")
-export type SessionCancelChannelService = DurableEventChannel<
-  typeof SessionCancelToolInputSchema
->
-
-export class SessionCancelChannel extends Context.Tag(
-  "firegrid/protocol/channels/session.cancel",
-)<SessionCancelChannel, SessionCancelChannelService>() {}
-
-export const SessionCloseChannelTarget = makeChannelTarget("session.close")
-export type SessionCloseChannelService = DurableEventChannel<
-  typeof SessionCloseToolInputSchema
->
-
-export class SessionCloseChannel extends Context.Tag(
-  "firegrid/protocol/channels/session.close",
-)<SessionCloseChannel, SessionCloseChannelService>() {}
 
 export const SessionLifecycleChannelTarget = makeChannelTarget(
   "session.lifecycle",

@@ -25,16 +25,9 @@ import {
   HostPromptChannel,
   HostPromptChannelTarget,
   HostPermissionRespondChannelTarget,
-  HostSessionsStartChannel,
-  HostSessionsStartChannelTarget,
-  HostSessionsStartRequestSchema,
   makeCallableChannel,
   makeDurableEventChannel,
   makeEgressChannel,
-  SessionCancelChannel,
-  SessionCancelChannelTarget,
-  SessionCloseChannel,
-  SessionCloseChannelTarget,
   SessionPromptChannel,
   SessionPromptChannelTarget,
 } from "@firegrid/protocol/channels"
@@ -121,15 +114,6 @@ const contextResolverFromControlPlaneTable = Layer.effect(
 
 const hostPlaneNoopEventChannelsLayer = Layer.mergeAll(
   Layer.succeed(
-    HostSessionsStartChannel,
-    makeDurableEventChannel({
-      target: HostSessionsStartChannelTarget,
-      schema: HostSessionsStartRequestSchema,
-      append: request =>
-        Effect.succeed(eventOffset(`host.sessions.start:${request.sessionId}`)),
-    }),
-  ),
-  Layer.succeed(
     SessionPromptChannel,
     SessionPromptChannel.of({
       forSession: sessionId =>
@@ -141,24 +125,6 @@ const hostPlaneNoopEventChannelsLayer = Layer.mergeAll(
               eventOffset(`session.prompt:${sessionId}:${request.idempotencyKey}`),
             ),
         }),
-    }),
-  ),
-  Layer.succeed(
-    SessionCancelChannel,
-    makeDurableEventChannel({
-      target: SessionCancelChannelTarget,
-      schema: AgentToolSchemas.SessionCancelToolInputSchema,
-      append: request =>
-        Effect.succeed(eventOffset(`session.cancel:${request.sessionId}`)),
-    }),
-  ),
-  Layer.succeed(
-    SessionCloseChannel,
-    makeDurableEventChannel({
-      target: SessionCloseChannelTarget,
-      schema: AgentToolSchemas.SessionCloseToolInputSchema,
-      append: request =>
-        Effect.succeed(eventOffset(`session.close:${request.sessionId}`)),
     }),
   ),
   Layer.succeed(
