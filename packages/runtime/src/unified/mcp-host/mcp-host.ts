@@ -38,7 +38,8 @@ import { IdGenerator, McpServer } from "@effect/ai"
 import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
 import { RpcSerialization, RpcServer } from "@effect/rpc"
-import { HostPermissionRespondChannel } from "@firegrid/protocol/channels"
+import { WorkflowEngine } from "@effect/workflow"
+import { respondPermissionDecision } from "../channel-bindings.ts"
 import {
   ContextNotFound,
   RuntimeControlPlaneTable,
@@ -272,11 +273,11 @@ const makeFiregridMcpDurableStreamsServerLayer = (
       const control = yield* RuntimeControlPlaneTable
       // eslint-disable-next-line local/sg-runtime-no-table-service-yield-outside-providers -- host composition wires the projection runtime to protocol-owned RuntimeOutput rows.
       const output = yield* RuntimeOutputTable
-      const permissionRespond = yield* HostPermissionRespondChannel
+      const engine = yield* WorkflowEngine.WorkflowEngine
       const projectionRuntime = makeRuntimeTaskAndObservationProjectionRuntime(
         control,
         output,
-        permissionRespond,
+        request => respondPermissionDecision({ engine, request }),
       )
       const mcpServerLayer = McpServer.layer({
         name: "firegrid.agent-tools",

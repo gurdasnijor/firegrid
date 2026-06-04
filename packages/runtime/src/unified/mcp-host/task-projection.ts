@@ -1,7 +1,16 @@
 import { RpcServer } from "@effect/rpc"
 import type * as RpcMessage from "@effect/rpc/RpcMessage"
 import type { PermissionDecision } from "@firegrid/protocol/agent-tools"
-import type { HostPermissionRespondChannel } from "@firegrid/protocol/channels"
+import type { HostPermissionRespondChannelRequest } from "@firegrid/protocol/channels"
+
+/**
+ * Resolve a permission decision (tf-vqv5: a bound `respondPermissionDecision`
+ * over the host `WorkflowEngine`, passed in by the composing host — no
+ * `HostPermissionRespondChannel` Tag).
+ */
+type RespondPermissionFn = (
+  request: HostPermissionRespondChannelRequest,
+) => Effect.Effect<unknown, unknown>
 import {
   runtimeContextsView,
   runtimeEventsForContextView,
@@ -819,7 +828,7 @@ const makeTaskProjectionProtocol = (
 
 export const makeRuntimeOutputTaskProjectionRuntime = (
   output: RuntimeOutputRowsSource,
-  permissionRespond: HostPermissionRespondChannel["Type"],
+  respondPermission: RespondPermissionFn,
 ): McpTaskProjectionRuntime => ({
   snapshot: (contextId: string) =>
     runtimeEventsForContextView(
@@ -835,7 +844,7 @@ export const makeRuntimeOutputTaskProjectionRuntime = (
       Stream.filterMap(runtimeAgentOutputObservationFromRow),
     ),
   respondToPermission: input =>
-    permissionRespond.binding.append({
+    respondPermission({
       contextId: input.contextId,
       permissionRequestId: input.permissionRequestId,
       decision: input.decision,
@@ -878,9 +887,9 @@ const waitForAgentOutputObservation = (
 export const makeRuntimeTaskAndObservationProjectionRuntime = (
   control: RuntimeControlRowsSource,
   output: RuntimeOutputRowsSource,
-  permissionRespond: HostPermissionRespondChannel["Type"],
+  respondPermission: RespondPermissionFn,
 ): McpProjectionRuntime => ({
-  ...makeRuntimeOutputTaskProjectionRuntime(output, permissionRespond),
+  ...makeRuntimeOutputTaskProjectionRuntime(output, respondPermission),
   observations: {
     contexts: Effect.suspend(() =>
       collectRows(runtimeContextsView(
