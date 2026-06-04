@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import type { Awaitable } from "./awaitable.ts"
 import { type FluentFiregridError } from "./error.ts"
 import { makePrimitive, type Operation, type PrimitiveOperation } from "./operation.ts"
 import type { FluentRequirements } from "./schema.ts"
@@ -9,11 +10,14 @@ export class Future<T> implements Operation<T> {
     | { readonly _tag: "Success"; readonly value: T }
     | { readonly _tag: "Failure"; readonly error: FluentFiregridError }
     | undefined
+  readonly awaitable: Awaitable<T>
   readonly effect: Effect.Effect<T, FluentFiregridError, FluentRequirements>
 
   constructor(
-    backing: Effect.Effect<T, FluentFiregridError, FluentRequirements>,
+    awaitable: Awaitable<T>,
   ) {
+    // fluent-firegrid-keystone.AWAITABLE.2
+    this.awaitable = awaitable
     this.leaf = makePrimitive({ _tag: "Leaf", future: this })
     this.effect = Effect.suspend(() => {
       if (this.memo !== undefined) {
@@ -21,7 +25,7 @@ export class Future<T> implements Operation<T> {
           ? Effect.succeed(this.memo.value)
           : Effect.fail(this.memo.error)
       }
-      return Effect.matchEffect(backing, {
+      return Effect.matchEffect(awaitable.effect, {
         onFailure: (error) =>
           Effect.sync(() => {
             this.memo = { _tag: "Failure", error }

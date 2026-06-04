@@ -1,5 +1,7 @@
 import { Effect } from "effect"
 import { DurableStream } from "effect-durable-streams"
+import { FluentFiregridError } from "./error.ts"
+import { DurableOperationProducers } from "./operations.ts"
 import { Scheduler } from "./scheduler.ts"
 import type { Operation } from "./operation.ts"
 import { foldStateEvents, JournalEventSchema, StateEventSchema, type ExecutionContext, type FluentRequirements, type StateRuntime } from "./schema.ts"
@@ -32,6 +34,21 @@ export const execute = <T>(
           pending: [],
         } satisfies StateRuntime
       })
-    const scheduler = new Scheduler(journal, events, stateRuntime)
+    const schedulerRef: { current?: Scheduler } = {}
+    const operations = new DurableOperationProducers(
+      journal,
+      events,
+      (child) => {
+        const scheduler = schedulerRef.current
+        return scheduler === undefined
+          ? Effect.fail(new FluentFiregridError({
+            message: "Scheduler unavailable while spawning operation",
+          }))
+          : scheduler.drive(child)
+      },
+      stateRuntime,
+    )
+    const scheduler = new Scheduler(operations)
+    schedulerRef.current = scheduler
     return yield* scheduler.drive(operation)
   })
