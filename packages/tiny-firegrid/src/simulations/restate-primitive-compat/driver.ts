@@ -867,31 +867,337 @@ const parseJson = <T>(value: string): T => JSON.parse(value) as T
 const errorFromUnknown = (error: unknown): Error =>
   error instanceof Error ? error : new Error(stringifyResult(error))
 
-const probePullWakeClaimEndpoint = (
-  url: string,
-): Effect.Effect<string, never, never> =>
+interface HttpProbeResponse {
+  readonly status: number
+  readonly statusText: string
+  readonly body: unknown
+}
+
+interface PullWakeRouteProbeResult {
+  readonly createData: string
+  readonly createWake: string
+  readonly createSubscription: string
+  readonly appendData: string
+  readonly claim: string
+  readonly claimWhileHeld: string
+  readonly claimWhileHeldError: string
+  readonly release: string
+  readonly reclaimAfterRelease: string
+  readonly staleAckAfterRelease: string
+  readonly staleAckAfterReleaseError: string
+  readonly ack: string
+  readonly ackNextWake: boolean
+  readonly claimNextWake: string
+  readonly ackNextWakeClaim: string
+  readonly claimAfterAck: string
+  readonly wakeIdSeen: boolean
+  readonly claimedStreamCount: number
+  readonly noPendingAfterAck: boolean
+  readonly leaseClaim: string
+  readonly leaseClaimWhileHeld: string
+  readonly leaseClaimWhileHeldError: string
+  readonly leaseClaimAfterTtl: string
+  readonly timerClaimBeforeAppend: string
+  readonly timerClaimBeforeAppendError: string
+  readonly timerClaimAfterAppend: string
+  readonly timerWakeSeen: boolean
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const readProbeResponse = async (response: Response): Promise<HttpProbeResponse> => {
+  const text = await response.text()
+  let body: unknown
+  if (text.length > 0) {
+    try {
+      body = JSON.parse(text) as unknown
+    } catch {
+      body = text
+    }
+  } else {
+    body = null
+  }
+  return {
+    status: response.status,
+    statusText: response.statusText,
+    body,
+  }
+}
+
+const statusLabel = (response: HttpProbeResponse): string =>
+  `${response.status} ${response.statusText}`
+
+const bodyRecord = (response: HttpProbeResponse): Record<string, unknown> =>
+  isRecord(response.body) ? response.body : {}
+
+const errorCode = (response: HttpProbeResponse): string => {
+  const body = bodyRecord(response)
+  const error = isRecord(body.error) ? body.error : {}
+  return typeof error.code === "string" ? error.code : ""
+}
+
+const pause = (durationMs: number): Promise<void> =>
+  // eslint-disable-next-line local/no-production-js-timers
+  new Promise(resolve => setTimeout(resolve, durationMs))
+
+const probePullWakeSubscriptionRoutes = (
+  baseUrl: string,
+  scenarioId: string,
+): Effect.Effect<PullWakeRouteProbeResult, never, never> =>
   Effect.tryPromise({
     try: async () => {
-      const response = await fetch(`${url}/__ds/subscriptions/restate-compat/claim`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer tiny-firegrid-spike",
-        },
-        body: JSON.stringify({ worker: "tiny-firegrid-spike" }),
+      const suffix = `restate-compat/${scenarioId}`
+      const dataStream = `${suffix}/data`
+      const wakeStream = `${suffix}/wake`
+      const subscriptionId = `restate-compat-${scenarioId}`
+      const requestJson = (path: string, init: RequestInit) =>
+        fetch(`${baseUrl}${path}`, init).then(readProbeResponse)
+      const putStream = (
+        path: string,
+        contentType: string = "application/octet-stream",
+        body?: string,
+      ) =>
+        requestJson(`/v1/stream/${path}`, {
+          method: "PUT",
+          headers: { "content-type": contentType },
+          ...(body === undefined ? {} : { body }),
+        })
+      const appendStream = (path: string, body: string) =>
+        requestJson(`/v1/stream/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/octet-stream" },
+          body,
+        })
+      const subscriptionPath = (id: string, action?: string) =>
+        `/v1/stream/__ds/subscriptions/${id}${action === undefined ? "" : `/${action}`}`
+      const createPullWakeSubscription = (
+        id: string,
+        stream: string,
+        wake: string,
+      ) =>
+        requestJson(subscriptionPath(id), {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            type: "pull-wake",
+            streams: [stream],
+            wake_stream: wake,
+            lease_ttl_ms: 1_000,
+          }),
+        })
+      const claimSubscription = (id: string, worker: string) =>
+        requestJson(subscriptionPath(id, "claim"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ worker }),
+        })
+      const claimAckBody = (response: HttpProbeResponse, stream: string) => {
+        const body = bodyRecord(response)
+        const streams = Array.isArray(body.streams) ? body.streams : []
+        const claimed = streams.find((item): item is Record<string, unknown> =>
+          isRecord(item) && item.path === stream)
+        return {
+          token: typeof body.token === "string" ? body.token : "",
+          request: {
+            wake_id: typeof body.wake_id === "string" ? body.wake_id : "",
+            generation: typeof body.generation === "number" ? body.generation : 0,
+            acks: [{
+              stream,
+              offset: typeof claimed?.tail_offset === "string" ? claimed.tail_offset : "",
+            }],
+            done: true,
+          },
+          wakeIdSeen: typeof body.wake_id === "string" && body.wake_id.length > 0,
+          claimedStreamCount: streams.length,
+        }
+      }
+      const ackSubscription = (
+        id: string,
+        token: string,
+        request: Record<string, unknown>,
+      ) =>
+        requestJson(subscriptionPath(id, "ack"), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(request),
+        })
+      const releaseSubscription = (
+        id: string,
+        token: string,
+        request: Record<string, unknown>,
+      ) =>
+        requestJson(subscriptionPath(id, "release"), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(request),
+        })
+
+      const createData = await requestJson(`/v1/stream/${dataStream}`, {
+        method: "PUT",
+        headers: { "content-type": "application/octet-stream" },
       })
-      return `${response.status} ${response.statusText}`
+      const createWake = await putStream(wakeStream, "application/json", "[]")
+      const createSubscription = await createPullWakeSubscription(
+        subscriptionId,
+        dataStream,
+        wakeStream,
+      )
+      const appendData = await appendStream(dataStream, `hello:${scenarioId}:1`)
+      const claim = await claimSubscription(subscriptionId, "tiny-firegrid-spike-a")
+      const claimA = claimAckBody(claim, dataStream)
+      const claimWhileHeld = await claimSubscription(subscriptionId, "tiny-firegrid-spike-b")
+      const release = await releaseSubscription(
+        subscriptionId,
+        claimA.token,
+        {
+          wake_id: claimA.request.wake_id,
+          generation: claimA.request.generation,
+        },
+      )
+      const reclaimAfterRelease = await claimSubscription(
+        subscriptionId,
+        "tiny-firegrid-spike-b",
+      )
+      const claimB = claimAckBody(reclaimAfterRelease, dataStream)
+      const staleAckAfterRelease = await ackSubscription(
+        subscriptionId,
+        claimA.token,
+        claimA.request,
+      )
+      await appendStream(dataStream, `hello:${scenarioId}:2`)
+      const ack = await ackSubscription(subscriptionId, claimB.token, claimB.request)
+      const ackBody = bodyRecord(ack)
+      const claimNextWake = await claimSubscription(subscriptionId, "tiny-firegrid-spike-c")
+      const claimC = claimAckBody(claimNextWake, dataStream)
+      const ackNextWakeClaim = await ackSubscription(
+        subscriptionId,
+        claimC.token,
+        claimC.request,
+      )
+      const claimAfterAck = await claimSubscription(subscriptionId, "tiny-firegrid-spike-d")
+
+      const leaseSubscriptionId = `${subscriptionId}-lease`
+      const leaseStream = `${suffix}/lease-data`
+      const leaseWakeStream = `${suffix}/lease-wake`
+      await putStream(leaseStream)
+      await putStream(leaseWakeStream, "application/json", "[]")
+      await createPullWakeSubscription(leaseSubscriptionId, leaseStream, leaseWakeStream)
+      await appendStream(leaseStream, `lease:${scenarioId}`)
+      const leaseClaim = await claimSubscription(leaseSubscriptionId, "lease-a")
+      const leaseClaimWhileHeld = await claimSubscription(leaseSubscriptionId, "lease-b")
+      await pause(1_200)
+      const leaseClaimAfterTtl = await claimSubscription(leaseSubscriptionId, "lease-b")
+
+      const timerSubscriptionId = `${subscriptionId}-timer`
+      const timerStream = `${suffix}/timer-data`
+      const timerWakeStream = `${suffix}/timer-wake`
+      await putStream(timerStream)
+      await putStream(timerWakeStream, "application/json", "[]")
+      await createPullWakeSubscription(timerSubscriptionId, timerStream, timerWakeStream)
+      const timerClaimBeforeAppend = await claimSubscription(timerSubscriptionId, "timer")
+      await pause(80)
+      await appendStream(timerStream, `timer:${scenarioId}`)
+      await pause(50)
+      const timerClaimAfterAppend = await claimSubscription(timerSubscriptionId, "timer")
+      const timerClaimAfterAppendBody = bodyRecord(timerClaimAfterAppend)
+
+      return {
+        createData: statusLabel(createData),
+        createWake: statusLabel(createWake),
+        createSubscription: statusLabel(createSubscription),
+        appendData: statusLabel(appendData),
+        claim: statusLabel(claim),
+        claimWhileHeld: statusLabel(claimWhileHeld),
+        claimWhileHeldError: errorCode(claimWhileHeld),
+        release: statusLabel(release),
+        reclaimAfterRelease: statusLabel(reclaimAfterRelease),
+        staleAckAfterRelease: statusLabel(staleAckAfterRelease),
+        staleAckAfterReleaseError: errorCode(staleAckAfterRelease),
+        ack: statusLabel(ack),
+        ackNextWake: ackBody.next_wake === true,
+        claimNextWake: statusLabel(claimNextWake),
+        ackNextWakeClaim: statusLabel(ackNextWakeClaim),
+        claimAfterAck: statusLabel(claimAfterAck),
+        wakeIdSeen: claimA.wakeIdSeen,
+        claimedStreamCount: claimA.claimedStreamCount,
+        noPendingAfterAck: errorCode(claimAfterAck) === "NO_PENDING_WORK",
+        leaseClaim: statusLabel(leaseClaim),
+        leaseClaimWhileHeld: statusLabel(leaseClaimWhileHeld),
+        leaseClaimWhileHeldError: errorCode(leaseClaimWhileHeld),
+        leaseClaimAfterTtl: statusLabel(leaseClaimAfterTtl),
+        timerClaimBeforeAppend: statusLabel(timerClaimBeforeAppend),
+        timerClaimBeforeAppendError: errorCode(timerClaimBeforeAppend),
+        timerClaimAfterAppend: statusLabel(timerClaimAfterAppend),
+        timerWakeSeen:
+          typeof timerClaimAfterAppendBody.wake_id === "string" &&
+          timerClaimAfterAppendBody.wake_id.length > 0,
+      }
     },
     catch: error => error,
   }).pipe(
-    Effect.catchAll(error => Effect.succeed(`request-error:${stringifyResult(error)}`)),
-    Effect.tap(status =>
+    Effect.catchAll(error =>
+      Effect.succeed({
+        createData: "request-error",
+        createWake: "request-error",
+        createSubscription: "request-error",
+        appendData: "request-error",
+        claim: "request-error",
+        claimWhileHeld: "request-error",
+        claimWhileHeldError: "",
+        release: "request-error",
+        reclaimAfterRelease: "request-error",
+        staleAckAfterRelease: "request-error",
+        staleAckAfterReleaseError: "",
+        ack: "request-error",
+        ackNextWake: false,
+        claimNextWake: "request-error",
+        ackNextWakeClaim: "request-error",
+        claimAfterAck: `request-error:${stringifyResult(error)}`,
+        wakeIdSeen: false,
+        claimedStreamCount: 0,
+        noPendingAfterAck: false,
+        leaseClaim: "request-error",
+        leaseClaimWhileHeld: "request-error",
+        leaseClaimWhileHeldError: "",
+        leaseClaimAfterTtl: "request-error",
+        timerClaimBeforeAppend: "request-error",
+        timerClaimBeforeAppendError: "",
+        timerClaimAfterAppend: "request-error",
+        timerWakeSeen: false,
+      })),
+    Effect.tap(result =>
       Effect.void.pipe(
-        Effect.withSpan("tiny_firegrid.restate_primitive_compat.pull_wake.raw_probe", {
+        Effect.withSpan("tiny_firegrid.restate_primitive_compat.pull_wake.route_probe", {
           kind: "client",
           attributes: {
-            "firegrid.restate_compat.pull_wake_probe_url": url,
-            "firegrid.restate_compat.pull_wake_probe_status": status,
+            "firegrid.restate_compat.pull_wake_probe_url":
+              `${baseUrl}/v1/stream/__ds/subscriptions/restate-compat-${scenarioId}/claim`,
+            "firegrid.restate_compat.pull_wake_probe_result": JSON.stringify(result),
+            "firegrid.restate_compat.pull_wake_create_subscription_status":
+              result.createSubscription,
+            "firegrid.restate_compat.pull_wake_claim_status": result.claim,
+            "firegrid.restate_compat.pull_wake_ack_status": result.ack,
+            "firegrid.restate_compat.pull_wake_after_ack_status": result.claimAfterAck,
+            "firegrid.restate_compat.pull_wake_no_pending_after_ack":
+              result.noPendingAfterAck,
+            "firegrid.restate_compat.pull_wake_release_reclaim":
+              result.release === "204 No Content" &&
+              result.reclaimAfterRelease === "200 OK",
+            "firegrid.restate_compat.pull_wake_stale_ack_fenced":
+              result.staleAckAfterReleaseError === "FENCED",
+            "firegrid.restate_compat.pull_wake_ack_next_wake": result.ackNextWake,
+            "firegrid.restate_compat.pull_wake_lease_reclaim":
+              result.leaseClaimAfterTtl === "200 OK",
+            "firegrid.restate_compat.pull_wake_timer_wake": result.timerWakeSeen,
+            "firegrid.restate_compat.pull_wake_probe_note":
+              "reserved route installed from @durable-streams/server@0.3.7; this exercises create/claim/release/reclaim/ack/lease/timer wake over the local server",
           },
         }),
       ),
@@ -1259,7 +1565,7 @@ const emitMappingSpans = Effect.all([
         "firegrid.restate_compat.firegrid":
           "DurableTable state-protocol rows for futures/waiters/claim lifecycle",
         "firegrid.restate_compat.compat":
-          "partial: row ledger matches the needed scheduler shape; pull-wake is simulated, not an HTTP subscription worker",
+          "partial: row ledger matches the needed scheduler shape; upstream PR #361 provides reserved HTTP pull-wake APIs but this sim uses local rows",
       },
     }),
   ),
@@ -1328,11 +1634,9 @@ export const restatePrimitiveCompatDriver = Effect.gen(function*() {
   return yield* Effect.gen(function*() {
     const scenarioId = `gen-${globalThis.crypto.randomUUID()}`
     yield* emitMappingSpans
-    const pullWakeProbeStatus = yield* probePullWakeClaimEndpoint(
-      durableStreamUrl(
-        durableStreamsBaseUrl,
-        `${namespace}.tiny-firegrid.restate-compat.pull-wake-probe`,
-      ),
+    const pullWakeRouteProbe = yield* probePullWakeSubscriptionRoutes(
+      durableStreamsBaseUrl,
+      scenarioId,
     )
     const first = yield* CompatWorkflow.execute({ scenarioId })
     const second = yield* CompatWorkflow.execute({ scenarioId })
@@ -1368,13 +1672,18 @@ export const restatePrimitiveCompatDriver = Effect.gen(function*() {
           "firegrid.restate_compat.cancellation_row_count": cancellationRows.length,
           "firegrid.restate_compat.service_call_row_count": serviceCallRows.length,
           "firegrid.restate_compat.race_select_loser_success_count": succeededLosers,
-          "firegrid.restate_compat.pull_wake_raw_probe_status": pullWakeProbeStatus,
+          "firegrid.restate_compat.pull_wake_route_probe": JSON.stringify(pullWakeRouteProbe),
+          "firegrid.restate_compat.pull_wake_claim_status": pullWakeRouteProbe.claim,
+          "firegrid.restate_compat.pull_wake_ack_status": pullWakeRouteProbe.ack,
+          "firegrid.restate_compat.pull_wake_no_pending_after_ack":
+            pullWakeRouteProbe.noPendingAfterAck,
           "firegrid.restate_compat.major_gap_1":
-            "raw Durable Streams HTTP probe is not the product scheduler surface; Firegrid's DurableStreamsWorkflowEngine already provides workflow-level claim/recovery semantics",
+            "@durable-streams/server@0.3.7 reserved subscription APIs can deliver pull-wake create/claim/ack; remaining work is mapping Restate Future scheduling onto that transport and durable state rows",
           "firegrid.restate_compat.major_gap_2":
-            "routine-backed spawn writes sim rows but is not yet mapped onto WorkflowEngine execution/deferred recovery as a restart-safe routine Future",
+            "routine-backed spawn writes sim rows but is not yet mapped onto durable routine rows and reclaim semantics as a restart-safe routine Future",
           "firegrid.restate_compat.major_gap_3": "cancellation writes rows and aborts run signals but is not invocation-level TerminalError semantics",
-          "firegrid.restate_compat.major_gap_4": "typed codegen/service/object/workflow descriptors are represented only by thin sim helpers",
+          "firegrid.restate_compat.major_gap_4":
+            "service/object/workflow client helpers are out-of-scope for the free-standing Operation/Future scheduler spike",
         },
       }),
     )
