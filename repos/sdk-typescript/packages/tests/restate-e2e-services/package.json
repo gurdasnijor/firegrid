@@ -1,0 +1,38 @@
+{
+  "name": "@restatedev/restate-e2e-services",
+  "version": "0.0.0",
+  "description": "TODO: Add description",
+  "author": "Restate Developers",
+  "email": "code@restate.dev",
+  "license": "MIT",
+  "homepage": "https://github.com/restatedev/sdk-typescript#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/restatedev/sdk-typescript.git"
+  },
+  "bugs": {
+    "url": "https://github.com/restatedev/sdk-typescript/issues"
+  },
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "turbo run _build --filter={.}...",
+    "_build": "tsc -b tsconfig.test.json",
+    "testrunner": "vitest run --exclude \"**/memory_leak.test.ts\" && vitest run test/memory_leak.test.ts",
+    "testrunner:fetch": "vitest run test/memory_leak.test.ts",
+    "clean": "rm -rf dist *.tsbuildinfo .turbo",
+    "check:types": "turbo run _check:types --filter={.}...",
+    "_check:types": "tsc --noEmit --project tsconfig.test.json",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@restatedev/restate-sdk": "workspace:*",
+    "@restatedev/restate-sdk-clients": "workspace:*",
+    "heapdump": "^0.3.15",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/heapdump": "^0.3.4",
+    "@types/uuid": "^10.0.0"
+  }
+}

@@ -1,0 +1,147 @@
+/*
+ * Copyright (c) 2023-2026 - Restate Software, Inc., Restate GmbH
+ *
+ * This file is part of the Restate SDK for Node.js/TypeScript,
+ * which is released under the MIT license.
+ *
+ * You can find a copy of the license in file LICENSE in the root
+ * directory of this repository or package, or at
+ * https://github.com/restatedev/sdk-typescript/blob/main/LICENSE
+ */
+
+import { describe, expect, test } from "vitest";
+import { gen, spawn, type Future } from "../src/index.js";
+import { Scheduler } from "../src/internal.js";
+import { deferred, resolved, rejected, testLib } from "./test-promise.js";
+
+describe("any — journal sources (fast path)", () => {
+  test("returns the first fulfilled value", async () => {
+    const sched = new Scheduler(testLib);
+    const d1 = deferred<string>();
+    const d2 = deferred<string>();
+    const f1 = sched.makeJournalFuture(d1.promise);
+    const f2 = sched.makeJournalFuture(d2.promise);
+    const op = gen(function* () {
+      return yield* sched.any([f1, f2]);
+    });
+    const result = sched.run(op);
+    queueMicrotask(() => d2.resolve("two"));
+    expect(await result).toBe("two");
+    d1.resolve("one");
+  });
+
+  test("skips early rejections, settles with first fulfillment", async () => {
+    const sched = new Scheduler(testLib);
+    const f1 = sched.makeJournalFuture(rejected(new Error("nope")));
+    const f2 = sched.makeJournalFuture(resolved("good"));
+    const op = gen(function* () {
+      return yield* sched.any([f1, f2]);
+    });
+    expect(await sched.run(op)).toBe("good");
+  });
+
+  test("rejects with AggregateError when every input rejects", async () => {
+    const sched = new Scheduler(testLib);
+    const f1 = sched.makeJournalFuture(rejected(new Error("a")));
+    const f2 = sched.makeJournalFuture(rejected(new Error("b")));
+    const op = gen(function* () {
+      try {
+        return yield* sched.any([f1, f2]);
+      } catch (e) {
+        if (e instanceof AggregateError) {
+          const msgs = (e.errors as Error[]).map((x) => x.message).join(",");
+          return `agg:${msgs}`;
+        }
+        return `unexpected:${(e as Error).message}`;
+      }
+    });
+    expect(await sched.run(op)).toBe("agg:a,b");
+  });
+
+  test("empty input rejects with AggregateError", async () => {
+    const sched = new Scheduler(testLib);
+    const op = gen(function* () {
+      try {
+        return yield* sched.any([]);
+      } catch (e) {
+        return e instanceof AggregateError ? "agg-empty" : "wrong";
+      }
+    });
+    expect(await sched.run(op)).toBe("agg-empty");
+  });
+});
+
+describe("any — routine sources (synthesized loop)", () => {
+  test("first fulfilled routine wins, others discarded", async () => {
+    const sched = new Scheduler(testLib);
+    const fast = gen(function* () {
+      return "fast-result";
+    });
+    const slow = gen(function* () {
+      return "slow-result";
+    });
+
+    const op = gen(function* () {
+      const f1 = spawn(fast);
+      const f2 = spawn(slow);
+      return yield* sched.any([f1, f2]);
+    });
+    expect(await sched.run(op)).toBe("fast-result");
+  });
+
+  test("collects rejections in input order, throws AggregateError", async () => {
+    const sched = new Scheduler(testLib);
+    const fail = (msg: string) =>
+      gen(function* () {
+        throw new Error(msg);
+      });
+
+    const op = gen(function* () {
+      const f1 = spawn(fail("a"));
+      const f2 = spawn(fail("b"));
+      const f3 = spawn(fail("c"));
+      try {
+        return yield* sched.any([f1, f2, f3]);
+      } catch (e) {
+        if (e instanceof AggregateError) {
+          return (e.errors as Error[]).map((x) => x.message).join(",");
+        }
+        return "wrong";
+      }
+    });
+    expect(await sched.run(op)).toBe("a,b,c");
+  });
+});
+
+describe("any — mixed sources", () => {
+  test("routine fulfills first, journal not needed", async () => {
+    const sched = new Scheduler(testLib);
+    const dj = deferred<string>();
+    const j = sched.makeJournalFuture(dj.promise);
+    const r = gen(function* () {
+      return "routine";
+    });
+
+    const op = gen(function* () {
+      const rf = spawn(r);
+      return yield* sched.any([j, rf]);
+    });
+    const result = sched.run(op);
+    expect(await result).toBe("routine");
+    dj.resolve("journal-late"); // unblock teardown
+  });
+
+  test("first journal rejects, routine wins", async () => {
+    const sched = new Scheduler(testLib);
+    const j = sched.makeJournalFuture(rejected(new Error("j-fail")));
+    const r = gen(function* () {
+      return "r-good";
+    });
+
+    const op = gen(function* () {
+      const rf = spawn(r);
+      return yield* sched.any([j, rf]);
+    });
+    expect(await sched.run(op)).toBe("r-good");
+  });
+});
