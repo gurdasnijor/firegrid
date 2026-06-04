@@ -17,7 +17,9 @@
  * `import ... from "spec"` and `export ... from "spec"` (re-export barrels are
  * real consumers) and bare `import "spec"` side-effect imports.
  *
- * Deterministic, zero-new-dep, re-runnable. Writes a committed artifact.
+ * Deterministic, zero-new-dep, re-runnable. Writes a LOCAL artifact under
+ * docs/findings/ that is git-IGNORED (regenerate on demand; do not commit — it
+ * is a parallel-lane conflict source, per the dependency-graph*.mmd precedent).
  *
  * Run:  pnpm tsx scripts/package-exports-audit.ts [--json]
  */
@@ -146,7 +148,7 @@ const main = () => {
     for (const r of unused) log(`    ${r.subpath.padEnd(46)} → ${r.target}`)
   }
 
-  // committed artifact
+  // local artifact (git-ignored — see docs/findings/.gitignore)
   const outDir = path.join(ROOT, "docs/findings")
   fs.mkdirSync(outDir, { recursive: true })
   fs.writeFileSync(

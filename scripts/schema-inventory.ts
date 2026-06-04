@@ -27,7 +27,8 @@
  * file:line + the import graph the boundary/reuse axes need) augmented by the
  * operation inventory's reflection for the projection/role cross-ref. No new dep.
  *
- * Run:  pnpm inventory:schemas      (writes docs/findings/tf-pxxe-*.{json,md})
+ * Run:  pnpm inventory:schemas      (writes docs/findings/tf-pxxe-*.{json,md}
+ *        — git-ignored; regenerate on demand, do not commit)
  */
 import * as fs from "node:fs"
 import * as path from "node:path"

@@ -415,7 +415,8 @@ const main = () => {
   const data = { testOnly, testExposed, dead, typeFindings, prodFiles: prod.length, testFiles: test.length }
   report(data, { strict, asJson })
 
-  // Always persist a committed, deterministic backlog artifact.
+  // Always (re)write a deterministic LOCAL backlog artifact. It is git-ignored
+  // (docs/findings/.gitignore) — regenerate on demand, do not commit.
   if (!asJson) {
     const outDir = path.join(ROOT, "docs/findings")
     fs.mkdirSync(outDir, { recursive: true })
