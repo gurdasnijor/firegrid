@@ -5,7 +5,16 @@
 import { FetchHttpClient, type HttpClient } from "@effect/platform"
 import { Effect, Layer, type Scope } from "effect"
 import { describe, expect, it } from "vitest"
-import { client, execute, gen, run, service } from "../src/index.ts"
+import {
+  all,
+  client,
+  execute,
+  gen,
+  run,
+  service,
+  sleep,
+  workflow,
+} from "../src/index.ts"
 
 type Reqs = FetchHttpClient.Fetch | HttpClient.HttpClient | Scope.Scope
 
@@ -124,5 +133,148 @@ describe("@firegrid/fluent-firegrid Operation/Future run keystone", () => {
     expect(first).toBe("Hello, Ada! run=1")
     expect(replayed).toBe("Hello, Ada! run=1")
     expect(executions.count).toBe(1)
+  })
+
+  it("fluent-firegrid-keystone.FREE.1 fluent-firegrid-keystone.FREE.2 replays ordered all results", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+    const executions = { count: 0 }
+    const calculator = service({
+      name: "calculator",
+      handlers: {
+        addPair: (base: number) =>
+          gen(function* () {
+            const left = run(() => {
+              executions.count += 1
+              return base + 1
+            }, { name: "left" })
+            const right = run(() => {
+              executions.count += 1
+              return base + 2
+            }, { name: "right" })
+            const [leftValue, rightValue] = yield* all([left, right])
+            return leftValue + rightValue
+          }),
+      },
+    })
+    const invocation = {
+      journal: {
+        endpoint: {
+          url: "https://journal.example/v1/stream/calculator/add-pair/invocation-1",
+        },
+      },
+    }
+
+    const first = await runtimeWith(fakeFetch, client(calculator, invocation).addPair(10))
+    const replayed = await runtimeWith(fakeFetch, client(calculator, invocation).addPair(10))
+
+    expect(first).toBe(23)
+    expect(replayed).toBe(23)
+    expect(executions.count).toBe(2)
+  })
+
+  it("fluent-firegrid-keystone.FREE.4 memoizes a Future yielded more than once", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+    const executions = { count: 0 }
+    const memo = service({
+      name: "memo",
+      handlers: {
+        duplicate: (base: number) =>
+          gen(function* () {
+            const once = run(() => {
+              executions.count += 1
+              return base + executions.count
+            }, { name: "once" })
+            const [left, right] = yield* all([once, once])
+            const again = yield* once
+            return `${left}:${right}:${again}`
+          }),
+      },
+    })
+    const invocation = {
+      journal: {
+        endpoint: {
+          url: "https://journal.example/v1/stream/memo/duplicate/invocation-1",
+        },
+      },
+    }
+
+    const result = await runtimeWith(fakeFetch, client(memo, invocation).duplicate(40))
+
+    expect(result).toBe("41:41:41")
+    expect(executions.count).toBe(1)
+  })
+
+  it("fluent-firegrid-keystone.FREE.3 replays a journaled sleep without waiting again", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+    const timer = service({
+      name: "timer",
+      handlers: {
+        pause: (label: string) =>
+          gen(function* () {
+            yield* sleep(5, "settle")
+            return `paused:${label}`
+          }),
+      },
+    })
+    const invocation = {
+      journal: {
+        endpoint: {
+          url: "https://journal.example/v1/stream/timer/pause/invocation-1",
+        },
+      },
+    }
+
+    const first = await runtimeWith(fakeFetch, client(timer, invocation).pause("first"))
+    const started = performance.now()
+    const replayed = await runtimeWith(fakeFetch, client(timer, invocation).pause("first"))
+    const replayElapsedMs = performance.now() - started
+
+    expect(first).toBe("paused:first")
+    expect(replayed).toBe("paused:first")
+    expect(replayElapsedMs).toBeLessThan(5)
+  })
+
+  it("fluent-firegrid-keystone.DEFINITIONS.1 fluent-firegrid-keystone.DEFINITIONS.2 fluent-firegrid-keystone.DEFINITIONS.3 invokes a direct workflow definition", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+    const patchWorkflow = workflow({
+      name: "patchWorkflow",
+      handlers: {
+        run: (title: string) =>
+          gen(function* () {
+            return yield* run(() => `opened:${title}`, {
+              name: "open-patch",
+            })
+          }),
+        status: (id: string) =>
+          gen(function* () {
+            return yield* run(() => `status:${id}:modeled`, {
+              name: "read-status",
+            })
+          }),
+      },
+    })
+    const invocation = {
+      journal: {
+        endpoint: {
+          url: "https://journal.example/v1/stream/patch-workflow/run/invocation-1",
+        },
+      },
+    }
+
+    const runResult = await runtimeWith(fakeFetch, client(patchWorkflow, invocation).run("tf-n3qc"))
+    const statusResult = await runtimeWith(
+      fakeFetch,
+      client(patchWorkflow, {
+        journal: {
+          endpoint: {
+            url: "https://journal.example/v1/stream/patch-workflow/status/invocation-1",
+          },
+        },
+      }).status("tf-n3qc"),
+    )
+
+    expect(patchWorkflow._kind).toBe("workflow")
+    expect(runResult).toBe("opened:tf-n3qc")
+    expect(statusResult).toBe("status:tf-n3qc:modeled")
   })
 })

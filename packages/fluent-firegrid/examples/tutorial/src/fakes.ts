@@ -29,3 +29,15 @@ export const draftPatchPlan = (
 
 export const publishTrace = (plan: string): string =>
   `trace:${plan}`
+
+export const collectIncidentContext = (input: IncidentInput): string =>
+  `context:${input.signal}:${input.title}`
+
+export const openRemediation = (
+  input: IncidentInput,
+  plan: string,
+): string =>
+  `remediation:${input.id}:${plan}`
+
+export const notifyCoordinator = (remediationId: string): string =>
+  `notified:${remediationId}`

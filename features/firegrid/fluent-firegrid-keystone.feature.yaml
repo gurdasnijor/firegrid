@@ -18,6 +18,19 @@ components:
       3: "On re-invocation with the same journal endpoint, `run` replays the journaled result and does not execute `action` again."
       4: "`run` step identity is deterministic for a handler invocation by combining generator order with the caller-provided step name."
 
+  FREE:
+    requirements:
+      1: "The package exports a free-standing `all(futures)` combinator that returns a yieldable `Future` with ordered tuple results."
+      2: "`all` delegates through the active scheduler slot instead of requiring an explicit operations parameter."
+      3: "The package exports a free-standing `sleep(durationMs, name?)` primitive that records completion in the journal and replays without waiting again."
+      4: "A `Future` yielded more than once is memoized so its backing work runs once and every yield observes the same result."
+
+  DEFINITIONS:
+    requirements:
+      1: "The package can define service, object, and workflow surfaces with a shared `_kind`, `name`, and handler map shape."
+      2: "The package can expose generator handlers from `service`, `object`, and `workflow` through the existing invocation client."
+      3: "Workflow definitions are modeled as workflow-shaped invocation surfaces over the current journal endpoint until workflow-specific primitives exist."
+
   BENCHMARK:
     requirements:
       1: "The package includes a Vitest benchmark harness modeled on restate-sdk-gen's bench shape."
@@ -27,6 +40,8 @@ components:
     requirements:
       1: "The package includes tutorial examples that track restate-sdk-gen's staged tutorial layout while using Firegrid-shaped use cases."
       2: "Only tutorial tiers backed by implemented fluent-firegrid primitives are executable; unavailable primitives are marked deferred."
+      3: "The tutorial includes a workflow-shaped example using `workflow({ name, handlers })` rather than workflow-only durable promise semantics."
+      4: "The tutorial exposes a deferred-surface registry describing each missing restate-sdk-gen primitive family and the substrate gap."
 
 constraints:
   SUBSTRATE:
