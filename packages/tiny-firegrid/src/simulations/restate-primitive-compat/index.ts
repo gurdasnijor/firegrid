@@ -1,6 +1,11 @@
 import { defineSimulation } from "../../types.ts"
 import { restatePrimitiveCompatDriver } from "./driver.ts"
 
+// No `coverage` spec by design — substrate workbench (`launchHost: false`): no
+// Firegrid host, so the trace carries no host-substrate spans (all are
+// `firegrid.side="driver"`, driving the durable substrate directly). A
+// forge-proof gate has nothing to bind to; the deliverable is the prose finding
+// per the methodology's substrate carve-out. See fluent-runtime-workbench.
 export default defineSimulation({
   id: "restate-primitive-compat",
   description:
