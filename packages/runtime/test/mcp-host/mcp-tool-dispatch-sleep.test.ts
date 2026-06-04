@@ -52,6 +52,8 @@ import {
   RuntimeControlPlaneTable,
   runtimeControlPlaneStreamUrl,
 } from "@firegrid/protocol/launch"
+import { RuntimeContextSessionAdapter } from "../../src/unified/adapter.ts"
+import { RuntimeContextSessionWorkflowLayer } from "../../src/unified/subscribers/runtime-context.ts"
 import { PublicPromptRequestSchema } from "@firegrid/protocol/runtime-ingress"
 import { SessionHandlePromptInputSchema } from "@firegrid/protocol/session-facade"
 import { Effect, Exit, Layer, Option, Ref, Schema } from "effect"
@@ -518,5 +520,74 @@ describe("mcp-host: relay-free MCP-entry sleep dispatch", () => {
         idempotencyKey: "wait-prompt:tu-wait-prompt",
       },
     ])
+  })
+
+  // tf-hzln SPIKE — channel-collapse viability.
+  // session_close is dispatched DIRECT to the durable terminal op
+  // (emitSessionTerminalSignal → RuntimeContextSessionWorkflow), bypassing the
+  // channel router. This composition provides NO HostPlaneChannelRouter and NO
+  // RuntimeChannelRouter — before the direct rewire, session_close went through
+  // hostPlaneDispatch and would fail "session tools require HostPlaneChannelRouter".
+  // It now succeeds AND drives the real terminal body (adapter.deregister),
+  // proving the router was pure indirection for this fixed-target op.
+  it("tf-hzln: session_close dispatches direct to the terminal op — no channel router", async () => {
+    const namespace = `session-close-direct-${crypto.randomUUID()}`
+    const contextId = "ctx-close-direct"
+    const deregistered = await Effect.runPromise(Ref.make<Array<string>>([]))
+    const recordingAdapter = Layer.succeed(RuntimeContextSessionAdapter, {
+      startOrAttach: () => Effect.void,
+      send: () => Effect.void,
+      deregister: (ctx) => Ref.update(deregistered, (current) => [...current, ctx]),
+    })
+    const result = await runWith(
+      streamUrlFor("session-close-direct"),
+      ToolDispatchLive.pipe(
+        Layer.provideMerge(RuntimeContextSessionWorkflowLayer),
+        Layer.provideMerge(recordingAdapter),
+        Layer.provideMerge(contextResolverFromControlPlaneTable),
+        Layer.provideMerge(controlPlaneLayer(namespace)),
+        Layer.provideMerge(currentHostSessionLayer(namespace)),
+      ),
+      Effect.gen(function*() {
+        const control = yield* RuntimeControlPlaneTable
+        const hostSession = yield* CurrentHostSession
+        yield* control.contexts.insertOrGet(
+          makeRuntimeContext({
+            contextId,
+            createdAtMs: 0,
+            runtime: normalizeRuntimeIntent({
+              provider: "local-process",
+              config: {
+                argv: ["node", "agent.js"],
+                agent: "spike-agent",
+                agentProtocol: "acp",
+              },
+            }),
+            host: {
+              hostId: hostSession.hostId,
+              streamPrefix: hostSession.streamPrefix,
+              boundAtMs: 0,
+            },
+          }),
+        )
+        const dispatch = yield* ToolDispatch
+        const output = yield* dispatch.call({
+          contextId,
+          toolUseId: "tu-close-direct",
+          toolName: "session_close",
+          input: { sessionId: contextId, reason: "tf-hzln spike" },
+        }).pipe(
+          Effect.flatMap(Schema.decodeUnknown(AgentToolSchemas.SessionCloseToolOutputSchema)),
+        )
+        // The terminal input is enqueued (discard); the engine runs the body
+        // asynchronously. Settle, then read whether the real terminal handler
+        // drove adapter.deregister.
+        yield* Effect.sleep("3000 millis")
+        const seen = yield* Ref.get(deregistered)
+        return { output, seen }
+      }),
+    )
+    expect(result.output).toEqual({ closed: true, sessionId: contextId })
+    expect(result.seen).toContain(contextId)
   })
 })

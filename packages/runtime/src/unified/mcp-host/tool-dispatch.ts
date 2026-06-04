@@ -46,7 +46,6 @@ import {
   HostSessionsCreateOrLoadChannelTarget,
   HostSessionsStartChannelTarget,
   SessionCancelChannelTarget,
-  SessionCloseChannelTarget,
   SessionPromptChannelTarget,
 } from "@firegrid/protocol/channels"
 import {
@@ -56,6 +55,7 @@ import {
 } from "@firegrid/protocol/launch"
 import { Clock, Context, Duration, Effect, Layer, Option, ParseResult, Ref, Schema, Stream } from "effect"
 import { HostPlaneChannelRouter, RuntimeChannelRouter } from "../../channels/router.ts"
+import { emitSessionTerminalSignal } from "../channel-bindings.ts"
 import { ContextResolverTag } from "../../tables/codec-adapter-tags.ts"
 import { traversePath } from "../../transforms/field-equals.ts"
 import {
@@ -556,22 +556,37 @@ const runSessionCancel = (
     } satisfies AgentToolSchemas.SessionCancelToolOutput),
   )
 
+// tf-hzln SPIKE — DIRECT path: the MCP tool handler invokes the durable
+// terminal-signal op (`emitSessionTerminalSignal`) directly, bypassing
+// RuntimeChannelRouter/HostPlaneChannelRouter, the `SessionCloseChannel` Tag +
+// `SessionCloseChannelSignalingLive`, and `makeDurableEventChannel`. The router
+// for this FIXED-target op was pure indirection: name→route resolution is
+// unneeded (the target is statically known), verb-gating is trivial (one verb),
+// and payload decode already happened at the MCP dispatch boundary
+// (`dispatchArm` → `decodeJson(SessionCloseToolInputSchema)`). The durable
+// execution (RuntimeContextSessionWorkflow terminal input) is unchanged.
 const runSessionClose = (
   toolUseId: string,
   input: AgentToolSchemas.SessionCloseToolInput,
-): Effect.Effect<AgentToolSchemas.SessionCloseToolOutput, ToolError> =>
-  hostPlaneDispatch(
-    toolUseId,
-    "session_close",
-    String(SessionCloseChannelTarget),
-    "call",
-    input,
-  ).pipe(
-    Effect.as({
+): Effect.Effect<AgentToolSchemas.SessionCloseToolOutput, ToolError, WorkflowEngine.WorkflowEngine> =>
+  Effect.gen(function*() {
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    yield* emitSessionTerminalSignal({
+      engine,
+      contextId: input.sessionId,
+      idempotencyKey: `session.close:${input.sessionId}`,
+      payloadJson: JSON.stringify({
+        operation: "close",
+        ...(input.reason === undefined ? {} : { reason: input.reason }),
+      }),
+    }).pipe(
+      Effect.mapError(cause => toolExecutionFailed(toolUseId, "session_close", cause)),
+    )
+    return {
       closed: true,
       sessionId: input.sessionId,
-    } satisfies AgentToolSchemas.SessionCloseToolOutput),
-  )
+    } satisfies AgentToolSchemas.SessionCloseToolOutput
+  })
 
 /**
  * Lower a `(toolName, inputJson)` invocation to a typed arm, decode its
@@ -586,7 +601,7 @@ const dispatchArm = (
   toolName: string,
   toolUseId: string,
   inputJson: string,
-): Effect.Effect<string, ToolError> => {
+): Effect.Effect<string, ToolError, WorkflowEngine.WorkflowEngine> => {
   switch (toolName) {
     case "sleep":
       return decodeJson(AgentToolSchemas.SleepToolInputSchema)(inputJson).pipe(
@@ -699,7 +714,7 @@ export interface FiregridAgentToolExecutor {
   /** Run the lowering for `payload`, returning the JSON-encoded tool output. */
   readonly execute: (
     payload: ToolDispatchPayload,
-  ) => Effect.Effect<string, ToolError>
+  ) => Effect.Effect<string, ToolError, WorkflowEngine.WorkflowEngine>
 }
 
 /**
