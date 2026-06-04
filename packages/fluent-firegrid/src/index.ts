@@ -22,14 +22,23 @@ const StepFailedEventSchema = Schema.Struct({
   cause: Schema.optional(Schema.Unknown),
 })
 
+const SleepCompletedEventSchema = Schema.Struct({
+  type: Schema.Literal("SleepCompleted"),
+  sleepKey: Schema.String,
+  name: Schema.String,
+  durationMs: Schema.Number,
+})
+
 const JournalEventSchema = Schema.Union(
   StepSucceededEventSchema,
   StepFailedEventSchema,
+  SleepCompletedEventSchema,
 )
 
 type JournalEvent = Schema.Schema.Type<typeof JournalEventSchema>
 type StepSucceededEvent = Schema.Schema.Type<typeof StepSucceededEventSchema>
 type StepFailedEvent = Schema.Schema.Type<typeof StepFailedEventSchema>
+type SleepCompletedEvent = Schema.Schema.Type<typeof SleepCompletedEventSchema>
 type JournalRequirements =
   ReturnType<DurableStream.Bound<JournalEvent, JournalEvent>["append"]> extends
     Effect.Effect<unknown, unknown, infer Requirements> ? Requirements : never
@@ -75,16 +84,32 @@ const isPrimitiveOperation = (
 
 export class Future<T> implements Operation<T> {
   private readonly leaf: PrimitiveOperation<T>
+  private memo: { readonly value: T } | undefined
+  readonly effect: Effect.Effect<T, FluentFiregridError, JournalRequirements>
 
   constructor(
-    readonly effect: Effect.Effect<T, FluentFiregridError, JournalRequirements>,
+    backing: Effect.Effect<T, FluentFiregridError, JournalRequirements>,
   ) {
     this.leaf = makePrimitive({ _tag: "Leaf", future: this })
+    this.effect = Effect.suspend(() => {
+      if (this.memo !== undefined) return Effect.succeed(this.memo.value)
+      return backing.pipe(
+        Effect.tap((value) =>
+          Effect.sync(() => {
+            this.memo = { value }
+          }),
+        ),
+      )
+    })
   }
 
   [Symbol.iterator](): Iterator<unknown, T, unknown> {
     return this.leaf[Symbol.iterator]()
   }
+}
+
+export type FutureValues<T extends readonly Future<unknown>[] | []> = {
+  -readonly [P in keyof T]: T[P] extends Future<infer Value> ? Value : never
 }
 
 // fluent-firegrid-keystone.DURABLE_RUN.1
@@ -96,20 +121,60 @@ export interface RunOptions {
   readonly name?: string
 }
 
+export type SleepDuration = number
+
 export type Handler<Input, Output> = (
   ctx: ExecutionContext,
   input: Input,
 ) => Effect.Effect<Output, unknown, JournalRequirements>
 
 type AnyHandler = Handler<never, unknown>
+type AnyOperationHandler = (input: never) => Operation<unknown>
+type HandlerEntry = AnyHandler | AnyOperationHandler
 
-export interface ServiceDefinition<
+type HandlerEntryInput<Entry> =
+  Entry extends Handler<infer Input, unknown> ? Input
+    : Entry extends (input: infer Input) => Operation<unknown> ? Input
+    : never
+
+type HandlerEntryOutput<Entry> =
+  Entry extends Handler<never, infer Output> ? Output
+    : Entry extends (input: never) => Operation<infer Output> ? Output
+    : never
+
+type NormalizeHandlers<Entries extends Record<string, HandlerEntry>> = {
+  readonly [Key in keyof Entries]: Handler<
+    HandlerEntryInput<Entries[Key]>,
+    HandlerEntryOutput<Entries[Key]>
+  >
+}
+
+export type DefinitionKind = "service" | "object" | "workflow"
+
+export interface Definition<
   Name extends string,
+  Kind extends DefinitionKind,
   Handlers extends Record<string, AnyHandler>,
 > {
   readonly name: Name
+  readonly _kind: Kind
   readonly handlers: Handlers
 }
+
+export type ServiceDefinition<
+  Name extends string,
+  Handlers extends Record<string, AnyHandler>,
+> = Definition<Name, "service", Handlers>
+
+export type ObjectDefinition<
+  Name extends string,
+  Handlers extends Record<string, AnyHandler>,
+> = Definition<Name, "object", Handlers>
+
+export type WorkflowDefinition<
+  Name extends string,
+  Handlers extends Record<string, AnyHandler>,
+> = Definition<Name, "workflow", Handlers>
 
 type InputOf<H> = H extends Handler<infer Input, unknown> ? Input : never
 type OutputOf<H> = H extends Handler<never, infer Output> ? Output : never
@@ -131,6 +196,12 @@ const isStepFailed = (
   stepKey: string,
 ): event is StepFailedEvent =>
   event.type === "StepFailed" && event.stepKey === stepKey
+
+const isSleepCompleted = (
+  event: JournalEvent,
+  sleepKey: string,
+): event is SleepCompletedEvent =>
+  event.type === "SleepCompleted" && event.sleepKey === sleepKey
 
 const effectFromStep = <T>(
   action: RunAction<T>,
@@ -204,6 +275,67 @@ class Scheduler {
       }),
     )
   }
+
+  sleep(durationMs: SleepDuration, name = "sleep"): Future<void> {
+    // fluent-firegrid-keystone.FREE.3
+    const sleepKey = `${this.nextStepIndex}:${name}`
+    this.nextStepIndex += 1
+
+    return new Future(
+      Effect.gen(this, function* () {
+        const completed = this.events.find((event) => isSleepCompleted(event, sleepKey))
+        if (completed !== undefined) return
+
+        yield* Effect.sleep(durationMs)
+        yield* this.stream.append({
+          type: "SleepCompleted",
+          sleepKey,
+          name,
+          durationMs,
+        }).pipe(
+          Effect.mapError((cause) =>
+            new FluentFiregridError({
+              message: `Failed to append sleep event for ${sleepKey}`,
+              cause,
+            }),
+          ),
+        )
+      }),
+    )
+  }
+
+  all<const T extends readonly Future<unknown>[] | []>(
+    futures: T,
+  ): Future<FutureValues<T>> {
+    // fluent-firegrid-keystone.FREE.1
+    return new Future(
+      Effect.gen(function* () {
+        const unique: Array<Future<unknown>> = []
+        const positions = new Map<Future<unknown>, number>()
+        const resultPositions = new Array<number>(futures.length)
+
+        for (let index = 0; index < futures.length; index += 1) {
+          const future = futures[index]
+          if (future === undefined) continue
+          const knownPosition = positions.get(future)
+          if (knownPosition !== undefined) {
+            resultPositions[index] = knownPosition
+            continue
+          }
+          const position = unique.length
+          positions.set(future, position)
+          resultPositions[index] = position
+          unique.push(future)
+        }
+
+        const uniqueResults = yield* Effect.all(
+          unique.map((future) => future.effect),
+          { concurrency: "unbounded" },
+        )
+        return resultPositions.map((position) => uniqueResults[position]) as FutureValues<T>
+      }),
+    )
+  }
 }
 
 // sdk-gen-style synchronous current-fiber slot; not durable replay state.
@@ -242,6 +374,32 @@ export const run = <T>(
   return scheduler.run(action, options)
 }
 
+export const all = <const T extends readonly Future<unknown>[] | []>(
+  futures: T,
+): Future<FutureValues<T>> => {
+  // fluent-firegrid-keystone.FREE.2
+  const scheduler = currentScheduler
+  if (scheduler === undefined) {
+    throw new FluentFiregridError({
+      message: "all() must be called inside execute(ctx, gen(...))",
+    })
+  }
+  return scheduler.all(futures)
+}
+
+export const sleep = (
+  durationMs: SleepDuration,
+  name?: string,
+): Future<void> => {
+  const scheduler = currentScheduler
+  if (scheduler === undefined) {
+    throw new FluentFiregridError({
+      message: "sleep() must be called inside execute(ctx, gen(...))",
+    })
+  }
+  return scheduler.sleep(durationMs, name)
+}
+
 export const execute = <T>(
   ctx: ExecutionContext,
   operation: Operation<T>,
@@ -277,21 +435,72 @@ export const execute = <T>(
     }
   })
 
+const isExecutionHandler = (entry: HandlerEntry): entry is AnyHandler =>
+  entry.length >= 2
+
+const normalizeHandlers = <const Entries extends Record<string, HandlerEntry>>(
+  entries: Entries,
+): NormalizeHandlers<Entries> => {
+  const normalized: Record<string, AnyHandler> = {}
+  const keys = Object.keys(entries)
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]
+    if (key === undefined) continue
+    const entry = entries[key]
+    if (entry === undefined) continue
+    normalized[key] = ((ctx: ExecutionContext, input: never) => {
+      if (isExecutionHandler(entry)) return entry(ctx, input)
+      return execute(ctx, entry(input))
+    })
+  }
+  return normalized as NormalizeHandlers<Entries>
+}
+
 // fluent-firegrid-keystone.PACKAGE.2
 export const service = <
   const Name extends string,
-  const Handlers extends Record<string, AnyHandler>,
+  const Handlers extends Record<string, HandlerEntry>,
 >(definition: {
   readonly name: Name
   readonly handlers: Handlers
-}): ServiceDefinition<Name, Handlers> => definition
+}): ServiceDefinition<Name, NormalizeHandlers<Handlers>> => ({
+  name: definition.name,
+  _kind: "service",
+  handlers: normalizeHandlers(definition.handlers),
+})
+
+export const object = <
+  const Name extends string,
+  const Handlers extends Record<string, HandlerEntry>,
+>(definition: {
+  readonly name: Name
+  readonly handlers: Handlers
+}): ObjectDefinition<Name, NormalizeHandlers<Handlers>> => ({
+  name: definition.name,
+  _kind: "object",
+  handlers: normalizeHandlers(definition.handlers),
+})
+
+export const workflow = <
+  const Name extends string,
+  const Handlers extends Record<string, HandlerEntry>,
+>(definition: {
+  readonly name: Name
+  readonly handlers: Handlers
+}): WorkflowDefinition<Name, NormalizeHandlers<Handlers>> => ({
+  // fluent-firegrid-keystone.DEFINITIONS.3
+  name: definition.name,
+  _kind: "workflow",
+  handlers: normalizeHandlers(definition.handlers),
+})
 
 export const invoke = <
   Name extends string,
+  Kind extends DefinitionKind,
   Handlers extends Record<string, AnyHandler>,
   Key extends keyof Handlers,
 >(
-  definition: ServiceDefinition<Name, Handlers>,
+  definition: Definition<Name, Kind, Handlers>,
   handlerName: Key,
   input: InputOf<Handlers[Key]>,
   ctx: ExecutionContext,
@@ -312,9 +521,10 @@ export const invoke = <
 
 export const client = <
   Name extends string,
+  Kind extends DefinitionKind,
   Handlers extends Record<string, AnyHandler>,
 >(
-  definition: ServiceDefinition<Name, Handlers>,
+  definition: Definition<Name, Kind, Handlers>,
   ctx: ExecutionContext,
 ): ServiceClient<Handlers> =>
   new Proxy({}, {
