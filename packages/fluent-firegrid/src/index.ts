@@ -1,4 +1,5 @@
 // fluent-firegrid-keystone.ENGINE.1
+export type { Awaitable } from "./awaitable.ts"
 export { FluentFiregridError } from "./error.ts"
 export { execute } from "./execute.ts"
 export { Future } from "./future.ts"

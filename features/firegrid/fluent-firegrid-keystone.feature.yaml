@@ -45,6 +45,7 @@ components:
     requirements:
       1: "The package includes a Vitest benchmark harness modeled on restate-sdk-gen's bench shape."
       2: "The benchmark harness measures baseline awaits, first-run append, and replay for sequential `run` workloads at 10, 100, and 1000 steps."
+      3: "The benchmark harness measures public free primitive composition for `all`, `race`, and `spawn` at 10, 100, and 1000 Futures to catch unexpected scheduler amplification."
 
   EXAMPLES:
     requirements:
@@ -58,6 +59,12 @@ components:
       1: "The package separates the Operation/Future engine into focused source modules instead of keeping the implementation in one monolithic entrypoint."
       2: "The scheduler implementation lives in its own module and remains the single owner of generator driving, combinator dispatch, and current operation execution."
       3: "The synchronous active scheduler slot lives in its own module and is only set for the synchronous generator advance span."
+
+  AWAITABLE:
+    requirements:
+      1: "The package defines an `Awaitable<T>` seam for the substrate work that backs journal Futures."
+      2: "`Future<T>` wraps an `Awaitable<T>` instead of directly owning a raw Effect."
+      3: "Durable journal replay and append logic lives in operation producer code, not in the scheduler module."
 
 constraints:
   SUBSTRATE:

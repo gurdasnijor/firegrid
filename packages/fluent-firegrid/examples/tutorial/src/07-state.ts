@@ -1,4 +1,5 @@
 import {
+  execute,
   gen,
   object,
   sharedState,
@@ -14,30 +15,39 @@ export const incidentCounter = object({
   name: "incidentCounter",
   handlers: {
     // fluent-firegrid-keystone.EXAMPLES.1
-    current: (_: void) =>
-      gen(function* () {
-        return (yield* sharedState<IncidentCounterState>().get("escalations")) ?? 0
-      }),
+    current: (ctx, _: void) =>
+      execute(
+        ctx,
+        gen(function* () {
+          return (yield* sharedState<IncidentCounterState>().get("escalations")) ?? 0
+        }),
+      ),
 
     // fluent-firegrid-keystone.EXAMPLES.1
-    recordEscalation: (signal: string) =>
-      gen(function* () {
-        const s = state<IncidentCounterState>()
-        const current = (yield* s.get("escalations")) ?? 0
-        const next = current + 1
-        s.set("escalations", next)
-        s.set("lastSignal", signal)
-        return {
-          escalations: next,
-          lastSignal: signal,
-        }
-      }),
+    recordEscalation: (ctx, signal: string) =>
+      execute(
+        ctx,
+        gen(function* () {
+          const s = state<IncidentCounterState>()
+          const current = (yield* s.get("escalations")) ?? 0
+          const next = current + 1
+          s.set("escalations", next)
+          s.set("lastSignal", signal)
+          return {
+            escalations: next,
+            lastSignal: signal,
+          }
+        }),
+      ),
 
     // fluent-firegrid-keystone.EXAMPLES.1
-    reset: (_: void) =>
-      gen(function* () {
-        state<IncidentCounterState>().clearAll()
-      }),
+    reset: (ctx, _: void) =>
+      execute(
+        ctx,
+        gen(function* () {
+          state<IncidentCounterState>().clearAll()
+        }),
+      ),
   },
 })
 
