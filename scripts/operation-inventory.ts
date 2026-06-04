@@ -23,7 +23,8 @@
  * protocol modules) and read the returned `Option` shape structurally so the
  * tool can run from the repo root, where `effect` is not hoisted.
  *
- * Run:  pnpm inventory:operations      (writes docs/findings/tf-7whh-*.{json,md})
+ * Run:  pnpm inventory:operations      (writes docs/findings/tf-7whh-*.{json,md}
+ *        — git-ignored; regenerate on demand, do not commit)
  */
 import * as fs from "node:fs"
 import * as path from "node:path"
