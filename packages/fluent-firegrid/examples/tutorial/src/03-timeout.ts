@@ -1,4 +1,5 @@
 import {
+  execute,
   gen,
   run,
   select,
@@ -11,22 +12,25 @@ export const incidentTimeout = service({
   name: "incidentTimeout",
   handlers: {
     // fluent-firegrid-keystone.EXAMPLES.1
-    boundedLookup: (request: {
+    boundedLookup: (ctx, request: {
       readonly incidentId: string
       readonly workMs: number
       readonly budgetMs: number
     }) =>
-      gen(function* () {
-        const selected = yield* select({
-          done: run(
-            () => delayedValue(request.workMs, `lookup:${request.incidentId}`),
-            { name: "lookup" },
-          ),
-          timeout: sleep(request.budgetMs, "lookup-budget"),
-        })
-        if (selected.tag === "timeout") return `timeout:${request.incidentId}`
-        return yield* selected.future
-      }),
+      execute(
+        ctx,
+        gen(function* () {
+          const selected = yield* select({
+            done: run(
+              () => delayedValue(request.workMs, `lookup:${request.incidentId}`),
+              { name: "lookup" },
+            ),
+            timeout: sleep(request.budgetMs, "lookup-budget"),
+          })
+          if (selected.tag === "timeout") return `timeout:${request.incidentId}`
+          return yield* selected.future
+        }),
+      ),
   },
 })
 

@@ -1,4 +1,5 @@
 import {
+  execute,
   gen,
   run,
   workflow,
@@ -14,25 +15,31 @@ export const remediationWorkflow = workflow({
   name: "remediationWorkflow",
   handlers: {
     // fluent-firegrid-keystone.EXAMPLES.3
-    run: (input: IncidentInput) =>
-      gen(function* () {
-        const plan = yield* run(() => draftPatchPlan(input, {
-          route: "coordinator",
-          severity: "high",
-        }), { name: "draft-remediation-plan" })
-        const remediationId = yield* run(() => openRemediation(input, plan), {
-          name: "open-remediation",
-        })
-        return yield* run(() => notifyCoordinator(remediationId), {
-          name: "notify-coordinator",
-        })
-      }),
-    status: (id: string) =>
-      gen(function* () {
-        return yield* run(() => `workflow:${id}:status:modeled`, {
-          name: "workflow-status",
-        })
-      }),
+    run: (ctx, input: IncidentInput) =>
+      execute(
+        ctx,
+        gen(function* () {
+          const plan = yield* run(() => draftPatchPlan(input, {
+            route: "coordinator",
+            severity: "high",
+          }), { name: "draft-remediation-plan" })
+          const remediationId = yield* run(() => openRemediation(input, plan), {
+            name: "open-remediation",
+          })
+          return yield* run(() => notifyCoordinator(remediationId), {
+            name: "notify-coordinator",
+          })
+        }),
+      ),
+    status: (ctx, id: string) =>
+      execute(
+        ctx,
+        gen(function* () {
+          return yield* run(() => `workflow:${id}:status:modeled`, {
+            name: "workflow-status",
+          })
+        }),
+      ),
   },
 })
 
