@@ -15,11 +15,6 @@ export const deferredSurface = [
     missing: "durable cancellation events and AbortSignal fanout",
   },
   {
-    family: "state",
-    tutorialTier: "07-state",
-    missing: "state/sharedState log fold and keyed workflow/object routing",
-  },
-  {
     family: "clients",
     tutorialTier: "08-clients",
     missing: "typed service/object/workflow call and send descriptors",

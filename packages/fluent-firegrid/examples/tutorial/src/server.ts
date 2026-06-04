@@ -4,7 +4,7 @@ import { incidentTimeout, timeoutTutorial } from "./03-timeout.ts"
 import { retryTutorial } from "./04-retry.ts"
 import { sagaTutorial } from "./05-saga.ts"
 import { cancelTutorial } from "./06-cancel.ts"
-import { stateTutorial } from "./07-state.ts"
+import { incidentCounter, stateTutorial } from "./07-state.ts"
 import { clientsTutorial } from "./08-clients.ts"
 import { remediationWorkflow, workflowTutorial } from "./09-workflows.ts"
 import { interfacesTutorial } from "./10-ifaces.ts"
@@ -15,6 +15,7 @@ export const services = [
   incidentReview,
   incidentFanout,
   incidentTimeout,
+  incidentCounter,
   remediationWorkflow,
 ] as const
 

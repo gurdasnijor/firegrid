@@ -36,6 +36,21 @@ const RaceCompletedEventSchema = Schema.Struct({
   winnerIndex: Schema.Number,
 })
 
+const StateSetEventSchema = Schema.Struct({
+  type: Schema.Literal("StateSet"),
+  name: Schema.String,
+  value: Schema.Unknown,
+})
+
+const StateClearedEventSchema = Schema.Struct({
+  type: Schema.Literal("StateCleared"),
+  name: Schema.String,
+})
+
+const StateClearedAllEventSchema = Schema.Struct({
+  type: Schema.Literal("StateClearedAll"),
+})
+
 const JournalEventSchema = Schema.Union(
   StepSucceededEventSchema,
   StepFailedEventSchema,
@@ -43,18 +58,38 @@ const JournalEventSchema = Schema.Union(
   RaceCompletedEventSchema,
 )
 
+const StateEventSchema = Schema.Union(
+  StateSetEventSchema,
+  StateClearedEventSchema,
+  StateClearedAllEventSchema,
+)
+
 type JournalEvent = Schema.Schema.Type<typeof JournalEventSchema>
+type StateEvent = Schema.Schema.Type<typeof StateEventSchema>
 type StepSucceededEvent = Schema.Schema.Type<typeof StepSucceededEventSchema>
 type StepFailedEvent = Schema.Schema.Type<typeof StepFailedEventSchema>
 type SleepCompletedEvent = Schema.Schema.Type<typeof SleepCompletedEventSchema>
 type RaceCompletedEvent = Schema.Schema.Type<typeof RaceCompletedEventSchema>
-type JournalRequirements =
-  ReturnType<DurableStream.Bound<JournalEvent, JournalEvent>["append"]> extends
+type StreamRequirements<Event> =
+  ReturnType<DurableStream.Bound<Event, Event>["append"]> extends
     Effect.Effect<unknown, unknown, infer Requirements> ? Requirements : never
+type JournalRequirements = StreamRequirements<JournalEvent>
+type FluentRequirements = JournalRequirements
+type StateStream = DurableStream.Bound<StateEvent, StateEvent>
+type JournalStream = DurableStream.Bound<JournalEvent, JournalEvent>
+
+interface StateRuntime {
+  readonly stream: StateStream
+  readonly values: Map<string, unknown>
+  readonly pending: Array<StateEvent>
+}
 
 export interface ExecutionContext {
   // fluent-firegrid-keystone.PACKAGE.3
   readonly journal: {
+    readonly endpoint: Endpoint
+  }
+  readonly state?: {
     readonly endpoint: Endpoint
   }
 }
@@ -97,10 +132,10 @@ export class Future<T> implements Operation<T> {
     | { readonly _tag: "Success"; readonly value: T }
     | { readonly _tag: "Failure"; readonly error: FluentFiregridError }
     | undefined
-  readonly effect: Effect.Effect<T, FluentFiregridError, JournalRequirements>
+  readonly effect: Effect.Effect<T, FluentFiregridError, FluentRequirements>
 
   constructor(
-    backing: Effect.Effect<T, FluentFiregridError, JournalRequirements>,
+    backing: Effect.Effect<T, FluentFiregridError, FluentRequirements>,
   ) {
     this.leaf = makePrimitive({ _tag: "Leaf", future: this })
     this.effect = Effect.suspend(() => {
@@ -146,6 +181,32 @@ export type SelectResult<Branches extends SelectBranches> = {
   }
 }[keyof Branches]
 
+export type TypedState = Record<string, unknown>
+export type UntypedState = { readonly _: never }
+
+export interface SharedState<TState extends TypedState = UntypedState> {
+  get<TValue, TKey extends keyof TState = string>(
+    name: TState extends UntypedState ? string : TKey,
+  ): Future<(TState extends UntypedState ? TValue : TState[TKey]) | null>
+
+  keys(): Future<Array<string>>
+}
+
+export interface State<TState extends TypedState = UntypedState>
+  extends SharedState<TState>
+{
+  set<TValue, TKey extends keyof TState = string>(
+    name: TState extends UntypedState ? string : TKey,
+    value: TState extends UntypedState ? TValue : TState[TKey],
+  ): void
+
+  clear<TKey extends keyof TState>(
+    name: TState extends UntypedState ? string : TKey,
+  ): void
+
+  clearAll(): void
+}
+
 // fluent-firegrid-keystone.DURABLE_RUN.1
 export type RunAction<T> = (
   options: { readonly signal: AbortSignal },
@@ -160,7 +221,7 @@ export type SleepDuration = number
 export type Handler<Input, Output> = (
   ctx: ExecutionContext,
   input: Input,
-) => Effect.Effect<Output, unknown, JournalRequirements>
+) => Effect.Effect<Output, unknown, FluentRequirements>
 
 type AnyHandler = Handler<never, unknown>
 type AnyOperationHandler = (input: never) => Operation<unknown>
@@ -216,7 +277,7 @@ type OutputOf<H> = H extends Handler<never, infer Output> ? Output : never
 type ServiceClient<Handlers extends Record<string, AnyHandler>> = {
   readonly [Key in keyof Handlers]: (
     input: InputOf<Handlers[Key]>,
-  ) => Effect.Effect<OutputOf<Handlers[Key]>, unknown, JournalRequirements>
+  ) => Effect.Effect<OutputOf<Handlers[Key]>, unknown, FluentRequirements>
 }
 
 const isStepSucceeded = (
@@ -269,7 +330,7 @@ const toFluentError = (cause: unknown, message: string): FluentFiregridError =>
 
 const toSettled = <T>(
   future: Future<T>,
-): Effect.Effect<FutureSettledResult<T>, never, JournalRequirements> =>
+): Effect.Effect<FutureSettledResult<T>, never, FluentRequirements> =>
   Effect.match(future.effect, {
     onFailure: (reason): FutureSettledResult<T> => ({
       status: "rejected",
@@ -294,12 +355,38 @@ type IndexedSettled = {
   readonly result: FutureSettledResult<unknown>
 }
 
+const foldStateEvents = (
+  events: ReadonlyArray<StateEvent>,
+): Map<string, unknown> => {
+  const values = new Map<string, unknown>()
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index]
+    if (event === undefined) continue
+    switch (event.type) {
+      case "StateSet": {
+        values.set(event.name, event.value)
+        break
+      }
+      case "StateCleared": {
+        values.delete(event.name)
+        break
+      }
+      case "StateClearedAll": {
+        values.clear()
+        break
+      }
+    }
+  }
+  return values
+}
+
 class Scheduler {
   private nextStepIndex = 0
 
   constructor(
-    private readonly stream: DurableStream.Bound<JournalEvent, JournalEvent>,
+    private readonly stream: JournalStream,
     private readonly events: ReadonlyArray<JournalEvent>,
+    private readonly stateRuntime?: StateRuntime,
   ) {}
 
   run<T>(action: RunAction<T>, options: RunOptions = {}): Future<T> {
@@ -408,6 +495,37 @@ class Scheduler {
         return resultPositions.map((position) => uniqueResults[position]) as FutureValues<T>
       }),
     )
+  }
+
+  state<TState extends TypedState = UntypedState>(): State<TState> {
+    // fluent-firegrid-keystone.STATE.1
+    const impl: State<TState> = {
+      get: <TValue, TKey extends keyof TState = string>(
+        name: TState extends UntypedState ? string : TKey,
+      ): Future<(TState extends UntypedState ? TValue : TState[TKey]) | null> =>
+        this.getStateValue(name as string),
+      keys: (): Future<Array<string>> => this.getStateKeys(),
+      set: <TValue, TKey extends keyof TState = string>(
+        name: TState extends UntypedState ? string : TKey,
+        value: TState extends UntypedState ? TValue : TState[TKey],
+      ): void => {
+        this.appendStateEvent({ type: "StateSet", name: name as string, value })
+      },
+      clear: <TKey extends keyof TState>(
+        name: TState extends UntypedState ? string : TKey,
+      ): void => {
+        this.appendStateEvent({ type: "StateCleared", name: name as string })
+      },
+      clearAll: (): void => {
+        this.appendStateEvent({ type: "StateClearedAll" })
+      },
+    }
+    return impl
+  }
+
+  sharedState<TState extends TypedState = UntypedState>(): SharedState<TState> {
+    // fluent-firegrid-keystone.STATE.4
+    return this.state<TState>()
   }
 
   race<const T extends readonly [Future<unknown>, ...Array<Future<unknown>>]>(
@@ -530,7 +648,7 @@ class Scheduler {
     return new Future(this.drive(operation))
   }
 
-  drive<T>(operation: Operation<T>): Effect.Effect<T, FluentFiregridError, JournalRequirements> {
+  drive<T>(operation: Operation<T>): Effect.Effect<T, FluentFiregridError, FluentRequirements> {
     return Effect.gen(this, function* () {
       const iterator = operation[Symbol.iterator]()
       let resume: unknown = undefined
@@ -552,6 +670,7 @@ class Scheduler {
             toFluentError(cause, "Operation failed while advancing generator"),
           ),
         )
+        yield* this.flushPendingState()
         if (next.done === true) return next.value
         if (!isPrimitiveOperation(next.value)) {
           return yield* new FluentFiregridError({
@@ -626,6 +745,90 @@ class Scheduler {
       }),
     )
   }
+
+  private getStateValue<T>(name: string): Future<T | null> {
+    // fluent-firegrid-keystone.STATE.2
+    return new Future(
+      Effect.suspend(() => {
+        const runtime = this.stateRuntime
+        if (runtime === undefined) {
+          return Effect.fail(new FluentFiregridError({
+            message: "state() requires execute(ctx, op) to provide state substrate",
+          }))
+        }
+        return Effect.succeed(
+          runtime.values.has(name) ? runtime.values.get(name) as T : null,
+        )
+      }),
+    )
+  }
+
+  private getStateKeys(): Future<Array<string>> {
+    // fluent-firegrid-keystone.STATE.2
+    return new Future(
+      Effect.suspend(() => {
+        const runtime = this.stateRuntime
+        if (runtime === undefined) {
+          return Effect.fail(new FluentFiregridError({
+            message: "state().keys() requires execute(ctx, op) to provide state substrate",
+          }))
+        }
+        return Effect.succeed(Array.from(runtime.values.keys()))
+      }),
+    )
+  }
+
+  private appendStateEvent(event: StateEvent): void {
+    // fluent-firegrid-keystone.STATE.3
+    const runtime = this.stateRuntime
+    if (runtime === undefined) {
+      throw new FluentFiregridError({
+        message: "state() requires execute(ctx, op) to provide state substrate",
+      })
+    }
+    switch (event.type) {
+      case "StateSet": {
+        runtime.values.set(event.name, event.value)
+        break
+      }
+      case "StateCleared": {
+        runtime.values.delete(event.name)
+        break
+      }
+      case "StateClearedAll": {
+        runtime.values.clear()
+        break
+      }
+    }
+    runtime.pending.push(event)
+  }
+
+  private flushPendingState(): Effect.Effect<void, FluentFiregridError, FluentRequirements> {
+    const runtime = this.stateRuntime
+    if (runtime === undefined || runtime.pending.length === 0) {
+      return Effect.void
+    }
+    const events = runtime.pending.slice()
+    return Effect.all(
+      events.map((event) =>
+        runtime.stream.append(event).pipe(
+          Effect.mapError((cause) =>
+            new FluentFiregridError({
+              message: "Failed to append state event",
+              cause,
+            }),
+          ),
+        ),
+      ),
+      { concurrency: 1, discard: true },
+    ).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          runtime.pending.splice(0, events.length)
+        }),
+      ),
+    )
+  }
 }
 
 // sdk-gen-style synchronous current-fiber slot; not durable replay state.
@@ -675,6 +878,30 @@ export const all = <const T extends readonly Future<unknown>[] | []>(
     })
   }
   return scheduler.all(futures)
+}
+
+export const state = <
+  TState extends TypedState = UntypedState,
+>(): State<TState> => {
+  const scheduler = currentScheduler
+  if (scheduler === undefined) {
+    throw new FluentFiregridError({
+      message: "state() must be called inside execute(ctx, gen(...))",
+    })
+  }
+  return scheduler.state<TState>()
+}
+
+export const sharedState = <
+  TState extends TypedState = UntypedState,
+>(): SharedState<TState> => {
+  const scheduler = currentScheduler
+  if (scheduler === undefined) {
+    throw new FluentFiregridError({
+      message: "sharedState() must be called inside execute(ctx, gen(...))",
+    })
+  }
+  return scheduler.sharedState<TState>()
 }
 
 export const race = <const T extends readonly [Future<unknown>, ...Array<Future<unknown>>]>(
@@ -751,7 +978,7 @@ export const sleep = (
 export const execute = <T>(
   ctx: ExecutionContext,
   operation: Operation<T>,
-): Effect.Effect<T, unknown, JournalRequirements> =>
+): Effect.Effect<T, unknown, FluentRequirements> =>
   Effect.gen(function* () {
     // fluent-firegrid-keystone.SUBSTRATE.2
     const journal = DurableStream.define({
@@ -760,7 +987,23 @@ export const execute = <T>(
     })
     yield* journal.create({ contentType: "application/json" })
     const events = yield* journal.collect
-    const scheduler = new Scheduler(journal, events)
+    const state = ctx.state
+    const stateRuntime = state === undefined
+      ? undefined
+      : yield* Effect.gen(function* () {
+        const stream = DurableStream.define({
+          endpoint: state.endpoint,
+          schema: StateEventSchema,
+        })
+        yield* stream.create({ contentType: "application/json" })
+        const stateEvents = yield* stream.collect
+        return {
+          stream,
+          values: foldStateEvents(stateEvents),
+          pending: [],
+        } satisfies StateRuntime
+      })
+    const scheduler = new Scheduler(journal, events, stateRuntime)
     return yield* scheduler.drive(operation)
   })
 
@@ -833,7 +1076,7 @@ export const invoke = <
   handlerName: Key,
   input: InputOf<Handlers[Key]>,
   ctx: ExecutionContext,
-): Effect.Effect<OutputOf<Handlers[Key]>, unknown, JournalRequirements> =>
+): Effect.Effect<OutputOf<Handlers[Key]>, unknown, FluentRequirements> =>
   Effect.gen(function* () {
     const handler = definition.handlers[handlerName]
     if (handler === undefined) {
