@@ -1,0 +1,39 @@
+feature:
+  name: fluent-runtime-workbench
+  product: firegrid
+  description: Prove the first managed-agent runtime substrate slice over Effect and Durable Streams without the legacy runtime package.
+
+components:
+  PACKAGE:
+    requirements:
+      1: "`@firegrid/fluent-runtime` is a workspace package that does not import `@firegrid/runtime`, `@firegrid/protocol`, `@effect/workflow`, `effect-durable-operators`, or DurableTable."
+      2: "The package exports domain-first modules for managed-agent sessions and turns rather than generic workflow invocations."
+
+  DOMAIN:
+    requirements:
+      1: "The package defines session and turn event schemas with Effect Schema."
+      2: "A session event stream is the durable conversation log for managed-agent lifecycle events."
+      3: "A turn event stream is the durable prompt/turn log and its terminal state is stream closure."
+
+  STORE:
+    requirements:
+      1: "The package exposes an Effect Context service for creating sessions and appending session events."
+      2: "The package exposes an Effect Context service for starting turns and atomically completing a turn by append-and-close."
+      3: "Reading a turn returns both decoded events and the Durable Streams `streamClosed` head flag so callers do not treat `Stream-Up-To-Date` as terminal."
+      4: "The package can attempt a substrate fork for child sessions using Durable Streams fork headers without inventing child-session rows."
+
+  INGRESS:
+    requirements:
+      1: "The package defines an Effect HttpApi control-plane contract for session creation, event URL lookup, prompt submission, and turn lookup."
+      2: "The control-plane responses return Durable Streams URLs for long-running observation instead of projecting observation through bespoke async task endpoints."
+
+  SIM:
+    requirements:
+      1: "A tiny-firegrid launchHost:false simulation exercises the fluent-runtime store against the embedded Durable Streams server."
+      2: "The simulation emits trace spans for session creation, turn append-and-close, turn closed read-back, and fork support probing."
+
+constraints:
+  SUBSTRATE:
+    requirements:
+      1: "The first slice is limited to Effect, @effect/platform, effect-durable-streams, and package-local code."
+      2: "Subscription/webhook claim-ack behavior is deferred until the Durable Streams server version surface is verified on the lane."
