@@ -45,6 +45,7 @@
     "@agentclientprotocol/sdk": "0.21.0",
     "@durable-streams/server": "0.3.7",
     "@firegrid/client-sdk": "workspace:*",
+    "@firegrid/fluent-firegrid": "workspace:*",
     "@firegrid/fluent-runtime": "workspace:*",
     "typescript": "^5.7.0"
   }

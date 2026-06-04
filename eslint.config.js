@@ -1832,6 +1832,7 @@ export default tseslint.config(
   {
     files: ["packages/tiny-firegrid/src/simulations/fluent-runtime-workbench/driver.ts"],
     rules: {
+      "no-restricted-imports": "off",
       "no-restricted-syntax": [
         "error",
         {

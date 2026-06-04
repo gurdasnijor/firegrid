@@ -1,7 +1,14 @@
 import { FetchHttpClient } from "@effect/platform"
 import { FiregridConfig } from "@firegrid/client-sdk/config"
+import {
+  execute as executeOperation,
+  gen,
+  run,
+  workflow,
+} from "@firegrid/fluent-firegrid"
 import { FluentStore, FluentStoreLive } from "@firegrid/fluent-runtime"
 import { Effect } from "effect"
+import { executeSandboxCommandActivity } from "./sandbox-activity-host.ts"
 
 const sanitize = (value: string): string =>
   value.replace(/[^A-Za-z0-9_.-]/g, "-").replace(/-+/g, "-")
@@ -17,6 +24,38 @@ const runtimeConfig = Effect.gen(function* () {
     namespace: config.namespace ?? "tiny-firegrid",
   }
 })
+
+interface SandboxActivityInput {
+  readonly sessionId: string
+  readonly argv: ReadonlyArray<string>
+}
+
+const sandboxActivityWorkflow = (
+  executionCount: { count: number },
+) =>
+  workflow({
+    name: "fluentRuntimeSandboxActivity",
+    handlers: {
+      runCommand: (ctx, input: SandboxActivityInput) =>
+        executeOperation(
+          ctx,
+          gen(function* () {
+            const result = yield* run(
+              () => {
+                executionCount.count += 1
+                return executeSandboxCommandActivity(input)
+              },
+              { name: "sandbox-provider-execute" },
+            )
+            return {
+              exitCode: result.exitCode,
+              stdout: result.stdout,
+              providerExecutions: executionCount.count,
+            }
+          }),
+        ),
+    },
+  })
 
 export const fluentRuntimeWorkbenchDriver = Effect.gen(function* () {
   const config = yield* runtimeConfig
@@ -107,6 +146,48 @@ export const fluentRuntimeWorkbenchDriver = Effect.gen(function* () {
     Effect.provide(FluentStoreLive(config)),
     Effect.provide(FetchHttpClient.layer),
     Effect.withSpan("tiny_firegrid.fluent_runtime_workbench.store_slice", {
+      attributes: {
+        "firegrid.namespace": config.namespace,
+        "firegrid.durable_streams.base_url": config.durableStreamsBaseUrl,
+      },
+    }),
+  )
+
+  yield* Effect.gen(function* () {
+    const executionCount = { count: 0 }
+    const activityWorkflow = sandboxActivityWorkflow(executionCount)
+    const ctx = {
+      journal: {
+        endpoint: {
+          url:
+            `${config.durableStreamsBaseUrl}/v1/stream/${config.namespace}/fluent-runtime-workbench/sandbox-activity`,
+        },
+      },
+    }
+    const input = {
+      sessionId: parentSessionId,
+      argv: [
+        process.execPath,
+        "--input-type=module",
+        "-e",
+        "console.log(JSON.stringify({activity:'sandbox-provider-execute',ok:true}))",
+      ],
+    }
+
+    // fluent-runtime-workbench.SIM.3
+    const first = yield* activityWorkflow.handlers.runCommand(ctx, input)
+    const replay = yield* activityWorkflow.handlers.runCommand(ctx, input)
+    yield* Effect.annotateCurrentSpan({
+      "fluent_runtime.sandbox_activity.first_exit_code": first.exitCode,
+      "fluent_runtime.sandbox_activity.replay_exit_code": replay.exitCode,
+      "fluent_runtime.sandbox_activity.stdout": replay.stdout,
+      "fluent_runtime.sandbox_activity.provider_executions": executionCount.count,
+      "fluent_runtime.sandbox_activity.replay_reused_journal":
+        executionCount.count === 1 && first.stdout === replay.stdout,
+    })
+  }).pipe(
+    Effect.provide(FetchHttpClient.layer),
+    Effect.withSpan("tiny_firegrid.fluent_runtime_workbench.sandbox_activity", {
       attributes: {
         "firegrid.namespace": config.namespace,
         "firegrid.durable_streams.base_url": config.durableStreamsBaseUrl,

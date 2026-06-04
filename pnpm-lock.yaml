@@ -348,6 +348,9 @@ importers:
       '@firegrid/client-sdk':
         specifier: workspace:*
         version: link:../client-sdk
+      '@firegrid/fluent-firegrid':
+        specifier: workspace:*
+        version: link:../fluent-firegrid
       '@firegrid/fluent-runtime':
         specifier: workspace:*
         version: link:../fluent-runtime

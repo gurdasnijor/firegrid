@@ -344,6 +344,46 @@ module.exports = {
       },
     },
     {
+      name: "fluent-runtime-no-legacy-runtime",
+      severity: "error",
+      comment:
+        "fluent-runtime is the lean managed-agent runtime workbench. It must not depend on the legacy runtime, host-sdk, protocol, workflow engine, or DurableTable package.",
+      from: { path: "^packages/fluent-runtime/src" },
+      to: {
+        path: [
+          "^packages/runtime/src",
+          "^packages/host-sdk/src",
+          "^packages/protocol/src",
+          "^node_modules/effect-durable-operators",
+          "effect-durable-operators",
+          "^node_modules/@effect/workflow",
+          "@effect/workflow",
+        ],
+      },
+    },
+    {
+      name: "fluent-firegrid-scheduler-substrate-free",
+      severity: "error",
+      comment:
+        "The fluent-firegrid scheduler is the substrate-free Operation/Future engine; durable streams stay behind execute/operations.",
+      from: { path: "^packages/fluent-firegrid/src/scheduler\\.ts$" },
+      to: {
+        path: [
+          "^packages/runtime/src",
+          "^packages/host-sdk/src",
+          "^packages/protocol/src",
+          "^packages/fluent-runtime/src",
+          "^packages/effect-durable-operators/src",
+          "^node_modules/effect-durable-operators",
+          "effect-durable-operators",
+          "^node_modules/@effect/workflow",
+          "@effect/workflow",
+          "^node_modules/effect-durable-streams",
+          "effect-durable-streams",
+        ],
+      },
+    },
+    {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.2
       // firegrid-package-migration.COMPATIBILITY.4
       // firegrid-host-sdk.PACKAGE_GRAPH.2
@@ -551,8 +591,8 @@ module.exports = {
       // seam; only host(env) composes the substrate. Anything else reaching into
       // runtime/host-sdk internals, protocol internals, or durable tables is
       // exercising a private seam — write it as a test in the owning package.
-      // tf-bp2t intentionally carves out one hostless greenfield substrate spike:
-      // it does not claim to validate the Firegrid client/host seam.
+      // tf-bp2t intentionally carves out a hostless greenfield substrate
+      // workbench: it does not claim to validate the Firegrid client/host seam.
       name: "tiny-firegrid-sim-airgap-whole-sim",
       severity: "error",
       comment:
@@ -561,6 +601,7 @@ module.exports = {
         path: "^packages/tiny-firegrid/src/simulations/",
         pathNot: [
           "/host\\.ts$",
+          "^packages/tiny-firegrid/src/simulations/fluent-runtime-workbench/sandbox-activity-host\\.ts$",
           "^packages/tiny-firegrid/src/simulations/restate-primitive-compat/",
         ],
       },
