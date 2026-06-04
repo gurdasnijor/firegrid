@@ -401,7 +401,7 @@ const printClaim = (c: ClaimResult): Effect.Effect<void> =>
 
 // The trace-gap report: what the run reveals about the instrumented surface, so a
 // behavior the oracle can only verify INDIRECTLY (or not at all) is visible.
-const printGaps = (gaps: TraceGaps): Effect.Effect<void> =>
+export const printGaps = (gaps: TraceGaps): Effect.Effect<void> =>
   Effect.gen(function* () {
     yield* Console.log("\nInstrumentation map (spans observed):")
     yield* Effect.forEach(gaps.observed, (o) =>

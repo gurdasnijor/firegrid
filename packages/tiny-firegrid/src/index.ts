@@ -5,6 +5,7 @@ import {
   listSimulations,
   selectedSimulation,
 } from "./runner/list.ts"
+import { gapsReport, seamsCoverage } from "./runner/coverage-cli.ts"
 import { showPhase1WorkflowCoreGate } from "./runner/phase1-gate.ts"
 import { runSimulation } from "./runner/runtime.ts"
 import { showPerf } from "./runner/perf.ts"
@@ -131,12 +132,30 @@ const phase1GateCommand = Command.make(
       )),
 )
 
+// `seams <id> [run-id]` re-judges a past run with the simulation's coverage
+// spec (the live oracle, applied offline). `gaps [run-id]` prints the
+// instrumentation map for a past run.
+const seamsCommand = Command.make(
+  "seams",
+  { simulationId: simulationIdArg, runId: runIdArg },
+  ({ simulationId, runId }) =>
+    seamsCoverage(simulationId, runId._tag === "Some" ? runId.value : undefined),
+)
+
+const gapsCommand = Command.make(
+  "gaps",
+  { runId: runIdArg },
+  ({ runId }) => gapsReport(runId._tag === "Some" ? runId.value : undefined),
+)
+
 const command = Command.make("simulate").pipe(
   Command.withSubcommands([
     phase1GateCommand,
+    gapsCommand,
     listCommand,
     perfCommand,
     runCommand,
+    seamsCommand,
     showCommand,
     runsCommand,
   ]),
