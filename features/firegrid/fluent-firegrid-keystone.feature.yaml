@@ -53,6 +53,12 @@ components:
       3: "The tutorial includes a workflow-shaped example using `workflow({ name, handlers })` rather than workflow-only durable promise semantics."
       4: "The tutorial exposes a deferred-surface registry describing each missing restate-sdk-gen primitive family and the substrate gap."
 
+  ENGINE:
+    requirements:
+      1: "The package separates the Operation/Future engine into focused source modules instead of keeping the implementation in one monolithic entrypoint."
+      2: "The scheduler implementation lives in its own module and remains the single owner of generator driving, combinator dispatch, and current operation execution."
+      3: "The synchronous active scheduler slot lives in its own module and is only set for the synchronous generator advance span."
+
 constraints:
   SUBSTRATE:
     requirements:
