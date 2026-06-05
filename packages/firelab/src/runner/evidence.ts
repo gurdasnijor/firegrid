@@ -114,6 +114,11 @@ export const showEvidence = (experimentId: string, runId: string | undefined) =>
     if (check.danglingGateAcids.length > 0) {
       yield* Console.log(`✗ gate ACIDs not in the feature: ${check.danglingGateAcids.join(", ")}`)
     }
-    yield* Console.log(`\nfeature-fully-covered: ${check.fullyCovered}`)
-    if (!check.fullyCovered) yield* Effect.sync(() => { process.exitCode = 1 })
+    yield* Console.log(`\nfeature-fully-covered: ${check.fullyCovered}` +
+      (report.gatingFailing > 0 ? `  (⚠ ${report.gatingFailing} gating claim(s) also failing)` : ""))
+    // The done-bar is BOTH: every ACID covered 1:1 AND no gating claim failing —
+    // an extra safety/non-ACID gate that fails or is vacuous must still block.
+    if (!check.fullyCovered || report.gatingFailing > 0) {
+      yield* Effect.sync(() => { process.exitCode = 1 })
+    }
   })

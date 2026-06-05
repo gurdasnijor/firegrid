@@ -34,16 +34,31 @@ interface RawFeatureDoc {
   readonly constraints?: Record<string, RawGroup>
 }
 
+// A requirement key is an ACID only when it is an integer with at most one
+// dash sub-level (acai: `1`, `3-1`). Other keys — notably the `<N>-note`
+// annotation convention — are prose, NOT coverable acceptance criteria.
+const isAcidKey = (key: string): boolean => /^\d+(-\d+)?$/.test(key)
+
 /** Parse a `.feature.yaml` into its derived ACIDs (components + constraints). */
 export const parseFeature = (yamlText: string): FeatureSpec => {
   const doc = (parseYaml(yamlText) ?? {}) as RawFeatureDoc
   const name = doc.feature?.name ?? ""
   const groups = { ...(doc.components ?? {}), ...(doc.constraints ?? {}) }
   const requirements = Object.entries(groups).flatMap(([groupKey, group]) =>
-    Object.entries(group?.requirements ?? {}).map((entry): FeatureRequirement => ({
-      acid: `${name}.${groupKey}.${entry[0]}`,
-      text: String(entry[1]),
-    })),
+    Object.entries(group?.requirements ?? {})
+      .filter(([idKey]) => isAcidKey(idKey))
+      .flatMap(([idKey, value]): ReadonlyArray<FeatureRequirement> => {
+        const acid = `${name}.${groupKey}.${idKey}`
+        // Object-shaped: `{ requirement: <text>, deprecated?: true }`. A deprecated
+        // requirement is NOT a coverable acceptance criterion — drop it.
+        if (value !== null && typeof value === "object") {
+          const obj = value as { readonly requirement?: unknown; readonly deprecated?: unknown }
+          if (obj.deprecated === true) return []
+          return [{ acid, text: String(obj.requirement ?? "") }]
+        }
+        // Plain string requirement.
+        return [{ acid, text: String(value) }]
+      }),
   )
   return { name, requirements }
 }
