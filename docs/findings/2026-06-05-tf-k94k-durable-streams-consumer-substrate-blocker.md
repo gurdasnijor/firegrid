@@ -5,7 +5,8 @@
 The published-package path is unavailable, but the source-checkout conformance
 path is executable.
 
-The Firegrid fork branch is now rebased onto upstream `main` and green at
+The Firegrid fork `main` integration branch now includes the rebased PR #343
+consumer substrate and is green at
 `9116edc55f7a989ae2c75f872364c946a1409eeb`.
 
 Firegrid currently depends on `@durable-streams/server@0.3.7`, and npm reports
@@ -123,9 +124,10 @@ Coverage observed in the passing run:
 Firegrid fork:
 
 - URL: `https://github.com/gurdasnijor/durable-streams`
-- Branch: `firegrid/pr343-consumer-substrate`
+- Integration branch: `main`
+- Import/staging branch: `firegrid/pr343-consumer-substrate`
 - Seed SHA: `5f3bae712a82219608138a53e60a223c2a7dd43c`
-- Current rebased SHA: `9116edc55f7a989ae2c75f872364c946a1409eeb`
+- Current integration SHA: `9116edc55f7a989ae2c75f872364c946a1409eeb`
 - Upstream base checked: `https://github.com/durable-streams/durable-streams`
   `main` at `82f9963a`
 
@@ -136,7 +138,7 @@ rm -rf /tmp/gurdasnijor-durable-streams-firegrid-pr343
 git clone https://github.com/gurdasnijor/durable-streams.git \
   /tmp/gurdasnijor-durable-streams-firegrid-pr343
 git -C /tmp/gurdasnijor-durable-streams-firegrid-pr343 \
-  checkout firegrid/pr343-consumer-substrate
+  checkout main
 git -C /tmp/gurdasnijor-durable-streams-firegrid-pr343 \
   remote add upstream https://github.com/durable-streams/durable-streams.git
 git -C /tmp/gurdasnijor-durable-streams-firegrid-pr343 fetch upstream main
@@ -150,14 +152,18 @@ Fork status:
 ```text
 HEAD: 9116edc55f7a989ae2c75f872364c946a1409eeb
 Ahead/behind upstream/main: 2	0
+origin/main: 9116edc55f7a989ae2c75f872364c946a1409eeb
+origin/firegrid/pr343-consumer-substrate: 9116edc55f7a989ae2c75f872364c946a1409eeb
 ```
 
-The fork branch was rebased onto upstream `main`; the previous broad merge
+The import branch was rebased onto upstream `main`; the previous broad merge
 conflicts were resolved by preserving current upstream metadata, storage,
-reserved subscription, state, client, Caddy, and workflow changes, then layering
-the PR #343 TypeScript server consumer substrate and conformance files on top.
-The branch was pushed with `--force-with-lease` because the rebase rewrote the
-old fork head.
+reserved subscription, state, client, Caddy, and workflow changes, then
+layering the PR #343 TypeScript server consumer substrate and conformance files
+on top. After validation, it was fast-forward merged into
+`gurdasnijor/durable-streams main`, making fork `main` Firegrid's curated
+Durable Streams integration line. The staging branch was pushed with
+`--force-with-lease` because the rebase rewrote the old fork head.
 
 Fork conformance command:
 
@@ -188,8 +194,8 @@ package dependency and not a mock.
 
 ## Fork Merge Status
 
-Resolved. The fork branch is now up to date with upstream `main` and carries
-two commits on top:
+Resolved. The fork `main` integration branch is now up to date with upstream
+`main` and carries two selected upstream PR #343 commits on top:
 
 ```text
 9116edc5 feat: implement layer consumer spec & webhooks
@@ -233,7 +239,7 @@ against the updated fork lockfile.
 
 Short term:
 
-- Treat `gurdasnijor/durable-streams#firegrid/pr343-consumer-substrate` at
+- Treat `gurdasnijor/durable-streams#main` at
   `9116edc55f7a989ae2c75f872364c946a1409eeb` as Firegrid's reproducible
   source substrate proof.
 - Keep Firegrid's in-repo package-integrated test skipped until Firegrid can
@@ -241,8 +247,8 @@ Short term:
 
 Next implementation dependency step:
 
-- Publish or otherwise materialize the fork branch as a reproducible package
-  artifact for `@durable-streams/server` and
+- Publish or otherwise materialize the fork `main` integration branch as a
+  reproducible package artifact for `@durable-streams/server` and
   `@durable-streams/server-conformance-tests`, or add a CI-only source-checkout
   conformance harness that clones the fork at the pinned SHA.
 - Do not import from Firegrid `repos/`, and do not rebuild L1/L2 substrate
