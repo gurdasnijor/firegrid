@@ -6,6 +6,7 @@ import {
   selectedExperiment,
 } from "./runner/list.ts"
 import { gapsReport, seamsCoverage } from "./runner/coverage-cli.ts"
+import { showEvidence } from "./runner/evidence.ts"
 import { runExperiment } from "./runner/runtime.ts"
 import { showPerf } from "./runner/perf.ts"
 import { listRuns, showRun } from "./runner/show.ts"
@@ -139,8 +140,18 @@ const gapsCommand = Command.make(
   ({ runId }) => gapsReport(runId._tag === "Some" ? runId.value : undefined),
 )
 
+// `evidence <id> [run-id]` renders the PR trace-evidence: the verdict + (when
+// the coverage spec is feature-bound) the requirement→ACID→span coverage table.
+const evidenceCommand = Command.make(
+  "evidence",
+  { experimentId: experimentIdArg, runId: runIdArg },
+  ({ experimentId, runId }) =>
+    showEvidence(experimentId, runId._tag === "Some" ? runId.value : undefined),
+)
+
 const command = Command.make("simulate").pipe(
   Command.withSubcommands([
+    evidenceCommand,
     gapsCommand,
     listCommand,
     perfCommand,

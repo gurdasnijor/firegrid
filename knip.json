@@ -53,7 +53,7 @@
     "packages/firelab": {
       "entry": [
         "src/bin/**/*.ts",
-        "src/simulations/*/index.ts",
+        "src/experiments/*/index.ts",
         "src/runner/fluent-coverage-specs.ts"
       ],
       "project": [

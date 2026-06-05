@@ -51,6 +51,16 @@ interface ClaimDef {
   readonly description: string
   /** A CEL boolean expression over `spans` (see the vocabulary above). */
   readonly claim: string
+  /**
+   * The acai ACID this gate proves — `<feature-name>.<GROUP_KEY>.<ID>`
+   * (e.g. `fluent-substrate-semantics.STREAM_CLOSURE.1`). The stable join key
+   * between the `.feature.yaml` acceptance requirement and the forge-proof span.
+   * **1:1** — each gate proves exactly ONE acid, and each feature acid is proven
+   * by exactly ONE gate; the feature-coverage checker enforces that bijection.
+   * Optional only for non-feature experiments (e.g. validation sims) + shared
+   * claim helpers; a `feature`-bound spec requires every gate to carry one.
+   */
+  readonly acid?: string
 }
 
 export interface CoverageSpec {
@@ -58,6 +68,28 @@ export interface CoverageSpec {
   readonly gates: ReadonlyArray<ClaimDef>
   /** Never gate. May reference any span (driver-side corroboration). */
   readonly corroborations?: ReadonlyArray<ClaimDef>
+  /**
+   * The acai feature (`feature.name`, e.g. `fluent-substrate-semantics`) this
+   * spec proves. When set, the feature-coverage checker derives every requirement
+   * ACID from the `.feature.yaml` and enforces that each maps 1:1 to a green,
+   * non-vacuous, host-substrate gate (the done-bar that gates task-exit).
+   */
+  readonly feature?: string
+  /**
+   * The negative control (the other half of the done-bar): a tamper applied to
+   * the REAL behavior — the host/driver reads `FIRELAB_MUTATE` to break the path —
+   * under which the verdict MUST flip to not-covered, proving the gates have teeth.
+   */
+  readonly mutation?: MutationSpec
+}
+
+interface MutationSpec {
+  /** What this negative control breaks (for the evidence block). */
+  readonly describe: string
+  /** Applied to the run; the experiment's host/driver reads `FIRELAB_MUTATE`. */
+  readonly env: Readonly<Record<string, string>>
+  /** The verdict the tampered run MUST produce. */
+  readonly expect: "production-path-not-covered"
 }
 
 // ── the forge-proof core spans — a gate may name only these ──────────────────
@@ -348,7 +380,7 @@ interface TraceGaps {
   readonly vacuousGates: ReadonlyArray<string>
 }
 
-interface CoverageReport {
+export interface CoverageReport {
   readonly totalSpans: number
   readonly gates: ReadonlyArray<ClaimResult>
   readonly corroborations: ReadonlyArray<ClaimResult>
