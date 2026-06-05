@@ -1,4 +1,5 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
+import type { TestServerOptions } from "@durable-streams/server"
 
 export interface TestServerHandle {
   readonly url: string
@@ -10,8 +11,17 @@ export interface TestServerHandle {
  * Start the reference `@durable-streams/server` in-process on an ephemeral
  * port. Returns a handle with a helper to mint unique stream URLs.
  */
-export const startTestServer = async (): Promise<TestServerHandle> => {
-  const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+export const startTestServer = async (options?: {
+  readonly webhooks?: boolean
+}): Promise<TestServerHandle> => {
+  const serverOptions: TestServerOptions = {
+    port: 0,
+    host: "127.0.0.1",
+  }
+  if (options?.webhooks !== undefined) {
+    serverOptions.webhooks = options.webhooks
+  }
+  const server = new DurableStreamTestServer(serverOptions)
   const url = await server.start()
   return {
     url,
