@@ -54,5 +54,11 @@
     "turbo": "^2.5.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "@durable-streams/server": "github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server",
+      "@firegrid/durable-streams-ui>@tanstack/react-db": "0.1.85"
+    }
   }
 }

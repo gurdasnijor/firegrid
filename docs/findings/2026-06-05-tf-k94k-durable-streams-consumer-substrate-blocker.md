@@ -6,8 +6,9 @@ The published-package path is unavailable, but the source-checkout conformance
 path is executable.
 
 The Firegrid fork `main` integration branch now includes the rebased PR #343
-consumer substrate and is green at
-`9116edc55f7a989ae2c75f872364c946a1409eeb`.
+consumer substrate plus one Firegrid packaging commit for Git dependency
+consumption. Firegrid pins that integration line at
+`4a5efcf35d67bf16697b2f965860cffdebde1dcb`.
 
 Firegrid currently depends on `@durable-streams/server@0.3.7`, and npm reports
 `0.3.7` as the latest published version. That package does not expose the
@@ -127,7 +128,8 @@ Firegrid fork:
 - Integration branch: `main`
 - Import/staging branch: `firegrid/pr343-consumer-substrate`
 - Seed SHA: `5f3bae712a82219608138a53e60a223c2a7dd43c`
-- Current integration SHA: `9116edc55f7a989ae2c75f872364c946a1409eeb`
+- Rebased upstream-import SHA: `9116edc55f7a989ae2c75f872364c946a1409eeb`
+- Current integration SHA: `4a5efcf35d67bf16697b2f965860cffdebde1dcb`
 - Upstream base checked: `https://github.com/durable-streams/durable-streams`
   `main` at `82f9963a`
 
@@ -150,9 +152,9 @@ git -C /tmp/gurdasnijor-durable-streams-firegrid-pr343 \
 Fork status:
 
 ```text
-HEAD: 9116edc55f7a989ae2c75f872364c946a1409eeb
-Ahead/behind upstream/main: 2	0
-origin/main: 9116edc55f7a989ae2c75f872364c946a1409eeb
+HEAD: 4a5efcf35d67bf16697b2f965860cffdebde1dcb
+Ahead/behind upstream/main: 3	0
+origin/main: 4a5efcf35d67bf16697b2f965860cffdebde1dcb
 origin/firegrid/pr343-consumer-substrate: 9116edc55f7a989ae2c75f872364c946a1409eeb
 ```
 
@@ -164,6 +166,12 @@ on top. After validation, it was fast-forward merged into
 `gurdasnijor/durable-streams main`, making fork `main` Firegrid's curated
 Durable Streams integration line. The staging branch was pushed with
 `--force-with-lease` because the rebase rewrote the old fork head.
+
+The additional integration-branch commit force-adds the generated
+`packages/server/dist` files for `@durable-streams/server`. That packaging
+commit is not part of upstream PR #343; it exists so Firegrid can consume the
+fork through pnpm's Git subdirectory dependency path while the package remains
+unpublished.
 
 Fork conformance command:
 
@@ -195,9 +203,11 @@ package dependency and not a mock.
 ## Fork Merge Status
 
 Resolved. The fork `main` integration branch is now up to date with upstream
-`main` and carries two selected upstream PR #343 commits on top:
+`main` and carries two selected upstream PR #343 commits plus one Firegrid
+packaging commit on top:
 
 ```text
+4a5efcf3 build: include server dist for Firegrid git pin
 9116edc5 feat: implement layer consumer spec & webhooks
 33a81e1d docs: introduce layered consumer spec into the protocol
 82f9963a upstream/main
@@ -240,17 +250,34 @@ against the updated fork lockfile.
 Short term:
 
 - Treat `gurdasnijor/durable-streams#main` at
-  `9116edc55f7a989ae2c75f872364c946a1409eeb` as Firegrid's reproducible
-  source substrate proof.
-- Keep Firegrid's in-repo package-integrated test skipped until Firegrid can
-  consume that fork as a package artifact or until upstream PR #343 lands.
+  `4a5efcf35d67bf16697b2f965860cffdebde1dcb` as Firegrid's reproducible
+  source substrate proof and package pin.
+- Firegrid consumes `@durable-streams/server` from that exact fork SHA using
+  pnpm's Git subdirectory dependency path.
+- Firegrid has a package-pinned claimed-wake witness at
+  `packages/effect-durable-streams/test/conformance/consumer-substrate.integration.test.ts`.
+
+Package-pinned witness command:
+
+```sh
+pnpm --filter effect-durable-streams exec vitest run \
+  test/conformance/consumer-substrate.integration.test.ts \
+  --reporter=verbose
+```
+
+Result:
+
+```text
+Test Files  1 passed (1)
+Tests       1 passed (1)
+```
 
 Next implementation dependency step:
 
-- Publish or otherwise materialize the fork `main` integration branch as a
-  reproducible package artifact for `@durable-streams/server` and
-  `@durable-streams/server-conformance-tests`, or add a CI-only source-checkout
-  conformance harness that clones the fork at the pinned SHA.
+- Keep the in-repo conformance adapters pointed at the real
+  `DurableStreamTestServer` from the pinned package path, and continue leaving
+  the upstream conformance-test package itself as a source-checkout proof until
+  it is published or otherwise materialized.
 - Do not import from Firegrid `repos/`, and do not rebuild L1/L2 substrate
   mechanics inside fluent-runtime.
 
@@ -298,7 +325,8 @@ one specified by `features/fluent/substrate/fluent-durable-streams-consumer-subs
 That would either rebuild missing semantics in Firegrid or hide the absence of
 the upstream claimed-event / named-consumer protocol.
 
-The next package-integrated step is a dependency update to a reproducible
-Durable Streams package containing PR #343. Until then, source-checkout
-conformance is the valid proof path, and Firegrid must not reimplement the
-consumer lease, cursor, pull queue, webhook retry, or task-claim substrate.
+The package-integrated path now has a reproducible `@durable-streams/server`
+pin containing PR #343. Source-checkout conformance remains the proof path for
+the upstream conformance-test package until it is published or otherwise
+materialized, and Firegrid must not reimplement the consumer lease, cursor,
+pull queue, webhook retry, or task-claim substrate.

@@ -4,13 +4,19 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@durable-streams/server': github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server
+  '@firegrid/durable-streams-ui>@tanstack/react-db': 0.1.85
+
+pnpmfileChecksum: sha256-AFEq42OO1KQV38FDUYm3Vz1xj5QbDNl+YBY9o3o+sdE=
+
 importers:
 
   .:
     devDependencies:
       '@durable-streams/server':
-        specifier: 0.3.7
-        version: 0.3.7(@tanstack/db@0.6.7(typescript@5.9.3))
+        specifier: github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server
+        version: https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server(@tanstack/db@0.6.7(typescript@5.9.3))
       '@effect/eslint-plugin':
         specifier: ^0.3.2
         version: 0.3.2
@@ -184,8 +190,8 @@ importers:
         specifier: 0.21.0
         version: 0.21.0(zod@4.4.3)
       '@durable-streams/server':
-        specifier: 0.3.7
-        version: 0.3.7(@tanstack/db@0.6.7(typescript@5.9.3))
+        specifier: github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server
+        version: https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server(@tanstack/db@0.6.7(typescript@5.9.3))
       '@firegrid/client-sdk':
         specifier: workspace:*
         version: link:../client-sdk
@@ -309,8 +315,8 @@ importers:
         specifier: 0.21.0
         version: 0.21.0(zod@4.4.3)
       '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))
+        specifier: github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server
+        version: https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server(@tanstack/db@0.6.7(typescript@5.9.3))
       '@effect/ai':
         specifier: ^0.35.0
         version: 0.35.0(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
@@ -370,7 +376,7 @@ importers:
         specifier: ^0.2.5
         version: 0.2.5(@tanstack/db@0.6.7(typescript@5.9.3))
       '@tanstack/react-db':
-        specifier: latest
+        specifier: 0.1.85
         version: 0.1.85(react@19.2.6)(typescript@5.9.3)
       '@tanstack/react-router':
         specifier: ^1.139.14
@@ -602,12 +608,9 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
-  '@durable-streams/server@0.3.1':
-    resolution: {integrity: sha512-c8vr9x5l5CzYrjdIIpVE/tiEDTrCvzBvcOsLRu0Cf13D06fofabgB2TB7W5OAIscWkXNDhO2plegfeP9I56KDQ==}
-    engines: {node: '>=18.0.0'}
-
-  '@durable-streams/server@0.3.7':
-    resolution: {integrity: sha512-3vF1EjCn+DhqZn5f7/aqW/E9sN4UGUhhYVn5LoeD7lP7sAdCy1M5sFCdI+tUe6B+5l7ORKNxU9lhgY7HfYa+Zw==}
+  '@durable-streams/server@https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server':
+    resolution: {path: /packages/server, tarball: https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb}
+    version: 0.3.7
     engines: {node: '>=18.0.0'}
 
   '@durable-streams/state@0.2.5':
@@ -4015,20 +4018,12 @@ snapshots:
       '@microsoft/fetch-event-source': 2.0.1
       fastq: 1.20.1
 
-  '@durable-streams/server@0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))':
-    dependencies:
-      '@durable-streams/client': 0.2.3
-      '@durable-streams/state': 0.2.5(@tanstack/db@0.6.7(typescript@5.9.3))
-      '@neophi/sieve-cache': 1.5.0
-      lmdb: 3.5.4
-    transitivePeerDependencies:
-      - '@tanstack/db'
-
-  '@durable-streams/server@0.3.7(@tanstack/db@0.6.7(typescript@5.9.3))':
+  '@durable-streams/server@https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server(@tanstack/db@0.6.7(typescript@5.9.3))':
     dependencies:
       '@durable-streams/client': 0.2.6
       '@durable-streams/state': 0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))
       '@neophi/sieve-cache': 1.5.0
+      '@opentelemetry/api': 1.9.1
       lmdb: 3.5.4
     transitivePeerDependencies:
       - '@tanstack/db'
