@@ -7,7 +7,10 @@ product-observable scenarios; the corresponding firelab experiment should live
 with its driver and coverage witness, and any mutation harness must flip the
 verdict red.
 
-**Structure: two halves + shared substrate** (matches the SDD).
+**Structure: authoring package + two halves + shared substrate** (matches the SDD).
+- **Authoring package.** `@firegrid/fluent-firegrid` exposes the public DSL:
+  definitions plus free primitives. It does not host a runtime or expose the
+  external control plane.
 - **Half 1 — Non-invasive agent binding.** The bridge over the agent's *own*
   harness. **🔴 real-agent only**: every Half-1 acceptance experiment MUST drive a
   real spawn-target (real native/ACP agent). A fake adapter/recorder/fake-codec is
@@ -32,6 +35,18 @@ the SDD's own D.7 surface-glue carve-out.
   `red→green` (red until the build step lands) · `decision` (a PO/source call) ·
   `harness` (the verification apparatus itself).
 - Section names are the primary reference; **line ranges are advisory** (they drift).
+
+---
+
+## Authoring package — `@firegrid/fluent-firegrid`
+
+Reference surface: `repos/sdk-typescript/packages/libs/restate-sdk-gen/src/index.ts`
+and its tutorial examples. The fluent package mirrors the authoring affordances
+that matter while keeping runtime/control-plane concerns out of this layer.
+
+| Feature file | Asserts (source / SDD §) | Proof |
+|---|---|---|
+| `fluent-firegrid-public-surface` | Public package surface = definitions (`service`/`object`/`workflow`) + generator handlers + free primitives (`run`/`all`/`race`/`select`/`spawn`) + descriptor/interface helpers + typed client derivation + explicit handler-edge execution (`execute`/`invoke`). Definitions must carry enough public metadata for `fluent-runtime` to bind the control plane (`send`/`fork`/`tag`/`schedule`/`read`/`head`/`delete`) without importing internals. `run` names journal steps; local composition is Effect-shaped; no public bespoke Future scheduler; scheduler/awaitable/journal implementation details are not root public API. | package API tests + tutorial examples + `fluent-control-surface` binding |
 
 ---
 
@@ -146,6 +161,7 @@ empirically.
 | System shape | `fluent-execution-model`, `fluent-session-handler` |
 | Execution model: axes / can't-replay / keys / races / differentiators | `fluent-execution-model`; keys→`fluent-durable-wait`+`fluent-concurrent-replay-soundness`; races→`fluent-fork-spawn` |
 | Background | `fluent-engine-substrate-free` |
+| Public authoring surface | `fluent-firegrid-public-surface` |
 | Part 1 — collapse DSL onto Effect | `fluent-engine-substrate-free` (+ race landmine→`fluent-concurrent-replay-soundness`) |
 | Part 2 — three families | `fluent-durable-sleep`+`fluent-durable-wait` (park/wake); upstream DS conformance is an assumption, not a Firegrid feature |
 | Part 3 — DS §7.2/§7.3 = wake subsystem | `fluent-worker-redrive`; sleep→`fluent-durable-sleep`; two-fencing is covered by DS conformance and asserted only through product use |
