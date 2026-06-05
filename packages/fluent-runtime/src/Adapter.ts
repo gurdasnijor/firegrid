@@ -104,4 +104,13 @@ export interface AgentAdapter {
     history: ReadonlyArray<StreamEnvelope>,
     options: ResumeOptions,
   ) => Promise<PreparedResume>
+  /**
+   * Park interface, mechanism (b) — produce the harness's NATIVE run-terminating
+   * tool result for a parking tool call: a result the harness treats as ENDING
+   * its current turn (transport end-of-turn). Its presence is what makes a
+   * durable wait a substrate guarantee rather than relying on the model to stop
+   * (mechanism (a)). A harness whose transport offers no such result cannot prove
+   * the park interface (see fluent-park-interface.feature). Optional per harness.
+   */
+  readonly runTerminatingToolResult?: (toolCallId: string) => object
 }
