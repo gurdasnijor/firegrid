@@ -1,9 +1,5 @@
-import {
-  execute,
-  gen,
-  run,
-  workflow,
-} from "@firegrid/fluent-firegrid"
+import { Effect } from "effect"
+import { execute, run, workflow } from "@firegrid/fluent-firegrid"
 import {
   draftPatchPlan,
   notifyCoordinator,
@@ -18,27 +14,19 @@ export const remediationWorkflow = workflow({
     run: (ctx, input: IncidentInput) =>
       execute(
         ctx,
-        gen(function* () {
-          const plan = yield* run(() => draftPatchPlan(input, {
+        Effect.gen(function* () {
+          const plan = yield* run("draft-remediation-plan", Effect.sync(() => draftPatchPlan(input, {
             route: "coordinator",
             severity: "high",
-          }), { name: "draft-remediation-plan" })
-          const remediationId = yield* run(() => openRemediation(input, plan), {
-            name: "open-remediation",
-          })
-          return yield* run(() => notifyCoordinator(remediationId), {
-            name: "notify-coordinator",
-          })
+          })))
+          const remediationId = yield* run("open-remediation", Effect.sync(() => openRemediation(input, plan)))
+          return yield* run("notify-coordinator", Effect.sync(() => notifyCoordinator(remediationId)))
         }),
       ),
     status: (ctx, id: string) =>
       execute(
         ctx,
-        gen(function* () {
-          return yield* run(() => `workflow:${id}:status:modeled`, {
-            name: "workflow-status",
-          })
-        }),
+        run("workflow-status", Effect.succeed(`workflow:${id}:status:modeled`)),
       ),
   },
 })

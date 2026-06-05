@@ -1,15 +1,7 @@
 import { afterAll, beforeAll, bench, describe } from "vitest"
-import {
-  all,
-  execute,
-  gen,
-  race,
-  run,
-  spawn,
-  type ExecutionContext,
-  type Future,
-  type Operation,
-} from "../src/index.ts"
+import { Effect, Fiber } from "effect"
+import { execute, run, type ExecutionContext, type Journal } from "../src/index.ts"
+import type { FluentRequirements } from "../src/schema.ts"
 import {
   BENCH_OPTS,
   BENCH_SIZES,
@@ -34,13 +26,12 @@ const expectedSum = (size: number): number => ((size - 1) * size) / 2
 const allOperation = (
   size: number,
   action: (index: number) => number,
-): Operation<number> =>
-  gen(function* () {
-    const futures = new Array<Future<number>>(size)
-    for (let index = 0; index < size; index += 1) {
-      futures[index] = run(() => action(index), { name: `all-${index}` })
-    }
-    const values = yield* all(futures)
+) =>
+  Effect.gen(function* () {
+    const effects = Array.from({ length: size }, (_value, index) =>
+      run(`all-${index}`, Effect.sync(() => action(index))),
+    )
+    const values = yield* Effect.all(effects, { concurrency: "unbounded" })
     let total = 0
     for (let index = 0; index < values.length; index += 1) {
       total += values[index] ?? 0
@@ -51,30 +42,28 @@ const allOperation = (
 const raceOperation = (
   size: number,
   action: (index: number) => number,
-): Operation<number> =>
-  gen(function* () {
-    const first = run(() => action(0), { name: "race-0" })
-    const futures: [Future<number>, ...Array<Future<number>>] = [first]
+) =>
+  Effect.gen(function* () {
+    let winner = run("race-0", Effect.sync(() => action(0)))
     for (let index = 1; index < size; index += 1) {
-      futures.push(run(() => action(index), { name: `race-${index}` }))
+      winner = Effect.race(winner, run(`race-${index}`, Effect.sync(() => action(index))))
     }
-    return yield* race(futures)
+    return yield* winner
   })
 
 const spawnOperation = (
   size: number,
   action: (index: number) => number,
-): Operation<number> =>
-  gen(function* () {
-    const futures = new Array<Future<number>>(size)
+) =>
+  Effect.gen(function* () {
+    const fibers = new Array<Fiber.RuntimeFiber<number, unknown>>(size)
     for (let index = 0; index < size; index += 1) {
-      futures[index] = spawn(
-        gen(function* () {
-          return yield* run(() => action(index), { name: `spawn-${index}` })
-        }),
-      )
+      fibers[index] = yield* Effect.fork(run(`spawn-${index}`, Effect.sync(() => action(index))))
     }
-    const values = yield* all(futures)
+    const values = yield* Effect.all(
+      fibers.map((fiber) => Fiber.join(fiber)),
+      { concurrency: "unbounded" },
+    )
     let total = 0
     for (let index = 0; index < values.length; index += 1) {
       total += values[index] ?? 0
@@ -82,10 +71,12 @@ const spawnOperation = (
     return total
   })
 
+type OperationRequirements = Journal | FluentRequirements
+
 const seedReplay = async (
   name: string,
   size: number,
-  operation: Operation<number>,
+  operation: Effect.Effect<number, unknown, OperationRequirements>,
   validate: (value: number) => void,
 ) => {
   const url = streamUrl(`${name}-replay-${size}`)
@@ -121,9 +112,9 @@ afterAll(async () => {
 
 // fluent-firegrid-keystone.BENCHMARK.3
 for (const size of BENCH_SIZES) {
-  describe(`fluent-firegrid public all(${size}) replay`, () => {
+  describe(`fluent-firegrid public Effect.all(${size}) replay`, () => {
     bench(
-      `execute + all(${size}x run Future) replay`,
+      `execute + Effect.all(${size}x run) replay`,
       async () => {
         const url = replayUrls.get(replayKey("all", size))
         if (url === undefined) throw new Error(`missing all replay journal for ${size}`)
@@ -144,9 +135,9 @@ for (const size of BENCH_SIZES) {
     )
   })
 
-  describe(`fluent-firegrid public race(${size}) replay`, () => {
+  describe(`fluent-firegrid public Effect.race(${size}) replay`, () => {
     bench(
-      `execute + race(${size}x run Future) replay`,
+      `execute + Effect.race(${size}x run) replay`,
       async () => {
         const url = replayUrls.get(replayKey("race", size))
         if (url === undefined) throw new Error(`missing race replay journal for ${size}`)
@@ -167,9 +158,9 @@ for (const size of BENCH_SIZES) {
     )
   })
 
-  describe(`fluent-firegrid public spawn(${size}) replay`, () => {
+  describe(`fluent-firegrid public Effect.fork(${size}) replay`, () => {
     bench(
-      `execute + spawn(${size}) + all replay`,
+      `execute + Effect.fork(${size}) + Effect.all replay`,
       async () => {
         const url = replayUrls.get(replayKey("spawn", size))
         if (url === undefined) throw new Error(`missing spawn replay journal for ${size}`)

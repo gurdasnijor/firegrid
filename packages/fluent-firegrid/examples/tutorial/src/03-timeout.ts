@@ -1,11 +1,5 @@
-import {
-  execute,
-  gen,
-  run,
-  select,
-  service,
-  sleep,
-} from "@firegrid/fluent-firegrid"
+import { Effect } from "effect"
+import { execute, run, service } from "@firegrid/fluent-firegrid"
 import { delayedValue } from "./fakes.ts"
 
 export const incidentTimeout = service({
@@ -19,22 +13,15 @@ export const incidentTimeout = service({
     }) =>
       execute(
         ctx,
-        gen(function* () {
-          const selected = yield* select({
-            done: run(
-              () => delayedValue(request.workMs, `lookup:${request.incidentId}`),
-              { name: "lookup" },
-            ),
-            timeout: sleep(request.budgetMs, "lookup-budget"),
-          })
-          if (selected.tag === "timeout") return `timeout:${request.incidentId}`
-          return yield* selected.future
-        }),
+        Effect.race(
+          run("lookup", delayedValue(request.workMs, `lookup:${request.incidentId}`)),
+          Effect.as(Effect.sleep(request.budgetMs), `timeout:${request.incidentId}`),
+        ),
       ),
   },
 })
 
 export const timeoutTutorial = {
   tier: "03-timeout",
-  status: "implemented: timeout via select({ done, timeout: sleep(...) })",
+  status: "implemented: local Effect.race timeout; durable sleep is separate",
 } as const

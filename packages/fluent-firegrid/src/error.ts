@@ -5,9 +5,3 @@ export class FluentFiregridError extends Data.TaggedError("FluentFiregridError")
   readonly message: string
   readonly cause?: unknown
 }> {}
-
-export const toFluentError = (cause: unknown, message: string): FluentFiregridError =>
-  cause instanceof FluentFiregridError ? cause : new FluentFiregridError({
-    message,
-    cause,
-  })
