@@ -5,26 +5,16 @@ import {
   type DefinitionKind,
   type GeneratorHandler,
   type Handler,
-  type Operation,
+  type HandlerInput,
+  type HandlerOutput,
 } from "./definitions.ts"
 import { FluentFiregridError } from "./error.ts"
 import { execute } from "./execute.ts"
 import type { ExecutionContext, FluentRequirements } from "./schema.ts"
 
-export type InputOf<H> = H extends (
-  ctx: ExecutionContext,
-  input: infer Input,
-) => unknown ? Input
-  : H extends (input: infer Input) => unknown ? Input
-  : never
+export type InputOf<H> = HandlerInput<H>
 
-export type OutputOf<H> = H extends (
-  ...args: Array<never>
-) => Effect.Effect<infer Output, unknown, unknown> ? Output
-  : H extends (
-    ...args: Array<never>
-  ) => Operation<infer Output, unknown, unknown> ? Output
-  : never
+export type OutputOf<H> = HandlerOutput<H>
 
 export const invoke = <
   Name extends string,

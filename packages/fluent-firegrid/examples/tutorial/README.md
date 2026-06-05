@@ -16,8 +16,11 @@ Implemented:
 - `src/03-timeout.ts` — timeout branching with local `Effect.race` and
   `Effect.sleep`.
 - `src/07-state.ts` — deferred placeholder for the later state surface.
+- `src/08-clients.ts` — typed call/send clients derived from definition
+  descriptors.
 - `src/09-workflows.ts` — a workflow-shaped surface using
   `workflow({ name, handlers })`.
+- `src/10-ifaces.ts` — descriptor-only contract plus typed implementation.
 
 Deferred until the package exposes the matching primitives:
 
@@ -29,9 +32,7 @@ Deferred until the package exposes the matching primitives:
 | retry | journaled retry policy and attempt classification |
 | saga | durable compensation steps and compensation ordering helpers |
 | cancellation | durable cancellation events and AbortSignal fanout |
-| clients | typed service/object/workflow call and send descriptors |
 | workflow promises | workflowPromise, attach, key, and shared workflow handler semantics |
-| interfaces | descriptor-only contracts and codegen/client projection |
 | serdes | runtime input/output serde hooks |
 
 `src/server.ts` exports a registry instead of starting an HTTP endpoint because
@@ -52,3 +53,5 @@ deferred.
 | `race([...])` | free helper over Effect race semantics |
 | `select({ tag })` | free tagged race helper returning `{ tag, future }` |
 | `spawn(op)` | local Effect fiber affordance; durable child-session spawn is deferred |
+| typed clients | `client` / `sendClient` over a runtime-provided ingress |
+| interface descriptors | `iface.service` plus `implement` |
