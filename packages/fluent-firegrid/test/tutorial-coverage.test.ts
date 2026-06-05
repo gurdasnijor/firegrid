@@ -25,9 +25,11 @@ describe("@firegrid/fluent-firegrid tutorial coverage", () => {
       "service",
       "service",
       "object",
+      "service",
       "workflow",
+      "service",
     ])
-    expect(deferredSurface).toHaveLength(7)
+    expect(deferredSurface).toHaveLength(5)
     for (const item of deferredSurface) {
       expect(item.missing.length).toBeGreaterThan(12)
     }

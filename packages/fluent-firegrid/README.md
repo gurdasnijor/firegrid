@@ -29,3 +29,9 @@ export const basics = service({
 effect)` remains available as the lower-level handler-edge API. The package
 does not expose a bespoke `Future` scheduler or module-global current scheduler
 slot; composition delegates to Effect.
+
+Definitions carry public handler descriptors (`_handlers`) so
+`@firegrid/fluent-runtime` can bind entity control-plane operations without
+importing internals. `client` and `sendClient` derive typed call/send clients
+from those descriptors over a runtime-provided ingress; hosting and entity
+control remain outside this package.
