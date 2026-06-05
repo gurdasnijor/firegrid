@@ -734,12 +734,12 @@ const local = {
         type: "problem",
         docs: {
           description:
-            "Require firelab simulation hosts to compose through a SANCTIONED published runtime root — `@firegrid/host-sdk` firegridHost/runFiregridHost OR `@firegrid/fluent-runtime` FluentRuntimeServerLive — so sim == prod and no per-sim layer assembly creeps back in.",
+            "Require firelab simulation hosts to compose through the sanctioned published host-sdk runtime root so sim == prod and no per-sim layer assembly creeps back in.",
         },
         schema: [],
         messages: {
           missingFactoryImport:
-            "Simulation host.ts must compose through a published runtime root — import firegridHost/runFiregridHost from @firegrid/host-sdk, OR FluentRuntimeServerLive from @firegrid/fluent-runtime — not hand-assemble a runtime + ingress per sim.",
+            "Simulation host.ts must compose through a published runtime root — import firegridHost/runFiregridHost from @firegrid/host-sdk, not hand-assemble a runtime + ingress per sim.",
           missingFactoryCall:
             "Simulation host.ts imported the @firegrid/host-sdk firegridHost / runFiregridHost root but never called it.",
         },
@@ -748,27 +748,9 @@ const local = {
         const factoryNames = new Set(["firegridHost", "runFiregridHost"])
         let importedFactoryLocalName
         let calledFactory = false
-        // The fluent-runtime is a second sanctioned prod runtime; its published
-        // composition root is `FluentRuntimeServerLive` (a function returning the
-        // served Layer). Calling it is the fluent analog of firegridHost — accept
-        // it the same way. (#939 ships it as "the product layer firelab launches".)
-        let fluentRootLocalName
-        let calledFluentRoot = false
 
         return {
           ImportDeclaration(node) {
-            if (node.source.value === "@firegrid/fluent-runtime") {
-              for (const specifier of node.specifiers) {
-                if (
-                  specifier.type === "ImportSpecifier" &&
-                  specifier.imported.type === "Identifier" &&
-                  specifier.imported.name === "FluentRuntimeServerLive"
-                ) {
-                  fluentRootLocalName = specifier.local.name
-                }
-              }
-              return
-            }
             if (node.source.value !== "@firegrid/host-sdk") {
               return
             }
@@ -791,20 +773,8 @@ const local = {
             ) {
               calledFactory = true
             }
-            if (
-              fluentRootLocalName !== undefined &&
-              node.callee.type === "Identifier" &&
-              node.callee.name === fluentRootLocalName
-            ) {
-              calledFluentRoot = true
-            }
           },
           "Program:exit"(node) {
-            // Accept the fluent-runtime root (imported + called) as an equal,
-            // sanctioned composition root.
-            if (fluentRootLocalName !== undefined && calledFluentRoot) {
-              return
-            }
             if (importedFactoryLocalName === undefined) {
               context.report({ node, messageId: "missingFactoryImport" })
             } else if (!calledFactory) {
@@ -1855,38 +1825,6 @@ export default tseslint.config(
           selector: "MemberExpression[object.name='process'][property.name='exit']",
           message:
             "firelab sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
-        },
-      ],
-    },
-  },
-  {
-    files: ["packages/firelab/src/simulations/fluent-runtime-workbench/driver.ts"],
-    rules: {
-      "no-restricted-imports": "off",
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector:
-            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
-          message:
-            "firelab sims must not self-run effects. Export a driver; the runner executes it.",
-        },
-        {
-          selector: "MemberExpression[object.name='process'][property.name='exit']",
-          message:
-            "firelab sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
-        },
-        {
-          selector:
-            "Property[key.name='claimStatus'], Property[key.value='claimStatus']",
-          message:
-            "Simulations emit traces; claimStatus verdicts belong in prose findings, not code artifacts.",
-        },
-        {
-          selector:
-            "Property[key.name='findings'][value.type='ArrayExpression'], Property[key.value='findings'][value.type='ArrayExpression']",
-          message:
-            "Simulations emit traces; findings arrays belong in prose findings, not code artifacts.",
         },
       ],
     },
