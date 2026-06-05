@@ -739,19 +739,23 @@ const local = {
         schema: [],
         messages: {
           missingFactoryImport:
-            "Simulation host.ts must compose through a published runtime root — import firegridHost/runFiregridHost from @firegrid/host-sdk, not hand-assemble a runtime + ingress per sim.",
+            "Simulation host.ts must compose through a published runtime root — import firegridHost/runFiregridHost from @firegrid/host-sdk or FluentRuntimeLive from @firegrid/fluent-runtime, not hand-assemble a runtime + ingress per sim.",
           missingFactoryCall:
-            "Simulation host.ts imported the @firegrid/host-sdk firegridHost / runFiregridHost root but never called it.",
+            "Simulation host.ts imported a published runtime root but never called it.",
         },
       },
       create(context) {
-        const factoryNames = new Set(["firegridHost", "runFiregridHost"])
+        const factoryNamesBySource = new Map([
+          ["@firegrid/host-sdk", new Set(["firegridHost", "runFiregridHost"])],
+          ["@firegrid/fluent-runtime", new Set(["FluentRuntimeLive"])],
+        ])
         let importedFactoryLocalName
         let calledFactory = false
 
         return {
           ImportDeclaration(node) {
-            if (node.source.value !== "@firegrid/host-sdk") {
+            const factoryNames = factoryNamesBySource.get(node.source.value)
+            if (factoryNames === undefined) {
               return
             }
 

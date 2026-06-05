@@ -189,6 +189,9 @@ importers:
       '@firegrid/client-sdk':
         specifier: workspace:*
         version: link:../client-sdk
+      '@firegrid/fluent-runtime':
+        specifier: workspace:*
+        version: link:../fluent-runtime
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
