@@ -17,6 +17,7 @@
  * via native resume (Bridge / Adapter.prepareResume) using the recorded
  * suspension; this module only ends the turn and records the suspension.
  */
+import { Effect } from "effect"
 import type { AgentAdapter } from "./Adapter.ts"
 
 /** What the session is durably waiting on while parked. */
@@ -62,13 +63,16 @@ export const parkTransportFor = (
     ? undefined
     : { runTerminatingToolResult: adapter.runTerminatingToolResult }
 
-export interface ParkDeps {
-  /** Append the durable suspension fact (called FIRST, before returning). */
-  readonly recordSuspension: (record: ParkSuspensionRecord) => void
-  /** Forward the run-terminating tool result to the harness over the transport. */
-  readonly sendToolResult: (raw: object) => void
+export interface ParkDeps<E = never, R = never> {
+  /**
+   * Append the durable suspension fact (run FIRST). This is a durable-stream
+   * append — an Effect, not a sync callback.
+   */
+  readonly recordSuspension: (record: ParkSuspensionRecord) => Effect.Effect<void, E, R>
+  /** Forward the run-terminating tool result to the harness — a transport Effect. */
+  readonly sendToolResult: (raw: object) => Effect.Effect<void, E, R>
   /** End the current harness turn (stop forwarding; the session is now parked). */
-  readonly endTurn: () => void
+  readonly endTurn: Effect.Effect<void, E, R>
   /** Mechanism (b) producer — mandatory; without it there is no park guarantee. */
   readonly transport: ParkTransport
 }
@@ -86,22 +90,23 @@ export interface ParkOutcome {
  * The harness ends its turn because the binding sent a run-terminating result —
  * not because the model chose to stop.
  */
-export const executePark = (
+export const executePark = <E = never, R = never>(
   decision: ParkDecision,
-  deps: ParkDeps,
-): ParkOutcome => {
-  const suspension: ParkSuspensionRecord = {
-    type: "turn_parked",
-    toolCallId: decision.toolCallId,
-    reason: decision.reason,
-    waitIntent: decision.waitIntent,
-  }
-  // 1. durable suspension recorded BEFORE the run-terminating result is returned
-  deps.recordSuspension(suspension)
-  // 2. mechanism (b): the native run-terminating tool result ends the turn
-  const runTerminatingResult = deps.transport.runTerminatingToolResult(decision.toolCallId)
-  deps.sendToolResult(runTerminatingResult)
-  // 3. the turn ends over the transport — the session is parked until a wake
-  deps.endTurn()
-  return { _tag: "Parked", suspension, runTerminatingResult }
-}
+  deps: ParkDeps<E, R>,
+): Effect.Effect<ParkOutcome, E, R> =>
+  Effect.gen(function* () {
+    const suspension: ParkSuspensionRecord = {
+      type: "turn_parked",
+      toolCallId: decision.toolCallId,
+      reason: decision.reason,
+      waitIntent: decision.waitIntent,
+    }
+    // 1. durable suspension appended BEFORE the run-terminating result is returned
+    yield* deps.recordSuspension(suspension)
+    // 2. mechanism (b): the native run-terminating tool result ends the turn
+    const runTerminatingResult = deps.transport.runTerminatingToolResult(decision.toolCallId)
+    yield* deps.sendToolResult(runTerminatingResult)
+    // 3. the turn ends over the transport — the session is parked until a wake
+    yield* deps.endTurn
+    return { _tag: "Parked", suspension, runTerminatingResult }
+  })

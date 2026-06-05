@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import type { AgentAdapter } from "../src/Adapter.ts"
 import { executePark, parkTransportFor, type ParkSuspensionRecord } from "../src/Park.ts"
@@ -36,19 +37,19 @@ describe("fluent park interface — transport end-of-turn (mechanism b)", () => 
     const transport = parkTransportFor(adapterWithPark())
     expect(transport).toBeDefined()
 
-    const outcome = executePark(
+    const outcome = Effect.runSync(executePark(
       {
         toolCallId: "call-1",
         reason: "wait_for github.pr.merged",
         waitIntent: { channel: "github.pr.merged", afterOffset: "7" },
       },
       {
-        recordSuspension: (record) => { log.push("record"); records.push(record) },
-        sendToolResult: (raw) => { log.push("send"); sent.push(raw) },
-        endTurn: () => { log.push("endTurn") },
+        recordSuspension: (record) => Effect.sync(() => { log.push("record"); records.push(record) }),
+        sendToolResult: (raw) => Effect.sync(() => { log.push("send"); sent.push(raw) }),
+        endTurn: Effect.sync(() => { log.push("endTurn") }),
         transport: transport as NonNullable<typeof transport>,
       },
-    )
+    ))
 
     // durable suspension recorded BEFORE the run-terminating result is returned,
     // then the turn ends over the transport
@@ -69,15 +70,15 @@ describe("fluent park interface — transport end-of-turn (mechanism b)", () => 
 
     // The fake adapter's spawn rejects; executePark never calls it — Firegrid does
     // not own/re-drive the model loop while parking. (No throw ⇒ spawn untouched.)
-    executePark(
+    Effect.runSync(executePark(
       { toolCallId: "c2", reason: "approval", waitIntent: { channel: "approval:send" } },
       {
-        recordSuspension: (record) => records.push(record),
-        sendToolResult: () => {},
-        endTurn: () => {},
+        recordSuspension: (record) => Effect.sync(() => { records.push(record) }),
+        sendToolResult: () => Effect.void,
+        endTurn: Effect.void,
         transport: transport as NonNullable<typeof transport>,
       },
-    )
+    ))
 
     // the suspension carries what a wake needs to re-register + re-enter natively
     // (native re-entry itself is Bridge.start → Adapter.prepareResume, gated for a real harness)
