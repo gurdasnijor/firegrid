@@ -25,6 +25,15 @@ spec introduced in durable-streams PR #346:
 The aim is to make every boundary falsifiable. A reader should be able to point
 at an actor, a stream write, a wake, or a schema and know which package owns it.
 
+## Architecture Doc Set
+
+Detailed role diagrams live under `docs/cannon/architecture/fluent/`:
+
+- [`fluent/README.md`](fluent/README.md) is the doc-set index.
+- [`fluent/harness-io.md`](fluent/harness-io.md) is the harness I/O role map:
+  ACP downstream client, ACP editor-facing conductor, future native/cloud
+  adapters, and Effect AI `LanguageModel` fronted work.
+
 ## Summary
 
 Firegrid is not the manager of the agent's reasoning loop. The external harness
@@ -33,15 +42,17 @@ owns the loop; Firegrid owns durable coordination around that loop.
 The durable source of truth is a Durable Streams log. Multiple Firegrid-owned or
 Firegrid-integrated actors read and write that log:
 
-- the harness adapter records observed agent events;
+- Firegrid's harness I/O roles record observed agent events;
+- Firegrid's ACP client/conductor records ACP observations when the harness or
+  editor speaks ACP;
 - the fluent host records coordination events and resolves waits;
 - clients append user/control intents through an authorized surface;
 - post-wake source handlers append timer, child, and wake results;
 - projections read the log to render or verify product state.
 
-The raw agent process does not write to Durable Streams directly. A bridge or
-adapter may write, but that bridge is part of the Firegrid integration boundary,
-not the harness itself.
+The raw agent process does not write to Durable Streams directly. Firegrid-owned
+harness I/O roles may write through fluent-runtime, but those roles are part of
+the Firegrid integration boundary, not the harness itself.
 
 The choreography promise scales across harnesses because the contract is not
 "run this one agent implementation." It is: adapt any Claude, Codex, ACP, stdio,
@@ -60,67 +71,65 @@ harness owns the model loop.
 ## System Shape
 
 ```text
-AUTHORING LIBRARY
 ┌──────────────────────────────────────────────────────────────────────┐
+│ AUTHORING                                                            │
 │ packages/fluent-firegrid                                             │
-│ Operation/Future engine, combinators, descriptors, typed clients      │
-│ Process-free. Imported by handlers and by packages/fluent-runtime.    │
+│ Operation/Future engine, combinators, descriptors, typed clients.     │
+│ Process-free; imported by handlers and fluent-runtime.                │
 └──────────────────────────────────────────────────────────────────────┘
 
-LIVE ACTORS / PROCESSES
-Durable boundary:
 ┌──────────────────────────────────────────────────────────────────────┐
+│ DURABLE BOUNDARY                                                     │
 │ Durable Streams                                                      │
-│                                                                      │
-│  DS-L0 streams                                                       │
-│    session/entity log: L1 harness facts + L2 Firegrid facts          │
-│    append/read/offset/close/fork + producer fencing                  │
-│                                                                      │
-│  DS-L1/L2 consumer substrate                                         │
-│    named consumers, cursors, leases, claim/ack/release, retry,       │
-│    webhook wake auth/callback/done, pull-wake delivery               │
-└───────────────▲───────────────────────────────┬──────────────────────┘
-                │ append/read                    │ authenticated wake or
-                │                                │ DS-granted claim
-                │                                ▼
-┌───────────────┴──────────────┐      ┌───────────────────────────────┐
-│ packages/fluent-runtime      │      │ packages/fluent-runtime       │
-│ control/source ingress       │      │ post-wake product actor       │
-│                              │      │                               │
-│ client intent -> append      │      │ read offsets, materialize     │
-│ accepted provider event      │      │ evaluate CEL, append L2       │
-│   -> append state fact       │      │ drive/resume adapter          │
-│ peer/child/timer fact        │      │ ack/done through DS only      │
-└───────────────▲──────────────┘      └───────────────┬───────────────┘
-                │                                     │ drive/resume
-                │                                     ▼
-┌───────────────┴──────────────┐      ┌───────────────────────────────┐
-│ clients / providers / peers  │      │ adapter / bridge              │
-│ prompt, approval, cancel,    │      │ coding-agents shape           │
-│ provider deliveries, sends   │      │ appends L1 observations       │
-└──────────────────────────────┘      └───────────────┬───────────────┘
-                                                      │ native protocol
-                                                      ▼
-                                      ┌───────────────────────────────┐
-                                      │ external harness              │
-                                      │ Claude/Codex/ACP/cloud/etc.   │
-                                      │ owns model loop               │
-                                      │ writes no Durable Streams     │
-                                      └───────────────────────────────┘
+│ DS-L0 stream log: session/entity facts, append/read/close/fork        │
+│ DS-L1/L2 consumer substrate: cursor, lease, claim/ack/release, wake   │
+└───────────────────────────────────────▲──────────────────────────────┘
+                                        │ append/read, DS-granted wake
+                                        │
+┌───────────────────────────────────────┴──────────────────────────────┐
+│ FIREGRID SESSION AUTHORITY                                            │
+│ packages/fluent-runtime                                               │
+│ - accepts user/control/provider facts                                 │
+│ - records L2 coordination: waits, timers, children, tool results       │
+│ - handles DS wake claims: materialize, evaluate CEL, redrive, ack      │
+│ - owns ACP client/conductor roles; raw processes remain outside        │
+└───────────────▲───────────────────────────────────────┬──────────────┘
+                │ accepted ingress                       │ drive/resume
+                │                                        │
+┌───────────────┴────────────────┐       ┌───────────────▼─────────────┐
+│ CLIENTS / PROVIDERS / PEERS    │       │ HARNESS I/O ROLES            │
+│ prompts, approvals, webhooks,  │       │ FiregridAcpClient            │
+│ sends, timer/child/source facts│       │ FiregridAcpConductor         │
+└────────────────────────────────┘       │ native/cloud lowering        │
+                                         │ LanguageModel adapter        │
+                                         └───────────────┬──────────────┘
+                                                         │ native protocol
+                                                         ▼
+                                         ┌──────────────────────────────┐
+                                         │ RAW / EXTERNAL HARNESS        │
+                                         │ Claude, Codex, ACP, cloud,    │
+                                         │ stdio/HTTP, provider models   │
+                                         │ owns loop; no DS writes       │
+                                         └──────────────────────────────┘
 
-Read models:
-┌────────────────────────────┐        read         ┌─────────────────────┐
-│ Durable Streams session log│────────────────────▶│ projections / UI    │
-│ L1 + L2                    │                     │ firelab acceptance  │
-└────────────────────────────┘                     └─────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ READ MODELS / ACCEPTANCE                                             │
+│ projections, UI, Firelab, and Gherkin acceptance read stream facts.   │
+│ They do not own coordination authority.                               │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 The raw agent harness speaks only its native protocol and writes no Durable
-Streams records. The adapter/bridge records Layer 1 observations. Durable
-Streams owns the durable stream and wake substrate. `packages/fluent-runtime`
-owns product ingress and post-wake product work: append accepted facts, evaluate
-Firegrid semantics, drive/resume the adapter, append Layer 2 outcomes, and
-ack/done through Durable Streams only after the durable outcome is recorded.
+Streams records. Firegrid's harness I/O roles record Layer 1 observations
+through fluent-runtime. Durable Streams owns the durable stream and wake
+substrate. `packages/fluent-runtime` owns product ingress and post-wake product
+work: append accepted facts, evaluate Firegrid semantics, drive/resume the
+harness I/O role, append Layer 2 outcomes, and ack/done through Durable Streams
+only after the durable outcome is recorded.
+
+Detailed role diagrams for ACP downstream harnesses, Zed/editor ACP conductor,
+future native/cloud adapters, and Effect AI `LanguageModel` fronted work live in
+[`fluent/harness-io.md`](fluent/harness-io.md).
 
 ## Substrate Layer Architecture
 
@@ -329,8 +338,9 @@ without duplicated Layer 1 side effects.
 | Component | Owns | Does not own |
 |---|---|---|
 | `packages/fluent-firegrid` | Composable authoring API: `Operation`, `Future`, `gen`, `run`, `sleep`, combinators, descriptors, typed clients | Processes, HTTP servers, MCP servers, Durable Streams workers, agent loop ownership |
-| `packages/fluent-runtime` | Fluent host: store, ingress, sources, workers, future HTTP/MCP surfaces, wake/redrive semantics, Durable Streams reads/writes | The agent's model loop, UI read-model schema, raw ACP protocol details |
-| `coding-agents` bridge/adapter | Spawning the ACP/native agent process, bidirectional protocol forwarding, raw/normalized harness event capture, native resume artifact reconstruction | Firegrid coordination semantics such as wait matching, timer firing, child lifecycle ownership |
+| `packages/fluent-runtime` | Fluent host: store, ingress, sources, workers, future HTTP/MCP surfaces, ACP client/conductor roles, wake/redrive semantics, Durable Streams reads/writes | The agent's model loop, UI read-model schema, raw process ownership |
+| ACP process owner package | Spawning/killing downstream ACP agent processes and exposing ACP streams | Firegrid ACP client callbacks, Durable Streams writes, Layer 1/Layer 2 facts, read-model schemas |
+| Native/cloud harness adapters | Native protocol fidelity, native resume, replay suppression for harness-native side effects | Firegrid coordination semantics such as wait matching, timer firing, child lifecycle ownership |
 | External harness | The model loop and native protocol behavior | Direct Durable Streams writes, durable coordination, redrive decisions |
 | Durable Streams | Append-only log, stream closure, fork, producer fencing, subscriptions/wake delivery substrate | Product semantics, schema projection decisions, wait predicate meaning |
 | Client/control plane | Authorized user intent, prompt, approval, cancel, send, fork/tag/schedule requests | Bypassing fluent-runtime coordination or directly mutating coordination state |
@@ -347,8 +357,8 @@ and Layer 2.
 
 **Layer 1: harness observation.** These are facts observed from the external
 agent harness: assistant text, reasoning, tool calls, tool results, permission
-requests, file changes, and turn completion. The adapter/normalizer owns the
-translation from native protocol to normalized event shape.
+requests, file changes, and turn completion. The harness I/O boundary records
+the protocol event; projection/read-model code owns normalized query shapes.
 
 **Layer 2: Firegrid coordination.** These are facts Firegrid owns: wait intents,
 wait matches, timers, child session lifecycle, committed tool results, approvals,
@@ -368,7 +378,9 @@ The one-log design removes cross-store reconciliation, not this intra-log lift.
 | Actor | Writes to Durable Streams | Reads from Durable Streams |
 |---|---|---|
 | Raw agent process | Nothing directly | Nothing directly |
-| Adapter / bridge | Layer 1 raw or normalized harness events; bridge lifecycle records | Existing history for native resume |
+| Firegrid ACP client / conductor | Layer 1 ACP observations, role/process lifecycle records, Layer 2 outcomes through fluent-runtime | Session stream for redrive and resume context |
+| ACP process owner | Nothing | Nothing; it owns process stdio only |
+| Native/cloud harness adapter | Layer 1 native observations through fluent-runtime | Existing history for native resume |
 | Client / control plane | User intents, prompt/cancel/approval responses, addressed sends | Projections and current session state |
 | Fluent host | Layer 2 coordination events, durable tool results, terminal records | Session/turn state before wake handling and redrive |
 | Event ingress | Fenced external state-change facts | Pending waits through fluent-runtime sources |
@@ -376,56 +388,21 @@ The one-log design removes cross-store reconciliation, not this intra-log lift.
 | Projection/UI | Nothing authoritative | Layer 1 and Layer 2 logs projected into read models |
 | Firelab | Usually nothing authoritative except scenario setup | Product-observable stream facts and projections |
 
-## Harness Adapter Contract
+## Harness I/O Contract
 
-An adapter lets a harness participate without making Firegrid own that harness's
-model loop. Each adapter must:
+A harness I/O binding lets a harness participate without making Firegrid own
+that harness's model loop. The binding details are now split into
+[`fluent/harness-io.md`](fluent/harness-io.md) because this is a load-bearing
+role contract.
 
-1. drive or resume the harness in its native protocol;
-2. observe native events and append faithful Layer 1 records;
-3. translate Firegrid durable tool calls into host-owned Layer 2 coordination;
-4. feed host-committed results back to the harness;
-5. reconstruct native resume state, or provide replay suppression for every
-   already-observed Layer 1 side effect;
-6. preserve native permission, approval, cancel, and interrupt semantics.
+The short rule is:
 
-The fifth item is the safety condition that lets choreography scale across
-Claude ACP, Codex, cloud agents, stdio agents, HTTP agents, and future harnesses.
-Adapter differences are allowed; duplicate side effects on resume are not.
-
-### Harness Observation Contract
-
-The adapter/bridge is the only component that translates harness-native protocol
-traffic into Layer 1. It must not behave like the old runtime `sources` layer,
-where observation, delivery, projection, and coordination could blur together.
-
-Required interaction:
-
-```text
-external harness
-  emits native protocol event
-      │
-      ▼
-adapter / bridge
-  classify event: text, reasoning, tool_call, tool_result,
-  permission_request, file_change, turn_complete, status
-      │
-      ├─ append faithful L1 event to the session stream
-      │
-      └─ if event is a Firegrid tool call:
-           call fluent-runtime tool binding
-           wait for host result or park signal
-           send native tool response back to harness
-```
-
-Layer 1 is observation, not authority. The adapter may normalize and materialize
-for query, but it does not decide wait matches, timer fires, child completion, or
-durable tool results. Those are Layer 2 decisions owned by `fluent-runtime`.
-
-For resume, the adapter uses the L1 stream to reconstruct the native artifact or
-to suppress replay of already-observed side effects. A renderer or materializer
-may change without rewriting history; the raw/normalized L1 facts remain the
-evidence.
+- ACP downstream subprocesses use `FiregridAcpClient implements acp.Client`.
+- Zed/editor-launched sessions use `FiregridAcpConductor implements acp.Agent`.
+- Future native/cloud harnesses use native lowering adapters.
+- Process-owner packages spawn/kill and expose protocol streams only; they do
+  not write Layer 1, Layer 2, projections, or Durable Streams facts.
+- Resume must not re-execute any already-observed Layer 1 side effect.
 
 ## MCP Host And Tool Binding
 
@@ -439,7 +416,7 @@ harness tool call
   wait_for / sleep / spawn / spawn_all / schedule_me / execute
       │
       ▼
-adapter observes native tool_call and appends L1
+harness I/O boundary records L1 tool_call
       │
       ▼
 Firegrid MCP host
@@ -451,7 +428,7 @@ fluent-runtime tool service
   park or return host-committed result
       │
       ▼
-adapter sends native tool_result back to harness
+harness I/O boundary returns native tool_result to harness
 ```
 
 Two tool families share the edge:
@@ -470,9 +447,10 @@ Durable Streams facts.
 
 | Schema family | Owner | Notes |
 |---|---|---|
-| ACP/raw harness envelopes | `coding-agents` bridge/adapter | Protocol fidelity boundary. |
-| `NormalizedEvent` taxonomy | adapter/projection layer, currently `coding-agents` | Shared read-model input for harness events. |
-| Agent DB rows: messages, turns, tool calls, permission requests, participants | projection/read-model layer, currently `coding-agents/src/agent-db-schema.ts` | UI/query schema over Layer 1. Not fluent-runtime coordination state. |
+| ACP protocol envelopes | ACP SDK; observed by `FiregridAcpClient` / `FiregridAcpConductor` | Protocol fidelity boundary for ACP roles. |
+| Native harness envelopes | Native/cloud lowering adapter | Protocol fidelity boundary for non-ACP harnesses. |
+| `NormalizedEvent` taxonomy | projection/read-model layer | Shared read-model input for harness events. |
+| Agent DB rows: messages, turns, tool calls, permission requests, participants | projection/read-model layer | UI/query schema over Layer 1. Not fluent-runtime coordination state. Prior art may be ported from `coding-agents/src/agent-db-schema.ts`, but ownership moves to Firegrid projections. |
 | Firegrid coordination rows: waits, timers, child lifecycle, committed tool results, terminal records | `packages/fluent-runtime` | Layer 2 durable coordination facts. |
 | Authoring types: `Operation`, `Future`, descriptors, typed clients | `packages/fluent-firegrid` | Library surface; no process or worker ownership. |
 | Durable Streams protocol: append/read/close/fork/subscription/fencing | Durable Streams packages | Substrate, not product semantics. |
@@ -635,13 +613,13 @@ which still require side machinery.
 |---|---|---|
 | Agent loop ownership | Post-cutover runtime already trends toward a per-event adapter-forwarding shape where the harness owns the loop. | Same principle, made explicit as the package/process contract. |
 | Durable topology | Runtime keeps key coordination durability in workflow tables/context/channel machinery beside the event stream. | Durable Streams session log is the single durable boundary; Layer 1 and Layer 2 are explicit stream facts. |
-| Primary runtime unit | Runtime context, channel router, workflow-engine bodies, subscribers, and edge adapters. | `handleSession(wake)` over a materialized stream, plus bridge/adapter-driven harness resume. |
+| Primary runtime unit | Runtime context, channel router, workflow-engine bodies, subscribers, and edge adapters. | `handleSession(wake)` over a materialized stream, plus role-specific harness I/O resume. |
 | Public authoring layer | Historically coupled to runtime execution and protocol projections. | `packages/fluent-firegrid` is process-free: Operation/Future engine, descriptors, and typed clients only. |
 | Process/host layer | Large runtime package owns edge routing, workflows, substrate adapters, and session machinery together. | `packages/fluent-runtime` is the fluent host: store, ingress, wake/redrive, workers, and future HTTP/MCP surfaces. |
-| Agent events | Runtime-specific observation/projection paths. | Adapter/bridge records Layer 1 harness events; projection/read-model schemas stay outside fluent-runtime. |
+| Agent events | Runtime-specific observation/projection paths. | Firegrid harness I/O roles record Layer 1 harness events; projection/read-model schemas stay outside fluent-runtime. |
 | Coordination events | Spread across runtime workflows, channels, context state, and subscribers. | Fluent host owns Layer 2 facts: waits, timers, children, committed tool results, approvals, terminal records. |
-| Schema ownership | Multiple surfaces historically projected through runtime/client/protocol edges. | Schema families have explicit owners: bridge/projection for agent DB; fluent-runtime for coordination; fluent-firegrid for authoring types. |
-| Extensibility | Adding surfaces tends to add runtime-specific adapters or route plumbing. | New harnesses plug in through adapter/bridge contracts; new coordination behavior lands as Layer 2 facts plus fluent host handling. |
+| Schema ownership | Multiple surfaces historically projected through runtime/client/protocol edges. | Schema families have explicit owners: projection for agent DB; fluent-runtime for coordination; fluent-firegrid for authoring types. |
+| Extensibility | Adding surfaces tends to add runtime-specific adapters or route plumbing. | New harnesses plug in through role-specific harness I/O contracts; new coordination behavior lands as Layer 2 facts plus fluent host handling. |
 | Verification target | Often requires understanding internal runtime workflows and traces. | Firelab/acceptance verifies product-observable stream facts and projections; traces are diagnostic. |
 
 The replacement goal is architectural reduction: keep the composable authoring
@@ -664,11 +642,13 @@ lessons should be mined and revalidated against the fluent architecture.
 - Product code must not import vendored references under `repos/`.
 - Projection packages may consume stream logs and normalized events, but must not
   own coordination semantics.
-- Bridge packages may spawn and resume harnesses, but must not implement
-  Firegrid wait/timer/child semantics.
+- Process-owner packages may spawn/kill harness processes, but must not
+  implement Firegrid wait/timer/child semantics or write Durable Streams facts.
+- Harness I/O packages may translate protocol traffic into Layer 1 facts, but
+  Layer 2 coordination authority stays in fluent-runtime.
 - Legacy `packages/runtime` is not a durability design reference for fluent
   architecture. It may be read for integration edge cases that must be tested
-  through the fluent bridge and host.
+  through the fluent harness I/O roles and host.
 
 ## Non-Goals
 
