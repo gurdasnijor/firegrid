@@ -570,9 +570,9 @@ module.exports = {
       name: "firelab-sim-no-fake-substitutes",
       severity: "error",
       comment:
-        "firelab simulations must exercise production code: no fake codec/sandbox modules and no direct adapter internals from simulations.",
+        "firelab experiments must exercise production code: no fake codec/sandbox modules and no direct adapter internals from experiments.",
       from: {
-        path: "^packages/firelab/src/simulations/",
+        path: "^packages/firelab/src/experiments/",
       },
       to: {
         path: [
@@ -598,11 +598,11 @@ module.exports = {
       comment:
         "firelab sims drive the public client/host seam; only host.ts composes the substrate. No runtime/host-sdk/protocol internals, workflow internals, or durable-streams imports from a non-host.ts sim file.",
       from: {
-        path: "^packages/firelab/src/simulations/",
+        path: "^packages/firelab/src/experiments/",
         pathNot: [
           "/host\\.ts$",
-          "^packages/firelab/src/simulations/fluent-runtime-workbench/sandbox-activity-host\\.ts$",
-          "^packages/firelab/src/simulations/restate-primitive-compat/",
+          "^packages/firelab/src/experiments/fluent-runtime-workbench/sandbox-activity-host\\.ts$",
+          "^packages/firelab/src/experiments/restate-primitive-compat/",
         ],
       },
       to: {

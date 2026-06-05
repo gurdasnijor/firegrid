@@ -52,10 +52,10 @@ which job you're doing.
 
 ## What counts as a simulation
 
-- A folder under `src/simulations/<id>/` with `index.ts`, `driver.ts`, `host.ts`
+- A folder under `src/experiments/<id>/` with `index.ts`, `driver.ts`, `host.ts`
   (split is preferred for navigability; flatter shapes are fine for very small
   sims).
-- A default export that satisfies `FirelabSimulation<A>`: an `id` (must
+- A default export that satisfies `FirelabExperiment<A>`: an `id` (must
   match the folder), `description`, `host(env): Layer<FiregridHost>`,
   `driver: Effect<A, _, Firegrid>`, and a `coverage: { gates, corroborations }`
   spec (the computed verdict; see "The trace-coverage oracle" below). `coverage`
@@ -171,7 +171,7 @@ The driver/host airgap above is not honor-system — it is enforced in CI, and
 re-introducing a violation turns the build **red**:
 
 - **Layout allowlist** (`scripts/firelab-layout-check.mjs`): `src/` holds
-  only `{simulations/, runner/, experiment*, bin/, index.ts, types.ts}`. A spike
+  only `{experiments/, runner/, experiment*, bin/, index.ts, types.ts}`. A spike
   dropped under a new top-level dir (the retired `prototypes/`) fails the gate.
 - **Sim airgap** (dep-cruiser, whole sim, `host.ts` carved out): no non-`host.ts`
   sim file may import `@firegrid/{runtime,host-sdk}/src`, protocol internals, or

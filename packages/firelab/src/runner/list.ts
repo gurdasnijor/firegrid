@@ -1,15 +1,15 @@
 import { FileSystem, Path } from "@effect/platform"
 import { Data, Effect, Option } from "effect"
-import type { FirelabSimulation } from "../types.ts"
+import type { FirelabExperiment } from "../types.ts"
 
-// Simulations live exactly one level deep: `simulations/<id>/index.ts`, where the
+// Experiments live exactly one level deep: `experiments/<id>/index.ts`, where the
 // folder name IS the `id` (enforced by scripts/firelab-layout-check.mjs).
 // No recursion, no per-folder denylist: discovery lists folder names only (never
 // imports), and loading a sim is isolated per-id, so one sim's bad import can no
 // longer sink the whole runner.
-const simulationsDirUrl = new URL("../simulations/", import.meta.url)
+const experimentsDirUrl = new URL("../experiments/", import.meta.url)
 const moduleUrlFor = (id: string): string =>
-  new URL(`${id}/index.ts`, simulationsDirUrl).href
+  new URL(`${id}/index.ts`, experimentsDirUrl).href
 
 class SimulationFolderInvalid extends Data.TaggedClass("SimulationFolderInvalid")<{
   readonly id: string
@@ -23,7 +23,7 @@ class UnknownSimulation extends Data.TaggedClass("UnknownSimulation")<{
 
 const isSimulation = (
   value: unknown,
-): value is FirelabSimulation<unknown> => {
+): value is FirelabExperiment<unknown> => {
   if (typeof value !== "object" || value === null) return false
   const candidate = value as Record<string, unknown>
   return typeof candidate["id"] === "string" &&
@@ -32,14 +32,14 @@ const isSimulation = (
     candidate["driver"] !== undefined
 }
 
-// The available simulation ids: immediate subdirectories of `simulations/` that
+// The available simulation ids: immediate subdirectories of `experiments/` that
 // contain an `index.ts`. Pure directory listing — imports nothing, so it cannot
 // be broken by any single sim's import error. `_`/`.`-prefixed folders are
 // skipped by convention (scaffolding / hidden).
-const simulationIds = Effect.gen(function*() {
+const experimentIds = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const dir = yield* path.fromFileUrl(simulationsDirUrl)
+  const dir = yield* path.fromFileUrl(experimentsDirUrl)
   const names = yield* fs.readDirectory(dir)
   const candidates = names
     .filter(name => !name.startsWith("_") && !name.startsWith("."))
@@ -50,11 +50,11 @@ const simulationIds = Effect.gen(function*() {
 
 // Import + validate a single sim by id. `Effect.tryPromise` (not `Effect.promise`)
 // so a failing module import surfaces as a typed, catchable `SimulationFolderInvalid`
-// rather than an uncatchable defect — that is what lets `listSimulations` skip a
-// broken sim and `selectedSimulation` import only the one requested.
+// rather than an uncatchable defect — that is what lets `listExperiments` skip a
+// broken sim and `selectedExperiment` import only the one requested.
 const loadSimulationById = (
   id: string,
-): Effect.Effect<FirelabSimulation<unknown>, SimulationFolderInvalid> =>
+): Effect.Effect<FirelabExperiment<unknown>, SimulationFolderInvalid> =>
   Effect.gen(function*() {
     const module = yield* Effect.tryPromise({
       try: () =>
@@ -82,8 +82,8 @@ const loadSimulationById = (
 
 // `simulate list`: load every discovered sim, but isolate failures — a sim whose
 // import or shape is broken is skipped with a warning, not fatal to the listing.
-export const listSimulations = Effect.gen(function*() {
-  const ids = yield* simulationIds
+export const listExperiments = Effect.gen(function*() {
+  const ids = yield* experimentIds
   const loaded = yield* Effect.forEach(
     ids,
     id =>
@@ -92,7 +92,7 @@ export const listSimulations = Effect.gen(function*() {
         Effect.catchAll(error =>
           Effect.logWarning(
             `firelab: skipping simulation "${id}" — ${error.reason}`,
-          ).pipe(Effect.as(Option.none<FirelabSimulation<unknown>>())),
+          ).pipe(Effect.as(Option.none<FirelabExperiment<unknown>>())),
         ),
       ),
     { concurrency: "unbounded" },
@@ -105,15 +105,15 @@ export const listSimulations = Effect.gen(function*() {
 // available ids (a pure folder listing) so the CLI lists them. There is no
 // "default simulation": running without an explicit id must error rather than
 // silently picking the alphabetically-first folder.
-export const selectedSimulation = (
-  simulationId: string,
+export const selectedExperiment = (
+  experimentId: string,
 ) =>
   Effect.gen(function*() {
-    const ids = yield* simulationIds
-    if (!ids.includes(simulationId)) {
+    const ids = yield* experimentIds
+    if (!ids.includes(experimentId)) {
       return yield* Effect.fail(
-        new UnknownSimulation({ id: simulationId, available: ids }),
+        new UnknownSimulation({ id: experimentId, available: ids }),
       )
     }
-    return yield* loadSimulationById(simulationId)
+    return yield* loadSimulationById(experimentId)
   })

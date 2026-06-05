@@ -17,7 +17,7 @@ import {
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   type FirelabHostEnv,
-  type FirelabSimulation,
+  type FirelabExperiment,
 } from "../types.ts"
 import {
   analyzeCoverage,
@@ -68,8 +68,8 @@ const sanitizeSegment = (value: string): string =>
 // runner used the same shape; we keep it for consistency.
 // CLI artifact-directory filename stamp, not durable workflow state.
 // effect-quality-allow-wall-clock
-const newRunId = (simulationId: string): string =>
-  `${new Date().toISOString().replace(/[:.]/g, "-")}__${sanitizeSegment(simulationId)}`
+const newRunId = (experimentId: string): string =>
+  `${new Date().toISOString().replace(/[:.]/g, "-")}__${sanitizeSegment(experimentId)}`
 
 // Package-relative .simulate/ root. Resolved off this module's URL (via the
 // Path service inside the run Effect) so it stays correct regardless of cwd —
@@ -100,7 +100,7 @@ interface RunOptions {
 // preserved.
 const maybeWriteLatest = (
   runId: string,
-  simulationId: string,
+  experimentId: string,
   runDir: string,
   tracePath: string,
   latestPath: string,
@@ -112,13 +112,13 @@ const maybeWriteLatest = (
     if (Number(info.size) === 0) return
     yield* fs.writeFileString(
       latestPath,
-      JSON.stringify({ runId, simulationId, runDir }, null, 2) + "\n",
+      JSON.stringify({ runId, experimentId, runDir }, null, 2) + "\n",
     )
     yield* Effect.logDebug("latest pointer updated")
   })
 
-export const runSimulation = (
-  simulation: FirelabSimulation<unknown>,
+export const runExperiment = (
+  simulation: FirelabExperiment<unknown>,
   options: RunOptions,
 ) =>
   Effect.gen(function*() {
@@ -160,7 +160,7 @@ export const runSimulation = (
       heartbeatProcessor: heartbeat?.processor,
     })
     const hostEnv: FirelabHostEnv = {
-      simulationId: simulation.id,
+      experimentId: simulation.id,
       runId,
       namespace,
       durableStreamsBaseUrl: baseUrl,
@@ -201,7 +201,7 @@ export const runSimulation = (
       yield* Effect.logInfo("simulation starting").pipe(
         Effect.annotateLogs({
           runId,
-          simulationId: simulation.id,
+          experimentId: simulation.id,
           namespace,
           baseUrl,
         }),
@@ -258,7 +258,7 @@ export const runSimulation = (
       yield* Effect.logInfo("simulation stopped").pipe(
         Effect.annotateLogs({
           runId,
-          simulationId: simulation.id,
+          experimentId: simulation.id,
           namespace,
           baseUrl,
           outcome: outcome._tag,

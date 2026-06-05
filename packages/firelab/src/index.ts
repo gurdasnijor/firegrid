@@ -2,18 +2,18 @@ import { Args, Command, Options } from "@effect/cli"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { Console, Effect } from "effect"
 import {
-  listSimulations,
-  selectedSimulation,
+  listExperiments,
+  selectedExperiment,
 } from "./runner/list.ts"
 import { gapsReport, seamsCoverage } from "./runner/coverage-cli.ts"
-import { runSimulation } from "./runner/runtime.ts"
+import { runExperiment } from "./runner/runtime.ts"
 import { showPerf } from "./runner/perf.ts"
 import { listRuns, showRun } from "./runner/show.ts"
 
 // Required argument — no default-sim fallback. Implicit alphabetical-first
 // selection silently picks the wrong simulation the moment someone adds an
 // earlier folder; the CLI should make you name what you ran.
-const simulationIdArg = Args.text({ name: "simulation-id" })
+const experimentIdArg = Args.text({ name: "simulation-id" })
 const timeoutOption = Options.integer("timeout-ms").pipe(
   Options.withDescription("Abort a simulation run after this many milliseconds"),
   Options.withDefault(300_000),
@@ -53,9 +53,9 @@ const findingThresholdOption = Options.integer("finding-threshold-ms").pipe(
 )
 
 const listCommand = Command.make("list", {}, () =>
-  Effect.flatMap(listSimulations, simulations =>
+  Effect.flatMap(listExperiments, experiments =>
     Console.log(
-      simulations
+      experiments
         .map(simulation => `${simulation.id}\t${simulation.description}`)
         .join("\n"),
     )))
@@ -63,17 +63,17 @@ const listCommand = Command.make("list", {}, () =>
 const runCommand = Command.make(
   "run",
   {
-    simulationId: simulationIdArg,
+    experimentId: experimentIdArg,
     timeoutMs: timeoutOption,
     consoleExporter: consoleOption,
     watch: watchOption,
   },
-  ({ simulationId, timeoutMs, consoleExporter, watch }) =>
+  ({ experimentId, timeoutMs, consoleExporter, watch }) =>
     Effect.flatMap(
-      selectedSimulation(simulationId),
+      selectedExperiment(experimentId),
       simulation =>
         Effect.flatMap(
-          runSimulation(simulation, {
+          runExperiment(simulation, {
             timeoutMs,
             console: consoleExporter,
             watch,
@@ -128,9 +128,9 @@ const perfCommand = Command.make(
 // instrumentation map for a past run.
 const seamsCommand = Command.make(
   "seams",
-  { simulationId: simulationIdArg, runId: runIdArg },
-  ({ simulationId, runId }) =>
-    seamsCoverage(simulationId, runId._tag === "Some" ? runId.value : undefined),
+  { experimentId: experimentIdArg, runId: runIdArg },
+  ({ experimentId, runId }) =>
+    seamsCoverage(experimentId, runId._tag === "Some" ? runId.value : undefined),
 )
 
 const gapsCommand = Command.make(
@@ -152,7 +152,7 @@ const command = Command.make("simulate").pipe(
 )
 
 const cli = Command.run(command, {
-  name: "Tiny Firegrid simulations",
+  name: "Tiny Firegrid experiments",
   version: "0.0.0",
 })
 

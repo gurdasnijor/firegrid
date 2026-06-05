@@ -8,7 +8,7 @@ import type {
 } from "@firegrid/observability/node"
 import { Command, FileSystem, Path } from "@effect/platform"
 import { Effect, Layer } from "effect"
-import type { FirelabSimulation } from "../types.ts"
+import type { FirelabExperiment } from "../types.ts"
 
 // Run-provenance attributes (Item E of the §6 observability batch). They
 // identify the binary that produced the trace, independent of the run. Each
@@ -41,7 +41,7 @@ const provenanceAttributes = Effect.gen(function*() {
 })
 
 const resource = (
-  simulation: FirelabSimulation<unknown>,
+  simulation: FirelabExperiment<unknown>,
   runId: string,
   options: {
     readonly namespace: string
@@ -73,7 +73,7 @@ export type TelemetryDestination = FiregridOtelDestination
 // is built — `Layer.unwrapEffect` over a config Effect is the idiomatic
 // @effect/opentelemetry shape (`NodeSdk.layer` likewise accepts an Effect config).
 export const TelemetryLive = (
-  simulation: FirelabSimulation<unknown>,
+  simulation: FirelabExperiment<unknown>,
   runId: string,
   options: {
     readonly namespace: string

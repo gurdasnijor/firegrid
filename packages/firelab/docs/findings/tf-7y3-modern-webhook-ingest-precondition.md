@@ -7,7 +7,7 @@ redesign). Two sub-capabilities are publicly expressible; three are NOT
 expressible without reaching past the public surface. Per factory-vision
 §8 the attempt is the evidence: this records a precise substrate gap.
 
-Sim: `packages/firelab/src/simulations/verified-webhook-ingest-pipeline.ts`
+Sim: `packages/firelab/src/experiments/verified-webhook-ingest-pipeline.ts`
 (registered). Trace artifact is the deliverable.
 
 ## Attempt: external event -> durable verified fact, public surface only

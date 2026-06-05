@@ -2,22 +2,22 @@
 
 Private simulation runner for generating observable Firegrid host/client runs.
 
-Each runnable simulation lives in a folder under `src/simulations/` with a
+Each runnable simulation lives in a folder under `src/experiments/` with a
 default export from `index.ts`:
 
 ```ts
-import type { FirelabSimulation } from "../../types.ts"
+import type { FirelabExperiment } from "../../types.ts"
 
 export default {
   id: "my-simulation",
   description: "short description",
   host: env => /* configured FiregridHost layer */,
   driver: /* Effect requiring Firegrid */,
-} satisfies FirelabSimulation<unknown>
+} satisfies FirelabExperiment<unknown>
 ```
 
 The driver only receives the `Firegrid` client service. Host configuration stays
-behind the `host(env)` layer so simulations exercise the same network-separated
+behind the `host(env)` layer so experiments exercise the same network-separated
 client boundary as production callers.
 
 Experimental substrate workbenches may set `launchHost: false` and omit

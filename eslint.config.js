@@ -1454,7 +1454,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/firelab/src/simulations/*/driver.ts"],
+    files: ["packages/firelab/src/experiments/*/driver.ts"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -1495,7 +1495,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/firelab/src/simulations/*/host.ts"],
+    files: ["packages/firelab/src/experiments/*/host.ts"],
     rules: {
       "local/simulation-host-real-firegrid-host": "error",
       "no-restricted-imports": [
@@ -1578,7 +1578,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/firelab/src/simulations/*/index.ts"],
+    files: ["packages/firelab/src/experiments/*/index.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1592,7 +1592,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/firelab/src/simulations/*/host.ts"],
+    files: ["packages/firelab/src/experiments/*/host.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1692,7 +1692,7 @@ export default tseslint.config(
     // tf-r06u.24 R4 (cont.) — no process.exit inside a sim. Drivers signal
     // completion by returning; the runner owns process lifecycle. (bin/ spawn
     // targets + runner/ are infra and may exit, so this is simulations-scoped.)
-    files: ["packages/firelab/src/simulations/**/*.ts"],
+    files: ["packages/firelab/src/experiments/**/*.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1772,7 +1772,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/firelab/src/simulations/*/driver.ts"],
+    files: ["packages/firelab/src/experiments/*/driver.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -1809,7 +1809,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/firelab/src/simulations/restate-primitive-compat/driver.ts"],
+    files: ["packages/firelab/src/experiments/restate-primitive-compat/driver.ts"],
     rules: {
       "local/no-unclassified-workflow-make": "off",
       "no-restricted-imports": "off",
@@ -1830,7 +1830,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/firelab/src/simulations/fluent-runtime-workbench/driver.ts"],
+    files: ["packages/firelab/src/experiments/fluent-runtime-workbench/driver.ts"],
     rules: {
       "no-restricted-imports": "off",
       "no-restricted-syntax": [

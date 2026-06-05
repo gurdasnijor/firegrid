@@ -17,7 +17,7 @@ export interface FirelabStopSignal {
 }
 
 export interface FirelabHostEnv {
-  readonly simulationId: string
+  readonly experimentId: string
   readonly runId: string
   readonly namespace: string
   readonly durableStreamsBaseUrl: string
@@ -25,7 +25,7 @@ export interface FirelabHostEnv {
   readonly stopSignal: FirelabStopSignal
 }
 
-export interface FirelabSimulationDefinition<A, E = unknown> {
+export interface FirelabExperimentDefinition<A, E = unknown> {
   readonly id: string
   readonly description: string
   readonly host?: (
@@ -46,14 +46,14 @@ export interface FirelabSimulationDefinition<A, E = unknown> {
   readonly coverage?: CoverageSpec
 }
 
-declare const FirelabSimulationBrand: unique symbol
+declare const FirelabExperimentBrand: unique symbol
 
-export type FirelabSimulation<A, E = unknown> =
-  FirelabSimulationDefinition<A, E> & {
-    readonly [FirelabSimulationBrand]: typeof FirelabSimulationBrand
+export type FirelabExperiment<A, E = unknown> =
+  FirelabExperimentDefinition<A, E> & {
+    readonly [FirelabExperimentBrand]: typeof FirelabExperimentBrand
   }
 
-export const defineSimulation = <A, E = unknown>(
-  simulation: FirelabSimulationDefinition<A, E>,
-): FirelabSimulation<A, E> =>
-  simulation as FirelabSimulation<A, E>
+export const defineExperiment = <A, E = unknown>(
+  simulation: FirelabExperimentDefinition<A, E>,
+): FirelabExperiment<A, E> =>
+  simulation as FirelabExperiment<A, E>

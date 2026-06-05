@@ -12,11 +12,11 @@
 import { FileSystem, Path } from "@effect/platform"
 import { Console, Data, Effect } from "effect"
 import { analyzeCoverage, printGaps, printSummary } from "./coverage.ts"
-import { selectedSimulation } from "./list.ts"
+import { selectedExperiment } from "./list.ts"
 import { readTraceSpans, resolveRunDir, runsRoot } from "./trace.ts"
 
 class NoRunForSimulation extends Data.TaggedClass("NoRunForSimulation")<{
-  readonly simulationId: string
+  readonly experimentId: string
   readonly runsRoot: string
 }> {}
 
@@ -24,7 +24,7 @@ class NoRunForSimulation extends Data.TaggedClass("NoRunForSimulation")<{
 // `<timestamp>__<id>`, so a descending lexicographic sort is chronological.
 // Without this, `seams <id>` (no run-id) would resolve the GLOBAL latest run
 // (latest.json) — judging a different sim's trace.
-const latestRunDirForSim = (simulationId: string) =>
+const latestRunDirForSim = (experimentId: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -33,11 +33,11 @@ const latestRunDirForSim = (simulationId: string) =>
       Effect.orElseSucceed(() => [] as ReadonlyArray<string>),
     )
     const match = [...names]
-      .filter(name => name.endsWith(`__${simulationId}`))
+      .filter(name => name.endsWith(`__${experimentId}`))
       .sort()
       .at(-1)
     if (match === undefined) {
-      return yield* Effect.fail(new NoRunForSimulation({ simulationId, runsRoot: root }))
+      return yield* Effect.fail(new NoRunForSimulation({ experimentId, runsRoot: root }))
     }
     return path.join(root, match)
   })
@@ -45,14 +45,14 @@ const latestRunDirForSim = (simulationId: string) =>
 /** Re-judge a past run with a simulation's coverage spec. Exit code gates on the
  *  computed verdict, exactly like `run`. */
 export const seamsCoverage = (
-  simulationId: string,
+  experimentId: string,
   runId: string | undefined,
 ) =>
   Effect.gen(function*() {
-    const simulation = yield* selectedSimulation(simulationId)
+    const simulation = yield* selectedExperiment(experimentId)
     if (simulation.coverage === undefined) {
       yield* Console.error(
-        `simulation "${simulationId}" has no coverage spec; nothing to judge`,
+        `simulation "${experimentId}" has no coverage spec; nothing to judge`,
       )
       yield* Effect.sync(() => {
         process.exitCode = 1
@@ -62,10 +62,10 @@ export const seamsCoverage = (
     // Explicit run-id resolves directly; otherwise the latest run FOR THIS sim
     // (not the global latest).
     const runDir = runId === undefined
-      ? yield* latestRunDirForSim(simulationId)
+      ? yield* latestRunDirForSim(experimentId)
       : yield* resolveRunDir(runId)
     const spans = yield* readTraceSpans(runDir)
-    yield* Console.log(`seams: ${simulationId}  ${runDir}  (${spans.length} spans)`)
+    yield* Console.log(`seams: ${experimentId}  ${runDir}  (${spans.length} spans)`)
     const report = analyzeCoverage(simulation.coverage, spans)
     yield* printSummary(report)
     if (report.gatingFailing > 0) {
