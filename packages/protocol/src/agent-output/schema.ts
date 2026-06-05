@@ -22,6 +22,9 @@ export type AgentTextDeltaPart = Response.TextDeltaPart
 export const AgentToolCallPartSchema = Prompt.ToolCallPart
 export type AgentToolCallPart = Prompt.ToolCallPart
 
+export const AgentToolResultPartSchema = Prompt.ToolResultPart
+export type AgentToolResultPart = Prompt.ToolResultPart
+
 export const StopReasonSchema = Response.FinishReason
 export type StopReason = Response.FinishReason
 
@@ -62,6 +65,9 @@ export const AgentToolUseEventSchema = Schema.TaggedStruct("ToolUse", {
   // firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.2
   part: AgentToolCallPartSchema,
 })
+export const AgentToolResultEventSchema = Schema.TaggedStruct("ToolResult", {
+  part: AgentToolResultPartSchema,
+})
 export const AgentPermissionRequestEventSchema = Schema.TaggedStruct(
   "PermissionRequest",
   {
@@ -93,6 +99,7 @@ export const AgentOutputEventSchema = Schema.Union(
   AgentReadyEventSchema,
   AgentTextChunkEventSchema,
   AgentToolUseEventSchema,
+  AgentToolResultEventSchema,
   AgentPermissionRequestEventSchema,
   AgentTurnCompleteEventSchema,
   AgentStatusEventSchema,

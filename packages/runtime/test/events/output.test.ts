@@ -69,4 +69,46 @@ describe("runtime agent output envelope", () => {
       })
     }
   })
+
+  it("tf-r06u.41 projects durable ToolResult identity and resultJson from RuntimeOutput rows", () => {
+    const raw = encodeRuntimeAgentOutputEnvelope({
+      _tag: "ToolResult",
+      part: Prompt.toolResultPart({
+        id: "tool-1",
+        name: "publish_terminal",
+        isFailure: false,
+        result: { buildSha: "abc123" },
+        providerExecuted: false,
+      }),
+    })
+
+    const observation = runtimeAgentOutputObservationFromRow({
+      eventId: {
+        contextId: "ctx_test",
+        activityAttempt: 2,
+        target: "events",
+        sequence: 4,
+      },
+      contextId: "ctx_test",
+      activityAttempt: 2,
+      sequence: 4,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-06-05T00:00:00.000Z",
+      raw,
+    })
+
+    expect(Option.isSome(observation)).toBe(true)
+    if (Option.isSome(observation)) {
+      expect(observation.value).toMatchObject({
+        contextId: "ctx_test",
+        activityAttempt: 2,
+        sequence: 4,
+        _tag: "ToolResult",
+        toolUseId: "tool-1",
+        toolName: "publish_terminal",
+        resultJson: JSON.stringify({ buildSha: "abc123" }),
+      })
+    }
+  })
 })

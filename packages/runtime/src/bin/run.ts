@@ -71,6 +71,8 @@ const renderObservation = (
       case "ToolUse":
         yield* writeStderr(`firegrid run: tool ${output.event.part.name}\n`)
         return
+      case "ToolResult":
+        return
       case "PermissionRequest": {
         const engine = yield* WorkflowEngine.WorkflowEngine
         yield* writeStderr(`firegrid run: allowing permission ${output.permissionRequestId}\n`)

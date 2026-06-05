@@ -201,6 +201,54 @@ describe("session facade protocol schema", () => {
     expect(observation.value.event.part.providerExecuted).toBe(true)
   })
 
+  it("tf-r06u.41 projects ToolResult observations with toolUseId and resultJson", () => {
+    const raw = encodeRuntimeAgentOutputEnvelope({
+      _tag: "ToolResult",
+      part: Prompt.toolResultPart({
+        id: "tool-1",
+        name: "publish_terminal",
+        isFailure: false,
+        result: { buildSha: "abc123" },
+        providerExecuted: false,
+      }),
+    })
+    const decoded = decodeRuntimeAgentOutputEnvelope(raw)
+    const observation = runtimeAgentOutputObservationFromRow({
+      eventId: {
+        contextId: "ctx_tool_result",
+        activityAttempt: 1,
+        target: "events",
+        sequence: 4,
+      },
+      contextId: "ctx_tool_result",
+      activityAttempt: 1,
+      sequence: 4,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-06-05T00:00:00.000Z",
+      raw,
+    })
+
+    expect(Option.isSome(decoded)).toBe(true)
+    if (Option.isNone(decoded)) return
+    expect(decoded.value._tag).toBe("ToolResult")
+
+    expect(Option.isSome(observation)).toBe(true)
+    if (Option.isNone(observation)) return
+    expect(observation.value).toMatchObject({
+      source: "firegrid.runtime.agent-output-events",
+      sessionId: "ctx_tool_result",
+      contextId: "ctx_tool_result",
+      sequence: 4,
+      _tag: "ToolResult",
+      toolUseId: "tool-1",
+      toolName: "publish_terminal",
+      resultJson: JSON.stringify({ buildSha: "abc123" }),
+    })
+    if (observation.value._tag !== "ToolResult") return
+    expect(observation.value.event.part.isFailure).toBe(false)
+  })
+
   it("TFIND-047 exposes correlated agent-output observation narrowing from the outer tag", () => {
     const textDeltaFromObservation = (
       observation: RuntimeAgentOutputObservation,
@@ -213,6 +261,12 @@ describe("session facade protocol schema", () => {
     ): string | undefined => {
       if (observation._tag !== "ToolUse") return undefined
       return observation.event.part.name
+    }
+    const toolResultJsonFromObservation = (
+      observation: RuntimeAgentOutputObservation,
+    ): string | undefined => {
+      if (observation._tag !== "ToolResult") return undefined
+      return observation.resultJson
     }
 
     const text = runtimeAgentOutputObservationFromRow({
@@ -256,12 +310,40 @@ describe("session facade protocol schema", () => {
         }),
       }),
     })
+    const toolResult = runtimeAgentOutputObservationFromRow({
+      eventId: {
+        contextId: "ctx_tool_result_narrowing",
+        activityAttempt: 1,
+        target: "events",
+        sequence: 3,
+      },
+      contextId: "ctx_tool_result_narrowing",
+      activityAttempt: 1,
+      sequence: 3,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-06-05T00:00:00.000Z",
+      raw: encodeRuntimeAgentOutputEnvelope({
+        _tag: "ToolResult",
+        part: Prompt.toolResultPart({
+          id: "tool-1",
+          name: "wait_for",
+          isFailure: false,
+          result: { ok: true },
+          providerExecuted: false,
+        }),
+      }),
+    })
 
     expect(Option.isSome(text)).toBe(true)
     expect(Option.isSome(tool)).toBe(true)
-    if (Option.isNone(text) || Option.isNone(tool)) return
+    expect(Option.isSome(toolResult)).toBe(true)
+    if (Option.isNone(text) || Option.isNone(tool) || Option.isNone(toolResult)) return
     expect(textDeltaFromObservation(text.value)).toBe("hello")
     expect(toolNameFromObservation(tool.value)).toBe("wait_for")
+    expect(toolResultJsonFromObservation(toolResult.value)).toBe(
+      JSON.stringify({ ok: true }),
+    )
   })
 
   it("firegrid-session-fact-client-surfaces.RUNTIME_OBSERVATION.2 projects PermissionRequest options and resume anchors", () => {

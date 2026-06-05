@@ -112,6 +112,21 @@ describe("AgentOutputEvent", () => {
     expect(decoded._tag).toBe("ToolUse")
   })
 
+  it("tf-r06u.41 decodes a ToolResult output event with an Effect AI tool-result part", async () => {
+    const decoded = await decodes(AgentOutputEventSchema, {
+      _tag: "ToolResult",
+      part: {
+        type: "tool-result",
+        id: "tool-1",
+        name: "publish_terminal",
+        result: { buildSha: "abc123" },
+        isFailure: false,
+        providerExecuted: false,
+      },
+    })
+    expect(decoded._tag).toBe("ToolResult")
+  })
+
   it("decodes a TurnComplete with Effect AI finish reason", async () => {
     const decoded = await decodes(AgentOutputEventSchema, {
       _tag: "TurnComplete",

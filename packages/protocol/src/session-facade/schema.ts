@@ -14,6 +14,7 @@ import {
   AgentStatusEventSchema,
   AgentTerminatedEventSchema,
   AgentTextChunkEventSchema,
+  AgentToolResultEventSchema,
   AgentToolUseEventSchema,
   AgentTurnCompleteEventSchema,
   AgentUnknownEventSchema,
@@ -274,10 +275,17 @@ const RuntimeAgentOutputObservationSupplementalFields = {
   options: Schema.optional(Schema.Array(RuntimePermissionOptionSchema)),
 } as const
 
+const RuntimeToolResultObservationFields = {
+  toolUseId: Schema.String.pipe(Schema.minLength(1)),
+  toolName: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  resultJson: Schema.String,
+} as const
+
 export const RuntimeAgentOutputObservationSchema = Schema.Union(
   Schema.TaggedStruct("Ready", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentReadyEventSchema }),
   Schema.TaggedStruct("TextChunk", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentTextChunkEventSchema }),
   Schema.TaggedStruct("ToolUse", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentToolUseEventSchema }),
+  Schema.TaggedStruct("ToolResult", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeToolResultObservationFields, event: AgentToolResultEventSchema }),
   Schema.TaggedStruct("PermissionRequest", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentPermissionRequestEventSchema }),
   Schema.TaggedStruct("TurnComplete", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentTurnCompleteEventSchema }),
   Schema.TaggedStruct("Status", { ...RuntimeAgentOutputObservationBaseFields, ...RuntimeAgentOutputObservationSupplementalFields, event: AgentStatusEventSchema }),
@@ -490,6 +498,15 @@ const runtimeAgentOutputObservationValueFromRow = (
           event,
           toolUseId: event.part.id,
           toolName: event.part.name,
+        })
+      case "ToolResult":
+        return Option.some({
+          ...base,
+          _tag: "ToolResult",
+          event,
+          toolUseId: event.part.id,
+          toolName: event.part.name,
+          resultJson: JSON.stringify(event.part.result),
         })
       case "PermissionRequest": {
         const decoded = Schema.decodeUnknownEither(RuntimePermissionRequestEventSchema)(event)

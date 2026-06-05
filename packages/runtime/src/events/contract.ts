@@ -90,6 +90,7 @@ export {
   type AgentTextDeltaPart,
   AgentToolCallPartSchema,
   type AgentToolCallPart,
+  AgentToolResultEventSchema,
   PermissionOptionKindSchema,
   type PermissionOptionKind,
   PermissionOptionSchema,

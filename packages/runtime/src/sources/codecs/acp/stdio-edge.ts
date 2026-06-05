@@ -509,6 +509,8 @@ class FiregridAcpStdioAgent implements acp.Agent {
           },
         })
         return
+      case "ToolResult":
+        return
       case "Status":
         // firegrid-zed-acp-stdio-external-agent.ACP_STDIO_EDGE.6
         return
