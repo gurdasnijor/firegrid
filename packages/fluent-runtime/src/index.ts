@@ -28,6 +28,21 @@ export {
   WaitForTool,
 } from "./Tools.ts"
 export {
+  FluentSessionDriverLive,
+  driveHarnessOverAdapter,
+  makeFluentSessionDriver,
+  type FluentSessionAdapterService,
+  type FluentSessionDriveHarness,
+  type FluentSessionDriveHarnessInput,
+  type FluentSessionDriveOutcome,
+  type FluentSessionDriveServices,
+  type FluentSessionFencedWriterService,
+  type FluentSessionHandlerConfig,
+  type FluentSessionJournalService,
+  type FluentSessionSuspension,
+  type FluentSessionWakeService,
+} from "./SessionHandler.ts"
+export {
   type SessionEvent,
   type SessionEventAppended,
   type SessionChildRaceWinnerEvent,
