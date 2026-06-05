@@ -2,9 +2,11 @@ import { Schema } from "effect"
 
 export const SessionIdSchema = Schema.String
 export const TurnIdSchema = Schema.String
+export const TimerIdSchema = Schema.String
 
 export type SessionId = Schema.Schema.Type<typeof SessionIdSchema>
 export type TurnId = Schema.Schema.Type<typeof TurnIdSchema>
+export type TimerId = Schema.Schema.Type<typeof TimerIdSchema>
 
 const SessionCreatedEventSchema = Schema.Struct({
   type: Schema.Literal("session.created"),
@@ -53,10 +55,28 @@ const TurnFailedEventSchema = Schema.Struct({
   message: Schema.String,
 })
 
+const TurnTimerScheduledEventSchema = Schema.Struct({
+  type: Schema.Literal("turn.timer_scheduled"),
+  sessionId: SessionIdSchema,
+  turnId: TurnIdSchema,
+  timerId: TimerIdSchema,
+  fireAtEpochMs: Schema.Number,
+})
+
+const TurnTimerFiredEventSchema = Schema.Struct({
+  type: Schema.Literal("turn.timer_fired"),
+  sessionId: SessionIdSchema,
+  turnId: TurnIdSchema,
+  timerId: TimerIdSchema,
+  firedAtEpochMs: Schema.Number,
+})
+
 export const TurnEventSchema = Schema.Union(
   TurnStartedEventSchema,
   TurnCompletedEventSchema,
   TurnFailedEventSchema,
+  TurnTimerScheduledEventSchema,
+  TurnTimerFiredEventSchema,
 )
 
 export type SessionEventAppended = Schema.Schema.Type<typeof SessionEventAppendedSchema>
@@ -66,6 +86,8 @@ export type SessionEvent = Schema.Schema.Type<typeof SessionEventSchema>
 export type TurnStartedEvent = Schema.Schema.Type<typeof TurnStartedEventSchema>
 export type TurnCompletedEvent = Schema.Schema.Type<typeof TurnCompletedEventSchema>
 export type TurnFailedEvent = Schema.Schema.Type<typeof TurnFailedEventSchema>
+export type TurnTimerScheduledEvent = Schema.Schema.Type<typeof TurnTimerScheduledEventSchema>
+export type TurnTimerFiredEvent = Schema.Schema.Type<typeof TurnTimerFiredEventSchema>
 export type TurnEvent = Schema.Schema.Type<typeof TurnEventSchema>
 
 export interface SessionHandle {

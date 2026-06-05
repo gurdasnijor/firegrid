@@ -1,12 +1,18 @@
 import { HttpClient } from "@effect/platform"
 import { Context, Data, Effect, Layer } from "effect"
-import { DurableStream, type Endpoint, type HeadResult } from "effect-durable-streams"
+import {
+  DurableStream,
+  type Endpoint,
+  type HeadResult,
+  type ProducerAppendResult,
+} from "effect-durable-streams"
 import {
   SessionEventSchema,
   TurnEventSchema,
   type SessionEvent,
   type SessionHandle,
   type SessionId,
+  type TimerId,
   type TurnEvent,
   type TurnHandle,
   type TurnId,
@@ -33,6 +39,21 @@ export interface AppendSessionEventInput {
   readonly payload: unknown
 }
 
+export interface ProducerFence {
+  readonly producerId: string
+  readonly epoch: number
+  readonly seq: number
+}
+
+export interface AppendSessionEventFencedInput extends AppendSessionEventInput {
+  readonly fence: ProducerFence
+}
+
+export interface AppendSessionEventFencedResult {
+  readonly handle: SessionHandle
+  readonly write: ProducerAppendResult
+}
+
 export interface StartTurnInput {
   readonly sessionId: SessionId
   readonly turnId: TurnId
@@ -49,6 +70,30 @@ export interface FailTurnInput {
   readonly sessionId: SessionId
   readonly turnId: TurnId
   readonly message: string
+}
+
+export interface ScheduleTurnTimerInput {
+  readonly sessionId: SessionId
+  readonly turnId: TurnId
+  readonly timerId: TimerId
+  readonly fireAtEpochMs: number
+}
+
+export interface ScheduleTurnTimerResult {
+  readonly turn: TurnHandle
+  readonly write: ProducerAppendResult
+}
+
+export interface FireTurnTimerInput {
+  readonly sessionId: SessionId
+  readonly turnId: TurnId
+  readonly timerId: TimerId
+  readonly firedAtEpochMs: number
+}
+
+export interface FireTurnTimerResult {
+  readonly turn: TurnHandle
+  readonly write: ProducerAppendResult
 }
 
 export interface ReadTurnResult {
@@ -90,6 +135,9 @@ export class FluentStore extends Context.Tag("@firegrid/fluent-runtime/Store/Flu
     readonly appendSessionEvent: (
       input: AppendSessionEventInput,
     ) => Effect.Effect<SessionHandle, FluentRuntimeError, StoreRequirements>
+    readonly appendSessionEventFenced: (
+      input: AppendSessionEventFencedInput,
+    ) => Effect.Effect<AppendSessionEventFencedResult, FluentRuntimeError, StoreRequirements>
     readonly collectSession: (
       sessionId: SessionId,
     ) => Effect.Effect<ReadonlyArray<SessionEvent>, FluentRuntimeError, StoreRequirements>
@@ -108,6 +156,12 @@ export class FluentStore extends Context.Tag("@firegrid/fluent-runtime/Store/Flu
     readonly failTurn: (
       input: FailTurnInput,
     ) => Effect.Effect<TurnHandle, FluentRuntimeError, StoreRequirements>
+    readonly scheduleTurnTimer: (
+      input: ScheduleTurnTimerInput,
+    ) => Effect.Effect<ScheduleTurnTimerResult, FluentRuntimeError, StoreRequirements>
+    readonly fireTurnTimer: (
+      input: FireTurnTimerInput,
+    ) => Effect.Effect<FireTurnTimerResult, FluentRuntimeError, StoreRequirements>
     readonly readTurn: (
       sessionId: SessionId,
       turnId: TurnId,
@@ -151,6 +205,23 @@ const toRuntimeError = (
     new FluentRuntimeError({ message, cause })
 
 const jsonBatch = <A>(event: A): string => JSON.stringify([event])
+
+const timerProducerId = (
+  kind: "schedule" | "fire",
+  input: {
+    readonly sessionId: SessionId
+    readonly turnId: TurnId
+    readonly timerId: TimerId
+  },
+): string =>
+  [
+    "fluent-runtime",
+    "timer",
+    kind,
+    encodeSegment(input.sessionId),
+    encodeSegment(input.turnId),
+    encodeSegment(input.timerId),
+  ].join("/")
 
 const makeSessionHandle = (
   config: StoreConfig,
@@ -228,6 +299,40 @@ export const makeFluentStore = (
       }),
     )
 
+  const appendSessionEventFenced = (
+    input: AppendSessionEventFencedInput,
+  ) =>
+    Effect.gen(function* () {
+      const handle = makeSessionHandle(config, input.sessionId)
+      const event: SessionEvent = {
+        type: "session.event_appended",
+        sessionId: input.sessionId,
+        name: input.name,
+        payload: input.payload,
+      }
+      const write = yield* DurableStream.appendWithProducer({
+        endpoint: endpoint(handle.eventsUrl),
+        schema: SessionEventSchema,
+        event,
+        producerId: input.fence.producerId,
+        producerEpoch: input.fence.epoch,
+        producerSeq: input.fence.seq,
+      }).pipe(
+        Effect.mapError(toRuntimeError("Failed to append fenced session event")),
+      )
+      return { handle, write }
+    }).pipe(
+      Effect.withSpan("fluent_runtime.store.session.append_event_fenced", {
+        attributes: {
+          "firegrid.session.id": input.sessionId,
+          "firegrid.session.event.name": input.name,
+          "fluent_runtime.producer.id": input.fence.producerId,
+          "fluent_runtime.producer.epoch": input.fence.epoch,
+          "fluent_runtime.producer.seq": input.fence.seq,
+        },
+      }),
+    )
+
   const collectSession = (sessionId: SessionId) =>
     sessionStream(makeSessionHandle(config, sessionId).eventsUrl).collect.pipe(
       Effect.mapError(toRuntimeError("Failed to collect session events")),
@@ -284,6 +389,23 @@ export const makeFluentStore = (
       Effect.mapError(toRuntimeError(message)),
     )
 
+  const appendTurnEventWithProducer = (
+    turn: TurnHandle,
+    event: TurnEvent,
+    producerId: string,
+    message: string,
+  ) =>
+    DurableStream.appendWithProducer({
+      endpoint: endpoint(turn.eventsUrl),
+      schema: TurnEventSchema,
+      event,
+      producerId,
+      producerEpoch: 0,
+      producerSeq: 0,
+    }).pipe(
+      Effect.mapError(toRuntimeError(message)),
+    )
+
   const completeTurn = (
     input: CompleteTurnInput,
   ) => {
@@ -324,6 +446,64 @@ export const makeFluentStore = (
     )
   }
 
+  const scheduleTurnTimer = (
+    input: ScheduleTurnTimerInput,
+  ) =>
+    Effect.gen(function* () {
+      const turn = makeTurnHandle(config, input.sessionId, input.turnId)
+      const write = yield* appendTurnEventWithProducer(
+        turn,
+        {
+          type: "turn.timer_scheduled",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          timerId: input.timerId,
+          fireAtEpochMs: input.fireAtEpochMs,
+        },
+        timerProducerId("schedule", input),
+        "Failed to append fenced turn.timer_scheduled event",
+      )
+      return { turn, write }
+    }).pipe(
+      Effect.withSpan("fluent_runtime.store.turn.timer.schedule", {
+        attributes: {
+          "firegrid.session.id": input.sessionId,
+          "firegrid.turn.id": input.turnId,
+          "fluent_runtime.timer.id": input.timerId,
+          "fluent_runtime.timer.fire_at_epoch_ms": input.fireAtEpochMs,
+        },
+      }),
+    )
+
+  const fireTurnTimer = (
+    input: FireTurnTimerInput,
+  ) =>
+    Effect.gen(function* () {
+      const turn = makeTurnHandle(config, input.sessionId, input.turnId)
+      const write = yield* appendTurnEventWithProducer(
+        turn,
+        {
+          type: "turn.timer_fired",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          timerId: input.timerId,
+          firedAtEpochMs: input.firedAtEpochMs,
+        },
+        timerProducerId("fire", input),
+        "Failed to append fenced turn.timer_fired event",
+      )
+      return { turn, write }
+    }).pipe(
+      Effect.withSpan("fluent_runtime.store.turn.timer.fire", {
+        attributes: {
+          "firegrid.session.id": input.sessionId,
+          "firegrid.turn.id": input.turnId,
+          "fluent_runtime.timer.id": input.timerId,
+          "fluent_runtime.timer.fired_at_epoch_ms": input.firedAtEpochMs,
+        },
+      }),
+    )
+
   const readTurn = (sessionId: SessionId, turnId: TurnId) =>
     Effect.gen(function* () {
       const handle = makeTurnHandle(config, sessionId, turnId)
@@ -354,14 +534,22 @@ export const makeFluentStore = (
   ) => {
     const parent = makeSessionHandle(config, input.parentSessionId)
     const child = makeSessionHandle(config, input.childSessionId)
-    return sessionStream(child.eventsUrl).create({
-      contentType: "application/json",
-      headers: {
-        "Stream-Forked-From": streamPathname(parent.eventsUrl),
-        "Stream-Fork-Offset": input.forkOffset,
-      },
+    return Effect.gen(function* () {
+      yield* sessionStream(child.eventsUrl).create({
+        contentType: "application/json",
+        headers: {
+          "Stream-Forked-From": streamPathname(parent.eventsUrl),
+          "Stream-Fork-Offset": input.forkOffset,
+        },
+      })
+      yield* sessionStream(parent.eventsUrl).append({
+        type: "session.forked",
+        parentSessionId: input.parentSessionId,
+        childSessionId: input.childSessionId,
+        forkOffset: input.forkOffset,
+      })
+      return { _tag: "Forked", parent, child } satisfies ForkSessionResult
     }).pipe(
-      Effect.as<ForkSessionResult>({ _tag: "Forked", parent, child }),
       Effect.catchAll((cause) =>
         Effect.succeed<ForkSessionResult>({
           _tag: "Unsupported",
@@ -385,12 +573,15 @@ export const makeFluentStore = (
     turnUrl: (sessionId, turnId) => makeTurnHandle(config, sessionId, turnId).eventsUrl,
     createSession: (input) => provideHttp(createSession(input)),
     appendSessionEvent: (input) => provideHttp(appendSessionEvent(input)),
+    appendSessionEventFenced: (input) => provideHttp(appendSessionEventFenced(input)),
     collectSession: (sessionId) => provideHttp(collectSession(sessionId)),
     headSession: (sessionId) => provideHttp(headSession(sessionId)),
     forkSession: (input) => provideHttp(forkSession(input)),
     startTurn: (input) => provideHttp(startTurn(input)),
     completeTurn: (input) => provideHttp(completeTurn(input)),
     failTurn: (input) => provideHttp(failTurn(input)),
+    scheduleTurnTimer: (input) => provideHttp(scheduleTurnTimer(input)),
+    fireTurnTimer: (input) => provideHttp(fireTurnTimer(input)),
     readTurn: (sessionId, turnId) => provideHttp(readTurn(sessionId, turnId)),
   }
 }
