@@ -8,6 +8,8 @@ export {
   type SessionHandle,
   type SessionId,
   SessionIdSchema,
+  type StateChangeMessage,
+  StateChangeMessageSchema,
   type TurnCompletedEvent,
   type TurnEvent,
   TurnEventSchema,
@@ -26,6 +28,14 @@ export {
   WaitIdSchema,
   SessionEventSchema,
 } from "./Domain.ts"
+export {
+  FluentEventIngress,
+  FluentEventIngressLive,
+  type IngestExternalEventInput,
+  type IngestExternalEventResult,
+  type IngressMatchedWait,
+  type IngressWaitSummary,
+} from "./EventIngress.ts"
 export {
   ControlPlaneApi,
   ControlPlaneApiLive,
@@ -57,6 +67,8 @@ export {
   type AppendSessionEventFencedInput,
   type AppendSessionEventFencedResult,
   type AppendSessionEventInput,
+  type AppendStateChangeFencedInput,
+  type AppendStateChangeFencedResult,
   type CompleteTurnInput,
   type CreateSessionInput,
   type ChildRaceLoserPolicy,

@@ -5,9 +5,23 @@ import { FetchHttpClient, type HttpClient } from "@effect/platform"
 import { Effect, Layer, type Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { DurableStream } from "effect-durable-streams"
-import { FluentRuntimeError, FluentSources, FluentSourcesLive, FluentStore, FluentStoreLive } from "../src/index.ts"
+import {
+  FluentEventIngress,
+  FluentEventIngressLive,
+  FluentRuntimeError,
+  FluentSources,
+  FluentSourcesLive,
+  FluentStore,
+  FluentStoreLive,
+} from "../src/index.ts"
 
-type Reqs = FetchHttpClient.Fetch | HttpClient.HttpClient | Scope.Scope | FluentStore | FluentSources
+type Reqs =
+  | FetchHttpClient.Fetch
+  | HttpClient.HttpClient
+  | Scope.Scope
+  | FluentStore
+  | FluentSources
+  | FluentEventIngress
 
 const lastOffset = (events: ReadonlyArray<unknown>): string =>
   events.length === 0 ? "-1" : String(events.length - 1)
@@ -163,6 +177,7 @@ const runtimeWith = <A, E>(
   Effect.runPromise(
     Effect.scoped(
       effect.pipe(
+        Effect.provide(FluentEventIngressLive),
         Effect.provide(FluentSourcesLive),
         Effect.provide(FluentStoreLive({
           durableStreamsBaseUrl: "https://durable.example",
@@ -958,6 +973,213 @@ describe("@firegrid/fluent-runtime Store", () => {
       "turn.wait_registered",
       "turn.wait_matched",
       "turn.wait_matched",
+    ])
+  })
+
+  it("fluent-event-ingress: External delivery becomes a durable event", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        const ingress = yield* FluentEventIngress
+        yield* store.createSession({
+          sessionId: "ingress-session",
+          agent: "agent",
+        })
+        yield* store.startTurn({
+          sessionId: "ingress-session",
+          turnId: "ingress-turn",
+          prompt: "wait_for",
+        })
+        yield* store.durableWait({
+          sessionId: "ingress-session",
+          turnId: "ingress-turn",
+          waitId: "review-wait",
+          predicate: "event.type == \"review.posted\"",
+          afterOffset: "-1",
+        })
+        const ingested = yield* ingress.ingestExternalEvent({
+          sessionId: "ingress-session",
+          turnId: "ingress-turn",
+          deliveryId: "d-1",
+          type: "review.posted",
+          key: "review/d-1",
+          value: { state: "posted" },
+          source: "reviews",
+        })
+        const session = yield* store.collectSession("ingress-session")
+        return { ingested, session }
+      }),
+    )
+
+    expect(result.ingested._tag).toBe("Appended")
+    expect(result.ingested.write).toEqual({ _tag: "Appended", offset: "1" })
+    expect(result.session[1]).toEqual({
+      type: "review.posted",
+      key: "review/d-1",
+      value: { state: "posted" },
+      headers: {
+        operation: "external",
+        delivery_id: "d-1",
+        producer_id: "fluent-runtime/event-ingress/reviews/d-1",
+        source: "reviews",
+      },
+    })
+  })
+
+  it("fluent-event-ingress: Duplicate delivery is deduplicated", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        const ingress = yield* FluentEventIngress
+        yield* store.createSession({
+          sessionId: "ingress-duplicate-session",
+          agent: "agent",
+        })
+        yield* store.startTurn({
+          sessionId: "ingress-duplicate-session",
+          turnId: "ingress-duplicate-turn",
+          prompt: "wait_for",
+        })
+        yield* store.durableWait({
+          sessionId: "ingress-duplicate-session",
+          turnId: "ingress-duplicate-turn",
+          waitId: "review-wait",
+          predicate: "event.type == \"review.posted\"",
+          afterOffset: "-1",
+        })
+        const first = yield* ingress.ingestExternalEvent({
+          sessionId: "ingress-duplicate-session",
+          turnId: "ingress-duplicate-turn",
+          deliveryId: "d-1",
+          type: "review.posted",
+          key: "review/d-1",
+          value: { state: "posted" },
+          source: "reviews",
+        })
+        const duplicate = yield* ingress.ingestExternalEvent({
+          sessionId: "ingress-duplicate-session",
+          turnId: "ingress-duplicate-turn",
+          deliveryId: "d-1",
+          type: "review.posted",
+          key: "review/d-1",
+          value: { state: "posted" },
+          source: "reviews",
+        })
+        const session = yield* store.collectSession("ingress-duplicate-session")
+        const turn = yield* store.readTurn("ingress-duplicate-session", "ingress-duplicate-turn")
+        return { first, duplicate, session, turn }
+      }),
+    )
+
+    expect(result.first._tag).toBe("Appended")
+    expect(result.duplicate._tag).toBe("Duplicate")
+    expect(result.duplicate.waits.matched).toEqual([])
+    expect(result.duplicate.redrive).toBe(false)
+    expect(result.session.map((event) => event.type)).toEqual(["session.created", "review.posted"])
+    expect(result.turn.events.filter((event) => event.type === "turn.wait_matched")).toHaveLength(1)
+  })
+
+  it("fluent-event-ingress: Matching webhook wakes a waiting session", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        const ingress = yield* FluentEventIngress
+        yield* store.createSession({
+          sessionId: "ingress-match-session",
+          agent: "agent",
+        })
+        yield* store.startTurn({
+          sessionId: "ingress-match-session",
+          turnId: "ingress-match-turn",
+          prompt: "wait_for",
+        })
+        yield* store.durableWait({
+          sessionId: "ingress-match-session",
+          turnId: "ingress-match-turn",
+          waitId: "review-wait",
+          predicate: "event.type == \"review.posted\"",
+          afterOffset: "-1",
+        })
+        const ingested = yield* ingress.ingestExternalEvent({
+          sessionId: "ingress-match-session",
+          turnId: "ingress-match-turn",
+          deliveryId: "d-match",
+          type: "review.posted",
+          key: "review/d-match",
+          value: { state: "posted" },
+          source: "reviews",
+        })
+        const turn = yield* store.readTurn("ingress-match-session", "ingress-match-turn")
+        return { ingested, turn }
+      }),
+    )
+
+    expect(result.ingested._tag).toBe("Appended")
+    expect(result.ingested.redrive).toBe(true)
+    expect(result.ingested.waits.matched.map((wait) => wait.waitId)).toEqual(["review-wait"])
+    expect(result.turn.events.at(-1)).toEqual({
+      type: "turn.wait_matched",
+      sessionId: "ingress-match-session",
+      turnId: "ingress-match-turn",
+      waitId: "review-wait",
+      matchedOffset: "1",
+      event: result.ingested.change,
+    })
+  })
+
+  it("fluent-event-ingress: Non-matching webhook does not wake unrelated waits", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        const ingress = yield* FluentEventIngress
+        yield* store.createSession({
+          sessionId: "ingress-nonmatch-session",
+          agent: "agent",
+        })
+        yield* store.startTurn({
+          sessionId: "ingress-nonmatch-session",
+          turnId: "ingress-nonmatch-turn",
+          prompt: "wait_for",
+        })
+        yield* store.durableWait({
+          sessionId: "ingress-nonmatch-session",
+          turnId: "ingress-nonmatch-turn",
+          waitId: "pr-wait",
+          predicate: "event.type == \"github.pr\"",
+          afterOffset: "-1",
+        })
+        const ingested = yield* ingress.ingestExternalEvent({
+          sessionId: "ingress-nonmatch-session",
+          turnId: "ingress-nonmatch-turn",
+          deliveryId: "d-issue",
+          type: "github.issue",
+          key: "issue/1",
+          value: { state: "opened" },
+          source: "github",
+        })
+        const turn = yield* store.readTurn("ingress-nonmatch-session", "ingress-nonmatch-turn")
+        return { ingested, turn }
+      }),
+    )
+
+    expect(result.ingested._tag).toBe("Appended")
+    expect(result.ingested.redrive).toBe(false)
+    expect(result.ingested.waits.notMatched).toEqual([{ waitId: "pr-wait" }])
+    expect(result.turn.events.map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.wait_registered",
     ])
   })
 })

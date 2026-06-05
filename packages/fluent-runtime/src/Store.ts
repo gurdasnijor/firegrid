@@ -14,6 +14,7 @@ import {
   type SessionHandle,
   type SessionId,
   type SessionChildResultEvent,
+  type StateChangeMessage,
   type TimerId,
   type TurnEvent,
   type TurnTimerFiredEvent,
@@ -59,6 +60,18 @@ export interface AppendSessionEventFencedInput extends AppendSessionEventInput {
 export interface AppendSessionEventFencedResult {
   readonly handle: SessionHandle
   readonly write: ProducerAppendResult
+}
+
+export interface AppendStateChangeFencedInput {
+  readonly sessionId: SessionId
+  readonly change: StateChangeMessage
+  readonly fence: ProducerFence
+}
+
+export interface AppendStateChangeFencedResult {
+  readonly handle: SessionHandle
+  readonly write: ProducerAppendResult
+  readonly change: StateChangeMessage
 }
 
 export interface StartTurnInput {
@@ -279,6 +292,9 @@ export class FluentStore extends Context.Tag("@firegrid/fluent-runtime/Store/Flu
     readonly appendSessionEventFenced: (
       input: AppendSessionEventFencedInput,
     ) => Effect.Effect<AppendSessionEventFencedResult, FluentRuntimeError, StoreRequirements>
+    readonly appendStateChangeFenced: (
+      input: AppendStateChangeFencedInput,
+    ) => Effect.Effect<AppendStateChangeFencedResult, FluentRuntimeError, StoreRequirements>
     readonly collectSession: (
       sessionId: SessionId,
     ) => Effect.Effect<ReadonlyArray<SessionEvent>, FluentRuntimeError, StoreRequirements>
@@ -586,6 +602,35 @@ export const makeFluentStore = (
         attributes: {
           "firegrid.session.id": input.sessionId,
           "firegrid.session.event.name": input.name,
+          "fluent_runtime.producer.id": input.fence.producerId,
+          "fluent_runtime.producer.epoch": input.fence.epoch,
+          "fluent_runtime.producer.seq": input.fence.seq,
+        },
+      }),
+    )
+
+  const appendStateChangeFenced = (
+    input: AppendStateChangeFencedInput,
+  ) =>
+    Effect.gen(function* () {
+      const handle = makeSessionHandle(config, input.sessionId)
+      const write = yield* DurableStream.appendWithProducer({
+        endpoint: endpoint(handle.eventsUrl),
+        schema: SessionEventSchema,
+        event: input.change,
+        producerId: input.fence.producerId,
+        producerEpoch: input.fence.epoch,
+        producerSeq: input.fence.seq,
+      }).pipe(
+        Effect.mapError(toRuntimeError("Failed to append fenced state change")),
+      )
+      return { handle, write, change: input.change }
+    }).pipe(
+      Effect.withSpan("fluent_runtime.store.state_change.append_fenced", {
+        attributes: {
+          "firegrid.session.id": input.sessionId,
+          "fluent_runtime.state_change.type": input.change.type,
+          "fluent_runtime.state_change.key": input.change.key,
           "fluent_runtime.producer.id": input.fence.producerId,
           "fluent_runtime.producer.epoch": input.fence.epoch,
           "fluent_runtime.producer.seq": input.fence.seq,
@@ -1151,6 +1196,8 @@ export const makeFluentStore = (
         childEvents,
         (event): event is SessionChildResultEvent =>
           event.type === "session.child_result" &&
+          "childSessionId" in event &&
+          "resultId" in event &&
           event.childSessionId === input.childSessionId &&
           event.resultId === input.resultId,
       )
@@ -1228,6 +1275,7 @@ export const makeFluentStore = (
     createSession: (input) => provideHttp(createSession(input)),
     appendSessionEvent: (input) => provideHttp(appendSessionEvent(input)),
     appendSessionEventFenced: (input) => provideHttp(appendSessionEventFenced(input)),
+    appendStateChangeFenced: (input) => provideHttp(appendStateChangeFenced(input)),
     collectSession: (sessionId) => provideHttp(collectSession(sessionId)),
     headSession: (sessionId) => provideHttp(headSession(sessionId)),
     forkSession: (input) => provideHttp(forkSession(input)),
