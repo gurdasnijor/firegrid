@@ -70,8 +70,8 @@ const isUserMessage = (
 const pendingPromptsFromHistory = (
   history: ReadonlyArray<StreamEnvelope>,
   adapter: AgentAdapter,
-): Array<Extract<ClientIntent, { type: "user_message" }>> => {
-  return history.reduce<Array<Extract<ClientIntent, { type: "user_message" }>>>(
+): Array<Extract<ClientIntent, { type: "user_message" }>> =>
+  history.reduce<Array<Extract<ClientIntent, { type: "user_message" }>>>(
     (pending, envelope) => {
       if (envelope.direction === "user" && isUserMessage(envelope.raw)) {
         pending.push(envelope.raw)
@@ -86,7 +86,6 @@ const pendingPromptsFromHistory = (
     },
     [],
   )
-}
 
 export const createBridge = (
   adapter: AgentAdapter,
