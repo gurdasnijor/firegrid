@@ -48,9 +48,10 @@ const makeMemoryDurableStreamsFetch = (): typeof globalThis.fetch => {
         if (forkedFrom !== null && parent === undefined) {
           return new Response("", { status: 404 })
         }
+        const forkEnd = forkOffset === null ? parent?.events.length ?? 0 : parseOffset(forkOffset) + 1
         const inheritedEvents = parent === undefined
           ? []
-          : parent.events.slice(0, Math.max(0, Number(forkOffset ?? "0")))
+          : parent.events.slice(0, Math.max(0, forkEnd))
         streams.set(streamKey, {
           events: inheritedEvents.slice(),
           closed: false,
@@ -319,12 +320,19 @@ describe("@firegrid/fluent-runtime Store", () => {
     expect(result.child.map((event) => event.type)).toEqual([
       "session.created",
       "session.event_appended",
+      "session.event_appended",
     ])
     expect(result.child[1]).toEqual({
       type: "session.event_appended",
       sessionId: "parent",
       name: "before-a",
       payload: { n: 1 },
+    })
+    expect(result.child[2]).toEqual({
+      type: "session.event_appended",
+      sessionId: "parent",
+      name: "before-b",
+      payload: { n: 2 },
     })
     expect(result.parent.map((event) => event.type)).toEqual([
       "session.created",
@@ -333,6 +341,212 @@ describe("@firegrid/fluent-runtime Store", () => {
       "session.forked",
       "session.event_appended",
     ])
+  })
+
+  it("fluent-fork-spawn.feature spawn creates a forked child stream with reset producer state", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        yield* store.createSession({
+          sessionId: "spawn-parent",
+          agent: "agent",
+        })
+        yield* store.appendSessionEventFenced({
+          sessionId: "spawn-parent",
+          name: "parent-side-effect",
+          payload: { parent: true },
+          fence: { producerId: "shared-producer", epoch: 0, seq: 0 },
+        })
+        const spawned = yield* store.spawnChild({
+          parentSessionId: "spawn-parent",
+          toolCallId: "child-1",
+          slot: 0,
+          prompt: "work",
+        })
+        const childReset = yield* store.appendSessionEventFenced({
+          sessionId: spawned.childSessionId,
+          name: "child-side-effect",
+          payload: { child: true },
+          fence: { producerId: "shared-producer", epoch: 0, seq: 0 },
+        })
+        const parent = yield* store.collectSession("spawn-parent")
+        const child = yield* store.collectSession(spawned.childSessionId)
+        return { spawned, childReset, parent, child }
+      }),
+    )
+
+    expect(result.spawned.childSessionId).toBe("spawn-parent/children/child-1/0")
+    expect(result.spawned.initialWrite._tag).toBe("Appended")
+    expect(result.childReset.write._tag).toBe("Appended")
+    expect(result.child.map(event => event.type)).toEqual([
+      "session.created",
+      "session.event_appended",
+      "session.event_appended",
+      "session.event_appended",
+    ])
+    expect(result.child[1]).toEqual({
+      type: "session.event_appended",
+      sessionId: "spawn-parent",
+      name: "parent-side-effect",
+      payload: { parent: true },
+    })
+    expect(result.child[2]).toEqual({
+      type: "session.event_appended",
+      sessionId: "spawn-parent/children/child-1/0",
+      name: "child.prompt",
+      payload: { prompt: "work" },
+    })
+    expect(result.parent.some(event => event.type === "session.child_spawned")).toBe(true)
+  })
+
+  it("fluent-fork-spawn.feature parent waits on child result event without an inline child handler call", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        yield* store.createSession({
+          sessionId: "join-parent",
+          agent: "agent",
+        })
+        yield* store.startTurn({
+          sessionId: "join-parent",
+          turnId: "join-turn",
+          prompt: "spawn",
+        })
+        const spawned = yield* store.spawnChild({
+          parentSessionId: "join-parent",
+          toolCallId: "child-1",
+          slot: 0,
+          prompt: "work",
+        })
+        const pending = yield* store.joinChildResult({
+          parentSessionId: "join-parent",
+          turnId: "join-turn",
+          childSessionId: spawned.childSessionId,
+          resultId: "child-1",
+        })
+        const published = yield* store.publishChildResult({
+          parentSessionId: "join-parent",
+          childSessionId: spawned.childSessionId,
+          resultId: "child-1",
+          result: "done",
+        })
+        const matched = yield* store.joinChildResult({
+          parentSessionId: "join-parent",
+          turnId: "join-turn",
+          childSessionId: spawned.childSessionId,
+          resultId: "child-1",
+        })
+        const turn = yield* store.readTurn("join-parent", "join-turn")
+        return { pending, published, matched, turn }
+      }),
+    )
+
+    expect(result.pending._tag).toBe("Pending")
+    expect(result.published.write._tag).toBe("Appended")
+    expect(result.matched._tag).toBe("Matched")
+    if (result.matched._tag === "Matched") {
+      expect(result.matched.childResult.result).toBe("done")
+      expect(result.matched.matched.event).toEqual(result.matched.childResult)
+    }
+    expect(result.turn.events.map(event => event.type)).toEqual([
+      "turn.started",
+      "turn.wait_registered",
+      "turn.wait_matched",
+    ])
+  })
+
+  it("fluent-fork-spawn.feature spawn_all creates deterministic child identities and joins all results", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        yield* store.createSession({
+          sessionId: "spawn-all-parent",
+          agent: "agent",
+        })
+        yield* store.startTurn({
+          sessionId: "spawn-all-parent",
+          turnId: "spawn-all-turn",
+          prompt: "spawn_all",
+        })
+        const spawned = yield* store.spawnAll({
+          parentSessionId: "spawn-all-parent",
+          toolCallId: "call-123",
+          tasks: [{ prompt: "a" }, { prompt: "b" }, { prompt: "c" }],
+        })
+        yield* Effect.forEach(spawned.children, (child, index) =>
+          store.publishChildResult({
+            parentSessionId: "spawn-all-parent",
+            childSessionId: child.childSessionId,
+            resultId: `result-${index}`,
+            result: ["a", "b", "c"][index],
+          }), { discard: true })
+        const joins = yield* Effect.forEach(spawned.children, (child, index) =>
+          store.joinChildResult({
+            parentSessionId: "spawn-all-parent",
+            turnId: "spawn-all-turn",
+            childSessionId: child.childSessionId,
+            resultId: `result-${index}`,
+          }))
+        return { spawned, joins }
+      }),
+    )
+
+    expect(result.spawned.children.map(child => child.childSessionId)).toEqual([
+      "spawn-all-parent/children/call-123/0",
+      "spawn-all-parent/children/call-123/1",
+      "spawn-all-parent/children/call-123/2",
+    ])
+    expect(result.joins.map(join => join._tag)).toEqual(["Matched", "Matched", "Matched"])
+  })
+
+  it("fluent-fork-spawn.feature child race winner records explicit loser policy", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        yield* store.createSession({
+          sessionId: "race-parent",
+          agent: "agent",
+        })
+        const spawned = yield* store.spawnAll({
+          parentSessionId: "race-parent",
+          toolCallId: "race-call",
+          tasks: [{ prompt: "fast" }, { prompt: "slow" }],
+        })
+        yield* store.publishChildResult({
+          parentSessionId: "race-parent",
+          childSessionId: spawned.children[0]!.childSessionId,
+          resultId: "race-fast",
+          result: "fast",
+        })
+        yield* store.recordChildRaceWinner({
+          parentSessionId: "race-parent",
+          raceId: "race-1",
+          winnerChildSessionId: spawned.children[0]!.childSessionId,
+          loserPolicy: "let_finish",
+        })
+        return yield* store.collectSession("race-parent")
+      }),
+    )
+
+    expect(result.at(-1)).toEqual({
+      type: "session.child_race_winner",
+      parentSessionId: "race-parent",
+      raceId: "race-1",
+      winnerChildSessionId: "race-parent/children/race-call/0",
+      loserPolicy: "let_finish",
+    })
   })
 
   it("records durable timer intent and dedupes timer-source fire events", async () => {
