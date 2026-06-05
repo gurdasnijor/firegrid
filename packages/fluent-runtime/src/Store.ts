@@ -13,15 +13,11 @@ import {
   type SessionEvent,
   type SessionHandle,
   type SessionId,
-  type SessionChildResultEvent,
   type StateChangeMessage,
   type TimerId,
   type TurnEvent,
-  type TurnTimerFiredEvent,
-  type TurnTimerScheduledEvent,
   type TurnHandle,
   type TurnId,
-  type TurnWaitMatchedEvent,
   type TurnWaitRegisteredEvent,
   type WaitId,
 } from "./Domain.ts"
@@ -116,19 +112,6 @@ export interface FireTurnTimerResult {
   readonly write: ProducerAppendResult
 }
 
-export type TurnTimerWaitResult =
-  | {
-    readonly _tag: "Pending"
-    readonly turn: TurnHandle
-    readonly scheduled: TurnTimerScheduledEvent
-  }
-  | {
-    readonly _tag: "Fired"
-    readonly turn: TurnHandle
-    readonly scheduled: TurnTimerScheduledEvent
-    readonly fired: TurnTimerFiredEvent
-  }
-
 export interface RegisterTurnWaitInput {
   readonly sessionId: SessionId
   readonly turnId: TurnId
@@ -163,117 +146,11 @@ export type MatchTurnWaitResult =
     readonly registered: TurnWaitRegisteredEvent
   }
 
-export type TurnWaitResult =
-  | {
-    readonly _tag: "Pending"
-    readonly turn: TurnHandle
-    readonly registered: TurnWaitRegisteredEvent
-  }
-  | {
-    readonly _tag: "Matched"
-    readonly turn: TurnHandle
-    readonly registered: TurnWaitRegisteredEvent
-    readonly matched: TurnWaitMatchedEvent
-  }
-
 export interface ReadTurnResult {
   readonly turn: TurnHandle
   readonly events: ReadonlyArray<TurnEvent>
   readonly head: HeadResult
   readonly streamClosed: boolean
-}
-
-export interface ForkSessionInput {
-  readonly parentSessionId: SessionId
-  readonly childSessionId: SessionId
-  readonly forkOffset: string
-}
-
-export type ForkSessionResult =
-  | {
-    readonly _tag: "Forked"
-    readonly parent: SessionHandle
-    readonly child: SessionHandle
-  }
-  | {
-    readonly _tag: "Unsupported"
-    readonly parent: SessionHandle
-    readonly child: SessionHandle
-    readonly reason: string
-  }
-
-export interface SpawnChildTask {
-  readonly prompt: string
-}
-
-export interface SpawnChildInput extends SpawnChildTask {
-  readonly parentSessionId: SessionId
-  readonly toolCallId: string
-  readonly slot: number
-}
-
-export interface SpawnChildResult {
-  readonly parent: SessionHandle
-  readonly child: SessionHandle
-  readonly childSessionId: SessionId
-  readonly forkOffset: string
-  readonly initialWrite: ProducerAppendResult
-}
-
-export interface SpawnAllInput {
-  readonly parentSessionId: SessionId
-  readonly toolCallId: string
-  readonly tasks: ReadonlyArray<SpawnChildTask>
-}
-
-export interface SpawnAllResult {
-  readonly parent: SessionHandle
-  readonly children: ReadonlyArray<SpawnChildResult>
-}
-
-export interface PublishChildResultInput {
-  readonly parentSessionId: SessionId
-  readonly childSessionId: SessionId
-  readonly resultId: string
-  readonly result: unknown
-}
-
-export interface PublishChildResultResult {
-  readonly child: SessionHandle
-  readonly write: ProducerAppendResult
-}
-
-export type JoinChildResultResult =
-  | {
-    readonly _tag: "Pending"
-    readonly turn: TurnHandle
-  }
-  | {
-    readonly _tag: "Matched"
-    readonly turn: TurnHandle
-    readonly matched: TurnWaitMatchedEvent
-    readonly childResult: SessionChildResultEvent
-  }
-
-export interface JoinChildResultInput {
-  readonly parentSessionId: SessionId
-  readonly turnId: TurnId
-  readonly childSessionId: SessionId
-  readonly resultId: string
-  readonly waitId?: WaitId
-}
-
-export type ChildRaceLoserPolicy = "let_finish" | "cancel"
-
-export interface RecordChildRaceWinnerInput {
-  readonly parentSessionId: SessionId
-  readonly raceId: string
-  readonly winnerChildSessionId: SessionId
-  readonly loserPolicy: ChildRaceLoserPolicy
-}
-
-export interface RecordChildRaceWinnerResult {
-  readonly parent: SessionHandle
 }
 
 export type StoreRequirements = never
@@ -301,24 +178,6 @@ export class FluentStore extends Context.Tag("@firegrid/fluent-runtime/Store/Flu
     readonly headSession: (
       sessionId: SessionId,
     ) => Effect.Effect<HeadResult, FluentRuntimeError, StoreRequirements>
-    readonly forkSession: (
-      input: ForkSessionInput,
-    ) => Effect.Effect<ForkSessionResult, never, StoreRequirements>
-    readonly spawnChild: (
-      input: SpawnChildInput,
-    ) => Effect.Effect<SpawnChildResult, FluentRuntimeError, StoreRequirements>
-    readonly spawnAll: (
-      input: SpawnAllInput,
-    ) => Effect.Effect<SpawnAllResult, FluentRuntimeError, StoreRequirements>
-    readonly publishChildResult: (
-      input: PublishChildResultInput,
-    ) => Effect.Effect<PublishChildResultResult, FluentRuntimeError, StoreRequirements>
-    readonly joinChildResult: (
-      input: JoinChildResultInput,
-    ) => Effect.Effect<JoinChildResultResult, FluentRuntimeError, StoreRequirements>
-    readonly recordChildRaceWinner: (
-      input: RecordChildRaceWinnerInput,
-    ) => Effect.Effect<RecordChildRaceWinnerResult, FluentRuntimeError, StoreRequirements>
     readonly startTurn: (
       input: StartTurnInput,
     ) => Effect.Effect<TurnHandle, FluentRuntimeError, StoreRequirements>
@@ -334,18 +193,12 @@ export class FluentStore extends Context.Tag("@firegrid/fluent-runtime/Store/Flu
     readonly fireTurnTimer: (
       input: FireTurnTimerInput,
     ) => Effect.Effect<FireTurnTimerResult, FluentRuntimeError, StoreRequirements>
-    readonly durableSleep: (
-      input: ScheduleTurnTimerInput,
-    ) => Effect.Effect<TurnTimerWaitResult, FluentRuntimeError, StoreRequirements>
     readonly registerTurnWait: (
       input: RegisterTurnWaitInput,
     ) => Effect.Effect<RegisterTurnWaitResult, FluentRuntimeError, StoreRequirements>
     readonly matchTurnWait: (
       input: MatchTurnWaitInput,
     ) => Effect.Effect<MatchTurnWaitResult, FluentRuntimeError, StoreRequirements>
-    readonly durableWait: (
-      input: RegisterTurnWaitInput,
-    ) => Effect.Effect<TurnWaitResult, FluentRuntimeError, StoreRequirements>
     readonly readTurn: (
       sessionId: SessionId,
       turnId: TurnId,
@@ -367,8 +220,6 @@ const streamUrl = (
   }/${segments.map(encodeSegment).join("/")}`
 
 const endpoint = (url: string): Endpoint => ({ url })
-
-const streamPathname = (url: string): string => new URL(url).pathname
 
 const sessionStream = (url: string) =>
   DurableStream.define({
@@ -424,28 +275,6 @@ const waitProducerId = (
     encodeSegment(input.waitId),
   ].join("/")
 
-const childSessionIdForSpawn = (
-  parentSessionId: SessionId,
-  toolCallId: string,
-  slot: number,
-): SessionId =>
-  `${parentSessionId}/children/${toolCallId}/${slot}`
-
-const childProducerId = (
-  kind: "initial" | "result",
-  input: {
-    readonly childSessionId: SessionId
-    readonly resultId?: string
-  },
-): string =>
-  [
-    "fluent-runtime",
-    "child",
-    kind,
-    encodeSegment(input.childSessionId),
-    ...(input.resultId === undefined ? [] : [encodeSegment(input.resultId)]),
-  ].join("/")
-
 const celEnvironment = new Environment({ unlistedVariablesAreDyn: true })
 
 const evaluateWaitPredicate = (
@@ -482,19 +311,6 @@ const findLastEvent = <A extends TurnEvent>(
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event !== undefined && predicate(event)) return event
-  }
-  return undefined
-}
-
-const findIndexedSessionEvent = <A extends SessionEvent>(
-  events: ReadonlyArray<SessionEvent>,
-  predicate: (event: SessionEvent) => event is A,
-): { readonly event: A; readonly offset: string } | undefined => {
-  for (let index = 0; index < events.length; index += 1) {
-    const event = events[index]
-    if (event !== undefined && predicate(event)) {
-      return { event, offset: String(index) }
-    }
   }
   return undefined
 }
@@ -809,49 +625,6 @@ export const makeFluentStore = (
       }),
     )
 
-  const timerStatusFromEvents = (
-    turn: TurnHandle,
-    timerId: TimerId,
-    events: ReadonlyArray<TurnEvent>,
-  ): Effect.Effect<TurnTimerWaitResult, FluentRuntimeError> =>
-    Effect.gen(function* () {
-      const scheduled = findLastEvent(
-        events,
-        (event): event is TurnTimerScheduledEvent =>
-          event.type === "turn.timer_scheduled" && event.timerId === timerId,
-      )
-      if (scheduled === undefined) {
-        return yield* new FluentRuntimeError({
-          message: `Missing durable timer schedule for ${timerId}`,
-        })
-      }
-      const fired = findLastEvent(
-        events,
-        (event): event is TurnTimerFiredEvent =>
-          event.type === "turn.timer_fired" && event.timerId === timerId,
-      )
-      return fired === undefined
-        ? { _tag: "Pending", turn, scheduled }
-        : { _tag: "Fired", turn, scheduled, fired }
-    })
-
-  const durableSleep = (
-    input: ScheduleTurnTimerInput,
-  ) =>
-    Effect.gen(function* () {
-      yield* scheduleTurnTimer(input)
-      const read = yield* readTurn(input.sessionId, input.turnId)
-      return yield* timerStatusFromEvents(read.turn, input.timerId, read.events)
-    }).pipe(
-      Effect.withSpan("fluent_runtime.store.turn.durable_sleep", {
-        attributes: {
-          "firegrid.session.id": input.sessionId,
-          "firegrid.turn.id": input.turnId,
-          "fluent_runtime.timer.id": input.timerId,
-        },
-      }),
-    )
-
   const registerTurnWait = (
     input: RegisterTurnWaitInput,
   ) =>
@@ -937,49 +710,6 @@ export const makeFluentStore = (
       }),
     )
 
-  const waitStatusFromEvents = (
-    turn: TurnHandle,
-    waitId: WaitId,
-    events: ReadonlyArray<TurnEvent>,
-  ): Effect.Effect<TurnWaitResult, FluentRuntimeError> =>
-    Effect.gen(function* () {
-      const registered = findLastEvent(
-        events,
-        (event): event is TurnWaitRegisteredEvent =>
-          event.type === "turn.wait_registered" && event.waitId === waitId,
-      )
-      if (registered === undefined) {
-        return yield* new FluentRuntimeError({
-          message: `Missing durable wait registration for ${waitId}`,
-        })
-      }
-      const matched = findLastEvent(
-        events,
-        (event): event is TurnWaitMatchedEvent =>
-          event.type === "turn.wait_matched" && event.waitId === waitId,
-      )
-      return matched === undefined
-        ? { _tag: "Pending", turn, registered }
-        : { _tag: "Matched", turn, registered, matched }
-    })
-
-  const durableWait = (
-    input: RegisterTurnWaitInput,
-  ) =>
-    Effect.gen(function* () {
-      yield* registerTurnWait(input)
-      const read = yield* readTurn(input.sessionId, input.turnId)
-      return yield* waitStatusFromEvents(read.turn, input.waitId, read.events)
-    }).pipe(
-      Effect.withSpan("fluent_runtime.store.turn.durable_wait", {
-        attributes: {
-          "firegrid.session.id": input.sessionId,
-          "firegrid.turn.id": input.turnId,
-          "fluent_runtime.wait.id": input.waitId,
-        },
-      }),
-    )
-
   const readTurn = (sessionId: SessionId, turnId: TurnId) =>
     Effect.gen(function* () {
       const handle = makeTurnHandle(config, sessionId, turnId)
@@ -1005,270 +735,6 @@ export const makeFluentStore = (
       }),
     )
 
-  const forkSession = (
-    input: ForkSessionInput,
-  ) => {
-    const parent = makeSessionHandle(config, input.parentSessionId)
-    const child = makeSessionHandle(config, input.childSessionId)
-    return Effect.gen(function* () {
-      yield* sessionStream(child.eventsUrl).create({
-        contentType: "application/json",
-        headers: {
-          "Stream-Forked-From": streamPathname(parent.eventsUrl),
-          "Stream-Fork-Offset": input.forkOffset,
-        },
-      })
-      yield* sessionStream(parent.eventsUrl).append({
-        type: "session.forked",
-        parentSessionId: input.parentSessionId,
-        childSessionId: input.childSessionId,
-        forkOffset: input.forkOffset,
-      })
-      return { _tag: "Forked", parent, child } satisfies ForkSessionResult
-    }).pipe(
-      Effect.catchAll((cause) =>
-        Effect.succeed<ForkSessionResult>({
-          _tag: "Unsupported",
-          parent,
-          child,
-          reason: cause instanceof Error ? cause.message : String(cause),
-        }),
-      ),
-      Effect.withSpan("fluent_runtime.store.session.fork_probe", {
-        attributes: {
-          "firegrid.session.parent_id": input.parentSessionId,
-          "firegrid.session.child_id": input.childSessionId,
-          "firegrid.session.fork_offset": input.forkOffset,
-        },
-      }),
-    )
-  }
-
-  const spawnChild = (
-    input: SpawnChildInput,
-  ) =>
-    Effect.gen(function* () {
-      const head = yield* headSession(input.parentSessionId)
-      const childSessionId = childSessionIdForSpawn(
-        input.parentSessionId,
-        input.toolCallId,
-        input.slot,
-      )
-      const fork = yield* forkSession({
-        parentSessionId: input.parentSessionId,
-        childSessionId,
-        forkOffset: head.offset,
-      })
-      if (fork._tag === "Unsupported") {
-        return yield* new FluentRuntimeError({
-          message: `Failed to fork child session ${childSessionId}: ${fork.reason}`,
-        })
-      }
-      yield* sessionStream(fork.parent.eventsUrl).append({
-        type: "session.child_spawned",
-        parentSessionId: input.parentSessionId,
-        childSessionId,
-        toolCallId: input.toolCallId,
-        slot: input.slot,
-        forkOffset: head.offset,
-        prompt: input.prompt,
-      }).pipe(
-        Effect.mapError(toRuntimeError("Failed to append session.child_spawned event")),
-      )
-      const initialWrite = yield* DurableStream.appendWithProducer({
-        endpoint: endpoint(fork.child.eventsUrl),
-        schema: SessionEventSchema,
-        event: {
-          type: "session.event_appended",
-          sessionId: childSessionId,
-          name: "child.prompt",
-          payload: { prompt: input.prompt },
-        },
-        producerId: childProducerId("initial", { childSessionId }),
-        producerEpoch: 0,
-        producerSeq: 0,
-      }).pipe(
-        Effect.mapError(toRuntimeError("Failed to append child initial prompt")),
-      )
-      return {
-        parent: fork.parent,
-        child: fork.child,
-        childSessionId,
-        forkOffset: head.offset,
-        initialWrite,
-      }
-    }).pipe(
-      Effect.withSpan("fluent_runtime.store.child.spawn", {
-        attributes: {
-          "firegrid.session.parent_id": input.parentSessionId,
-          "fluent_runtime.tool_call.id": input.toolCallId,
-          "fluent_runtime.spawn.slot": input.slot,
-        },
-      }),
-    )
-
-  const spawnAll = (
-    input: SpawnAllInput,
-  ) =>
-    Effect.gen(function* () {
-      const children = yield* Effect.forEach(
-        input.tasks,
-        (task, slot) =>
-          spawnChild({
-            parentSessionId: input.parentSessionId,
-            toolCallId: input.toolCallId,
-            slot,
-            prompt: task.prompt,
-          }),
-        { concurrency: "unbounded" },
-      )
-      return {
-        parent: makeSessionHandle(config, input.parentSessionId),
-        children,
-      }
-    }).pipe(
-      Effect.withSpan("fluent_runtime.store.child.spawn_all", {
-        attributes: {
-          "firegrid.session.parent_id": input.parentSessionId,
-          "fluent_runtime.tool_call.id": input.toolCallId,
-          "fluent_runtime.spawn.count": input.tasks.length,
-        },
-      }),
-    )
-
-  const publishChildResult = (
-    input: PublishChildResultInput,
-  ) =>
-    Effect.gen(function* () {
-      const child = makeSessionHandle(config, input.childSessionId)
-      const write = yield* DurableStream.appendWithProducer({
-        endpoint: endpoint(child.eventsUrl),
-        schema: SessionEventSchema,
-        event: {
-          type: "session.child_result",
-          parentSessionId: input.parentSessionId,
-          childSessionId: input.childSessionId,
-          resultId: input.resultId,
-          result: input.result,
-        },
-        producerId: childProducerId("result", input),
-        producerEpoch: 0,
-        producerSeq: 0,
-      }).pipe(
-        Effect.mapError(toRuntimeError("Failed to append session.child_result event")),
-      )
-      return { child, write }
-    }).pipe(
-      Effect.withSpan("fluent_runtime.store.child.result", {
-        attributes: {
-          "firegrid.session.parent_id": input.parentSessionId,
-          "firegrid.session.child_id": input.childSessionId,
-          "fluent_runtime.result.id": input.resultId,
-        },
-      }),
-    )
-
-  const childResultWaitId = (
-    input: JoinChildResultInput,
-  ): WaitId =>
-    input.waitId ?? `child-result:${input.childSessionId}:${input.resultId}`
-
-  const joinChildResult = (
-    input: JoinChildResultInput,
-  ) =>
-    Effect.gen(function* () {
-      const waitId = childResultWaitId(input)
-      yield* registerTurnWait({
-        sessionId: input.parentSessionId,
-        turnId: input.turnId,
-        waitId,
-        predicate:
-          "event.type == self.type && event.childSessionId == self.childSessionId && event.resultId == self.resultId",
-        afterOffset: "-1",
-        self: {
-          type: "session.child_result",
-          childSessionId: input.childSessionId,
-          resultId: input.resultId,
-        },
-      })
-      const childEvents = yield* collectSession(input.childSessionId)
-      const found = findIndexedSessionEvent(
-        childEvents,
-        (event): event is SessionChildResultEvent =>
-          event.type === "session.child_result" &&
-          "childSessionId" in event &&
-          "resultId" in event &&
-          event.childSessionId === input.childSessionId &&
-          event.resultId === input.resultId,
-      )
-      if (found === undefined) {
-        const turn = makeTurnHandle(config, input.parentSessionId, input.turnId)
-        return { _tag: "Pending" as const, turn }
-      }
-      yield* matchTurnWait({
-        sessionId: input.parentSessionId,
-        turnId: input.turnId,
-        waitId,
-        matchedOffset: found.offset,
-        event: found.event,
-      })
-      const wait = yield* durableWait({
-        sessionId: input.parentSessionId,
-        turnId: input.turnId,
-        waitId,
-        predicate:
-          "event.type == self.type && event.childSessionId == self.childSessionId && event.resultId == self.resultId",
-        afterOffset: "-1",
-        self: {
-          type: "session.child_result",
-          childSessionId: input.childSessionId,
-          resultId: input.resultId,
-        },
-      })
-      return wait._tag === "Matched"
-        ? {
-          _tag: "Matched" as const,
-          turn: wait.turn,
-          matched: wait.matched,
-          childResult: found.event,
-        }
-        : { _tag: "Pending" as const, turn: wait.turn }
-    }).pipe(
-      Effect.withSpan("fluent_runtime.store.child.join", {
-        attributes: {
-          "firegrid.session.parent_id": input.parentSessionId,
-          "firegrid.session.child_id": input.childSessionId,
-          "fluent_runtime.result.id": input.resultId,
-        },
-      }),
-    )
-
-  const recordChildRaceWinner = (
-    input: RecordChildRaceWinnerInput,
-  ) =>
-    Effect.gen(function* () {
-      const parent = makeSessionHandle(config, input.parentSessionId)
-      yield* sessionStream(parent.eventsUrl).append({
-        type: "session.child_race_winner",
-        parentSessionId: input.parentSessionId,
-        raceId: input.raceId,
-        winnerChildSessionId: input.winnerChildSessionId,
-        loserPolicy: input.loserPolicy,
-      }).pipe(
-        Effect.mapError(toRuntimeError("Failed to append session.child_race_winner event")),
-      )
-      return { parent }
-    }).pipe(
-      Effect.withSpan("fluent_runtime.store.child.race_winner", {
-        attributes: {
-          "firegrid.session.parent_id": input.parentSessionId,
-          "fluent_runtime.race.id": input.raceId,
-          "firegrid.session.child_id": input.winnerChildSessionId,
-          "fluent_runtime.race.loser_policy": input.loserPolicy,
-        },
-      }),
-    )
-
   return {
     sessionUrl: (sessionId) => makeSessionHandle(config, sessionId).eventsUrl,
     turnUrl: (sessionId, turnId) => makeTurnHandle(config, sessionId, turnId).eventsUrl,
@@ -1278,21 +744,13 @@ export const makeFluentStore = (
     appendStateChangeFenced: (input) => provideHttp(appendStateChangeFenced(input)),
     collectSession: (sessionId) => provideHttp(collectSession(sessionId)),
     headSession: (sessionId) => provideHttp(headSession(sessionId)),
-    forkSession: (input) => provideHttp(forkSession(input)),
-    spawnChild: (input) => provideHttp(spawnChild(input)),
-    spawnAll: (input) => provideHttp(spawnAll(input)),
-    publishChildResult: (input) => provideHttp(publishChildResult(input)),
-    joinChildResult: (input) => provideHttp(joinChildResult(input)),
-    recordChildRaceWinner: (input) => provideHttp(recordChildRaceWinner(input)),
     startTurn: (input) => provideHttp(startTurn(input)),
     completeTurn: (input) => provideHttp(completeTurn(input)),
     failTurn: (input) => provideHttp(failTurn(input)),
     scheduleTurnTimer: (input) => provideHttp(scheduleTurnTimer(input)),
     fireTurnTimer: (input) => provideHttp(fireTurnTimer(input)),
-    durableSleep: (input) => provideHttp(durableSleep(input)),
     registerTurnWait: (input) => provideHttp(registerTurnWait(input)),
     matchTurnWait: (input) => provideHttp(matchTurnWait(input)),
-    durableWait: (input) => provideHttp(durableWait(input)),
     readTurn: (sessionId, turnId) => provideHttp(readTurn(sessionId, turnId)),
   }
 }

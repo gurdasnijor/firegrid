@@ -23,39 +23,6 @@ const SessionEventAppendedSchema = Schema.Struct({
   payload: Schema.Unknown,
 })
 
-const SessionForkedEventSchema = Schema.Struct({
-  type: Schema.Literal("session.forked"),
-  parentSessionId: SessionIdSchema,
-  childSessionId: SessionIdSchema,
-  forkOffset: Schema.String,
-})
-
-const SessionChildSpawnedEventSchema = Schema.Struct({
-  type: Schema.Literal("session.child_spawned"),
-  parentSessionId: SessionIdSchema,
-  childSessionId: SessionIdSchema,
-  toolCallId: Schema.String,
-  slot: Schema.Number,
-  forkOffset: Schema.String,
-  prompt: Schema.String,
-})
-
-const SessionChildResultEventSchema = Schema.Struct({
-  type: Schema.Literal("session.child_result"),
-  parentSessionId: SessionIdSchema,
-  childSessionId: SessionIdSchema,
-  resultId: Schema.String,
-  result: Schema.Unknown,
-})
-
-const SessionChildRaceWinnerEventSchema = Schema.Struct({
-  type: Schema.Literal("session.child_race_winner"),
-  parentSessionId: SessionIdSchema,
-  raceId: Schema.String,
-  winnerChildSessionId: SessionIdSchema,
-  loserPolicy: Schema.Literal("let_finish", "cancel"),
-})
-
 export const StateChangeMessageSchema = Schema.Struct({
   type: Schema.String,
   key: Schema.String,
@@ -67,10 +34,6 @@ export const StateChangeMessageSchema = Schema.Struct({
 export const SessionEventSchema = Schema.Union(
   SessionCreatedEventSchema,
   SessionEventAppendedSchema,
-  SessionForkedEventSchema,
-  SessionChildSpawnedEventSchema,
-  SessionChildResultEventSchema,
-  SessionChildRaceWinnerEventSchema,
   StateChangeMessageSchema,
 )
 
@@ -141,10 +104,6 @@ export const TurnEventSchema = Schema.Union(
 )
 
 export type SessionEventAppended = Schema.Schema.Type<typeof SessionEventAppendedSchema>
-export type SessionForkedEvent = Schema.Schema.Type<typeof SessionForkedEventSchema>
-export type SessionChildSpawnedEvent = Schema.Schema.Type<typeof SessionChildSpawnedEventSchema>
-export type SessionChildResultEvent = Schema.Schema.Type<typeof SessionChildResultEventSchema>
-export type SessionChildRaceWinnerEvent = Schema.Schema.Type<typeof SessionChildRaceWinnerEventSchema>
 export type StateChangeMessage = Schema.Schema.Type<typeof StateChangeMessageSchema>
 export type SessionEvent = Schema.Schema.Type<typeof SessionEventSchema>
 

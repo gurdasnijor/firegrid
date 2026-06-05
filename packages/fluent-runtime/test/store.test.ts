@@ -193,7 +193,7 @@ describe("@firegrid/fluent-runtime Store", () => {
   const prMergedPredicate =
     "event.type == \"github.pr\" && event.value.state == \"merged\" && event.value.issueId == self.issueId"
 
-  it("fluent-runtime-workbench.STORE.2 fluent-runtime-workbench.STORE.3 completes a turn by append-and-close and reads closure", async () => {
+  it("completes a turn by append-and-close and reads closure", async () => {
     const fakeFetch = makeMemoryDurableStreamsFetch()
 
     const read = await runtimeWith(
@@ -292,276 +292,6 @@ describe("@firegrid/fluent-runtime Store", () => {
         expect(exit.cause.error.cause).toBeInstanceOf(DurableStream.SequenceGap)
       }
     }
-  })
-
-  it("forks a child session from the parent stream path and records the fork on the parent", async () => {
-    const fakeFetch = makeMemoryDurableStreamsFetch()
-
-    const result = await runtimeWith(
-      fakeFetch,
-      Effect.gen(function* () {
-        const store = yield* FluentStore
-        yield* store.createSession({
-          sessionId: "parent",
-          agent: "agent",
-        })
-        yield* store.appendSessionEvent({
-          sessionId: "parent",
-          name: "before-a",
-          payload: { n: 1 },
-        })
-        yield* store.appendSessionEvent({
-          sessionId: "parent",
-          name: "before-b",
-          payload: { n: 2 },
-        })
-        const fork = yield* store.forkSession({
-          parentSessionId: "parent",
-          childSessionId: "child",
-          forkOffset: "2",
-        })
-        yield* store.appendSessionEvent({
-          sessionId: "parent",
-          name: "after-fork",
-          payload: { n: 3 },
-        })
-        const parent = yield* store.collectSession("parent")
-        const child = yield* store.collectSession("child")
-        return { fork, parent, child }
-      }),
-    )
-
-    expect(result.fork._tag).toBe("Forked")
-    expect(result.child.map((event) => event.type)).toEqual([
-      "session.created",
-      "session.event_appended",
-      "session.event_appended",
-    ])
-    expect(result.child[1]).toEqual({
-      type: "session.event_appended",
-      sessionId: "parent",
-      name: "before-a",
-      payload: { n: 1 },
-    })
-    expect(result.child[2]).toEqual({
-      type: "session.event_appended",
-      sessionId: "parent",
-      name: "before-b",
-      payload: { n: 2 },
-    })
-    expect(result.parent.map((event) => event.type)).toEqual([
-      "session.created",
-      "session.event_appended",
-      "session.event_appended",
-      "session.forked",
-      "session.event_appended",
-    ])
-  })
-
-  it("fluent-fork-spawn.feature spawn creates a forked child stream with reset producer state", async () => {
-    const fakeFetch = makeMemoryDurableStreamsFetch()
-
-    const result = await runtimeWith(
-      fakeFetch,
-      Effect.gen(function* () {
-        const store = yield* FluentStore
-        yield* store.createSession({
-          sessionId: "spawn-parent",
-          agent: "agent",
-        })
-        yield* store.appendSessionEventFenced({
-          sessionId: "spawn-parent",
-          name: "parent-side-effect",
-          payload: { parent: true },
-          fence: { producerId: "shared-producer", epoch: 0, seq: 0 },
-        })
-        const spawned = yield* store.spawnChild({
-          parentSessionId: "spawn-parent",
-          toolCallId: "child-1",
-          slot: 0,
-          prompt: "work",
-        })
-        const childReset = yield* store.appendSessionEventFenced({
-          sessionId: spawned.childSessionId,
-          name: "child-side-effect",
-          payload: { child: true },
-          fence: { producerId: "shared-producer", epoch: 0, seq: 0 },
-        })
-        const parent = yield* store.collectSession("spawn-parent")
-        const child = yield* store.collectSession(spawned.childSessionId)
-        return { spawned, childReset, parent, child }
-      }),
-    )
-
-    expect(result.spawned.childSessionId).toBe("spawn-parent/children/child-1/0")
-    expect(result.spawned.initialWrite._tag).toBe("Appended")
-    expect(result.childReset.write._tag).toBe("Appended")
-    expect(result.child.map(event => event.type)).toEqual([
-      "session.created",
-      "session.event_appended",
-      "session.event_appended",
-      "session.event_appended",
-    ])
-    expect(result.child[1]).toEqual({
-      type: "session.event_appended",
-      sessionId: "spawn-parent",
-      name: "parent-side-effect",
-      payload: { parent: true },
-    })
-    expect(result.child[2]).toEqual({
-      type: "session.event_appended",
-      sessionId: "spawn-parent/children/child-1/0",
-      name: "child.prompt",
-      payload: { prompt: "work" },
-    })
-    expect(result.parent.some(event => event.type === "session.child_spawned")).toBe(true)
-  })
-
-  it("fluent-fork-spawn.feature parent waits on child result event without an inline child handler call", async () => {
-    const fakeFetch = makeMemoryDurableStreamsFetch()
-
-    const result = await runtimeWith(
-      fakeFetch,
-      Effect.gen(function* () {
-        const store = yield* FluentStore
-        yield* store.createSession({
-          sessionId: "join-parent",
-          agent: "agent",
-        })
-        yield* store.startTurn({
-          sessionId: "join-parent",
-          turnId: "join-turn",
-          prompt: "spawn",
-        })
-        const spawned = yield* store.spawnChild({
-          parentSessionId: "join-parent",
-          toolCallId: "child-1",
-          slot: 0,
-          prompt: "work",
-        })
-        const pending = yield* store.joinChildResult({
-          parentSessionId: "join-parent",
-          turnId: "join-turn",
-          childSessionId: spawned.childSessionId,
-          resultId: "child-1",
-        })
-        const published = yield* store.publishChildResult({
-          parentSessionId: "join-parent",
-          childSessionId: spawned.childSessionId,
-          resultId: "child-1",
-          result: "done",
-        })
-        const matched = yield* store.joinChildResult({
-          parentSessionId: "join-parent",
-          turnId: "join-turn",
-          childSessionId: spawned.childSessionId,
-          resultId: "child-1",
-        })
-        const turn = yield* store.readTurn("join-parent", "join-turn")
-        return { pending, published, matched, turn }
-      }),
-    )
-
-    expect(result.pending._tag).toBe("Pending")
-    expect(result.published.write._tag).toBe("Appended")
-    expect(result.matched._tag).toBe("Matched")
-    if (result.matched._tag === "Matched") {
-      expect(result.matched.childResult.result).toBe("done")
-      expect(result.matched.matched.event).toEqual(result.matched.childResult)
-    }
-    expect(result.turn.events.map(event => event.type)).toEqual([
-      "turn.started",
-      "turn.wait_registered",
-      "turn.wait_matched",
-    ])
-  })
-
-  it("fluent-fork-spawn.feature spawn_all creates deterministic child identities and joins all results", async () => {
-    const fakeFetch = makeMemoryDurableStreamsFetch()
-
-    const result = await runtimeWith(
-      fakeFetch,
-      Effect.gen(function* () {
-        const store = yield* FluentStore
-        yield* store.createSession({
-          sessionId: "spawn-all-parent",
-          agent: "agent",
-        })
-        yield* store.startTurn({
-          sessionId: "spawn-all-parent",
-          turnId: "spawn-all-turn",
-          prompt: "spawn_all",
-        })
-        const spawned = yield* store.spawnAll({
-          parentSessionId: "spawn-all-parent",
-          toolCallId: "call-123",
-          tasks: [{ prompt: "a" }, { prompt: "b" }, { prompt: "c" }],
-        })
-        yield* Effect.forEach(spawned.children, (child, index) =>
-          store.publishChildResult({
-            parentSessionId: "spawn-all-parent",
-            childSessionId: child.childSessionId,
-            resultId: `result-${index}`,
-            result: ["a", "b", "c"][index],
-          }), { discard: true })
-        const joins = yield* Effect.forEach(spawned.children, (child, index) =>
-          store.joinChildResult({
-            parentSessionId: "spawn-all-parent",
-            turnId: "spawn-all-turn",
-            childSessionId: child.childSessionId,
-            resultId: `result-${index}`,
-          }))
-        return { spawned, joins }
-      }),
-    )
-
-    expect(result.spawned.children.map(child => child.childSessionId)).toEqual([
-      "spawn-all-parent/children/call-123/0",
-      "spawn-all-parent/children/call-123/1",
-      "spawn-all-parent/children/call-123/2",
-    ])
-    expect(result.joins.map(join => join._tag)).toEqual(["Matched", "Matched", "Matched"])
-  })
-
-  it("fluent-fork-spawn.feature child race winner records explicit loser policy", async () => {
-    const fakeFetch = makeMemoryDurableStreamsFetch()
-
-    const result = await runtimeWith(
-      fakeFetch,
-      Effect.gen(function* () {
-        const store = yield* FluentStore
-        yield* store.createSession({
-          sessionId: "race-parent",
-          agent: "agent",
-        })
-        const spawned = yield* store.spawnAll({
-          parentSessionId: "race-parent",
-          toolCallId: "race-call",
-          tasks: [{ prompt: "fast" }, { prompt: "slow" }],
-        })
-        yield* store.publishChildResult({
-          parentSessionId: "race-parent",
-          childSessionId: spawned.children[0]!.childSessionId,
-          resultId: "race-fast",
-          result: "fast",
-        })
-        yield* store.recordChildRaceWinner({
-          parentSessionId: "race-parent",
-          raceId: "race-1",
-          winnerChildSessionId: spawned.children[0]!.childSessionId,
-          loserPolicy: "let_finish",
-        })
-        return yield* store.collectSession("race-parent")
-      }),
-    )
-
-    expect(result.at(-1)).toEqual({
-      type: "session.child_race_winner",
-      parentSessionId: "race-parent",
-      raceId: "race-1",
-      winnerChildSessionId: "race-parent/children/race-call/0",
-      loserPolicy: "let_finish",
-    })
   })
 
   it("records durable timer intent and dedupes timer-source fire events", async () => {
@@ -663,7 +393,7 @@ describe("@firegrid/fluent-runtime Store", () => {
     })
   })
 
-  it("parks durable sleep as a replayed timer intent and resumes after timer source fire", async () => {
+  it("records timer intent and fired rows with producer dedupe", async () => {
     const fakeFetch = makeMemoryDurableStreamsFetch()
 
     const result = await runtimeWith(
@@ -679,7 +409,7 @@ describe("@firegrid/fluent-runtime Store", () => {
           turnId: "sleep-turn",
           prompt: "sleep",
         })
-        const parked = yield* store.durableSleep({
+        const scheduled = yield* store.scheduleTurnTimer({
           sessionId: "sleep-session",
           turnId: "sleep-turn",
           timerId: "sleep-wait",
@@ -691,19 +421,19 @@ describe("@firegrid/fluent-runtime Store", () => {
           timerId: "sleep-wait",
           firedAtEpochMs: 10_000,
         })
-        const replayed = yield* store.durableSleep({
+        const duplicateSchedule = yield* store.scheduleTurnTimer({
           sessionId: "sleep-session",
           turnId: "sleep-turn",
           timerId: "sleep-wait",
           fireAtEpochMs: 10_000,
         })
         const read = yield* store.readTurn("sleep-session", "sleep-turn")
-        return { parked, replayed, read }
+        return { scheduled, duplicateSchedule, read }
       }),
     )
 
-    expect(result.parked._tag).toBe("Pending")
-    expect(result.replayed._tag).toBe("Fired")
+    expect(result.scheduled.write._tag).toBe("Appended")
+    expect(result.duplicateSchedule.write._tag).toBe("Duplicate")
     expect(result.read.events.map((event) => event.type)).toEqual([
       "turn.started",
       "turn.timer_scheduled",
@@ -728,13 +458,13 @@ describe("@firegrid/fluent-runtime Store", () => {
           turnId: "timer-source-turn",
           prompt: "source",
         })
-        yield* store.durableSleep({
+        yield* store.scheduleTurnTimer({
           sessionId: "timer-source-session",
           turnId: "timer-source-turn",
           timerId: "due",
           fireAtEpochMs: 100,
         })
-        yield* store.durableSleep({
+        yield* store.scheduleTurnTimer({
           sessionId: "timer-source-session",
           turnId: "timer-source-turn",
           timerId: "later",
@@ -780,7 +510,7 @@ describe("@firegrid/fluent-runtime Store", () => {
     ])
   })
 
-  it("registers durable wait before park and resolves from a matched event on replay", async () => {
+  it("registers wait intent and records a matching event row", async () => {
     const fakeFetch = makeMemoryDurableStreamsFetch()
 
     const result = await runtimeWith(
@@ -796,7 +526,7 @@ describe("@firegrid/fluent-runtime Store", () => {
           turnId: "wait-turn",
           prompt: "wait_for",
         })
-        const pending = yield* store.durableWait({
+        const registered = yield* store.registerTurnWait({
           sessionId: "wait-session",
           turnId: "wait-turn",
           waitId: "github-pr-merged",
@@ -840,27 +570,18 @@ describe("@firegrid/fluent-runtime Store", () => {
             headers: { operation: "update" },
           },
         })
-        const matched = yield* store.durableWait({
-          sessionId: "wait-session",
-          turnId: "wait-turn",
-          waitId: "github-pr-merged",
-          predicate: prMergedPredicate,
-          afterOffset: "3",
-          self: { issueId: "ISS-1" },
-        })
         const read = yield* store.readTurn("wait-session", "wait-turn")
-        return { pending, staleOffset, nonMatch, match, matched, read }
+        return { registered, staleOffset, nonMatch, match, read }
       }),
     )
 
-    expect(result.pending._tag).toBe("Pending")
+    expect(result.registered.write._tag).toBe("Appended")
     expect(result.staleOffset._tag).toBe("NotMatched")
     expect(result.nonMatch._tag).toBe("NotMatched")
     expect(result.match._tag).toBe("Matched")
     if (result.match._tag === "Matched") {
       expect(result.match.write._tag).toBe("Appended")
     }
-    expect(result.matched._tag).toBe("Matched")
     expect(result.read.events.map((event) => event.type)).toEqual([
       "turn.started",
       "turn.wait_registered",
@@ -907,7 +628,7 @@ describe("@firegrid/fluent-runtime Store", () => {
           turnId: "wait-source-turn",
           prompt: "wait_for",
         })
-        yield* store.durableWait({
+        yield* store.registerTurnWait({
           sessionId: "wait-source-session",
           turnId: "wait-source-turn",
           waitId: "issue-1",
@@ -915,7 +636,7 @@ describe("@firegrid/fluent-runtime Store", () => {
           afterOffset: "10",
           self: { issueId: "ISS-1" },
         })
-        yield* store.durableWait({
+        yield* store.registerTurnWait({
           sessionId: "wait-source-session",
           turnId: "wait-source-turn",
           waitId: "issue-2",
@@ -993,7 +714,7 @@ describe("@firegrid/fluent-runtime Store", () => {
           turnId: "ingress-turn",
           prompt: "wait_for",
         })
-        yield* store.durableWait({
+        yield* store.registerTurnWait({
           sessionId: "ingress-session",
           turnId: "ingress-turn",
           waitId: "review-wait",
@@ -1046,7 +767,7 @@ describe("@firegrid/fluent-runtime Store", () => {
           turnId: "ingress-duplicate-turn",
           prompt: "wait_for",
         })
-        yield* store.durableWait({
+        yield* store.registerTurnWait({
           sessionId: "ingress-duplicate-session",
           turnId: "ingress-duplicate-turn",
           waitId: "review-wait",
@@ -1102,7 +823,7 @@ describe("@firegrid/fluent-runtime Store", () => {
           turnId: "ingress-match-turn",
           prompt: "wait_for",
         })
-        yield* store.durableWait({
+        yield* store.registerTurnWait({
           sessionId: "ingress-match-session",
           turnId: "ingress-match-turn",
           waitId: "review-wait",
@@ -1153,7 +874,7 @@ describe("@firegrid/fluent-runtime Store", () => {
           turnId: "ingress-nonmatch-turn",
           prompt: "wait_for",
         })
-        yield* store.durableWait({
+        yield* store.registerTurnWait({
           sessionId: "ingress-nonmatch-session",
           turnId: "ingress-nonmatch-turn",
           waitId: "pr-wait",
