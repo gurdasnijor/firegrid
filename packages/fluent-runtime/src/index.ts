@@ -18,6 +18,19 @@ export {
   createBridge,
 } from "./Bridge.ts"
 export {
+  type DurableTool,
+  type DurableToolCatalog,
+  DurableToolError,
+  makeMcpToolTransport,
+  makeToolGateway,
+  makeToolTransport,
+  type ToolGateway,
+  type ToolGatewayDeps,
+  type ToolInvocation,
+  type ToolInvocationRecord,
+  type ToolTransport,
+} from "./Tools.ts"
+export {
   type SessionEvent,
   type SessionEventAppended,
   type SessionChildRaceWinnerEvent,
