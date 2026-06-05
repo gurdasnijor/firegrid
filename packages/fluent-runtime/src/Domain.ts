@@ -3,10 +3,12 @@ import { Schema } from "effect"
 export const SessionIdSchema = Schema.String
 export const TurnIdSchema = Schema.String
 export const TimerIdSchema = Schema.String
+export const WaitIdSchema = Schema.String
 
 export type SessionId = Schema.Schema.Type<typeof SessionIdSchema>
 export type TurnId = Schema.Schema.Type<typeof TurnIdSchema>
 export type TimerId = Schema.Schema.Type<typeof TimerIdSchema>
+export type WaitId = Schema.Schema.Type<typeof WaitIdSchema>
 
 const SessionCreatedEventSchema = Schema.Struct({
   type: Schema.Literal("session.created"),
@@ -71,12 +73,33 @@ const TurnTimerFiredEventSchema = Schema.Struct({
   firedAtEpochMs: Schema.Number,
 })
 
+const TurnWaitRegisteredEventSchema = Schema.Struct({
+  type: Schema.Literal("turn.wait_registered"),
+  sessionId: SessionIdSchema,
+  turnId: TurnIdSchema,
+  waitId: WaitIdSchema,
+  predicate: Schema.String,
+  afterOffset: Schema.String,
+  self: Schema.optional(Schema.Unknown),
+})
+
+const TurnWaitMatchedEventSchema = Schema.Struct({
+  type: Schema.Literal("turn.wait_matched"),
+  sessionId: SessionIdSchema,
+  turnId: TurnIdSchema,
+  waitId: WaitIdSchema,
+  matchedOffset: Schema.String,
+  event: Schema.Unknown,
+})
+
 export const TurnEventSchema = Schema.Union(
   TurnStartedEventSchema,
   TurnCompletedEventSchema,
   TurnFailedEventSchema,
   TurnTimerScheduledEventSchema,
   TurnTimerFiredEventSchema,
+  TurnWaitRegisteredEventSchema,
+  TurnWaitMatchedEventSchema,
 )
 
 export type SessionEventAppended = Schema.Schema.Type<typeof SessionEventAppendedSchema>
@@ -88,6 +111,8 @@ export type TurnCompletedEvent = Schema.Schema.Type<typeof TurnCompletedEventSch
 export type TurnFailedEvent = Schema.Schema.Type<typeof TurnFailedEventSchema>
 export type TurnTimerScheduledEvent = Schema.Schema.Type<typeof TurnTimerScheduledEventSchema>
 export type TurnTimerFiredEvent = Schema.Schema.Type<typeof TurnTimerFiredEventSchema>
+export type TurnWaitRegisteredEvent = Schema.Schema.Type<typeof TurnWaitRegisteredEventSchema>
+export type TurnWaitMatchedEvent = Schema.Schema.Type<typeof TurnWaitMatchedEventSchema>
 export type TurnEvent = Schema.Schema.Type<typeof TurnEventSchema>
 
 export interface SessionHandle {

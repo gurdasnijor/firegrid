@@ -1,4 +1,5 @@
 import { HttpClient } from "@effect/platform"
+import { Environment } from "@marcbachmann/cel-js"
 import { Context, Data, Effect, Layer } from "effect"
 import {
   DurableStream,
@@ -14,8 +15,13 @@ import {
   type SessionId,
   type TimerId,
   type TurnEvent,
+  type TurnTimerFiredEvent,
+  type TurnTimerScheduledEvent,
   type TurnHandle,
   type TurnId,
+  type TurnWaitMatchedEvent,
+  type TurnWaitRegisteredEvent,
+  type WaitId,
 } from "./Domain.ts"
 
 export class FluentRuntimeError extends Data.TaggedError("FluentRuntimeError")<{
@@ -96,6 +102,66 @@ export interface FireTurnTimerResult {
   readonly write: ProducerAppendResult
 }
 
+export type TurnTimerWaitResult =
+  | {
+    readonly _tag: "Pending"
+    readonly turn: TurnHandle
+    readonly scheduled: TurnTimerScheduledEvent
+  }
+  | {
+    readonly _tag: "Fired"
+    readonly turn: TurnHandle
+    readonly scheduled: TurnTimerScheduledEvent
+    readonly fired: TurnTimerFiredEvent
+  }
+
+export interface RegisterTurnWaitInput {
+  readonly sessionId: SessionId
+  readonly turnId: TurnId
+  readonly waitId: WaitId
+  readonly predicate: string
+  readonly afterOffset: string
+  readonly self?: unknown
+}
+
+export interface RegisterTurnWaitResult {
+  readonly turn: TurnHandle
+  readonly write: ProducerAppendResult
+}
+
+export interface MatchTurnWaitInput {
+  readonly sessionId: SessionId
+  readonly turnId: TurnId
+  readonly waitId: WaitId
+  readonly matchedOffset: string
+  readonly event: unknown
+}
+
+export type MatchTurnWaitResult =
+  | {
+    readonly _tag: "Matched"
+    readonly turn: TurnHandle
+    readonly write: ProducerAppendResult
+  }
+  | {
+    readonly _tag: "NotMatched"
+    readonly turn: TurnHandle
+    readonly registered: TurnWaitRegisteredEvent
+  }
+
+export type TurnWaitResult =
+  | {
+    readonly _tag: "Pending"
+    readonly turn: TurnHandle
+    readonly registered: TurnWaitRegisteredEvent
+  }
+  | {
+    readonly _tag: "Matched"
+    readonly turn: TurnHandle
+    readonly registered: TurnWaitRegisteredEvent
+    readonly matched: TurnWaitMatchedEvent
+  }
+
 export interface ReadTurnResult {
   readonly turn: TurnHandle
   readonly events: ReadonlyArray<TurnEvent>
@@ -162,6 +228,18 @@ export class FluentStore extends Context.Tag("@firegrid/fluent-runtime/Store/Flu
     readonly fireTurnTimer: (
       input: FireTurnTimerInput,
     ) => Effect.Effect<FireTurnTimerResult, FluentRuntimeError, StoreRequirements>
+    readonly durableSleep: (
+      input: ScheduleTurnTimerInput,
+    ) => Effect.Effect<TurnTimerWaitResult, FluentRuntimeError, StoreRequirements>
+    readonly registerTurnWait: (
+      input: RegisterTurnWaitInput,
+    ) => Effect.Effect<RegisterTurnWaitResult, FluentRuntimeError, StoreRequirements>
+    readonly matchTurnWait: (
+      input: MatchTurnWaitInput,
+    ) => Effect.Effect<MatchTurnWaitResult, FluentRuntimeError, StoreRequirements>
+    readonly durableWait: (
+      input: RegisterTurnWaitInput,
+    ) => Effect.Effect<TurnWaitResult, FluentRuntimeError, StoreRequirements>
     readonly readTurn: (
       sessionId: SessionId,
       turnId: TurnId,
@@ -222,6 +300,50 @@ const timerProducerId = (
     encodeSegment(input.turnId),
     encodeSegment(input.timerId),
   ].join("/")
+
+const waitProducerId = (
+  kind: "register" | "match",
+  input: {
+    readonly sessionId: SessionId
+    readonly turnId: TurnId
+    readonly waitId: WaitId
+  },
+): string =>
+  [
+    "fluent-runtime",
+    "wait",
+    kind,
+    encodeSegment(input.sessionId),
+    encodeSegment(input.turnId),
+    encodeSegment(input.waitId),
+  ].join("/")
+
+const celEnvironment = new Environment({ unlistedVariablesAreDyn: true })
+
+const evaluateWaitPredicate = (
+  predicate: string,
+  event: unknown,
+  self: unknown,
+): Effect.Effect<boolean, FluentRuntimeError> =>
+  Effect.try({
+    try: () => celEnvironment.evaluate(predicate, { event, self }) === true,
+    catch: (cause) =>
+      new FluentRuntimeError({
+        message: "Failed to evaluate wait predicate",
+        cause,
+      }),
+  })
+
+const findLastEvent = <A extends TurnEvent>(
+  events: ReadonlyArray<TurnEvent>,
+  predicate: (event: TurnEvent) => event is A,
+): A | undefined => {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event !== undefined && predicate(event)) return event
+  }
+  return undefined
+}
 
 const makeSessionHandle = (
   config: StoreConfig,
@@ -504,6 +626,170 @@ export const makeFluentStore = (
       }),
     )
 
+  const timerStatusFromEvents = (
+    turn: TurnHandle,
+    timerId: TimerId,
+    events: ReadonlyArray<TurnEvent>,
+  ): Effect.Effect<TurnTimerWaitResult, FluentRuntimeError> =>
+    Effect.gen(function* () {
+      const scheduled = findLastEvent(
+        events,
+        (event): event is TurnTimerScheduledEvent =>
+          event.type === "turn.timer_scheduled" && event.timerId === timerId,
+      )
+      if (scheduled === undefined) {
+        return yield* new FluentRuntimeError({
+          message: `Missing durable timer schedule for ${timerId}`,
+        })
+      }
+      const fired = findLastEvent(
+        events,
+        (event): event is TurnTimerFiredEvent =>
+          event.type === "turn.timer_fired" && event.timerId === timerId,
+      )
+      return fired === undefined
+        ? { _tag: "Pending", turn, scheduled }
+        : { _tag: "Fired", turn, scheduled, fired }
+    })
+
+  const durableSleep = (
+    input: ScheduleTurnTimerInput,
+  ) =>
+    Effect.gen(function* () {
+      yield* scheduleTurnTimer(input)
+      const read = yield* readTurn(input.sessionId, input.turnId)
+      return yield* timerStatusFromEvents(read.turn, input.timerId, read.events)
+    }).pipe(
+      Effect.withSpan("fluent_runtime.store.turn.durable_sleep", {
+        attributes: {
+          "firegrid.session.id": input.sessionId,
+          "firegrid.turn.id": input.turnId,
+          "fluent_runtime.timer.id": input.timerId,
+        },
+      }),
+    )
+
+  const registerTurnWait = (
+    input: RegisterTurnWaitInput,
+  ) =>
+    Effect.gen(function* () {
+      const turn = makeTurnHandle(config, input.sessionId, input.turnId)
+      const write = yield* appendTurnEventWithProducer(
+        turn,
+        {
+          type: "turn.wait_registered",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          waitId: input.waitId,
+          predicate: input.predicate,
+          afterOffset: input.afterOffset,
+          ...(input.self === undefined ? {} : { self: input.self }),
+        },
+        waitProducerId("register", input),
+        "Failed to append fenced turn.wait_registered event",
+      )
+      return { turn, write }
+    }).pipe(
+      Effect.withSpan("fluent_runtime.store.turn.wait.register", {
+        attributes: {
+          "firegrid.session.id": input.sessionId,
+          "firegrid.turn.id": input.turnId,
+          "fluent_runtime.wait.id": input.waitId,
+          "fluent_runtime.wait.after_offset": input.afterOffset,
+        },
+      }),
+    )
+
+  const matchTurnWait = (
+    input: MatchTurnWaitInput,
+  ) =>
+    Effect.gen(function* () {
+      const turn = makeTurnHandle(config, input.sessionId, input.turnId)
+      const read = yield* readTurn(input.sessionId, input.turnId)
+      const registered = findLastEvent(
+        read.events,
+        (event): event is TurnWaitRegisteredEvent =>
+          event.type === "turn.wait_registered" && event.waitId === input.waitId,
+      )
+      if (registered === undefined) {
+        return yield* new FluentRuntimeError({
+          message: `Missing durable wait registration for ${input.waitId}`,
+        })
+      }
+      const matched = yield* evaluateWaitPredicate(
+        registered.predicate,
+        input.event,
+        registered.self ?? {},
+      )
+      if (!matched) return { _tag: "NotMatched" as const, turn, registered }
+      const write = yield* appendTurnEventWithProducer(
+        turn,
+        {
+          type: "turn.wait_matched",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          waitId: input.waitId,
+          matchedOffset: input.matchedOffset,
+          event: input.event,
+        },
+        waitProducerId("match", input),
+        "Failed to append fenced turn.wait_matched event",
+      )
+      return { _tag: "Matched" as const, turn, write }
+    }).pipe(
+      Effect.withSpan("fluent_runtime.store.turn.wait.match", {
+        attributes: {
+          "firegrid.session.id": input.sessionId,
+          "firegrid.turn.id": input.turnId,
+          "fluent_runtime.wait.id": input.waitId,
+          "fluent_runtime.wait.matched_offset": input.matchedOffset,
+        },
+      }),
+    )
+
+  const waitStatusFromEvents = (
+    turn: TurnHandle,
+    waitId: WaitId,
+    events: ReadonlyArray<TurnEvent>,
+  ): Effect.Effect<TurnWaitResult, FluentRuntimeError> =>
+    Effect.gen(function* () {
+      const registered = findLastEvent(
+        events,
+        (event): event is TurnWaitRegisteredEvent =>
+          event.type === "turn.wait_registered" && event.waitId === waitId,
+      )
+      if (registered === undefined) {
+        return yield* new FluentRuntimeError({
+          message: `Missing durable wait registration for ${waitId}`,
+        })
+      }
+      const matched = findLastEvent(
+        events,
+        (event): event is TurnWaitMatchedEvent =>
+          event.type === "turn.wait_matched" && event.waitId === waitId,
+      )
+      return matched === undefined
+        ? { _tag: "Pending", turn, registered }
+        : { _tag: "Matched", turn, registered, matched }
+    })
+
+  const durableWait = (
+    input: RegisterTurnWaitInput,
+  ) =>
+    Effect.gen(function* () {
+      yield* registerTurnWait(input)
+      const read = yield* readTurn(input.sessionId, input.turnId)
+      return yield* waitStatusFromEvents(read.turn, input.waitId, read.events)
+    }).pipe(
+      Effect.withSpan("fluent_runtime.store.turn.durable_wait", {
+        attributes: {
+          "firegrid.session.id": input.sessionId,
+          "firegrid.turn.id": input.turnId,
+          "fluent_runtime.wait.id": input.waitId,
+        },
+      }),
+    )
+
   const readTurn = (sessionId: SessionId, turnId: TurnId) =>
     Effect.gen(function* () {
       const handle = makeTurnHandle(config, sessionId, turnId)
@@ -582,6 +868,10 @@ export const makeFluentStore = (
     failTurn: (input) => provideHttp(failTurn(input)),
     scheduleTurnTimer: (input) => provideHttp(scheduleTurnTimer(input)),
     fireTurnTimer: (input) => provideHttp(fireTurnTimer(input)),
+    durableSleep: (input) => provideHttp(durableSleep(input)),
+    registerTurnWait: (input) => provideHttp(registerTurnWait(input)),
+    matchTurnWait: (input) => provideHttp(matchTurnWait(input)),
+    durableWait: (input) => provideHttp(durableWait(input)),
     readTurn: (sessionId, turnId) => provideHttp(readTurn(sessionId, turnId)),
   }
 }

@@ -11,6 +11,8 @@ import { FluentStore } from "./Store.ts"
 
 const sessionIdParam = HttpApiSchema.param("sessionId", Schema.String)
 const turnIdParam = HttpApiSchema.param("turnId", Schema.String)
+const timerIdParam = HttpApiSchema.param("timerId", Schema.String)
+const waitIdParam = HttpApiSchema.param("waitId", Schema.String)
 const entityIdParam = HttpApiSchema.param("entityId", Schema.String)
 
 const SessionHandleSchema = Schema.Struct({
@@ -40,6 +42,65 @@ const TurnReadSchema = Schema.Struct({
   eventsUrl: Schema.String,
   streamClosed: Schema.Boolean,
   events: Schema.Array(TurnEventSchema),
+})
+
+const SleepPayloadSchema = Schema.Struct({
+  timerId: Schema.String,
+  fireAtEpochMs: Schema.Number,
+})
+
+const SleepResultSchema = Schema.Struct({
+  status: Schema.Literal("pending", "fired"),
+  sessionId: Schema.String,
+  turnId: Schema.String,
+  timerId: Schema.String,
+  eventsUrl: Schema.String,
+  fireAtEpochMs: Schema.Number,
+  firedAtEpochMs: Schema.optional(Schema.Number),
+})
+
+const FireTimerPayloadSchema = Schema.Struct({
+  firedAtEpochMs: Schema.Number,
+})
+
+const FireTimerResultSchema = Schema.Struct({
+  sessionId: Schema.String,
+  turnId: Schema.String,
+  timerId: Schema.String,
+  eventsUrl: Schema.String,
+  write: Schema.Literal("appended", "duplicate"),
+})
+
+const WaitPayloadSchema = Schema.Struct({
+  waitId: Schema.String,
+  predicate: Schema.String,
+  afterOffset: Schema.String,
+  self: Schema.optional(Schema.Unknown),
+})
+
+const WaitResultSchema = Schema.Struct({
+  status: Schema.Literal("pending", "matched"),
+  sessionId: Schema.String,
+  turnId: Schema.String,
+  waitId: Schema.String,
+  eventsUrl: Schema.String,
+  predicate: Schema.String,
+  afterOffset: Schema.String,
+  matchedOffset: Schema.optional(Schema.String),
+  event: Schema.optional(Schema.Unknown),
+})
+
+const MatchWaitPayloadSchema = Schema.Struct({
+  matchedOffset: Schema.String,
+  event: Schema.Unknown,
+})
+
+const MatchWaitResultSchema = Schema.Struct({
+  sessionId: Schema.String,
+  turnId: Schema.String,
+  waitId: Schema.String,
+  eventsUrl: Schema.String,
+  write: Schema.Literal("appended", "duplicate", "not_matched"),
 })
 
 // ── Control-plane (entity) surface — product spelling over durable stream
@@ -102,6 +163,26 @@ const mapRuntimeFailure = <A, E extends { readonly message: string }, R>(
 ): Effect.Effect<A, RuntimeFailure, R> =>
   Effect.mapError(effect, (error) => new RuntimeFailure({ message: error.message }))
 
+const writeStatus = (
+  tag: "Appended" | "Duplicate",
+): "appended" | "duplicate" =>
+  tag === "Appended" ? "appended" : "duplicate"
+
+const entityTag = (entityId: string, offset: string) => ({
+  entityId,
+  offset,
+})
+
+const entityHead = (
+  entityId: string,
+  offset: string,
+  streamClosed: boolean,
+) => ({
+  entityId,
+  offset,
+  streamClosed,
+})
+
 export class SessionsApi extends HttpApiGroup.make("Sessions")
   .add(
     HttpApiEndpoint.post("create", "/")
@@ -122,6 +203,30 @@ export class SessionsApi extends HttpApiGroup.make("Sessions")
   .add(
     HttpApiEndpoint.get("turn")`/${sessionIdParam}/turns/${turnIdParam}`
       .addSuccess(TurnReadSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("sleep")`/${sessionIdParam}/turns/${turnIdParam}/sleep`
+      .setPayload(SleepPayloadSchema)
+      .addSuccess(SleepResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("fireTimer")`/${sessionIdParam}/turns/${turnIdParam}/timers/${timerIdParam}/fire`
+      .setPayload(FireTimerPayloadSchema)
+      .addSuccess(FireTimerResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("wait")`/${sessionIdParam}/turns/${turnIdParam}/waits`
+      .setPayload(WaitPayloadSchema)
+      .addSuccess(WaitResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("matchWait")`/${sessionIdParam}/turns/${turnIdParam}/waits/${waitIdParam}/match`
+      .setPayload(MatchWaitPayloadSchema)
+      .addSuccess(MatchWaitResultSchema)
       .addError(RuntimeFailure),
   )
   .prefix("/sessions")
@@ -204,6 +309,102 @@ export const SessionsApiLive = HttpApiBuilder.group(
             streamClosed: read.streamClosed,
             events: read.events,
           }
+        }))
+      .handle("sleep", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const result = yield* mapRuntimeFailure(store.durableSleep({
+            sessionId: path.sessionId,
+            turnId: path.turnId,
+            timerId: payload.timerId,
+            fireAtEpochMs: payload.fireAtEpochMs,
+          }))
+          const base = {
+            sessionId: result.turn.sessionId,
+            turnId: result.turn.turnId,
+            timerId: result.scheduled.timerId,
+            eventsUrl: result.turn.eventsUrl,
+            fireAtEpochMs: result.scheduled.fireAtEpochMs,
+          }
+          return result._tag === "Pending"
+            ? { ...base, status: "pending" as const }
+            : {
+              ...base,
+              status: "fired" as const,
+              firedAtEpochMs: result.fired.firedAtEpochMs,
+            }
+        }))
+      .handle("fireTimer", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const result = yield* mapRuntimeFailure(store.fireTurnTimer({
+            sessionId: path.sessionId,
+            turnId: path.turnId,
+            timerId: path.timerId,
+            firedAtEpochMs: payload.firedAtEpochMs,
+          }))
+          return {
+            sessionId: result.turn.sessionId,
+            turnId: result.turn.turnId,
+            timerId: path.timerId,
+            eventsUrl: result.turn.eventsUrl,
+            write: writeStatus(result.write._tag),
+          }
+        }))
+      .handle("wait", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const result = yield* mapRuntimeFailure(store.durableWait({
+            sessionId: path.sessionId,
+            turnId: path.turnId,
+            waitId: payload.waitId,
+            predicate: payload.predicate,
+            afterOffset: payload.afterOffset,
+            ...(payload.self === undefined ? {} : { self: payload.self }),
+          }))
+          const base = {
+            sessionId: result.turn.sessionId,
+            turnId: result.turn.turnId,
+            waitId: result.registered.waitId,
+            eventsUrl: result.turn.eventsUrl,
+            predicate: result.registered.predicate,
+            afterOffset: result.registered.afterOffset,
+          }
+          return result._tag === "Pending"
+            ? { ...base, status: "pending" as const }
+            : {
+              ...base,
+              status: "matched" as const,
+              matchedOffset: result.matched.matchedOffset,
+              event: result.matched.event,
+            }
+        }))
+      .handle("matchWait", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const result = yield* mapRuntimeFailure(store.matchTurnWait({
+            sessionId: path.sessionId,
+            turnId: path.turnId,
+            waitId: path.waitId,
+            matchedOffset: payload.matchedOffset,
+            event: payload.event,
+          }))
+          if (result._tag === "NotMatched") {
+            return {
+              sessionId: result.turn.sessionId,
+              turnId: result.turn.turnId,
+              waitId: result.registered.waitId,
+              eventsUrl: result.turn.eventsUrl,
+              write: "not_matched" as const,
+            }
+          }
+          return {
+            sessionId: result.turn.sessionId,
+            turnId: result.turn.turnId,
+            waitId: path.waitId,
+            eventsUrl: result.turn.eventsUrl,
+            write: writeStatus(result.write._tag),
+          }
         })),
 )
 
@@ -226,7 +427,7 @@ export const ControlPlaneApiLive = HttpApiBuilder.group(
         Effect.gen(function* () {
           const store = yield* FluentStore
           const head = yield* mapRuntimeFailure(store.headSession(path.entityId))
-          return { entityId: path.entityId, name: payload.name, offset: head.offset }
+          return { ...entityTag(path.entityId, head.offset), name: payload.name }
         }))
       .handle("fork", ({ path, payload }) =>
         Effect.gen(function* () {
@@ -263,11 +464,7 @@ export const ControlPlaneApiLive = HttpApiBuilder.group(
         Effect.gen(function* () {
           const store = yield* FluentStore
           const head = yield* mapRuntimeFailure(store.headSession(path.entityId))
-          return {
-            entityId: path.entityId,
-            offset: head.offset,
-            streamClosed: head.streamClosed,
-          }
+          return entityHead(path.entityId, head.offset, head.streamClosed)
         })),
 )
 
