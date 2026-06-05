@@ -5,9 +5,9 @@ import { FetchHttpClient, type HttpClient } from "@effect/platform"
 import { Effect, Layer, type Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { DurableStream } from "effect-durable-streams"
-import { FluentRuntimeError, FluentStore, FluentStoreLive } from "../src/index.ts"
+import { FluentRuntimeError, FluentSources, FluentSourcesLive, FluentStore, FluentStoreLive } from "../src/index.ts"
 
-type Reqs = FetchHttpClient.Fetch | HttpClient.HttpClient | Scope.Scope | FluentStore
+type Reqs = FetchHttpClient.Fetch | HttpClient.HttpClient | Scope.Scope | FluentStore | FluentSources
 
 const lastOffset = (events: ReadonlyArray<unknown>): string =>
   events.length === 0 ? "-1" : String(events.length - 1)
@@ -162,6 +162,7 @@ const runtimeWith = <A, E>(
   Effect.runPromise(
     Effect.scoped(
       effect.pipe(
+        Effect.provide(FluentSourcesLive),
         Effect.provide(FluentStoreLive({
           durableStreamsBaseUrl: "https://durable.example",
           namespace: "fluent-runtime-test",
@@ -481,6 +482,75 @@ describe("@firegrid/fluent-runtime Store", () => {
     ])
   })
 
+  it("materializes only due timers from the timer source and reports replayed fires", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        const sources = yield* FluentSources
+        yield* store.createSession({
+          sessionId: "timer-source-session",
+          agent: "agent",
+        })
+        yield* store.startTurn({
+          sessionId: "timer-source-session",
+          turnId: "timer-source-turn",
+          prompt: "source",
+        })
+        yield* store.durableSleep({
+          sessionId: "timer-source-session",
+          turnId: "timer-source-turn",
+          timerId: "due",
+          fireAtEpochMs: 100,
+        })
+        yield* store.durableSleep({
+          sessionId: "timer-source-session",
+          turnId: "timer-source-turn",
+          timerId: "later",
+          fireAtEpochMs: 500,
+        })
+        const first = yield* sources.fireDueTurnTimers({
+          sessionId: "timer-source-session",
+          turnId: "timer-source-turn",
+          nowEpochMs: 150,
+        })
+        const second = yield* sources.fireDueTurnTimers({
+          sessionId: "timer-source-session",
+          turnId: "timer-source-turn",
+          nowEpochMs: 150,
+        })
+        const read = yield* store.readTurn("timer-source-session", "timer-source-turn")
+        return { first, second, read }
+      }),
+    )
+
+    expect(result.first.fired).toEqual([
+      {
+        timerId: "due",
+        fireAtEpochMs: 100,
+        firedAtEpochMs: 150,
+        write: { _tag: "Appended", offset: "3" },
+      },
+    ])
+    expect(result.first.pending).toEqual([{ timerId: "later", fireAtEpochMs: 500 }])
+    expect(result.first.alreadyFired).toEqual([])
+    expect(result.second.fired).toEqual([])
+    expect(result.second.pending).toEqual([{ timerId: "later", fireAtEpochMs: 500 }])
+    expect(result.second.alreadyFired).toEqual([{
+      timerId: "due",
+      fireAtEpochMs: 100,
+      firedAtEpochMs: 150,
+    }])
+    expect(result.read.events.map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.timer_scheduled",
+      "turn.timer_scheduled",
+      "turn.timer_fired",
+    ])
+  })
+
   it("registers durable wait before park and resolves from a matched event on replay", async () => {
     const fakeFetch = makeMemoryDurableStreamsFetch()
 
@@ -504,6 +574,18 @@ describe("@firegrid/fluent-runtime Store", () => {
           predicate: prMergedPredicate,
           afterOffset: "3",
           self: { issueId: "ISS-1" },
+        })
+        const staleOffset = yield* store.matchTurnWait({
+          sessionId: "wait-session",
+          turnId: "wait-turn",
+          waitId: "github-pr-merged",
+          matchedOffset: "3",
+          event: {
+            type: "github.pr",
+            key: "pr-000",
+            value: { state: "merged", issueId: "ISS-1" },
+            headers: { operation: "update" },
+          },
         })
         const nonMatch = yield* store.matchTurnWait({
           sessionId: "wait-session",
@@ -538,11 +620,12 @@ describe("@firegrid/fluent-runtime Store", () => {
           self: { issueId: "ISS-1" },
         })
         const read = yield* store.readTurn("wait-session", "wait-turn")
-        return { pending, nonMatch, match, matched, read }
+        return { pending, staleOffset, nonMatch, match, matched, read }
       }),
     )
 
     expect(result.pending._tag).toBe("Pending")
+    expect(result.staleOffset._tag).toBe("NotMatched")
     expect(result.nonMatch._tag).toBe("NotMatched")
     expect(result.match._tag).toBe("Matched")
     if (result.match._tag === "Matched") {
@@ -576,5 +659,91 @@ describe("@firegrid/fluent-runtime Store", () => {
         headers: { operation: "update" },
       },
     })
+  })
+
+  it("fans one candidate event across pending CEL waits from the wait source", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        const sources = yield* FluentSources
+        yield* store.createSession({
+          sessionId: "wait-source-session",
+          agent: "agent",
+        })
+        yield* store.startTurn({
+          sessionId: "wait-source-session",
+          turnId: "wait-source-turn",
+          prompt: "wait_for",
+        })
+        yield* store.durableWait({
+          sessionId: "wait-source-session",
+          turnId: "wait-source-turn",
+          waitId: "issue-1",
+          predicate: prMergedPredicate,
+          afterOffset: "10",
+          self: { issueId: "ISS-1" },
+        })
+        yield* store.durableWait({
+          sessionId: "wait-source-session",
+          turnId: "wait-source-turn",
+          waitId: "issue-2",
+          predicate: prMergedPredicate,
+          afterOffset: "10",
+          self: { issueId: "ISS-2" },
+        })
+        const stale = yield* sources.matchPendingTurnWaits({
+          sessionId: "wait-source-session",
+          turnId: "wait-source-turn",
+          matchedOffset: "10",
+          event: {
+            type: "github.pr",
+            key: "pr-123",
+            value: { state: "merged", issueId: "ISS-1" },
+            headers: { operation: "update" },
+          },
+        })
+        const first = yield* sources.matchPendingTurnWaits({
+          sessionId: "wait-source-session",
+          turnId: "wait-source-turn",
+          matchedOffset: "11",
+          event: {
+            type: "github.pr",
+            key: "pr-123",
+            value: { state: "merged", issueId: "ISS-1" },
+            headers: { operation: "update" },
+          },
+        })
+        const second = yield* sources.matchPendingTurnWaits({
+          sessionId: "wait-source-session",
+          turnId: "wait-source-turn",
+          matchedOffset: "12",
+          event: {
+            type: "github.pr",
+            key: "pr-456",
+            value: { state: "merged", issueId: "ISS-2" },
+            headers: { operation: "update" },
+          },
+        })
+        const read = yield* store.readTurn("wait-source-session", "wait-source-turn")
+        return { stale, first, second, read }
+      }),
+    )
+
+    expect(result.stale.matched).toEqual([])
+    expect(result.stale.notMatched).toEqual([{ waitId: "issue-1" }, { waitId: "issue-2" }])
+    expect(result.first.matched).toEqual([{ waitId: "issue-1", write: { _tag: "Appended", offset: "3" } }])
+    expect(result.first.notMatched).toEqual([{ waitId: "issue-2" }])
+    expect(result.second.matched).toEqual([{ waitId: "issue-2", write: { _tag: "Appended", offset: "4" } }])
+    expect(result.second.alreadyMatched).toEqual([{ waitId: "issue-1", matchedOffset: "11" }])
+    expect(result.read.events.map((event) => event.type)).toEqual([
+      "turn.started",
+      "turn.wait_registered",
+      "turn.wait_registered",
+      "turn.wait_matched",
+      "turn.wait_matched",
+    ])
   })
 })

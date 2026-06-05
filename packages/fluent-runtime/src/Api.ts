@@ -7,6 +7,7 @@ import {
 } from "@effect/platform"
 import { Effect, Layer, Schema } from "effect"
 import { SessionEventSchema, TurnEventSchema } from "./Domain.ts"
+import { FluentSources } from "./Sources.ts"
 import { FluentStore } from "./Store.ts"
 
 const sessionIdParam = HttpApiSchema.param("sessionId", Schema.String)
@@ -71,6 +72,31 @@ const FireTimerResultSchema = Schema.Struct({
   write: Schema.Literal("appended", "duplicate"),
 })
 
+const FireDueTimersPayloadSchema = Schema.Struct({
+  nowEpochMs: Schema.Number,
+})
+
+const FireDueTimersResultSchema = Schema.Struct({
+  sessionId: Schema.String,
+  turnId: Schema.String,
+  eventsUrl: Schema.String,
+  fired: Schema.Array(Schema.Struct({
+    timerId: Schema.String,
+    fireAtEpochMs: Schema.Number,
+    firedAtEpochMs: Schema.Number,
+    write: Schema.Literal("appended", "duplicate"),
+  })),
+  pending: Schema.Array(Schema.Struct({
+    timerId: Schema.String,
+    fireAtEpochMs: Schema.Number,
+  })),
+  alreadyFired: Schema.Array(Schema.Struct({
+    timerId: Schema.String,
+    fireAtEpochMs: Schema.Number,
+    firedAtEpochMs: Schema.Number,
+  })),
+})
+
 const WaitPayloadSchema = Schema.Struct({
   waitId: Schema.String,
   predicate: Schema.String,
@@ -101,6 +127,23 @@ const MatchWaitResultSchema = Schema.Struct({
   waitId: Schema.String,
   eventsUrl: Schema.String,
   write: Schema.Literal("appended", "duplicate", "not_matched"),
+})
+
+const MatchPendingWaitsResultSchema = Schema.Struct({
+  sessionId: Schema.String,
+  turnId: Schema.String,
+  eventsUrl: Schema.String,
+  matched: Schema.Array(Schema.Struct({
+    waitId: Schema.String,
+    write: Schema.Literal("appended", "duplicate"),
+  })),
+  notMatched: Schema.Array(Schema.Struct({
+    waitId: Schema.String,
+  })),
+  alreadyMatched: Schema.Array(Schema.Struct({
+    waitId: Schema.String,
+    matchedOffset: Schema.String,
+  })),
 })
 
 // ── Control-plane (entity) surface — product spelling over durable stream
@@ -218,6 +261,12 @@ export class SessionsApi extends HttpApiGroup.make("Sessions")
       .addError(RuntimeFailure),
   )
   .add(
+    HttpApiEndpoint.post("fireDueTimers")`/${sessionIdParam}/turns/${turnIdParam}/timers/fire-due`
+      .setPayload(FireDueTimersPayloadSchema)
+      .addSuccess(FireDueTimersResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
     HttpApiEndpoint.post("wait")`/${sessionIdParam}/turns/${turnIdParam}/waits`
       .setPayload(WaitPayloadSchema)
       .addSuccess(WaitResultSchema)
@@ -227,6 +276,12 @@ export class SessionsApi extends HttpApiGroup.make("Sessions")
     HttpApiEndpoint.post("matchWait")`/${sessionIdParam}/turns/${turnIdParam}/waits/${waitIdParam}/match`
       .setPayload(MatchWaitPayloadSchema)
       .addSuccess(MatchWaitResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("matchPendingWaits")`/${sessionIdParam}/turns/${turnIdParam}/waits/match`
+      .setPayload(MatchWaitPayloadSchema)
+      .addSuccess(MatchPendingWaitsResultSchema)
       .addError(RuntimeFailure),
   )
   .prefix("/sessions")
@@ -351,6 +406,28 @@ export const SessionsApiLive = HttpApiBuilder.group(
             write: writeStatus(result.write._tag),
           }
         }))
+      .handle("fireDueTimers", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const sources = yield* FluentSources
+          const result = yield* mapRuntimeFailure(sources.fireDueTurnTimers({
+            sessionId: path.sessionId,
+            turnId: path.turnId,
+            nowEpochMs: payload.nowEpochMs,
+          }))
+          return {
+            sessionId: result.turn.sessionId,
+            turnId: result.turn.turnId,
+            eventsUrl: result.turn.eventsUrl,
+            fired: result.fired.map((timer) => ({
+              timerId: timer.timerId,
+              fireAtEpochMs: timer.fireAtEpochMs,
+              firedAtEpochMs: timer.firedAtEpochMs,
+              write: writeStatus(timer.write._tag),
+            })),
+            pending: result.pending,
+            alreadyFired: result.alreadyFired,
+          }
+        }))
       .handle("wait", ({ path, payload }) =>
         Effect.gen(function* () {
           const store = yield* FluentStore
@@ -404,6 +481,27 @@ export const SessionsApiLive = HttpApiBuilder.group(
             waitId: path.waitId,
             eventsUrl: result.turn.eventsUrl,
             write: writeStatus(result.write._tag),
+          }
+        }))
+      .handle("matchPendingWaits", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const sources = yield* FluentSources
+          const result = yield* mapRuntimeFailure(sources.matchPendingTurnWaits({
+            sessionId: path.sessionId,
+            turnId: path.turnId,
+            matchedOffset: payload.matchedOffset,
+            event: payload.event,
+          }))
+          return {
+            sessionId: result.turn.sessionId,
+            turnId: result.turn.turnId,
+            eventsUrl: result.turn.eventsUrl,
+            matched: result.matched.map((wait) => ({
+              waitId: wait.waitId,
+              write: writeStatus(wait.write._tag),
+            })),
+            notMatched: result.notMatched,
+            alreadyMatched: result.alreadyMatched,
           }
         })),
 )
