@@ -15,6 +15,7 @@ const turnIdParam = HttpApiSchema.param("turnId", Schema.String)
 const timerIdParam = HttpApiSchema.param("timerId", Schema.String)
 const waitIdParam = HttpApiSchema.param("waitId", Schema.String)
 const entityIdParam = HttpApiSchema.param("entityId", Schema.String)
+const childEntityIdParam = HttpApiSchema.param("childEntityId", Schema.String)
 
 const SessionHandleSchema = Schema.Struct({
   sessionId: Schema.String,
@@ -183,6 +184,73 @@ const ForkResultSchema = Schema.Struct({
   reason: Schema.optional(Schema.String),
 })
 
+const SpawnTaskSchema = Schema.Struct({
+  prompt: Schema.String,
+})
+
+const SpawnPayloadSchema = Schema.Struct({
+  toolCallId: Schema.String,
+  slot: Schema.Number,
+  prompt: Schema.String,
+})
+
+const SpawnChildResultSchema = Schema.Struct({
+  parentEntityId: Schema.String,
+  childEntityId: Schema.String,
+  forkOffset: Schema.String,
+  eventsUrl: Schema.String,
+  initialWrite: Schema.Literal("appended", "duplicate"),
+})
+
+const SpawnAllPayloadSchema = Schema.Struct({
+  toolCallId: Schema.String,
+  tasks: Schema.Array(SpawnTaskSchema),
+})
+
+const SpawnAllResultSchema = Schema.Struct({
+  parentEntityId: Schema.String,
+  children: Schema.Array(SpawnChildResultSchema),
+})
+
+const ChildResultPayloadSchema = Schema.Struct({
+  resultId: Schema.String,
+  result: Schema.Unknown,
+})
+
+const ChildResultResultSchema = Schema.Struct({
+  childEntityId: Schema.String,
+  write: Schema.Literal("appended", "duplicate"),
+})
+
+const JoinChildPayloadSchema = Schema.Struct({
+  turnId: Schema.String,
+  childEntityId: Schema.String,
+  resultId: Schema.String,
+  waitId: Schema.optional(Schema.String),
+})
+
+const JoinChildResultSchema = Schema.Struct({
+  status: Schema.Literal("pending", "matched"),
+  parentEntityId: Schema.String,
+  turnId: Schema.String,
+  childEntityId: Schema.String,
+  resultId: Schema.String,
+  event: Schema.optional(Schema.Unknown),
+})
+
+const RaceWinnerPayloadSchema = Schema.Struct({
+  raceId: Schema.String,
+  winnerChildEntityId: Schema.String,
+  loserPolicy: Schema.Literal("let_finish", "cancel"),
+})
+
+const RaceWinnerResultSchema = Schema.Struct({
+  parentEntityId: Schema.String,
+  raceId: Schema.String,
+  winnerChildEntityId: Schema.String,
+  loserPolicy: Schema.Literal("let_finish", "cancel"),
+})
+
 const EntityReadSchema = Schema.Struct({
   entityId: Schema.String,
   eventsUrl: Schema.String,
@@ -224,6 +292,19 @@ const entityHead = (
   entityId,
   offset,
   streamClosed,
+})
+
+const spawnChildResult = (parentEntityId: string, result: {
+  readonly childSessionId: string
+  readonly child: { readonly eventsUrl: string }
+  readonly forkOffset: string
+  readonly initialWrite: { readonly _tag: "Appended" | "Duplicate" }
+}) => ({
+  parentEntityId,
+  childEntityId: result.childSessionId,
+  forkOffset: result.forkOffset,
+  eventsUrl: result.child.eventsUrl,
+  initialWrite: writeStatus(result.initialWrite._tag),
 })
 
 export class SessionsApi extends HttpApiGroup.make("Sessions")
@@ -304,6 +385,36 @@ export class ControlPlaneApi extends HttpApiGroup.make("ControlPlane")
     HttpApiEndpoint.post("fork")`/${entityIdParam}/fork`
       .setPayload(ForkPayloadSchema)
       .addSuccess(ForkResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("spawn")`/${entityIdParam}/spawn`
+      .setPayload(SpawnPayloadSchema)
+      .addSuccess(SpawnChildResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("spawnAll")`/${entityIdParam}/spawn_all`
+      .setPayload(SpawnAllPayloadSchema)
+      .addSuccess(SpawnAllResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("publishChildResult")`/${entityIdParam}/children/${childEntityIdParam}/result`
+      .setPayload(ChildResultPayloadSchema)
+      .addSuccess(ChildResultResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("joinChild")`/${entityIdParam}/children/join`
+      .setPayload(JoinChildPayloadSchema)
+      .addSuccess(JoinChildResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("raceWinner")`/${entityIdParam}/children/race-winner`
+      .setPayload(RaceWinnerPayloadSchema)
+      .addSuccess(RaceWinnerResultSchema)
       .addError(RuntimeFailure),
   )
   .add(
@@ -547,6 +658,88 @@ export const ControlPlaneApiLive = HttpApiBuilder.group(
               childEntityId: result.child.sessionId,
               reason: result.reason,
             }
+        }))
+      .handle("spawn", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const result = yield* mapRuntimeFailure(store.spawnChild({
+            parentSessionId: path.entityId,
+            toolCallId: payload.toolCallId,
+            slot: payload.slot,
+            prompt: payload.prompt,
+          }))
+          return spawnChildResult(path.entityId, result)
+        }))
+      .handle("spawnAll", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const result = yield* mapRuntimeFailure(store.spawnAll({
+            parentSessionId: path.entityId,
+            toolCallId: payload.toolCallId,
+            tasks: payload.tasks,
+          }))
+          return {
+            parentEntityId: result.parent.sessionId,
+            children: result.children.map(child =>
+              spawnChildResult(result.parent.sessionId, child)),
+          }
+        }))
+      .handle("publishChildResult", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const result = yield* mapRuntimeFailure(store.publishChildResult({
+            parentSessionId: path.entityId,
+            childSessionId: path.childEntityId,
+            resultId: payload.resultId,
+            result: payload.result,
+          }))
+          return {
+            childEntityId: result.child.sessionId,
+            write: writeStatus(result.write._tag),
+          }
+        }))
+      .handle("joinChild", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const result = yield* mapRuntimeFailure(store.joinChildResult({
+            parentSessionId: path.entityId,
+            turnId: payload.turnId,
+            childSessionId: payload.childEntityId,
+            resultId: payload.resultId,
+            ...(payload.waitId === undefined ? {} : { waitId: payload.waitId }),
+          }))
+          return result._tag === "Matched"
+            ? {
+              status: "matched" as const,
+              parentEntityId: path.entityId,
+              turnId: result.turn.turnId,
+              childEntityId: payload.childEntityId,
+              resultId: payload.resultId,
+              event: result.childResult,
+            }
+            : {
+              status: "pending" as const,
+              parentEntityId: path.entityId,
+              turnId: result.turn.turnId,
+              childEntityId: payload.childEntityId,
+              resultId: payload.resultId,
+            }
+        }))
+      .handle("raceWinner", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          yield* mapRuntimeFailure(store.recordChildRaceWinner({
+            parentSessionId: path.entityId,
+            raceId: payload.raceId,
+            winnerChildSessionId: payload.winnerChildEntityId,
+            loserPolicy: payload.loserPolicy,
+          }))
+          return {
+            parentEntityId: path.entityId,
+            raceId: payload.raceId,
+            winnerChildEntityId: payload.winnerChildEntityId,
+            loserPolicy: payload.loserPolicy,
+          }
         }))
       .handle("read", ({ path }) =>
         Effect.gen(function* () {
