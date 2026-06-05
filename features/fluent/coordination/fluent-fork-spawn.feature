@@ -18,6 +18,15 @@ Feature: Fluent fork spawn
     Then the parent wait resolves with "done"
     And the parent did not inline-call the child handler
 
+  Scenario: Cross-harness child terminal wakes parent
+    Given parent session "parent-1" is driven by harness type "claude"
+    And child session "child-1" is driven by harness type "codex"
+    When the parent spawns child "child-1"
+    And child "child-1" publishes terminal result "tests-passed"
+    Then the child terminal fact wakes the parent
+    And the parent resolves the child join with "tests-passed"
+    And both harness adapters can be killed and resumed without duplicating observed side effects
+
   Scenario: spawn_all creates deterministic child identities
     When the parent spawn_all creates tasks "a", "b", and "c"
     Then each child session has a deterministic id derived from the parent tool call and slot
@@ -28,4 +37,3 @@ Feature: Fluent fork spawn
     When "fast" publishes a terminal result first
     Then the parent records "fast" as the winner
     And the configured policy determines whether "slow" is left to finish or durably cancelled
-

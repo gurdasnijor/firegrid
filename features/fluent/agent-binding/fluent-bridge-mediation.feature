@@ -27,6 +27,20 @@ Feature: Fluent bridge mediation
     And the bridge sends the harness-native interrupt after those responses
     And the cancellation responses are recorded as effective bridge behavior
 
+  Scenario: Cancel during parked wait leaves durable continuation evidence
+    Given the harness turn is parked on a Firegrid wait
+    When a client sends cancel
+    Then the bridge records a durable cancellation or continuation fact
+    And the parked wait does not resume as if it had matched
+    And the next redrive does not duplicate already-observed side effects
+
+  Scenario: Interrupt during active turn is durable before teardown
+    Given the harness is actively producing a turn
+    When a client sends interrupt
+    Then owed native responses are delivered or recorded as cancelled before teardown
+    And a durable interrupt or terminal fact is recorded
+    And the next redrive does not duplicate already-observed side effects
+
   Scenario: Terminal events are recorded before cleanup
     When the harness reports turn completion or exits
     Then the bridge records the terminal lifecycle event
