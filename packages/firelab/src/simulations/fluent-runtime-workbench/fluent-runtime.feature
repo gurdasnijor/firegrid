@@ -1,58 +1,25 @@
-Feature: Fluent runtime managed-agent store
+Feature: Durable turn timers and waits
+  A turn can register durable sleeps and waits that survive replay. A scheduled
+  sleep stays pending until its due time, then fires; a wait stays pending until
+  a candidate event satisfies its predicate, then matches. Both outcomes are
+  visible by reading the turn back. (#942 source endpoints over FluentStore.)
 
-  Scenario: Create a session
-    When I POST "/sessions" with body
-      """
-      { "sessionId": "acc-create", "agent": "claude" }
-      """
-    Then the response status is 200
-    And the response field "sessionId" equals "acc-create"
+  Background:
+    Given a session "s1" for agent "claude"
+    And turn "t1" is open with prompt "do the work"
 
-  Scenario: Open a turn and read it back open
-    When I POST "/sessions" with body
-      """
-      { "sessionId": "acc-turn", "agent": "claude" }
-      """
-    Then the response status is 200
-    When I POST "/sessions/acc-turn/turns" with body
-      """
-      { "turnId": "t1", "prompt": "hello" }
-      """
-    Then the response status is 200
-    And the response field "turnId" equals "t1"
-    When I GET "/sessions/acc-turn/turns/t1"
-    Then the response status is 200
-    And the response field "streamClosed" equals false
+  Scenario: A scheduled sleep registers pending and fires when due
+    When turn schedules sleep "sleep-1" due at 1000
+    Then the sleep is registered pending
+    When due timers fire at 1000
+    Then timer "sleep-1" is reported fired
+    And reading the turn shows event "turn.timer_fired"
 
-  Scenario: Reading a turn that was never started fails
-    When I GET "/sessions/acc-missing/turns/never"
-    Then the response status is 500
-
-  Scenario: Control-plane send then read an entity
-    When I POST "/sessions" with body
-      """
-      { "sessionId": "acc-entity", "agent": "claude" }
-      """
-    Then the response status is 200
-    When I POST "/entities/acc-entity/send" with body
-      """
-      { "name": "ping", "payload": { "n": 1 } }
-      """
-    Then the response status is 200
-    And the response field "entityId" equals "acc-entity"
-    When I GET "/entities/acc-entity"
-    Then the response status is 200
-    And the response field "entityId" equals "acc-entity"
-
-  Scenario: Control-plane tag captures the head offset
-    When I POST "/sessions" with body
-      """
-      { "sessionId": "acc-tag", "agent": "claude" }
-      """
-    Then the response status is 200
-    When I POST "/entities/acc-tag/tag" with body
-      """
-      { "name": "checkpoint" }
-      """
-    Then the response status is 200
-    And the response field "name" equals "checkpoint"
+  Scenario: A durable wait stays pending until a matching candidate arrives
+    When turn registers wait "w1" with predicate "event.type == 'turn.completed'"
+    Then the wait is registered pending
+    When a candidate event "turn.started" is offered to pending waits
+    Then wait "w1" stays not matched
+    When a candidate event "turn.completed" is offered to pending waits
+    Then wait "w1" is matched
+    And reading the turn shows event "turn.wait_matched"

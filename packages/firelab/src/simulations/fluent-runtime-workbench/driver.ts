@@ -1,21 +1,20 @@
 /**
- * Blackbox acceptance driver — binds the co-located Gherkin feature against the
- * live API contract and drives each scenario over HTTP at the launched
- * fluent-runtime host. The store work happens host-side, so the verdict gates on
- * forge-proof `fluent_runtime.store.*` spans, not on anything the driver emits.
- * The driver only reaches the host through its served HTTP surface.
+ * Acceptance driver — parses the co-located domain feature and runs each
+ * scenario (background + steps) through the cucumber step registry (steps.ts),
+ * whose handlers drive the typed fluent-runtime client at the launched host. The
+ * store work happens host-side, so the verdict gates on forge-proof
+ * `fluent_runtime.store.*` spans, not on anything the driver emits.
  */
-import { FileSystem, Path } from "@effect/platform"
+import { AstBuilder, GherkinClassicTokenMatcher, Parser } from "@cucumber/gherkin"
+import { IdGenerator } from "@cucumber/messages"
+import { FetchHttpClient, FileSystem, Path } from "@effect/platform"
 import { NodeContext } from "@effect/platform-node"
 import { FiregridConfig } from "@firegrid/client-sdk/config"
 import { Effect, Schedule } from "effect"
-import { bindFeature, buildCatalog, concretePath, type PlannedStep, type ScenarioPlan } from "./catalog.ts"
+import { makeClient, matchStep, type World } from "./steps.ts"
 import { WORKBENCH_PORT } from "./port.ts"
 
 const BASE = `http://127.0.0.1:${WORKBENCH_PORT}`
-
-const sameValue = (actual: unknown, expected: unknown): boolean =>
-  actual === expected || JSON.stringify(actual) === JSON.stringify(expected)
 
 // Back off until the launched host's HTTP listener accepts connections.
 const awaitHost = Effect.tryPromise(() => fetch(`${BASE}/`)).pipe(
@@ -23,66 +22,42 @@ const awaitHost = Effect.tryPromise(() => fetch(`${BASE}/`)).pipe(
   Effect.asVoid,
 )
 
-interface StepState {
-  readonly status: number
-  readonly body: Record<string, unknown> | undefined
-}
-
-const applyStep = (
-  plan: ScenarioPlan,
-  state: StepState,
-  step: PlannedStep,
-): Effect.Effect<StepState, Error> =>
-  Effect.gen(function*() {
-    if (step._tag === "callOp") {
-      const res = yield* Effect.tryPromise({
-        try: () =>
-          fetch(BASE + concretePath(step.op, step.params), {
-            method: step.op.method,
-            headers: { "content-type": "application/json" },
-            ...(step.body === undefined ? {} : { body: JSON.stringify(step.body) }),
-          }),
-        catch: (cause) => new Error(`[${plan.name}] request failed: ${String(cause)}`),
-      })
-      const body = yield* Effect.promise(() =>
-        res.json().then(
-          (b: unknown) => (b !== null && typeof b === "object" ? (b as Record<string, unknown>) : undefined),
-          () => undefined,
-        ))
-      return { status: res.status, body }
-    }
-    if (step._tag === "expectStatus") {
-      return state.status === step.status
-        ? state
-        : yield* Effect.fail(new Error(`[${plan.name}] expected status ${step.status}, got ${state.status} (body ${JSON.stringify(state.body)})`))
-    }
-    if (step._tag === "expectField") {
-      const actual = state.body?.[step.field]
-      return sameValue(actual, step.value)
-        ? state
-        : yield* Effect.fail(new Error(`[${plan.name}] field "${step.field}": expected ${JSON.stringify(step.value)}, got ${JSON.stringify(actual)}`))
-    }
-    return yield* Effect.fail(new Error(`[${plan.name}] unbound step "${step.keyword} ${step.text}"`))
-  })
-
-const runScenario = (plan: ScenarioPlan): Effect.Effect<void, Error> =>
-  Effect.reduce(plan.steps, { status: 0, body: undefined } as StepState, (state, step) => applyStep(plan, state, step)).pipe(
-    Effect.asVoid,
-    Effect.withSpan("firelab.fluent_runtime_acceptance.scenario", {
-      attributes: { "firelab.scenario": plan.name },
-    }),
+const runStep = (world: World, text: string): Effect.Effect<void, Error> => {
+  const matched = matchStep(text)
+  if (matched === undefined) {
+    return Effect.fail(new Error(`no step definition for: "${text}"`))
+  }
+  return matched.def.run(world, matched.args).pipe(
+    Effect.mapError((cause) => new Error(`step "${text}": ${String(cause)}`)),
   )
+}
 
 export const fluentRuntimeWorkbenchDriver = Effect.gen(function*() {
   yield* FiregridConfig
   yield* awaitHost
+  const client = yield* makeClient
+
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const featurePath = yield* path.fromFileUrl(new URL("./fluent-runtime.feature", import.meta.url))
   const featureText = yield* fs.readFileString(featurePath)
-  const plans = bindFeature(buildCatalog(), featureText)
-  yield* Effect.forEach(plans, runScenario, { discard: true })
+
+  const parser = new Parser(new AstBuilder(IdGenerator.uuid()), new GherkinClassicTokenMatcher())
+  const children = parser.parse(featureText).feature?.children ?? []
+  const background = children.flatMap((child) => (child.background ? child.background.steps : []))
+  const scenarios = children.flatMap((child) => (child.scenario ? [child.scenario] : []))
+
+  yield* Effect.forEach(scenarios, (scenario, index) => {
+    const world: World = { client, ns: `sc${index}`, vars: new Map(), last: undefined }
+    const allSteps = [...background, ...scenario.steps]
+    return Effect.forEach(allSteps, (s) => runStep(world, s.text.trim()), { discard: true }).pipe(
+      Effect.withSpan("firelab.fluent_runtime_acceptance.scenario", {
+        attributes: { "firelab.scenario": scenario.name },
+      }),
+    )
+  }, { discard: true })
 }).pipe(
   Effect.provide(NodeContext.layer),
+  Effect.provide(FetchHttpClient.layer),
   Effect.withSpan("firelab.fluent_runtime_acceptance.driver"),
 )

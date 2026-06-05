@@ -183,6 +183,9 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 0.21.0
         version: 0.21.0(zod@4.4.3)
+      '@cucumber/cucumber-expressions':
+        specifier: ^19.0.1
+        version: 19.0.1
       '@cucumber/gherkin':
         specifier: ^39.1.0
         version: 39.1.0
@@ -591,6 +594,9 @@ packages:
   '@colors/colors@1.5.0':
     resolution: {integrity: sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ==}
     engines: {node: '>=0.1.90'}
+
+  '@cucumber/cucumber-expressions@19.0.1':
+    resolution: {integrity: sha512-tJrTgCZ5/vgDBfAs2pQu0fu88gPJIGQ40AC/3ftg5/i/BwnhX/W1MbaFF8A+tanY1zbUWWarGFJ2QMKItPQ/QQ==}
 
   '@cucumber/gherkin@39.1.0':
     resolution: {integrity: sha512-pqmSO2bUWxJm3TbNrKXlDaHjL6c77+ez9kWmfCd9oRPeTRPEVH3spZvpAqdXYWOZYSNYwWFCAAeZ4RGpkauNoQ==}
@@ -3296,6 +3302,9 @@ packages:
   reflect-metadata@0.2.2:
     resolution: {integrity: sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q==}
 
+  regexp-match-indices@1.0.2:
+    resolution: {integrity: sha512-DwZuAkt8NF5mKwGGER1EGh2PRqyvhRhhLviH+R8y8dIuaQROlUfXjt4s9ZTXstIsSkptf06BSvwcEmmfheJJWQ==}
+
   regexp-tree@0.1.27:
     resolution: {integrity: sha512-iETxpjK6YoRWJG5o6hXLwvjYAoW+FEZn9os0PD/b6AP6xQwsa/Y7lCVgIixBbUPMfhu+i2LtdeAqVTgGlQarfA==}
     hasBin: true
@@ -4018,6 +4027,10 @@ snapshots:
 
   '@colors/colors@1.5.0':
     optional: true
+
+  '@cucumber/cucumber-expressions@19.0.1':
+    dependencies:
+      regexp-match-indices: 1.0.2
 
   '@cucumber/gherkin@39.1.0':
     dependencies:
@@ -6600,6 +6613,10 @@ snapshots:
       resolve: 1.22.12
 
   reflect-metadata@0.2.2: {}
+
+  regexp-match-indices@1.0.2:
+    dependencies:
+      regexp-tree: 0.1.27
 
   regexp-tree@0.1.27: {}
 
