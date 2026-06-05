@@ -20,11 +20,14 @@ export {
   SessionEventSchema,
 } from "./Domain.ts"
 export {
+  ControlPlaneApi,
+  ControlPlaneApiLive,
   FluentRuntimeApi,
   FluentRuntimeApiLive,
   SessionsApi,
   SessionsApiLive,
 } from "./Api.ts"
+export { FluentRuntimeServerLive } from "./Server.ts"
 export {
   FluentRuntimeError,
   FluentStore,

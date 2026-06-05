@@ -6,11 +6,12 @@ import {
   HttpApiSchema,
 } from "@effect/platform"
 import { Effect, Layer, Schema } from "effect"
-import { TurnEventSchema } from "./Domain.ts"
+import { SessionEventSchema, TurnEventSchema } from "./Domain.ts"
 import { FluentStore } from "./Store.ts"
 
 const sessionIdParam = HttpApiSchema.param("sessionId", Schema.String)
 const turnIdParam = HttpApiSchema.param("turnId", Schema.String)
+const entityIdParam = HttpApiSchema.param("entityId", Schema.String)
 
 const SessionHandleSchema = Schema.Struct({
   sessionId: Schema.String,
@@ -39,6 +40,55 @@ const TurnReadSchema = Schema.Struct({
   eventsUrl: Schema.String,
   streamClosed: Schema.Boolean,
   events: Schema.Array(TurnEventSchema),
+})
+
+// ── Control-plane (entity) surface — product spelling over durable stream
+// facts. send/tag/fork/read/head map onto FluentStore primitives; the entity id
+// addresses a session stream. `tag` names a durable point by capturing the
+// current head offset (no extra store state); that offset is the address `fork`
+// branches from.
+const SendPayloadSchema = Schema.Struct({
+  name: Schema.String,
+  payload: Schema.Unknown,
+})
+
+const SendResultSchema = Schema.Struct({
+  entityId: Schema.String,
+  eventsUrl: Schema.String,
+})
+
+const TagPayloadSchema = Schema.Struct({
+  name: Schema.String,
+})
+
+const TagResultSchema = Schema.Struct({
+  entityId: Schema.String,
+  name: Schema.String,
+  offset: Schema.String,
+})
+
+const ForkPayloadSchema = Schema.Struct({
+  childEntityId: Schema.String,
+  forkOffset: Schema.String,
+})
+
+const ForkResultSchema = Schema.Struct({
+  status: Schema.Literal("forked", "unsupported"),
+  parentEntityId: Schema.String,
+  childEntityId: Schema.String,
+  reason: Schema.optional(Schema.String),
+})
+
+const EntityReadSchema = Schema.Struct({
+  entityId: Schema.String,
+  eventsUrl: Schema.String,
+  events: Schema.Array(SessionEventSchema),
+})
+
+const EntityHeadSchema = Schema.Struct({
+  entityId: Schema.String,
+  offset: Schema.String,
+  streamClosed: Schema.Boolean,
 })
 
 class RuntimeFailure extends Schema.TaggedError<RuntimeFailure>()(
@@ -77,8 +127,41 @@ export class SessionsApi extends HttpApiGroup.make("Sessions")
   .prefix("/sessions")
 {}
 
+export class ControlPlaneApi extends HttpApiGroup.make("ControlPlane")
+  .add(
+    HttpApiEndpoint.post("send")`/${entityIdParam}/send`
+      .setPayload(SendPayloadSchema)
+      .addSuccess(SendResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("tag")`/${entityIdParam}/tag`
+      .setPayload(TagPayloadSchema)
+      .addSuccess(TagResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("fork")`/${entityIdParam}/fork`
+      .setPayload(ForkPayloadSchema)
+      .addSuccess(ForkResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.get("read")`/${entityIdParam}`
+      .addSuccess(EntityReadSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.get("head")`/${entityIdParam}/head`
+      .addSuccess(EntityHeadSchema)
+      .addError(RuntimeFailure),
+  )
+  .prefix("/entities")
+{}
+
 export class FluentRuntimeApi extends HttpApi.make("FluentRuntime")
   .add(SessionsApi)
+  .add(ControlPlaneApi)
 {}
 
 export const SessionsApiLive = HttpApiBuilder.group(
@@ -124,6 +207,71 @@ export const SessionsApiLive = HttpApiBuilder.group(
         })),
 )
 
+export const ControlPlaneApiLive = HttpApiBuilder.group(
+  FluentRuntimeApi,
+  "ControlPlane",
+  (handlers) =>
+    handlers
+      .handle("send", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const handle = yield* mapRuntimeFailure(store.appendSessionEvent({
+            sessionId: path.entityId,
+            name: payload.name,
+            payload: payload.payload,
+          }))
+          return { entityId: handle.sessionId, eventsUrl: handle.eventsUrl }
+        }))
+      .handle("tag", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const head = yield* mapRuntimeFailure(store.headSession(path.entityId))
+          return { entityId: path.entityId, name: payload.name, offset: head.offset }
+        }))
+      .handle("fork", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const result = yield* store.forkSession({
+            parentSessionId: path.entityId,
+            childSessionId: payload.childEntityId,
+            forkOffset: payload.forkOffset,
+          })
+          return result._tag === "Forked"
+            ? {
+              status: "forked" as const,
+              parentEntityId: result.parent.sessionId,
+              childEntityId: result.child.sessionId,
+            }
+            : {
+              status: "unsupported" as const,
+              parentEntityId: result.parent.sessionId,
+              childEntityId: result.child.sessionId,
+              reason: result.reason,
+            }
+        }))
+      .handle("read", ({ path }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const events = yield* mapRuntimeFailure(store.collectSession(path.entityId))
+          return {
+            entityId: path.entityId,
+            eventsUrl: store.sessionUrl(path.entityId),
+            events,
+          }
+        }))
+      .handle("head", ({ path }) =>
+        Effect.gen(function* () {
+          const store = yield* FluentStore
+          const head = yield* mapRuntimeFailure(store.headSession(path.entityId))
+          return {
+            entityId: path.entityId,
+            offset: head.offset,
+            streamClosed: head.streamClosed,
+          }
+        })),
+)
+
 export const FluentRuntimeApiLive = HttpApiBuilder.api(FluentRuntimeApi).pipe(
   Layer.provide(SessionsApiLive),
+  Layer.provide(ControlPlaneApiLive),
 )
