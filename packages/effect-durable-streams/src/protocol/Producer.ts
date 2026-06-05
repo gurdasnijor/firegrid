@@ -155,6 +155,7 @@ export const make = <A, I>(
     // `.changes` stream — reactive semantics are required there.
     const failure = MutableRef.make<Option.Option<AnyProducerFailure>>(Option.none())
     const offered = MutableRef.make(0)
+    const closed = MutableRef.make(false)
     const sent = yield* SubscriptionRef.make(0)
 
     const maxBatchBytes = opts.maxBatchBytes ?? 1_048_576 // 1 MiB
@@ -304,6 +305,11 @@ export const make = <A, I>(
      */
     const append = (event: A): Effect.Effect<void, AnyProducerFailure> =>
       Effect.suspend(() => {
+        // Reject appends after `close` with a typed failure rather than
+        // letting `Queue.offer` interrupt on a shut-down queue.
+        if (MutableRef.get(closed)) {
+          return Effect.fail(new TransportError({ cause: new Error("producer closed") }))
+        }
         // Fast-fail: a recorded terminal failure short-circuits before
         // any queue interaction so we don't backpressure on a wedged
         // producer.
@@ -346,12 +352,34 @@ export const make = <A, I>(
     const restart = (epoch: number): Effect.Effect<void, never> =>
       Ref.set(state, { epoch, lastSeq: -1 })
 
+    // Flush pending events, mark closed so further appends fail typed, then
+    // shut the queue (interrupts the scoped drain fiber). The underlying
+    // stream stays open — terminate it via `DurableStream.close`.
+    const close: Effect.Effect<void, AnyProducerFailure> = flush.pipe(
+      Effect.ensuring(
+        Effect.zipRight(
+          Effect.sync(() => MutableRef.set(closed, true)),
+          Queue.shutdown(queue),
+        ),
+      ),
+    )
+
+    const epoch: Effect.Effect<number> = Ref.get(state).pipe(Effect.map((s) => s.epoch))
+    const nextSeq: Effect.Effect<number> = Ref.get(state).pipe(Effect.map((s) => s.lastSeq + 1))
+    const pendingCount: Effect.Effect<number> = SubscriptionRef.get(sent).pipe(
+      Effect.map((s) => Math.max(0, MutableRef.get(offered) - s)),
+    )
+
     const sink = Sink.forEach(append)
 
     const producer: Producer<A> = Object.assign(sink, {
       append,
       flush,
       restart,
+      close,
+      epoch,
+      nextSeq,
+      pendingCount,
     })
 
     // Scope finalizer: best-effort drain of pending events before the scope

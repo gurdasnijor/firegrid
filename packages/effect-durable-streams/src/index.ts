@@ -9,6 +9,19 @@
  */
 
 export * as DurableStream from "./namespace.ts"
+export {
+  DurableStreamClient,
+  layer as DurableStreamClientLayer,
+  layerFetch as DurableStreamClientLayerFetch,
+} from "./Client.ts"
+export type {
+  DurableStreamClientService,
+  RawAppendOptions,
+  RawBatch,
+  RawStreamOptions,
+  RawStreamSession,
+  TypedClient,
+} from "./Client.ts"
 export type {
   Bound,
   CloseOptions,
