@@ -42,6 +42,15 @@ Feature: Fluent durable wait
     When an event has value.issueId "42"
     Then the wait resolves as if the predicate were "event.value.issueId == self.value.issueId"
 
+  Scenario: self binding is a recorded correlation snapshot
+    Given the handler waits for "event.value.repo == self.repo"
+    And self.repo is "firegrid" when the wait intent is recorded
+    And the live session projection later changes self.repo to "other"
+    When an event has value.repo "firegrid"
+    Then the CEL predicate evaluates against the recorded self binding
+    And the wait resolves with that event
+    And replay does not rebuild self from the newer projection
+
   Scenario: Replay does not re-evaluate against the live world
     Given a wait has already resolved with matched event "e1"
     And a newer event "e2" would also satisfy the predicate

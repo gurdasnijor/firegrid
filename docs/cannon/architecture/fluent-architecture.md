@@ -181,6 +181,13 @@ event schemas, bind CEL `wait_for` predicates to state-change facts, implement
 the host's claimed-wake handler, and prove real harness resume without duplicate
 side effects.
 
+This mapping is conditional on Durable Streams shipping and us adopting the
+`DS-L1`/`DS-L2` surface with conformance coverage. Until that is true,
+fluent-runtime must not build bypass infrastructure that competes with the
+substrate: no local lease table, cursor store, pull queue, webhook retry loop, or
+task-claim lock. The correct interim state is "blocked on substrate adoption,"
+not "rebuild the substrate inside fluent-runtime."
+
 ## RFC Delivery Shape
 
 The original Fireline promise is choreography across many agent implementations:
@@ -214,7 +221,7 @@ schedule itself, all by appending and observing durable facts. That is the RFC's
 "append durable facts, read durable facts, derive everything else" rule made
 concrete.
 
-Example round trip:
+Target-state round trip:
 
 ```text
 client prompt
@@ -233,6 +240,11 @@ client prompt
 
 No authored DAG coordinates that sequence. The model chose the calls; Firegrid
 made each call durable, observable, and recoverable through stream facts.
+This is the architecture's north-star acceptance story, not the first milestone.
+It requires a composite proof before it can be treated as a shipped capability:
+parent harness A spawns child harness B, the child reaches terminal state, the
+parent is woken by the child terminal fact, and both harnesses survive kill/resume
+without duplicated Layer 1 side effects.
 
 ## Component Ownership
 
@@ -445,6 +457,13 @@ change message shape (`event` plus the waiting session's `self` correlation
 data), so the same fact that wakes the session is the fact humans and agents can
 query.
 
+`self` is not a live mutable projection read at match time. It is the session's
+recorded correlation context for that wait: either embedded in the `WaitIntent`
+or referenced by an immutable stream offset captured before park. When a match is
+recorded, the Layer 2 match fact records the predicate, the matched event, and
+the `self` snapshot or immutable reference used for evaluation. Replay serves
+that recorded match; it does not rebuild `self` from a newer projection.
+
 Durable Streams subscription delivery supplies the transport mechanisms:
 webhook delivery/callback can deliver a wake to an HTTP endpoint, and pull-wake
 claim/ack/release with generation fencing/leases can drive worker redrive. The
@@ -501,6 +520,7 @@ These invariants are the review handles for fluent implementation work.
 | F-S6 | Resume must not re-execute any already-observed Layer 1 side effect. | Prevents duplicate shell/file/tool effects. |
 | F-S7 | External facts that can wake a wait are also queryable as stream facts. | Keeps ingress, wake, UI, audit, and Firelab on the same truth. |
 | F-S8 | Durable waits, timers, and promises do not use a second authoritative journal beside the session stream. | Preserves the one-log architecture. |
+| F-S9 | Cancel during a parked wait and interrupt during an active turn leave a durable terminal or continuation fact before process teardown. | Prevents corrupt sessions and duplicate effects on the next redrive. |
 
 ## Implementation Gaps To Prove
 
@@ -514,6 +534,8 @@ implemented. The first load-bearing proofs are:
 | Real harness resume | Killing and resuming a real Claude/Codex/ACP harness does not duplicate already-observed side effects. |
 | Provider webhook ingress | A verified external delivery becomes a queryable session-stream fact and can wake a CEL predicate. |
 | MCP/tool binding | Harness tool calls are observed in Layer 1, resolved by fluent-runtime as Layer 2 facts, and returned through the adapter. |
+| Cancel/interrupt safety | Cancel during a parked wait and interrupt during an active harness turn do not corrupt the session, drop owed native responses, or duplicate side effects on subsequent redrive. |
+| Cross-harness spawn | A parent session running harness A spawns a child session running harness B; the child terminal fact wakes the parent; both adapters resume safely after kill/restart. |
 
 ## Difference From `packages/runtime`
 
