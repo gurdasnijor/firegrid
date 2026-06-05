@@ -1830,6 +1830,32 @@ export default tseslint.config(
     },
   },
   {
+    files: ["packages/firelab/src/simulations/fluent-concurrent-replay-witness/driver.ts"],
+    rules: {
+      "no-restricted-imports": "off",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "ImportDeclaration:not([source.value=/^(effect($|\\/)|@effect\\/platform$|@firegrid\\/client-sdk\\/config$|@firegrid\\/fluent-firegrid$|effect-durable-streams$)/])",
+          message:
+            "This Appendix A witness may import only effect, @effect/platform, FiregridConfig, @firegrid/fluent-firegrid, and effect-durable-streams.",
+        },
+        {
+          selector:
+            "MemberExpression[object.name='Effect'][property.name=/^run(Promise|PromiseExit|Sync|SyncExit)$/]",
+          message:
+            "firelab sims must not self-run effects. Export a driver; the runner executes it.",
+        },
+        {
+          selector: "MemberExpression[object.name='process'][property.name='exit']",
+          message:
+            "firelab sims must not call process.exit. Drivers return; the runner owns process lifecycle.",
+        },
+      ],
+    },
+  },
+  {
     files: ["packages/substrate/src/**/*.ts"],
     rules: {
       "no-restricted-imports": [

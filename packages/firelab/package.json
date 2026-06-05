@@ -35,13 +35,15 @@
     "@effect/platform-node": "^0.106.0",
     "@effect/rpc": "0.75.1",
     "@effect/workflow": "0.18.1",
+    "@firegrid/fluent-firegrid": "workspace:*",
     "@firegrid/host-sdk": "workspace:*",
     "@firegrid/observability": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
     "@marcbachmann/cel-js": "7.6.1",
     "effect": "^3.21.2",
-    "effect-durable-operators": "workspace:*"
+    "effect-durable-operators": "workspace:*",
+    "effect-durable-streams": "workspace:*"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.21.0",

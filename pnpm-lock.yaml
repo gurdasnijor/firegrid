@@ -158,6 +158,9 @@ importers:
       '@effect/workflow':
         specifier: 0.18.1
         version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@firegrid/fluent-firegrid':
+        specifier: workspace:*
+        version: link:../fluent-firegrid
       '@firegrid/host-sdk':
         specifier: workspace:*
         version: link:../host-sdk
@@ -179,6 +182,9 @@ importers:
       effect-durable-operators:
         specifier: workspace:*
         version: link:../effect-durable-operators
+      effect-durable-streams:
+        specifier: workspace:*
+        version: link:../effect-durable-streams
     devDependencies:
       '@agentclientprotocol/sdk':
         specifier: 0.21.0
