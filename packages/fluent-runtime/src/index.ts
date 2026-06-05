@@ -18,17 +18,14 @@ export {
   createBridge,
 } from "./Bridge.ts"
 export {
-  type DurableTool,
-  type DurableToolCatalog,
-  DurableToolError,
-  makeMcpToolTransport,
-  makeToolGateway,
-  makeToolTransport,
-  type ToolGateway,
-  type ToolGatewayDeps,
-  type ToolInvocation,
+  DurableToolRecorder,
+  FluentToolkit,
+  fluentMcpServerLayer,
+  fluentToolkitLayer,
+  handleDurableToolCall,
+  type FluentToolHandlers,
   type ToolInvocationRecord,
-  type ToolTransport,
+  WaitForTool,
 } from "./Tools.ts"
 export {
   type SessionEvent,

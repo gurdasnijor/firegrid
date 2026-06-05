@@ -1,121 +1,99 @@
 /**
  * The "out" half of the non-invasive binding (SDD Appendix D/E;
  * fluent-mcp-tools-out.feature): Firegrid's durable tools are exposed to the
- * agent's own harness through the harness's OWN tool-call mechanism. The harness
- * decides to call a tool; Firegrid only serves it and records the invocation.
+ * agent's own harness through the harness's OWN tool-call mechanism.
  *
- * The **gateway** is transport-agnostic — it routes a harness-initiated
- * invocation to the tool handler and records a durable invocation fact. A
- * **transport** (MCP-over-durable-streams is one) carries the catalog out to the
- * harness and delivers invocations in. The non-invasive property is the
- * invariant; the transport is replaceable.
+ * This is built ON `@effect/ai` — the tool surface is NOT reinvented:
+ *  - `Tool.make` defines each tool (name, parameter + success schemas);
+ *  - `Toolkit.make` groups them; `Toolkit.toLayer` provides the handlers;
+ *  - `Toolkit.WithHandler.handle` does decode → validate → execute → encode;
+ *  - `McpServer.registerToolkit` / `McpServer.toolkit` give the real MCP
+ *    list/call behavior (one transport).
  *
- * Firegrid NEVER injects an `agent.run` / owned model loop — the gateway has no
- * harness reference and cannot initiate a turn. It only responds to
- * harness-initiated invocations.
+ * Firegrid-specific code is ONLY:
+ *  1. `DurableToolRecorder` + the handler wrap that records a durable invocation
+ *     fact after each execution (transport-agnostic — recorded once per call);
+ *  2. `handleDurableToolCall` — adapting a durable-stream-delivered tool call to
+ *     `Toolkit.WithHandler.handle`.
+ *
+ * The handlers run only when the harness invokes (via MCP or the durable-stream
+ * adapter); Firegrid never injects an `agent.run` / owned model loop.
  */
-import { Data } from "effect"
+import { McpServer, Tool, Toolkit } from "@effect/ai"
+import { Context, Effect, Schema } from "effect"
 
-/** A durable tool the harness can discover and call. */
-export interface DurableTool<A = unknown, R = unknown> {
-  readonly name: string
-  readonly description: string
-  /** Pure-ish handler over decoded args; no harness/loop access by construction. */
-  readonly handler: (args: A) => Promise<R> | R
-}
-
-export type DurableToolCatalog = ReadonlyArray<DurableTool>
-
-/** A harness-initiated invocation. `via: "harness"` records the provenance. */
-export interface ToolInvocation {
-  readonly name: string
-  readonly args: unknown
-  readonly via: "harness"
-}
-
-/** The durable fact recorded for every served invocation. */
+/** The durable fact recorded for every served tool invocation. */
 export interface ToolInvocationRecord {
   readonly name: string
-  readonly args: unknown
+  readonly params: unknown
   readonly result: unknown
+  /** Provenance: the call arrived through the harness's own tool-call path. */
   readonly via: "harness"
-  readonly transport: string
 }
 
-export class DurableToolError extends Data.TaggedError("DurableToolError")<{
-  readonly message: string
-}> {}
+/** Records durable tool-invocation facts (e.g. onto the session stream). */
+export class DurableToolRecorder extends Context.Tag(
+  "@firegrid/fluent-runtime/Tools/DurableToolRecorder",
+)<
+  DurableToolRecorder,
+  { readonly recordInvocation: (record: ToolInvocationRecord) => Effect.Effect<void> }
+>() {}
 
-export interface ToolGatewayDeps {
-  /** Append a durable tool-invocation fact (e.g. onto the session stream). */
-  readonly recordInvocation: (record: ToolInvocationRecord) => void
-}
+// ── Tool definitions (Tool.make) — the durable tool catalog. ──
+export const WaitForTool = Tool.make("wait_for", {
+  description: "Wait until a host-declared channel emits a matching row.",
+  parameters: { channel: Schema.String },
+  success: Schema.Struct({
+    matched: Schema.Boolean,
+    event: Schema.optional(Schema.Unknown),
+  }),
+})
 
-export interface ToolGateway {
-  /** Tool names the harness can discover (the exposed catalog). */
-  readonly list: () => ReadonlyArray<string>
-  /**
-   * Run a harness-initiated invocation: route → handler → durable record →
-   * result. Does NOT drive any model loop.
-   */
-  readonly invoke: (
-    invocation: ToolInvocation,
-    transport: string,
-  ) => Promise<unknown>
-}
+/** The Firegrid durable-tool toolkit exposed to the harness. */
+export const FluentToolkit = Toolkit.make(WaitForTool)
 
-export const makeToolGateway = (
-  catalog: DurableToolCatalog,
-  deps: ToolGatewayDeps,
-): ToolGateway => {
-  const byName = new Map(catalog.map((tool) => [tool.name, tool] as const))
-  return {
-    list: () => catalog.map((tool) => tool.name),
-    invoke: async (invocation, transport) => {
-      const tool = byName.get(invocation.name)
-      if (tool === undefined) {
-        throw new DurableToolError({ message: `unknown durable tool: ${invocation.name}` })
-      }
-      const result = await tool.handler(invocation.args)
-      deps.recordInvocation({
-        name: invocation.name,
-        args: invocation.args,
-        result,
-        via: invocation.via,
-        transport,
-      })
-      return result
-    },
-  }
+/** The concrete tool semantics (provided per deployment; e.g. wired to waits). */
+export interface FluentToolHandlers {
+  readonly wait_for: (
+    params: { readonly channel: string },
+  ) => Effect.Effect<{ readonly matched: boolean; readonly event?: unknown }>
 }
 
 /**
- * A transport exposes the catalog to a harness and delivers harness-initiated
- * invocations to the gateway. It is the replaceable part — any compatible
- * transport over the SAME gateway yields identical durable-tool semantics.
+ * The Firegrid wrap: provide the toolkit's handlers, each recording a durable
+ * invocation fact after execution. Requires `DurableToolRecorder`. The recording
+ * is at the handler level, so it fires once per execution regardless of which
+ * transport (MCP server / durable-stream adapter) drove the call.
  */
-export interface ToolTransport {
-  readonly id: string
-  /** Tool names discoverable over this transport (the harness "asks for tools"). */
-  readonly listTools: () => ReadonlyArray<string>
-  /** Deliver a harness tool-call to the gateway and return the result. */
-  readonly invokeTool: (name: string, args: unknown) => Promise<unknown>
-}
+export const fluentToolkitLayer = (handlers: FluentToolHandlers) =>
+  FluentToolkit.toLayer(
+    Effect.gen(function* () {
+      const recorder = yield* DurableToolRecorder
+      return {
+        wait_for: (params) =>
+          handlers.wait_for(params).pipe(
+            Effect.tap((result) =>
+              recorder.recordInvocation({ name: "wait_for", params, result, via: "harness" })),
+          ),
+      }
+    }),
+  )
 
 /**
- * MCP-over-durable-streams transport — Firegrid's durable tools served to the
- * harness as MCP tools. One transport; the non-invasive property is the
+ * The MCP transport: register the toolkit so a real harness gets MCP list/call
+ * over the connected server. Compose with `McpServer.layer*` + `fluentToolkitLayer`
+ * + a `DurableToolRecorder`. One transport; the non-invasive property is the
  * invariant, not the protocol.
  */
-export const makeMcpToolTransport = (gateway: ToolGateway): ToolTransport =>
-  makeToolTransport("mcp-over-durable-streams", gateway)
+export const fluentMcpServerLayer = McpServer.toolkit(FluentToolkit)
 
-/** Build a transport of the given id over a gateway (transport is replaceable). */
-export const makeToolTransport = (
-  id: string,
-  gateway: ToolGateway,
-): ToolTransport => ({
-  id,
-  listTools: () => gateway.list(),
-  invokeTool: (name, args) => gateway.invoke({ name, args, via: "harness" }, id),
-})
+/**
+ * The durable-stream transport adapter: drive a durable-stream-delivered tool
+ * call through `Toolkit.WithHandler.handle` (decode/validate/execute/encode +
+ * the durable-recording wrap). Same handlers as the MCP path → identical
+ * semantics; the transport is replaceable.
+ */
+export const handleDurableToolCall = <Name extends keyof typeof FluentToolkit.tools>(
+  name: Name,
+  params: Tool.Parameters<(typeof FluentToolkit.tools)[Name]>,
+) => Effect.flatMap(FluentToolkit, (withHandler) => withHandler.handle(name, params))
