@@ -1,4 +1,23 @@
 export {
+  type AgentAdapter,
+  type AgentConnection,
+  type AgentType,
+  type ClientIntent,
+  type ControlResponsePayload,
+  type MessageClassification,
+  type PreparedResume,
+  type ResumeOptions,
+  type SpawnOptions,
+  type StreamEnvelope,
+  type User,
+} from "./Adapter.ts"
+export {
+  type Bridge,
+  type BridgeDeps,
+  type BridgeLifecycle,
+  createBridge,
+} from "./Bridge.ts"
+export {
   type SessionEvent,
   type SessionEventAppended,
   type SessionChildRaceWinnerEvent,
