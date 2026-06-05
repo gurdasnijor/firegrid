@@ -87,6 +87,7 @@ red spec localizes which part of the bridge failed.
 | Feature file | Asserts (SDD §) | Firelab CoverageSpec |
 |---|---|---|
 | `fluent-engine-substrate-free` | Collapse the DSL onto Effect with **named (not positional) journal keys** → `run` returns a plain `Effect`; `Future`/`Scheduler.drive`/`Awaitable`/`operation.ts`/`current.ts` all **delete**; concurrency + spawn become free. **Durability enters via provided `Journal`/`FencedWriter` Effect.Services at the handler edge; the engine core (the `Effect.gen` bodies) stays substrate-free** — it does not import the old runtime or the durable substrate directly. What-becomes-free: retry/saga/in-process-cancel/serde. (Part 1; Summary) | `replayCoverage` + airgap assertion |
+| `fluent-durable-streams-consumer-substrate` | Adopt Durable Streams named consumers, pull-wake, webhook wake, and idempotent-producer coordination as the wake/redrive substrate. Gate the adopted package with upstream conformance suites: L1 named consumers (register/acquire/ack/release/stale epoch/cursors), L2/B pull-wake (wake stream, claimed event, persisted cursors, lease-expiry re-wake, competing claims), and L2/A webhook wake (signed delivery, callback, ack/done/retry/idle). Fluent-runtime becomes a claimed-wake handler and must not rebuild lease tables, cursor stores, pull queues, webhook retry loops, or task-claim locks. Coordination patterns use producer-fenced first-writer-wins claims and explicit epoch override for recovery. | upstream Durable Streams conformance + Firegrid claimed-wake integration witness |
 | `fluent-worker-redrive` | Pull-wake worker **claims the lease**, materialises session state, **resolves waits**, re-enters the harness, **acks/releases safely** on the server's §7.2/§7.3 machinery (do NOT rebuild the lease); **stale-generation ack is fenced**; `next_wake:true` = the turn loop for free; **no double side-effect**. `acked_offset` is a delivery cursor, not a replay position (replay reads the journal every claim). (Part 3; Appendix B) | `workerLoopCoverage` |
 
 **Upstream substrate assumption.** Durable Streams stream closure, append-after-close
@@ -139,10 +140,11 @@ sleep, durable wait, fork spawn, and worker redrive.
 
 1. `fluent-durable-sleep` (headline durable-wait gap)
 2. `fluent-durable-wait` (headline durable-wait gap)
-3. `fluent-worker-redrive` (product use of DS claim/ack/release)
-4. `fluent-agent-adapter-contract` (🔴 non-invasive real-agent binding)
-5. `fluent-native-resume` (🔴 recovery thesis)
-6. `fluent-park-interface` (🔴 the open binding proof)
+3. `fluent-durable-streams-consumer-substrate` (adopt and prove the DS wake substrate before building worker code)
+4. `fluent-worker-redrive` (product use of DS claim/ack/release)
+5. `fluent-agent-adapter-contract` (🔴 non-invasive real-agent binding)
+6. `fluent-native-resume` (🔴 recovery thesis)
+7. `fluent-park-interface` (🔴 the open binding proof)
 
 Covers the headline durable-wait gap, Firegrid's use of the Durable Streams wake
 protocol, and the non-invasive real-agent binding/recovery thesis. **Half-1
@@ -164,7 +166,7 @@ empirically.
 | Public authoring surface | `fluent-firegrid-public-surface` |
 | Part 1 — collapse DSL onto Effect | `fluent-engine-substrate-free` (+ race landmine→`fluent-concurrent-replay-soundness`) |
 | Part 2 — three families | `fluent-durable-sleep`+`fluent-durable-wait` (park/wake); upstream DS conformance is an assumption, not a Firegrid feature |
-| Part 3 — DS §7.2/§7.3 = wake subsystem | `fluent-worker-redrive`; sleep→`fluent-durable-sleep`; two-fencing is covered by DS conformance and asserted only through product use |
+| Part 3 — DS §7.2/§7.3 = wake subsystem | substrate conformance→`fluent-durable-streams-consumer-substrate`; product redrive→`fluent-worker-redrive`; sleep→`fluent-durable-sleep`; two-fencing is covered by DS conformance and asserted only through product use |
 | Coordination and ingress | `fluent-coordination-taxonomy`, `fluent-event-ingress` |
 | External control surface (fork/tag/schedule) | `fluent-control-surface` |
 | Build order tiers 1–11 | Half 2 (1–6) · Shared substrate (7–9) · Half 1 (10) · Below-line (11) |
