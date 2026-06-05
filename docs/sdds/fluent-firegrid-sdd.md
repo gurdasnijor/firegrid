@@ -6,6 +6,10 @@ decision that reframes both: fluent-firegrid runs agents **choreography-first,
 handler-shaped, over the agent's own harness**. The reader is assumed to have the
 `fluent-firegrid` source and the restate-sdk-gen source it was ported from.
 
+Read `docs/cannon/architecture/fluent-architecture.md` first for package,
+process, stream, and schema ownership. This SDD is the execution-detail
+companion to that architecture reference.
+
 ---
 
 ## TL;DR — four takeaways
@@ -42,32 +46,33 @@ handler-shaped, over the agent's own harness**. The reader is assumed to have th
 ## System shape
 
 ```
-                              ╭─ external agent harness ─────────────╮
-                              │  Claude Code / codex / ACP           │
-                              │  — owns the model loop —             │
-                              ╰──▲───────────────────────────┬───────╯
-                       resume    │ drive (prompt + context)  │ native events
-                       context    │                          ▼ (per-harness codec)
-  wake sources         ╭─────────┴───────────────────────────────────────────────╮
-  ────────────         │  SESSION  /support/ticket-42                             │
-  ● input append       │  ┌─ handler ────────────────┐  ┌─ stream ──────────────┐ │
-  ● child result  ───▶ │  │ handleSession(wake):     │  │ L1 normalized (codec) │ │
-  ● state change       │  │  materialise → resume    │─▶│  [tool][result][text] │ │
-  ● timer · webhook    │  │  context → driveHarness  │  │ L2 coordination (own) │ │
-  ● approval           │  │  (NOT agent.run)         │  │  [run][wait][child]   │ │
-                       │  └──────────────────────────┘  └───────────────────────┘ │
-                       │  durable tools the harness calls (firegrid MCP):         │
-                       │     wait_for · spawn · execute  — record intent + park   │
-                       ╰────────┬─────────────┬──────────────────┬────────────────╯
-                          spawn │        send │         observe   │
-                                ▼             ▼                   ▼
-                          ╭────────────╮ ╭────────────╮ ╭────────────╮
-                          │ /worker/   │ │ /notify/   │ │ /order/    │
-                          ╰────────────╯ ╰────────────╯ ╰────────────╯
+wake source
+  input append · child result · state change · timer · webhook · approval
+      │
+      ▼
+fluent host: handleSession(wake)
+  read Durable Streams session log
+  materialise state, waits, terminal facts
+  reconstruct native resume artifact through adapter
+      │
+      ▼
+adapter / bridge ── native protocol ── external agent harness
+      │                                  Claude Code / Codex / ACP
+      │ append L1 harness events         owns the model loop
+      ▼
+Durable Streams session log
+  L1 harness events: text, reasoning, tool_call, tool_result, file_change
+  L2 coordination: input, run, wait, timer, child, approval, terminal
+      ▲
+      │ append L2
+fluent host durable tools / ingress / timer workers / child workers
 ```
 
-**Reading the diagram.** The harness owns the reasoning loop; Firegrid owns the
-durable coordination around it.
+**Reading the diagram.** Package, process, stream, and schema ownership are
+canonicalized in `docs/cannon/architecture/fluent-architecture.md`. This SDD
+uses the compact execution view above: a wake re-enters the fluent host, the host
+materializes the durable log, and the adapter drives the external harness without
+making Firegrid own the model loop.
 
 - **`handleSession(wake)`** is re-invoked per wake. It does *not* run the model
   loop — it materialises the committed stream, builds a resume context, and
@@ -79,6 +84,10 @@ durable coordination around it.
 - Firegrid's durable tools (`wait_for`/`spawn`/`execute`) are the agent's own tool
   calls, served over MCP; when one must wait it records intent and **ends the
   turn**, and the matching wake re-invokes `handleSession`.
+- **External producers** are any actors outside the parked harness turn that append
+  candidate wake facts: webhook ingress, approval UIs, tool callbacks, child
+  completions, timers, or peer sessions. They append through the same fenced
+  writer path as every other durable event.
 
 Contrast with an *owned-loop* runtime (Electric `agents-runtime`): there the
 runtime calls `agent.run` and the LLM loop is a subscriber to the runtime's
