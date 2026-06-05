@@ -1,8 +1,8 @@
 # tf-q1j3 — Durable Streams Effect client (PR #218) vs our `effect-durable-streams` wrapper
 
 **Date:** 2026-06-05
-**Class:** sidecar (investigation only — no production migration)
-**Recommendation:** **KEEP** (retain `packages/effect-durable-streams`; do not replace, do not partially adopt). Re-evaluate only if upstream lands a working follow loop + typed producer errors + a schema boundary.
+**Class:** sidecar (investigation → ergonomic adoption; no production migration)
+**Recommendation:** **KEEP the typed core + ADOPT upstream's ergonomics** (PO direction 2026-06-05, after a design gut-check). We retain `packages/effect-durable-streams`'s `Reader`/`Writer`/`Producer` as the authoritative `Stream<A>`/`Sink<A>` typed core, and ADD a URL-keyed, optional-schema `DurableStreamClient` facade that copies upstream's *surface* ergonomics by delegating to that core — see §14. We did NOT replace internals, copy the global-`fetch` hardwire, the untyped `Error` producer channel, or the dead follow loop.
 
 ---
 
@@ -194,6 +194,29 @@ WAIT ⟂ (we don't need to wait on anything; ours is already in use). Revisit on
 3. If anyone re-raises "should we use the official Effect client?", point here: re-run the bench + re-check the three gating conditions in §13 before reopening.
 
 ---
+
+## 14. Ergonomic adoption (IMPLEMENTED 2026-06-05)
+
+Per PO direction — "copy the better ergonomics of the library instead" + a design gut-check (the "schema at the wire" property is kept but made *optional*, not mandatory) — we ported upstream's ergonomic surface as a thin facade over the existing typed core. New code is `packages/effect-durable-streams/src/Client.ts`; everything else is additive.
+
+**Added (delegates to `Reader`/`Writer`/`protocol` — no parallel transport):**
+- `DurableStreamClient` — a `Context.Tag` service. Provide one layer, call `client.<op>(url, …)`; methods carry **no `HttpClient` in `R`** (captured by the layer); the producer keeps `Scope`.
+- `DurableStreamClientLayerFetch` — batteries-included (bundles `FetchHttpClient`; Node 18+/Bun/Deno/browser). The analog of upstream's `DurableStreamClientLiveNode()`, but the transport stays a swappable `@effect/platform` `HttpClient`. `DurableStreamClientLayer` is the bring-your-own-client variant.
+- **Optional schema.** Raw ops skip Schema for quick use — `client.append(url, string | Uint8Array)`, `client.stream(url)` → a lazy `RawStreamSession` with `json` (accumulate `unknown[]`), `jsonStream`, and `jsonBatches` (per-response `{ items, offset, upToDate, cursor }` metadata, backed by a new `protocol/Read.ts#batchStream`). `client.withSchema(schema)` returns the fully typed `TypedClient<A>` (`append`/`read`→`Stream<A>`/`collect`/`snapshotThenFollow`/`tail`/`producer`→`Sink<A>`).
+- **Producer accessors** (parity with upstream's object producer, added to the `Producer<A>` interface without weakening `ProducerFailure`): `close` (flush + stop accepting; append-after-close fails typed `TransportError`), `pendingCount`, `epoch`, `nextSeq`.
+
+**Deliberately NOT copied:** global-`fetch` hardwire (kept pluggable `HttpClient`); the untyped `Error` producer channel (ours stays `WriteError | ProducerError`); the dead follow loop (our reads actually follow); `body()`/`text()` raw-byte session accessors (ill-defined over the JSON-array wire — documented on `RawStreamSession`); `cancel()` (interrupt the consuming fiber — idiomatic Effect).
+
+**Verification:** `test/conformance/client-facade.test.ts` (6 tests: raw append + `Uint8Array`, `jsonBatches` metadata, `withSchema` typed round-trip, producer `Stream.run` + accessors + `close`-then-append-fails, typed `NotFound`). Full suite **76/76**. Gates green: tsc, eslint (`--max-warnings 0`), knip, dep-cruiser, jscpd (0 clones), effect-language-service (0 errors), and `@firegrid/fluent-firegrid` (the `workspace:*` consumer) typechecks unchanged — no trap from the service-Tag addition.
+
+**Facade overhead (perf evidence):** the facade delegates to the same core, so per-op cost is within noise. Median ms, same server/runtime (`test/bench/client-facade.bench.ts`, plus a tsx timing harness):
+
+| Operation | `define(...)` | facade |
+|---|---:|---:|
+| 200 typed appends | ~31 ms | ~28 ms |
+| producer 500 events | ~2.3 ms | ~2.2 ms |
+
+(Differences are run-to-run variance — the facade is zero-overhead delegation, confirming the §10 numbers carry over to the new surface.)
 
 ## Appendix A — source provenance
 

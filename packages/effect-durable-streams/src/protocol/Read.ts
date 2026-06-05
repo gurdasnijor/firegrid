@@ -76,36 +76,48 @@ interface LongPollState {
   readonly cursor: string | undefined
 }
 
+// Build the long-poll `getJson` options for the current loop state, attaching
+// the cursor and per-call headers only when present. Shared by the item and
+// batch long-poll loops.
+const longPollGetOpts = (
+  state: LongPollState,
+  callHeaders: HeadersRecord | undefined,
+): Parameters<typeof Http.getJson>[1] => {
+  const base = state.cursor !== undefined
+    ? { offset: state.offset, live: "long-poll" as const, cursor: state.cursor }
+    : { offset: state.offset, live: "long-poll" as const }
+  return callHeaders !== undefined ? { ...base, callHeaders } : base
+}
+
+type GetJsonResult = Effect.Effect.Success<ReturnType<typeof Http.getJson>>
+
+// Generic long-poll follow loop. Polls until stream-closed-with-no-items,
+// projecting each server response into the emitted chunk. The item and batch
+// loops differ ONLY in `project`, so the loop skeleton lives here once.
+const longPollUnfold = <T>(
+  endpoint: Endpoint,
+  startOffset: Offset,
+  callHeaders: HeadersRecord | undefined,
+  project: (res: GetJsonResult) => Chunk.Chunk<T>,
+): Stream.Stream<T, ReadError, HttpClient.HttpClient> =>
+  Stream.unfoldChunkEffect<LongPollState, T, ReadError, HttpClient.HttpClient>(
+    { offset: startOffset, cursor: undefined },
+    (state) =>
+      Effect.gen(function* () {
+        const res = yield* Http.getJson(endpoint, longPollGetOpts(state, callHeaders))
+        if (res.streamClosed && res.items.length === 0) return Option.none()
+        const next: LongPollState = { offset: res.nextOffset, cursor: res.cursor ?? state.cursor }
+        return Option.some([project(res), next] as const)
+      }),
+  )
+
 const longPollLoop = (
   endpoint: Endpoint,
   startOffset: Offset,
   callHeaders?: HeadersRecord,
 ): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
-  Stream.unfoldChunkEffect<LongPollState, unknown, ReadError, HttpClient.HttpClient>(
-    { offset: startOffset, cursor: undefined },
-    (state) =>
-      Effect.gen(function* () {
-        const baseOpts = state.cursor !== undefined
-          ? ({
-              offset: state.offset,
-              live: "long-poll" as const,
-              cursor: state.cursor,
-            })
-          : ({ offset: state.offset, live: "long-poll" as const })
-        const getOpts = callHeaders !== undefined
-          ? { ...baseOpts, callHeaders }
-          : baseOpts
-        const res = yield* Http.getJson(endpoint, getOpts)
-        if (res.streamClosed && res.items.length === 0) {
-          return Option.none()
-        }
-        const next: LongPollState = {
-          offset: res.nextOffset,
-          cursor: res.cursor ?? state.cursor,
-        }
-        return Option.some([Chunk.unsafeFromArray(res.items.slice()), next] as const)
-      }),
-  )
+  longPollUnfold(endpoint, startOffset, callHeaders, (res) =>
+    Chunk.unsafeFromArray(res.items.slice()))
 
 // ============================================================================
 // SSE (live: "sse")
@@ -186,6 +198,77 @@ export const catchUpAll = (
     }
     return { items, finalOffset: offset }
   })
+
+// ============================================================================
+// Batch reads (metadata-preserving) — backs the client facade's jsonBatches().
+// Emits one record PER server response, carrying the protocol metadata the
+// item-flattening loops above discard.
+// ============================================================================
+
+export interface RawBatch {
+  readonly items: ReadonlyArray<unknown>
+  readonly offset: Offset
+  readonly upToDate: boolean
+  readonly cursor: string | undefined
+}
+
+const catchUpBatchLoop = (
+  endpoint: Endpoint,
+  startOffset: Offset,
+  callHeaders?: HeadersRecord,
+): Stream.Stream<RawBatch, ReadError, HttpClient.HttpClient> =>
+  Stream.paginateChunkEffect<CatchUpState, RawBatch, ReadError, HttpClient.HttpClient>(
+    { offset: startOffset, done: false, nextIfNoneMatch: undefined },
+    (state) => {
+      if (state.done) return Effect.succeed([Chunk.empty(), Option.none()])
+      return Effect.gen(function* () {
+        const res = yield* Http.getJson(endpoint, {
+          offset: state.offset,
+          live: false,
+          ...(callHeaders !== undefined ? { callHeaders } : {}),
+        })
+        const batch: RawBatch = {
+          items: res.items,
+          offset: res.nextOffset,
+          upToDate: res.upToDate,
+          cursor: res.cursor,
+        }
+        const next: Option.Option<CatchUpState> = res.upToDate || res.streamClosed
+          ? Option.none()
+          : Option.some({ offset: res.nextOffset, done: false, nextIfNoneMatch: undefined })
+        return [Chunk.of(batch), next] as const
+      })
+    },
+  )
+
+const longPollBatchLoop = (
+  endpoint: Endpoint,
+  startOffset: Offset,
+  callHeaders?: HeadersRecord,
+): Stream.Stream<RawBatch, ReadError, HttpClient.HttpClient> =>
+  longPollUnfold(endpoint, startOffset, callHeaders, (res) =>
+    Chunk.of({
+      items: res.items,
+      offset: res.nextOffset,
+      upToDate: res.upToDate,
+      cursor: res.cursor,
+    }))
+
+/**
+ * Stream of raw (un-decoded) batches with protocol metadata. `live: false`
+ * walks catch-up to up-to-date; any other mode follows via long-poll (the
+ * batch API maps cleanly onto discrete long-poll responses — for SSE
+ * item-level follow use {@link readStream}).
+ */
+export const batchStream = (
+  endpoint: Endpoint,
+  opts: { readonly live?: LiveMode; readonly offset?: Offset; readonly headers?: HeadersRecord },
+): Stream.Stream<RawBatch, ReadError, HttpClient.HttpClient> => {
+  const startOffset = opts.offset ?? BEGIN
+  return opts.live === false
+    ? catchUpBatchLoop(endpoint, startOffset, opts.headers)
+    : longPollBatchLoop(endpoint, startOffset, opts.headers)
+}
 
 // Helpers re-exported for Reader.
 export { BEGIN }

@@ -214,6 +214,20 @@ export interface Producer<A>
    * the server's current epoch for the next batch to be accepted.
    */
   readonly restart: (epoch: number) => Effect.Effect<void, never>
+  /**
+   * Flush pending events, then stop accepting new ones. The producer
+   * detaches; the underlying stream stays open (use {@link Bound.close} to
+   * terminate the stream itself). `append` after `close` fails with a typed
+   * `TransportError`. Provided for ergonomic parity with object-style
+   * producers — the `Sink`/scope-release lifecycle remains the primary path.
+   */
+  readonly close: Effect.Effect<void, ProducerFailure>
+  /** Current producer epoch. */
+  readonly epoch: Effect.Effect<number>
+  /** Sequence number the next appended batch will claim. */
+  readonly nextSeq: Effect.Effect<number>
+  /** Events accepted by `append` that have not yet been acknowledged. */
+  readonly pendingCount: Effect.Effect<number>
 }
 
 export interface ReadOpts<A, I> {

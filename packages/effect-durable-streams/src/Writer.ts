@@ -49,17 +49,40 @@ const failMissingOrTransport = (
       )
 }
 
-/** One-shot append. Encodes via schema, POSTs as a single-element JSON array. */
-export const append = <A, I>(
-  opts: AppendOpts<A, I>,
+interface AppendRawOptions {
+  /** Pre-encoded request body sent verbatim. */
+  readonly body: string
+  /** Overrides the default `application/json` content type. */
+  readonly contentType?: string
+  readonly seq?: string
+  readonly headers?: HeadersRecord
+}
+
+// Optional `PostOptions` header fields, attached only when present. Shared by
+// `appendRaw` and `close` so both build the request the same way.
+const postHeaderFields = (o: {
+  readonly contentType?: string
+  readonly seq?: string
+  readonly headers?: HeadersRecord
+}): Partial<Http.PostOptions> => ({
+  ...(o.contentType !== undefined ? { contentType: o.contentType } : {}),
+  ...(o.seq !== undefined ? { seq: o.seq } : {}),
+  ...(o.headers !== undefined ? { callHeaders: o.headers } : {}),
+})
+
+/**
+ * Raw one-shot append: POSTs `body` verbatim (no schema encode) and maps the
+ * response to the typed `WriteError` channel. Shared by the schema-encoded
+ * {@link append} and the URL-keyed client facade, so both go through the
+ * SAME protocol + error classification — no parallel transport.
+ */
+export const appendRaw = (
+  endpoint: Endpoint,
+  opts: AppendRawOptions,
 ): Effect.Effect<{ readonly offset: Offset }, WriteError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const postOpts: Http.PostOptions = {
-      body: encodeSingleJson(opts.schema, opts.event),
-      ...(opts.seq !== undefined ? { seq: opts.seq } : {}),
-      ...(opts.headers !== undefined ? { callHeaders: opts.headers } : {}),
-    }
-    const res = yield* Http.post(opts.endpoint, postOpts)
+    const postOpts: Http.PostOptions = { body: opts.body, ...postHeaderFields(opts) }
+    const res = yield* Http.post(endpoint, postOpts)
     if (res.status === 200 || res.status === 204) {
       yield* failIfClosed(res)
       return { offset: res.nextOffset }
@@ -68,7 +91,17 @@ export const append = <A, I>(
       yield* failIfClosed(res)
       return yield* new Conflict({ reason: "409 Conflict on append" })
     }
-    return yield* failMissingOrTransport(opts.endpoint, res.status)
+    return yield* failMissingOrTransport(endpoint, res.status)
+  })
+
+/** One-shot append. Encodes via schema, POSTs as a single-element JSON array. */
+export const append = <A, I>(
+  opts: AppendOpts<A, I>,
+): Effect.Effect<{ readonly offset: Offset }, WriteError, HttpClient.HttpClient> =>
+  appendRaw(opts.endpoint, {
+    body: encodeSingleJson(opts.schema, opts.event),
+    ...(opts.seq !== undefined ? { seq: opts.seq } : {}),
+    ...(opts.headers !== undefined ? { headers: opts.headers } : {}),
   })
 
 export const appendWithProducer = <A, I>(
@@ -152,8 +185,10 @@ export const close = (
         ? (typeof opts.body === "string" ? opts.body : new TextDecoder().decode(opts.body))
         : "",
       streamClosed: true,
-      ...(opts.contentType !== undefined ? { contentType: opts.contentType } : {}),
-      ...(opts.headers !== undefined ? { callHeaders: opts.headers } : {}),
+      ...postHeaderFields({
+        ...(opts.contentType !== undefined ? { contentType: opts.contentType } : {}),
+        ...(opts.headers !== undefined ? { headers: opts.headers } : {}),
+      }),
     }
     const res = yield* Http.post(endpoint, postOpts)
     if (res.status === 200 || res.status === 204) {
