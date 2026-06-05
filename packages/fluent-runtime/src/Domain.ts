@@ -56,6 +56,14 @@ const SessionChildRaceWinnerEventSchema = Schema.Struct({
   loserPolicy: Schema.Literal("let_finish", "cancel"),
 })
 
+export const StateChangeMessageSchema = Schema.Struct({
+  type: Schema.String,
+  key: Schema.String,
+  value: Schema.Unknown,
+  old_value: Schema.optional(Schema.Unknown),
+  headers: Schema.Record({ key: Schema.String, value: Schema.String }),
+})
+
 export const SessionEventSchema = Schema.Union(
   SessionCreatedEventSchema,
   SessionEventAppendedSchema,
@@ -63,6 +71,7 @@ export const SessionEventSchema = Schema.Union(
   SessionChildSpawnedEventSchema,
   SessionChildResultEventSchema,
   SessionChildRaceWinnerEventSchema,
+  StateChangeMessageSchema,
 )
 
 const TurnStartedEventSchema = Schema.Struct({
@@ -136,6 +145,7 @@ export type SessionForkedEvent = Schema.Schema.Type<typeof SessionForkedEventSch
 export type SessionChildSpawnedEvent = Schema.Schema.Type<typeof SessionChildSpawnedEventSchema>
 export type SessionChildResultEvent = Schema.Schema.Type<typeof SessionChildResultEventSchema>
 export type SessionChildRaceWinnerEvent = Schema.Schema.Type<typeof SessionChildRaceWinnerEventSchema>
+export type StateChangeMessage = Schema.Schema.Type<typeof StateChangeMessageSchema>
 export type SessionEvent = Schema.Schema.Type<typeof SessionEventSchema>
 
 export type TurnStartedEvent = Schema.Schema.Type<typeof TurnStartedEventSchema>

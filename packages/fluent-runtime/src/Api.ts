@@ -6,7 +6,8 @@ import {
   HttpApiSchema,
 } from "@effect/platform"
 import { Effect, Layer, Schema } from "effect"
-import { SessionEventSchema, TurnEventSchema } from "./Domain.ts"
+import { SessionEventSchema, StateChangeMessageSchema, TurnEventSchema } from "./Domain.ts"
+import { FluentEventIngress } from "./EventIngress.ts"
 import { FluentSources } from "./Sources.ts"
 import { FluentStore } from "./Store.ts"
 
@@ -130,10 +131,7 @@ const MatchWaitResultSchema = Schema.Struct({
   write: Schema.Literal("appended", "duplicate", "not_matched"),
 })
 
-const MatchPendingWaitsResultSchema = Schema.Struct({
-  sessionId: Schema.String,
-  turnId: Schema.String,
-  eventsUrl: Schema.String,
+const WaitMatchSummaryFields = {
   matched: Schema.Array(Schema.Struct({
     waitId: Schema.String,
     write: Schema.Literal("appended", "duplicate"),
@@ -145,6 +143,34 @@ const MatchPendingWaitsResultSchema = Schema.Struct({
     waitId: Schema.String,
     matchedOffset: Schema.String,
   })),
+}
+
+const MatchPendingWaitsResultSchema = Schema.Struct({
+  sessionId: Schema.String,
+  turnId: Schema.String,
+  eventsUrl: Schema.String,
+  ...WaitMatchSummaryFields,
+})
+
+const IngestExternalEventPayloadSchema = Schema.Struct({
+  deliveryId: Schema.String,
+  type: Schema.String,
+  key: Schema.String,
+  value: Schema.Unknown,
+  oldValue: Schema.optional(Schema.Unknown),
+  source: Schema.optional(Schema.String),
+  headers: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+})
+
+const IngestExternalEventResultSchema = Schema.Struct({
+  status: Schema.Literal("appended", "duplicate"),
+  sessionId: Schema.String,
+  turnId: Schema.String,
+  eventsUrl: Schema.String,
+  offset: Schema.String,
+  change: StateChangeMessageSchema,
+  redrive: Schema.Boolean,
+  ...WaitMatchSummaryFields,
 })
 
 // ── Control-plane (entity) surface — product spelling over durable stream
@@ -363,6 +389,12 @@ export class SessionsApi extends HttpApiGroup.make("Sessions")
     HttpApiEndpoint.post("matchPendingWaits")`/${sessionIdParam}/turns/${turnIdParam}/waits/match`
       .setPayload(MatchWaitPayloadSchema)
       .addSuccess(MatchPendingWaitsResultSchema)
+      .addError(RuntimeFailure),
+  )
+  .add(
+    HttpApiEndpoint.post("ingestExternalEvent")`/${sessionIdParam}/turns/${turnIdParam}/events/ingest`
+      .setPayload(IngestExternalEventPayloadSchema)
+      .addSuccess(IngestExternalEventResultSchema)
       .addError(RuntimeFailure),
   )
   .prefix("/sessions")
@@ -613,6 +645,36 @@ export const SessionsApiLive = HttpApiBuilder.group(
             })),
             notMatched: result.notMatched,
             alreadyMatched: result.alreadyMatched,
+          }
+        }))
+      .handle("ingestExternalEvent", ({ path, payload }) =>
+        Effect.gen(function* () {
+          const ingress = yield* FluentEventIngress
+          const result = yield* mapRuntimeFailure(ingress.ingestExternalEvent({
+            sessionId: path.sessionId,
+            turnId: path.turnId,
+            deliveryId: payload.deliveryId,
+            type: payload.type,
+            key: payload.key,
+            value: payload.value,
+            ...(payload.oldValue === undefined ? {} : { oldValue: payload.oldValue }),
+            ...(payload.source === undefined ? {} : { source: payload.source }),
+            ...(payload.headers === undefined ? {} : { headers: payload.headers }),
+          }))
+          return {
+            status: writeStatus(result.write._tag),
+            sessionId: result.session.sessionId,
+            turnId: path.turnId,
+            eventsUrl: result.session.eventsUrl,
+            offset: result.write.offset,
+            change: result.change,
+            redrive: result.redrive,
+            matched: result.waits.matched.map((wait) => ({
+              waitId: wait.waitId,
+              write: writeStatus(wait.write._tag),
+            })),
+            notMatched: result.waits.notMatched,
+            alreadyMatched: result.waits.alreadyMatched,
           }
         })),
 )
