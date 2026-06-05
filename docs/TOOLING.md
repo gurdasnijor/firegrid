@@ -16,12 +16,13 @@ turbo owns the DAG, concurrency, keep-going, and per-gate caching; on failure it
 replays only the failing gates' logs. Gates:
 
 `test` · `typecheck` · `diagnostics` · `lint` · `lint:dead` · `lint:dup` ·
-`lint:deps` · `trace:seams:ukv`
+`lint:deps` · `coverage:gate`
 
 The slow gates (`test` / `typecheck` / `diagnostics`) are per-package turbo-cached,
-so unchanged re-runs skip them. `lint` / `lint:dead` scan the whole repo and the
-`trace` gate is a live sim, so all three are `cache: false` (never a stale
-false-green); `lint:dup` / `lint:deps` cache against declared inputs.
+so unchanged re-runs skip them. `lint` / `lint:dead` scan the whole repo and
+`coverage:gate` is a live sim (the firelab unified-kernel-validation run whose
+computed forge-proof verdict gates the exit code), so all three are `cache: false`
+(never a stale false-green); `lint:dup` / `lint:deps` cache against declared inputs.
 
 `task-exit.sh` runs `pnpm preflight` and refuses to push on failure.
 
@@ -226,7 +227,7 @@ For the *strict* dependency-boundary gate, use `pnpm run lint:deps` (and CI).
 ## CI workflow shape
 
 `.github/workflows/ci.yml` runs five gating jobs in parallel — **Lint**,
-**Typecheck**, **Effect diagnostics**, **Tests**, and **UKV trace seams**.
+**Typecheck**, **Effect diagnostics**, **Tests**, and **UKV coverage gate**.
 Dependency-cruiser boundary checks run inside the `Lint` job. The separate
 `arch-graph-comment.yml` workflow posts the advisory dependency-graph comment and
 is **non-gating**.
@@ -255,8 +256,9 @@ ESLint is the keystone source-pattern engine. Semgrep was retired (consolidation
 footprint guards with no live findings became ESLint `local/sg-*` rules in
 `eslint.config.js` (a shared source-text scanner applying Semgrep's exact regexes,
 scoped per block via `files`/`ignores`, run under `pnpm run lint`); rules with live
-findings moved to the `effect-quality` ts-morph count ratchet
-(`pnpm run lint:effect-quality`). ast-grep was likewise retired — its one gated
+findings became AST-precise `local/*` ESLint rules (the interim `effect-quality`
+ts-morph count ratchet that briefly held them was since deleted — see below; there
+is no `lint:effect-quality` script). ast-grep was likewise retired — its one gated
 rule now lives as `local/hrtime-number-arithmetic`. To add a source-pattern guard:
 prefer a type-aware `local/*` ESLint rule; for a pure text shape add a `local/sg-*`
 block. **Do not** add a baseline-JSON count ratchet — the last one was deleted
