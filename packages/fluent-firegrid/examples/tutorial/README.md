@@ -10,13 +10,12 @@ Spec refs: `fluent-firegrid-keystone.EXAMPLES.1`,
 Implemented:
 
 - `src/01-basics.ts` — a Firegrid-shaped durable step pipeline using
-  free `run` and `all` inside generator operations.
-- `src/02-spawn.ts` — routine-backed Futures composed with
-  `all`, `race`, and `select`.
-- `src/03-timeout.ts` — timeout branching with
-  `select({ done, timeout: sleep(...) })`.
-- `src/07-state.ts` — object-shaped state with free
-  `state<T>()` and `sharedState<T>()`.
+  generator handlers plus free `run`, `all`, `race`, and `select`.
+- `src/02-spawn.ts` — Restate-shaped local `spawn` affordance composed with
+  `all`, `race`, and `select`; durable child sessions are separate.
+- `src/03-timeout.ts` — timeout branching with local `Effect.race` and
+  `Effect.sleep`.
+- `src/07-state.ts` — deferred placeholder for the later state surface.
 - `src/09-workflows.ts` — a workflow-shaped surface using
   `workflow({ name, handlers })`.
 
@@ -24,6 +23,9 @@ Deferred until the package exposes the matching primitives:
 
 | family | missing substrate |
 |---|---|
+| durable sleep | timer intent, subscription wake, and redrive |
+| durable wait | CEL predicate wait intent, match wake, and redrive |
+| state | state collections and concurrency semantics |
 | retry | journaled retry policy and attempt classification |
 | saga | durable compensation steps and compensation ordering helpers |
 | cancellation | durable cancellation events and AbortSignal fanout |
@@ -39,3 +41,14 @@ The workflow tier is intentionally narrower than Restate's workflow tutorial:
 it models workflow handlers over one caller-supplied journal endpoint. Workflow
 promises, workflow keys, attach/cancel, and shared workflow handlers are still
 deferred.
+
+## API Affordance Parity
+
+| Restate tutorial affordance | Fluent Part 1 shape |
+|---|---|
+| generator service handlers | generator handlers accepted by `service` |
+| `run(action, { name })` | same authoring shape, backed by named journal steps |
+| `all([...])` | free helper over Effect concurrency |
+| `race([...])` | free helper over Effect race semantics |
+| `select({ tag })` | free tagged race helper returning `{ tag, future }` |
+| `spawn(op)` | local Effect fiber affordance; durable child-session spawn is deferred |

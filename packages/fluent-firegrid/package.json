@@ -1,7 +1,7 @@
 {
   "name": "@firegrid/fluent-firegrid",
   "version": "0.0.0",
-  "description": "Restate-shaped Firegrid primitives directly over Effect and Durable Streams.",
+  "description": "Effect-native Firegrid primitives with named durable steps over Durable Streams.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",

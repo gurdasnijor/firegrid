@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, bench, describe } from "vitest"
-import { execute, gen, run, type ExecutionContext } from "../src/index.ts"
+import { Effect } from "effect"
+import { execute, run, type ExecutionContext } from "../src/index.ts"
 import {
   BENCH_OPTS,
   BENCH_SIZES,
@@ -21,10 +22,10 @@ const durableRunOperation = (
   size: number,
   action: (index: number) => number,
 ) =>
-  gen(function* () {
+  Effect.gen(function* () {
     let total = 0
     for (let index = 0; index < size; index += 1) {
-      total += yield* run(() => action(index), { name: `step-${index}` })
+      total += yield* run(`step-${index}`, Effect.sync(() => action(index)))
     }
     return total
   })

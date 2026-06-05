@@ -1,9 +1,31 @@
 # @firegrid/fluent-firegrid
 
-Restate sdk-gen-shaped Firegrid primitives directly over Effect and Durable
+Effect-native Firegrid primitives with named durable steps over Durable
 Streams.
 
-This package is a keystone slice for a generator-based Operation/Future API:
-`gen`, `execute`, `run`, `sleep`, `state`, `sharedState`, `all`, `race`, `any`,
-`allSettled`, `select`, and `spawn` run through a scheduler backed by
-append-only Durable Streams journals.
+The Part 1 engine is intentionally substrate-free above the handler edge.
+User-facing handlers can use Restate-like generator syntax while the backing
+implementation remains ordinary Effect plus journal services:
+
+```ts
+export const basics = service({
+  name: "basics",
+  handlers: {
+    *hello(name: string): Operation<string> {
+      return yield* run(() => `Hello, ${name}!`, { name: "compose" })
+    },
+
+    *parallel(): Operation<string> {
+      const a = run(() => fetchA(), { name: "a" })
+      const b = run(() => fetchB(), { name: "b" })
+      const [av, bv] = yield* all([a, b])
+      return `${av}+${bv}`
+    },
+  },
+})
+```
+
+`run(action, { name })` lowers to a named journal step, and `execute(ctx,
+effect)` remains available as the lower-level handler-edge API. The package
+does not expose a bespoke `Future` scheduler or module-global current scheduler
+slot; composition delegates to Effect.
