@@ -17,6 +17,9 @@
 # Fork base precedence: --base <ref>  >  $FIREGRID_TASK_BASE  >  DEFAULT_BASE.
 #
 set -eu
+# Lane hardening: no interactive prompt may hang the (stdin-less) lane; long
+# commands are timeout-capped. (TASK_DEBUG=1 step-traces where a lane wedges.)
+. "$(dirname "$0")/_lane-common.sh"
 # #765 (unified-kernel cutover) is merged to main; main is canonical.
 DEFAULT_BASE="origin/main"
 BEAD="${1:?usage: task-enter.sh <bead-id> <slug> [--class codex|sidecar] [--base ref] [--resume]}"
@@ -80,11 +83,11 @@ fi
 # so the lane is gate-ready. Best-effort: a hiccup warns and continues — never
 # blocks starting the task (the lane can always `pnpm install` by hand).
 if [ "$CREATED" = 1 ] && command -v pnpm >/dev/null 2>&1; then
-  echo "→ installing dependencies (pnpm install)…"
-  if (cd "$WT" && pnpm install); then
+  echo "→ installing dependencies (pnpm install, ≤600s)…"
+  if with_timeout 600 sh -c "cd '$WT' && pnpm install"; then
     echo "✓ dependencies installed — pnpm preflight is ready"
   else
-    echo "⚠ pnpm install failed in $WT — run it manually before pnpm preflight" >&2
+    echo "⚠ pnpm install failed/timed out in $WT — run it manually before pnpm preflight" >&2
   fi
 fi
 

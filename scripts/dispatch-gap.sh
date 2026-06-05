@@ -24,6 +24,7 @@
 #     # ↑ explicit, audited override: lanes deliberately idle, with a reason.
 #
 set -u
+. "$(dirname "$0")/_lane-common.sh"   # no-hang guards (git/gh/pnpm never prompt)
 RR="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "dispatch-gap: not a git repo" >&2; exit 1; }
 export BEADS_DIR="$RR/.beads"
 for b in jq br; do command -v "$b" >/dev/null 2>&1 || { echo "dispatch-gap: $b not on PATH" >&2; exit 1; }; done
