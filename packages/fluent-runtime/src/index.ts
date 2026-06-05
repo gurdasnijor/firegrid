@@ -18,6 +18,16 @@ export {
   createBridge,
 } from "./Bridge.ts"
 export {
+  DurableToolRecorder,
+  FluentToolkit,
+  fluentMcpServerLayer,
+  fluentToolkitLayer,
+  handleDurableToolCall,
+  type FluentToolHandlers,
+  type ToolInvocationRecord,
+  WaitForTool,
+} from "./Tools.ts"
+export {
   type SessionEvent,
   type SessionEventAppended,
   type SessionChildRaceWinnerEvent,

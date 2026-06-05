@@ -27,6 +27,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@effect/ai": "^0.35.0",
     "@effect/platform": "^0.96.1",
     "@marcbachmann/cel-js": "7.6.1",
     "effect": "^3.21.2",
