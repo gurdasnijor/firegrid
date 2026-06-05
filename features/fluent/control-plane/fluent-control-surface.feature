@@ -21,7 +21,7 @@ Feature: Fluent control surface
   Scenario: Schedule creates a future wake
     When a client schedules entity "session-1" for time "T"
     Then a timer intent is durably recorded
-    And the timer source later materializes the wake as an append
+    And an adopted scheduled source or Durable Streams wake integration later materializes the wake as an append
 
   Scenario: Reads are projections over durable state
     When a client reads or heads entity "session-1"

@@ -6,7 +6,7 @@ Feature: Fluent durable wait
 
   Background:
     Given a fluent session with correlation data
-    And a wake registry connected to durable event ingress
+    And Durable Streams wake delivery connected to durable event ingress
 
   Scenario: Wait intent is recorded before parking
     When the handler calls wait_for with predicate "event.type == 'review.posted'"
@@ -25,7 +25,8 @@ Feature: Fluent durable wait
   Scenario: Non-matching wake re-suspends the handler
     Given the handler waits for "event.type == 'github.pr'"
     When an event with type "github.issue" is appended
-    Then the worker re-drives the handler
+    Then Durable Streams delivers or grants work for the subscribed session
+    And the post-wake product actor re-drives the handler
     And the CEL predicate evaluates to false
     And the wait remains pending with its original intent
 

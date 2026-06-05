@@ -1,13 +1,14 @@
 @fluent @coordination @ingress
 Feature: Fluent event ingress
-  External webhooks and producer events enter fluent as fenced durable appends
-  and use the same wake registry as approvals, tool results, and timers.
+  Provider deliveries and producer events enter fluent as fenced durable appends.
+  Durable Streams owns wake delivery; Firegrid owns the product match recorded
+  after delivery or claim.
 
   Background:
     Given a fluent event ingress endpoint
     And a session waiting for external events
 
-  Scenario: External delivery becomes a durable event
+  Scenario: Accepted external delivery becomes a durable event
     When an external system posts event "review.posted" with delivery id "d-1"
     Then the event is appended as a durable state change
     And the append carries producer fencing data or equivalent delivery-id idempotency
@@ -18,13 +19,14 @@ Feature: Fluent event ingress
     Then the event is not appended a second time
     And no wait is resolved twice
 
-  Scenario: Matching webhook wakes a waiting session
+  Scenario: Matching provider event records a wait match
     Given a session waits for "review.posted"
     When an external "review.posted" event is appended
-    Then the wake registry records a match for the waiting session
-    And the session is eligible for redrive
+    And Durable Streams delivers or grants subscribed work
+    Then Firegrid records a wait_matched fact for the waiting session
+    And the session can be redriven from that recorded match
 
-  Scenario: Non-matching webhook does not wake unrelated waits
+  Scenario: Non-matching provider event does not match unrelated waits
     Given a session waits for "github.pr"
     When an external "github.issue" event is appended
     Then the wait remains pending
