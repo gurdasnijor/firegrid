@@ -15,6 +15,7 @@
 #   bash scripts/task-reap.sh            # every merged+clean lane worktree
 #   bash scripts/task-reap.sh <branch>   # just that one
 set -u
+. "$(dirname "$0")/_lane-common.sh"   # no-hang guards (git/gh never prompt)
 RR="$(git rev-parse --show-toplevel)"
 [ "$(git rev-parse --git-dir 2>/dev/null)" = "$(git rev-parse --git-common-dir 2>/dev/null)" ] \
   || { echo "✋ task-reap runs from the PRIMARY checkout." >&2; exit 1; }

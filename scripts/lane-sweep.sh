@@ -38,6 +38,7 @@
 # Best-effort reporter: a grep no-match must not abort the sweep, so no -e /
 # pipefail here. -u catches typos.
 set -u
+. "$(dirname "$0")/_lane-common.sh"   # no-hang guards (git/gh never prompt)
 
 command -v cmux >/dev/null 2>&1 || { echo "lane-sweep: cmux not on PATH" >&2; exit 1; }
 

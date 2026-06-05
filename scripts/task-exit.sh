@@ -8,6 +8,9 @@
 #   bash scripts/task-exit.sh <bead-id> [--decision <PR-or-SDD-url>]
 #
 set -eu
+# Lane hardening: prompts can't hang the (stdin-less) lane; preflight is
+# timeout-capped. (TASK_DEBUG=1 step-traces where a lane wedges.)
+. "$(dirname "$0")/_lane-common.sh"
 BEAD="${1:?usage: task-exit.sh <bead-id> [--decision <url>]}"
 DECISION=""
 shift || true
@@ -53,6 +56,20 @@ if [ -n "$(git -C "$RR" status --porcelain -- ':!.beads/')" ]; then
     && echo "✓ committed remaining work on $BR"
 fi
 
+# 3a. No-diff guard — refuse to proceed when the branch has NO commits ahead of
+#     its base. Pushing that opens a BLANK PR (the other blank-PR source besides
+#     --fill). Fail loud instead of stranding an empty draft.
+BASE_REF="${FIREGRID_TASK_BASE:-origin/main}"
+case "$BASE_REF" in origin/*) ;; *) BASE_REF="origin/$BASE_REF" ;; esac
+git -C "$RR" fetch -q origin "${BASE_REF#origin/}" 2>/dev/null || true
+AHEAD="$(git -C "$RR" rev-list --count "$BASE_REF..HEAD" 2>/dev/null || echo 1)"
+if [ "${AHEAD:-1}" = "0" ]; then
+  echo "✋ task-exit: $BR has NO commits ahead of $BASE_REF — nothing to PR." >&2
+  echo "   The lane produced no diff. Make + commit the work first, then re-run." >&2
+  echo "   (task-exit only commits LEFTOVER changes; it never invents a diff.)" >&2
+  exit 1
+fi
+
 # 3b. PREFLIGHT GATE — run the full local gate set on the committed state and
 #     REFUSE to push / open a PR on failure. The DRAFT PR is the merge gate, so
 #     pushing a red branch just burns a CI round-trip and strands a failing PR;
@@ -67,13 +84,15 @@ if [ "${TASK_EXIT_SKIP_PREFLIGHT:-}" = "1" ]; then
   echo "⚠ task-exit: TASK_EXIT_SKIP_PREFLIGHT=1 — SKIPPING pnpm preflight." >&2
   echo "   The push/PR is NOT locally verified; CI may fail. Use sparingly." >&2
 else
-  echo "▶ task-exit: running pnpm preflight before push (override: TASK_EXIT_SKIP_PREFLIGHT=1)…"
-  if ! ( cd "$RR" && pnpm preflight ); then
+  echo "▶ task-exit: running pnpm preflight before push (≤${TASK_EXIT_PREFLIGHT_TIMEOUT:-1200}s; override: TASK_EXIT_SKIP_PREFLIGHT=1)…"
+  if ! with_timeout "${TASK_EXIT_PREFLIGHT_TIMEOUT:-1200}" sh -c "cd '$RR' && pnpm preflight"; then
     echo "" >&2
-    echo "✋ task-exit: pnpm preflight FAILED — REFUSING to push $BR or open a PR." >&2
+    echo "✋ task-exit: pnpm preflight FAILED or TIMED OUT — REFUSING to push $BR or open a PR." >&2
     echo "   Your work is committed locally on $BR but NOT pushed (nothing stranded" >&2
     echo "   remotely). Fix the failing gate(s) above, then re-run task-exit." >&2
-    echo "   (Override with TASK_EXIT_SKIP_PREFLIGHT=1 only when knowingly pushing WIP.)" >&2
+    echo "   (A timeout means a gate hung — most often the live coverage:gate sim; re-run" >&2
+    echo "    \`pnpm --filter firelab coverage:gate\` in $RR to see it, or raise" >&2
+    echo "    TASK_EXIT_PREFLIGHT_TIMEOUT. Override entirely with TASK_EXIT_SKIP_PREFLIGHT=1.)" >&2
     exit 1
   fi
   echo "✓ task-exit: pnpm preflight green — proceeding to push."
@@ -145,7 +164,27 @@ if command -v gh >/dev/null 2>&1; then
     # PR base = origin/main (canonical post-#765). FIREGRID_TASK_BASE overrides
     # for the rare lane that forks off a non-main integration branch.
     PR_BASE="${FIREGRID_TASK_BASE:-main}"; PR_BASE="${PR_BASE#origin/}"
-    gh pr create --head "$BR" --base "$PR_BASE" --fill --draft 2>&1 | tail -1 || echo "  ⚠ open the PR manually"
+    # Real title + body (NOT --fill, which produces a BLANK PR when the only
+    # commit is the generic "wip(...) checkpoint"). Title = the first non-wip
+    # commit subject; body = commits + diffstat. (Phase 4 replaces the body with
+    # the firelab trace-evidence block once experiments drive the lane.)
+    PR_TITLE="$(git -C "$RR" log "$BASE_REF..HEAD" --format='%s' | grep -vi '^wip(' | head -1)"
+    [ -n "$PR_TITLE" ] || PR_TITLE="$(git -C "$RR" log -1 --format='%s')"
+    PR_BODY_FILE="$(mktemp)"
+    {
+      echo "## Lane \`$BR\`"
+      [ -n "$BEAD" ] && echo "Bead: \`$BEAD\`"
+      echo
+      echo "### Commits"
+      git -C "$RR" log "$BASE_REF..HEAD" --format='- %s'
+      echo
+      echo "### Changed files"
+      echo '```'
+      git -C "$RR" diff --stat "$BASE_REF..HEAD"
+      echo '```'
+    } > "$PR_BODY_FILE"
+    gh pr create --head "$BR" --base "$PR_BASE" --title "$PR_TITLE" --body-file "$PR_BODY_FILE" --draft 2>&1 | tail -1 || echo "  ⚠ open the PR manually"
+    rm -f "$PR_BODY_FILE"
   fi
 
   # CI-trigger guarantee. A task-exit DRAFT PR is the merge gate, so it

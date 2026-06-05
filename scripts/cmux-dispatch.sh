@@ -19,6 +19,7 @@
 #   bash scripts/cmux-dispatch.sh --workspace workspace:2 oca1 "resume #326"
 #
 set -u
+. "$(dirname "$0")/_lane-common.sh"   # no-hang guards (git/gh/pnpm never prompt)
 WS="${CMUX_DISPATCH_WS:-workspace:2}"
 while [ $# -gt 0 ]; do
   case "$1" in
