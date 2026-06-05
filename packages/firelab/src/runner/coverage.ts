@@ -142,6 +142,11 @@ const HOST_SUBSTRATE_PREFIXES: ReadonlyArray<string> = [
   // because they fire host-side, side != "driver"). Lets a sim gate on a
   // behavior-specific probe without polluting the global production allowlist.
   "firegrid.sim.",
+  // fluent-runtime managed-agent store: emitted host-side by FluentStore when it
+  // drives durable streams (session/turn create, append-and-close, read-back).
+  // Forge-proof because the store runs in the launched host (the served HTTP
+  // surface), never in the driver — `firegrid.side != "driver"`.
+  "fluent_runtime.store.",
   // dynamic-suffix host spans: <verb>/<sessionId|contextId>
   "unified.permission.request/",
   "unified.permission.relay/",

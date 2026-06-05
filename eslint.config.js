@@ -734,23 +734,41 @@ const local = {
         type: "problem",
         docs: {
           description:
-            "Require firelab simulation hosts to compose through the single Firegrid host composition root (firegridHost / runFiregridHost), so sim == prod and no per-sim layer assembly creeps back in.",
+            "Require firelab simulation hosts to compose through a SANCTIONED published runtime root — `@firegrid/host-sdk` firegridHost/runFiregridHost OR `@firegrid/fluent-runtime` FluentRuntimeServerLive — so sim == prod and no per-sim layer assembly creeps back in.",
         },
         schema: [],
         messages: {
           missingFactoryImport:
-            "Simulation host.ts must import firegridHost (or runFiregridHost) from @firegrid/host-sdk and compose through that single root — not hand-assemble FiregridRuntime + ingress per sim.",
+            "Simulation host.ts must compose through a published runtime root — import firegridHost/runFiregridHost from @firegrid/host-sdk, OR FluentRuntimeServerLive from @firegrid/fluent-runtime — not hand-assemble a runtime + ingress per sim.",
           missingFactoryCall:
-            "Simulation host.ts must call the imported @firegrid/host-sdk firegridHost / runFiregridHost composition root.",
+            "Simulation host.ts imported the @firegrid/host-sdk firegridHost / runFiregridHost root but never called it.",
         },
       },
       create(context) {
         const factoryNames = new Set(["firegridHost", "runFiregridHost"])
         let importedFactoryLocalName
         let calledFactory = false
+        // The fluent-runtime is a second sanctioned prod runtime; its published
+        // composition root is `FluentRuntimeServerLive` (a function returning the
+        // served Layer). Calling it is the fluent analog of firegridHost — accept
+        // it the same way. (#939 ships it as "the product layer firelab launches".)
+        let fluentRootLocalName
+        let calledFluentRoot = false
 
         return {
           ImportDeclaration(node) {
+            if (node.source.value === "@firegrid/fluent-runtime") {
+              for (const specifier of node.specifiers) {
+                if (
+                  specifier.type === "ImportSpecifier" &&
+                  specifier.imported.type === "Identifier" &&
+                  specifier.imported.name === "FluentRuntimeServerLive"
+                ) {
+                  fluentRootLocalName = specifier.local.name
+                }
+              }
+              return
+            }
             if (node.source.value !== "@firegrid/host-sdk") {
               return
             }
@@ -773,8 +791,20 @@ const local = {
             ) {
               calledFactory = true
             }
+            if (
+              fluentRootLocalName !== undefined &&
+              node.callee.type === "Identifier" &&
+              node.callee.name === fluentRootLocalName
+            ) {
+              calledFluentRoot = true
+            }
           },
           "Program:exit"(node) {
+            // Accept the fluent-runtime root (imported + called) as an equal,
+            // sanctioned composition root.
+            if (fluentRootLocalName !== undefined && calledFluentRoot) {
+              return
+            }
             if (importedFactoryLocalName === undefined) {
               context.report({ node, messageId: "missingFactoryImport" })
             } else if (!calledFactory) {

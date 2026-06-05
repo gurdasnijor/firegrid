@@ -30,7 +30,6 @@
   },
   "dependencies": {
     "@effect/ai": "^0.35.0",
-    "@marcbachmann/cel-js": "7.6.1",
     "@effect/cli": "0.75.1",
     "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",
@@ -40,14 +39,16 @@
     "@firegrid/observability": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
+    "@marcbachmann/cel-js": "7.6.1",
     "effect": "^3.21.2",
     "effect-durable-operators": "workspace:*"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.21.0",
+    "@cucumber/gherkin": "^39.1.0",
+    "@cucumber/messages": "^32.3.1",
     "@durable-streams/server": "0.3.7",
     "@firegrid/client-sdk": "workspace:*",
-    "@firegrid/fluent-firegrid": "workspace:*",
     "@firegrid/fluent-runtime": "workspace:*",
     "typescript": "^5.7.0"
   }
