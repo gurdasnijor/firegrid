@@ -33,6 +33,11 @@ export {
   type IngressWaitSummary,
 } from "./EventIngress.ts"
 export {
+  FluentRuntimeLive,
+  type FluentRuntimeConfig,
+  type FluentRuntimeServices,
+} from "./Host.ts"
+export {
   FluentSources,
   FluentSourcesLive,
   type AlreadyFiredTurnTimer,

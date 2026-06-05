@@ -146,6 +146,8 @@ const HOST_SUBSTRATE_PREFIXES: ReadonlyArray<string> = [
   // drives durable streams (session/turn create, append-and-close, read-back).
   // Forge-proof because the store runs in the launched host (the served HTTP
   // surface), never in the driver — `firegrid.side != "driver"`.
+  "fluent_runtime.event_ingress.",
+  "fluent_runtime.sources.",
   "fluent_runtime.store.",
   // dynamic-suffix host spans: <verb>/<sessionId|contextId>
   "unified.permission.request/",

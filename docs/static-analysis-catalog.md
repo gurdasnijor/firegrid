@@ -49,7 +49,7 @@ Invocation: `eslint . --max-warnings 0 --cache` (every `warn` fails CI). Plugins
 | `local/no-module-durable-cache` | top-level `let`; or top-level cache/registry/runs/… Map/Set/array/object | same | warn |
 | `local/no-host-authority-registry` | `run/completion/claim/eventPlane` × `cache/registry` named decls | `runtime/src/**` (minus tests) | warn |
 | `local/no-hidden-control-plane` | imports of `node:http(s)`/express/fastify/hono/koa/`@effect/platform/HttpServer` | `{client-sdk,runtime}/src/**` | error |
-| `local/simulation-host-real-firegrid-host` | sim host.ts that never imports **or** never calls `FiregridHost` from `@firegrid/runtime/unified` (anti-forge) | `firelab/src/simulations/*/host.ts` | error |
+| `local/simulation-host-real-firegrid-host` | sim host.ts that never imports **or** never calls a published host root (`@firegrid/host-sdk` `firegridHost`/`runFiregridHost`, or `@firegrid/fluent-runtime` `FluentRuntimeLive`) | `firelab/src/simulations/*/host.ts` | error |
 | `local/no-extends-error` | `class X extends Error` (push `Data.TaggedError`) | `packages/**/src`+`apps/**/src` (minus tests) | error |
 | `local/no-process-env-outside-bin` | `process.env` (off under `src/bin/**`) | `packages/**/src`+`apps/**/src` (minus tests, bin) | error |
 

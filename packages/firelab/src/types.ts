@@ -11,6 +11,7 @@ export type { CoverageSpec } from "./runner/coverage.ts"
 export type FiregridHost = Layer.Layer.Success<
   ReturnType<typeof RuntimeFiregridRuntime>
 >
+export type FirelabHost = never
 
 export interface FirelabStopSignal {
   readonly complete: Effect.Effect<void>
@@ -30,7 +31,7 @@ export interface FirelabSimulationDefinition<A, E = unknown> {
   readonly description: string
   readonly host?: (
     env: FirelabHostEnv,
-  ) => Layer.Layer<FiregridHost, E>
+  ) => Layer.Layer<FiregridHost, E> | Layer.Layer<FirelabHost, E>
   readonly channels?: (
     env: FirelabHostEnv,
   ) => ReadonlyArray<ChannelRegistration>
