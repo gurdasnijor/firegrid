@@ -28,6 +28,23 @@ export {
   WaitForTool,
 } from "./Tools.ts"
 export {
+  defaultAgentEventNormalizer,
+  normalizeRawAgentHistory,
+  projectClientReadModels,
+  projectRawAgentHistory,
+  type AgentEventNormalizer,
+  type ClientProjectionApprovalResponse,
+  type ClientProjectionMessage,
+  type ClientProjectionParticipant,
+  type ClientProjectionPermissionRequest,
+  type ClientProjectionSession,
+  type ClientProjectionToolCall,
+  type ClientProjectionTurn,
+  type FluentClientProjection,
+  type FluentClientReadModels,
+  type FluentNormalizedEvent,
+} from "./ClientProjection.ts"
+export {
   type SessionEvent,
   type SessionEventAppended,
   type SessionChildRaceWinnerEvent,
