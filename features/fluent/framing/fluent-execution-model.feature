@@ -11,8 +11,8 @@ Feature: Fluent execution model
     And replay does not re-invoke the model to rediscover the same call
 
   Scenario: Handler is a redrive boundary
-    When a wake is claimed
-    Then a handler materializes stream state and drives progress
+    When Durable Streams delivers or grants work
+    Then a handler materializes stream state and drives product progress
     And the handler returns when the session parks or completes
 
   Scenario: External harness owns the reasoning loop

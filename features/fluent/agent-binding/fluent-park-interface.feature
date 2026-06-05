@@ -6,7 +6,7 @@ Feature: Fluent park interface
 
   Background:
     Given a real harness with Firegrid durable tools available
-    And a fluent session driven by a worker claim
+    And a fluent session driven after Durable Streams delivery or claim
 
   Scenario: Parking records durable suspension before ending the turn
     When the harness invokes a parking durable tool
@@ -21,7 +21,7 @@ Feature: Fluent park interface
 
   Scenario: Resume re-enters natively
     Given the parked wait later resolves
-    When a worker re-drives the session
+    When the fluent post-wake product actor re-drives the session
     Then the bridge resumes or re-enters the native harness
     And the resolved durable result is delivered through the harness's tool path
 

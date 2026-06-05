@@ -17,10 +17,11 @@ Feature: Fluent coordination taxonomy
     And the child decides what to do when it wakes
     And the parent does not synchronously execute the child handler
 
-  Scenario: Wake registry is the single wake mechanism
+  Scenario: Candidate wake facts compose with Durable Streams wake delivery
     When a timer fires, an external event arrives, or a child publishes a result
     Then each source appends a durable change
-    And the wake registry determines which sessions are eligible to redrive
+    And Durable Streams delivers or grants subscribed work
+    And Firegrid records post-wake eligibility or outcome as a durable change
 
   Scenario: Tags name durable offsets
     When a client tags a session state as "before-risky-action"

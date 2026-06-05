@@ -16,10 +16,11 @@ verdict red.
   real spawn-target (real native/ACP agent). A fake adapter/recorder/fake-codec is
   **invalid except for unit tests below the firelab acceptance layer**.
 - **Half 2 — Durable coordination surface.** The agent-facing durable tools
-  (`wait_for`/`wait_until`/`sleep`/`spawn`/`spawn_all`/`execute`) as durable
-  rows + park + re-drive.
-- **Shared substrate.** The engine, fencing, worker loop, and wake/timer source
-  that sit under both halves.
+  (`wait_for`/`wait_until`/`sleep`/`spawn`/`spawn_all`/`execute`) as session
+  stream facts, DS wake delivery, and post-wake product redrive.
+- **Shared substrate.** Durable Streams owns stream storage, producer fencing,
+  named consumers, claim/ack/release, cursors, leases, retry, and webhook wake
+  delivery. Fluent owns only the product step after those primitives fire.
 
 **Coverage guarantee.** Every section of `fluent-firegrid-sdd.md` maps to at
 least one feature — see the **Traceability matrix**. The only deliberate gap is
@@ -76,9 +77,9 @@ red spec localizes which part of the bridge failed.
 | `fluent-durable-wait` | `wait_for`/`wait_any` append `WaitIntent` **before** park; CEL predicate evaluated **during the drive** over `event` + recorded `self`; **`afterOffset` catch-up prevents lost wakeup**; the timeout race is **fenced once** (at-most-once winner). Given-key principle: key by `toolCallId` / `(toolCallId, slotIndex)`. Journal the predicate + matched event + `self` snapshot/reference so replay resolves from the journal, never re-evaluates a moving world or a newer session projection. (Appendix D.3/D.4) | `durableWaitCoverage` + `raceCoverage` |
 | `fluent-durable-sleep` | `sleep`/`wait_until` append timer intent (`TimerScheduled`) **before** park; **no `Clock.sleep`/local timer**; the **timer source materializes `TimerFired`** (unforgeable `timer.fire`); replay resolves from the journal. The one genuinely net-new piece (O5). `sleep`+`wait_for` = one family, two sources. (Part 3 sleep; Appendix D.2) | `durableSleepCoverage` |
 | `fluent-fork-spawn` | `spawn`/`spawn_all` create a child session via **stream fork / child stream**; **producer state resets** on the child; the parent waits on the child's **terminal event / closure** (the cross-session join — the parent cannot inline-join a child fiber). Composite proof: parent harness A can spawn child harness B, the child terminal fact wakes the parent, and both adapters resume safely after kill/restart. `raceCoverage` facet b = the child-cancel-vs-leave policy (O2). (Substrate Commitments; Appendix D.5) | `crossSessionCoverage` (+ `raceCoverage` b) |
-| `fluent-coordination-taxonomy` | `runs`/`toolCalls`/`inbox`/`childStatus`/`wakes`/`tags`/`errors` as State-Protocol change-messages, keyed by given ids. **Addressing is not calling** (`send`/`spawn` address an event; delivery is through the core; recipient decides on its wake). The wake-registry is the single mechanism behind every wake source. (Build order 1; Coordination/ingress) | underpins `durableWait`/`crossSession` |
-| `fluent-session-handler` | `handleSession(wake)` + `driveHarness` re-invoke the **external** harness with a resume context (never `agent.run`): materialise committed stream → build resume context → drive. The harness-resumability dependency is "the one piece of real engineering." (System shape; Build order 2; Appendix E.1/E.5) | `session.drive` span (graded by `workerLoopCoverage`) |
-| `fluent-event-ingress` | Webhook/external event ingest = a **fenced append** into the core; the wake-registry matches `wait_for` predicates and wakes those entities (identical to approvals/tool-results); **duplicate delivery deduped by §5.2.1 producer fencing** (delivery-id). (Coordination/ingress 578–584) | ingest + wait-match trace |
+| `fluent-coordination-taxonomy` | `runs`/`toolCalls`/`inbox`/`childStatus`/`wakes`/`tags`/`errors` as State-Protocol change-messages, keyed by given ids. **Addressing is not calling** (`send`/`spawn` address an event; delivery is through Durable Streams; recipient decides on its wake). Candidate wake facts are product facts; DS delivers/grants work; Firegrid records post-wake eligibility/outcome. (Build order 1; Coordination/ingress) | underpins `durableWait`/`crossSession` |
+| `fluent-session-handler` | `handleSession(wake)` + `driveHarness` re-invoke the **external** harness with a resume context (never `agent.run`): materialise committed stream → build resume context → drive after DS delivery or claim. The harness-resumability dependency is "the one piece of real engineering." (System shape; Build order 2; Appendix E.1/E.5) | product-observable redrive + resume witness |
+| `fluent-event-ingress` | Provider/external event ingest = a **fenced append** into the stream; post-wake Firegrid matching records `wait_matched` facts for eligible waits. **Duplicate delivery deduped by §5.2.1 producer fencing** (delivery-id). Durable Streams webhook wake authentication/callback/retry remains substrate-owned. (Coordination/ingress 578–584) | ingest + wait-match trace |
 
 ---
 
@@ -87,15 +88,15 @@ red spec localizes which part of the bridge failed.
 | Feature file | Asserts (SDD §) | Firelab CoverageSpec |
 |---|---|---|
 | `fluent-engine-substrate-free` | Collapse the DSL onto Effect with **named (not positional) journal keys** → `run` returns a plain `Effect`; `Future`/`Scheduler.drive`/`Awaitable`/`operation.ts`/`current.ts` all **delete**; concurrency + spawn become free. **Durability enters via provided `Journal`/`FencedWriter` Effect.Services at the handler edge; the engine core (the `Effect.gen` bodies) stays substrate-free** — it does not import the old runtime or the durable substrate directly. What-becomes-free: retry/saga/in-process-cancel/serde. (Part 1; Summary) | `replayCoverage` + airgap assertion |
-| `fluent-durable-streams-consumer-substrate` | Adopt Durable Streams named consumers, pull-wake, webhook wake, and idempotent-producer coordination as the wake/redrive substrate. Gate the adopted package with upstream conformance suites: L1 named consumers (register/acquire/ack/release/stale epoch/cursors), L2/B pull-wake (wake stream, claimed event, persisted cursors, lease-expiry re-wake, competing claims), and L2/A webhook wake (signed delivery, callback, ack/done/retry/idle). Fluent-runtime becomes a claimed-wake handler and must not rebuild lease tables, cursor stores, pull queues, webhook retry loops, or task-claim locks. Coordination patterns use producer-fenced first-writer-wins claims and explicit epoch override for recovery. | upstream Durable Streams conformance + Firegrid claimed-wake integration witness |
-| `fluent-worker-redrive` | Pull-wake worker **claims the lease**, materialises session state, **resolves waits**, re-enters the harness, **acks/releases safely** on the server's §7.2/§7.3 machinery (do NOT rebuild the lease); **stale-generation ack is fenced**; `next_wake:true` = the turn loop for free; **no double side-effect**. `acked_offset` is a delivery cursor, not a replay position (replay reads the journal every claim). (Part 3; Appendix B) | `workerLoopCoverage` |
+| `fluent-durable-streams-consumer-substrate` | Adopt Durable Streams named consumers, pull-wake, webhook wake, and idempotent-producer coordination as the wake/redrive substrate. Gate the adopted package with upstream conformance suites: L1 named consumers (register/acquire/ack/release/stale epoch/cursors), L2/B pull-wake (wake stream, claimed event, persisted cursors, lease-expiry re-wake, competing claims), and L2/A webhook wake (signed delivery, callback, ack/done/retry/idle). Durable Streams owns claim/lease/cursor/retry/webhook-wake mechanics. Fluent-runtime only runs the post-claim product step and must not rebuild lease tables, cursor stores, pull queues, webhook retry loops, or task-claim locks. Coordination patterns use producer-fenced first-writer-wins claims and explicit epoch override for recovery. | upstream Durable Streams conformance + Firegrid post-claim integration witness |
+| `fluent-worker-redrive` | Durable Streams **grants the claim/lease**; fluent materialises session state, **resolves waits**, re-enters the harness, and **acks/releases through** the server's §7.2/§7.3 machinery after the durable product outcome is recorded. Fluent does NOT rebuild the lease; stale-generation ack, competing claim, cursor persistence, retry, and `next_wake:true` are DS conformance concerns. `acked_offset` is a delivery cursor, not a replay position (replay reads the journal every claim). (Part 3; Appendix B) | product-observable post-claim redrive witness |
 
 **Upstream substrate assumption.** Durable Streams stream closure, append-after-close
 rejection, fork inheritance, idempotent producer fencing, and subscription
 claim/ack/release generation fencing are dependency conformance, covered by
 `durable-streams` server tests. Fluent firelab specs should only assert our
 product uses those primitives correctly in vertical flows such as durable
-sleep, durable wait, fork spawn, and worker redrive.
+sleep, durable wait, fork spawn, and post-claim redrive.
 
 ---
 
@@ -111,7 +112,7 @@ sleep, durable wait, fork spawn, and worker redrive.
 
 | Feature file | Asserts (SDD §) | Firelab proof |
 |---|---|---|
-| `fluent-control-surface` | External `/entities/:type/:id` control — `send` · `fork` · `tag` · `schedule`(→wake-registry) · `get`/`head`/`delete` — as **product spelling over durable-stream primitives**. `tag` names an offset; `fork` branches a new entity from a prefix (stream *is* the state → fork = copy-a-prefix → "explore from here" / "retry under a changed tool set" / "snapshot before a risky action"). Read plane = the same projection externalised. (External control surface) | control-plane simulation over stream facts |
+| `fluent-control-surface` | External `/entities/:type/:id` control — `send` · `fork` · `tag` · `schedule`(→adopted scheduled source / DS wake integration) · `get`/`head`/`delete` — as **product spelling over durable-stream primitives**. `tag` names an offset; `fork` branches a new entity from a prefix (stream *is* the state → fork = copy-a-prefix → "explore from here" / "retry under a changed tool set" / "snapshot before a risky action"). Read plane = the same projection externalised. (External control surface) | control-plane simulation over stream facts |
 
 ---
 
@@ -120,7 +121,7 @@ sleep, durable wait, fork spawn, and worker redrive.
 | Item | Covers (SDD §) | Status |
 |---|---|---|
 | `fluent-execution-model` | The three axes — **choreography · handler · external-harness**; "you cannot replay the model" → durable unit = the committed tool-call-and-result; "sessions never call each other" → **address ≠ call**; the three differentiators (non-invasive binding · forge-proof firelab · deterministic-replay rigor). (System shape; Execution model) | the framing every feature inherits |
-| `fluent-coverage-oracle` | Stand up the **firelab runner over fluent-firegrid** (`firelab` is the home — the runner is the driver + Control + infra seam). The `HOST_SUBSTRATE` span vocabulary (`journal.step`/`journal.append`/`step.action`(tripwire)/`durable.sleep`/`timer.schedule`/`timer.fire`/`worker.claim`/`worker.ack`/`session.drive`/`race.settle`/`child.spawn`/`cancel.delivered`/`state.cas`/`stream.close`/`sandbox.run` + `wait.register`/`durable.wait`/`child.result`). **Forge-proof lint** (gates name only host-substrate spans; Layer-1 codec events excluded). Each spec = witness + a **mutation harness that must flip red** + a **vacuity check** (absence = an attribute on a span that fires, never `size()==0`). Reuse the firelab oracle (`analyzeCoverage`/AST-lint/vacuity) verbatim. (Appendix C) | harness · partly green-now (oracle exists in `firelab`; the fluent runner + span vocab are net-new) |
+| `fluent-coverage-oracle` | Stand up the **firelab runner over fluent-firegrid** (`firelab` is the home — the runner is the driver + Control + infra seam). Verdicts are product-observable: stream contents, projections, resumed output, approval shapes, and durable outcomes. Diagnostic spans may explain failures but cannot replace `Then` assertions. Any substrate evidence must be emitted by Durable Streams or the host, never forged by the driver. Each spec = witness + a **mutation harness that must flip red** + a **vacuity check**. (Appendix C) | harness · partly green-now (oracle exists in `firelab`; the fluent runner is net-new) |
 
 ---
 
@@ -138,10 +139,10 @@ sleep, durable wait, fork spawn, and worker redrive.
 
 ## Recommended first slice
 
-1. `fluent-durable-sleep` (headline durable-wait gap)
-2. `fluent-durable-wait` (headline durable-wait gap)
-3. `fluent-durable-streams-consumer-substrate` (adopt and prove the DS wake substrate before building worker code)
-4. `fluent-worker-redrive` (product use of DS claim/ack/release)
+1. `fluent-durable-streams-consumer-substrate` (adopt/prove DS dependency path before building post-claim product code)
+2. `fluent-worker-redrive` (post-claim product use after DS claim/ack/release, not a worker substrate)
+3. `fluent-durable-sleep` (headline durable-wait gap)
+4. `fluent-durable-wait` (headline durable-wait gap)
 5. `fluent-agent-adapter-contract` (🔴 non-invasive real-agent binding)
 6. `fluent-native-resume` (🔴 recovery thesis)
 7. `fluent-park-interface` (🔴 the open binding proof)

@@ -6,7 +6,7 @@ Feature: Fluent durable sleep
 
   Background:
     Given a fluent session with a durable journal
-    And a timer source connected to the wake registry
+    And a timer source integrated with Durable Streams wake delivery
 
   Scenario: Timer intent is recorded before the handler parks
     When the handler calls sleep until time "T"
@@ -18,14 +18,14 @@ Feature: Fluent durable sleep
     Given a TimerScheduled record exists for time "T"
     When time "T" arrives
     Then the timer source appends a TimerFired record
-    And the wake registry makes the session eligible for redrive
+    And Durable Streams delivers or grants work for the subscribed session
     And the TimerFired append is distinguishable from a driver-forged observation
 
   Scenario: Sleep resumes from the journal after restart
     Given the handler parked on a TimerScheduled record
     And the process exits before time "T"
-    When a worker claims the wake after TimerFired is appended
-    Then the worker re-drives the handler from the journal
+    When Durable Streams grants a wake claim after TimerFired is appended
+    Then the post-wake product actor re-drives the handler from the journal
     And the sleep resolves from TimerFired
     And no process-local timer state is required
 

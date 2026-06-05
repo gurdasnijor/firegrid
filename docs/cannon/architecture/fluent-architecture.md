@@ -36,7 +36,7 @@ Firegrid-integrated actors read and write that log:
 - the harness adapter records observed agent events;
 - the fluent host records coordination events and resolves waits;
 - clients append user/control intents through an authorized surface;
-- workers append timer, child, and wake results;
+- post-wake source handlers append timer, child, and wake results;
 - projections read the log to render or verify product state.
 
 The raw agent process does not write to Durable Streams directly. A bridge or
@@ -68,46 +68,45 @@ AUTHORING LIBRARY
 └──────────────────────────────────────────────────────────────────────┘
 
 LIVE ACTORS / PROCESSES
-Control and coordination:
-┌────────────────────────────┐   intents / facts   ┌─────────────────────┐
-│ clients, webhooks, peers   │────────────────────▶│ packages/          │
-│ prompt, approval, cancel,  │                     │ fluent-runtime     │
-│ state change, send/fork    │◀───────────────────▶│ fluent host        │
-└────────────────────────────┘   responses / state │ reads + appends L2 │
-                                                   └──────────┬──────────┘
-                                                              │
-                                                              ▼
-                                                   ┌────────────────────┐
-                                                   │ Durable Streams    │
-                                                   │ session log        │
-                                                   │ L2 coordination   │
-                                                   └────────────────────┘
-
-Harness observation:
-┌────────────────────────────┐   drive/resume      ┌─────────────────────┐
-│ packages/fluent-runtime    │────────────────────▶│ adapter / bridge    │
-│ fluent host                │                     │ coding-agents shape │
-└────────────────────────────┘                     └─────────┬───────────┘
-                                                             │ native protocol
-                                                             ▼
-                                                   ┌────────────────────┐
-                                                   │ external harness   │
-                                                   │ Claude/Codex/ACP   │
-                                                   │ owns model loop    │
-                                                   └─────────┬──────────┘
-                                                             │ native events
-                                                             ▼
-                                                   ┌────────────────────┐
-                                                   │ adapter / bridge   │
-                                                   │ appends L1         │
-                                                   └─────────┬──────────┘
-                                                             │
-                                                             ▼
-                                                   ┌────────────────────┐
-                                                   │ Durable Streams    │
-                                                   │ session log        │
-                                                   │ L1 harness events │
-                                                   └────────────────────┘
+Durable boundary:
+┌──────────────────────────────────────────────────────────────────────┐
+│ Durable Streams                                                      │
+│                                                                      │
+│  DS-L0 streams                                                       │
+│    session/entity log: L1 harness facts + L2 Firegrid facts          │
+│    append/read/offset/close/fork + producer fencing                  │
+│                                                                      │
+│  DS-L1/L2 consumer substrate                                         │
+│    named consumers, cursors, leases, claim/ack/release, retry,       │
+│    webhook wake auth/callback/done, pull-wake delivery               │
+└───────────────▲───────────────────────────────┬──────────────────────┘
+                │ append/read                    │ authenticated wake or
+                │                                │ DS-granted claim
+                │                                ▼
+┌───────────────┴──────────────┐      ┌───────────────────────────────┐
+│ packages/fluent-runtime      │      │ packages/fluent-runtime       │
+│ control/source ingress       │      │ post-wake product actor       │
+│                              │      │                               │
+│ client intent -> append      │      │ read offsets, materialize     │
+│ accepted provider event      │      │ evaluate CEL, append L2       │
+│   -> append state fact       │      │ drive/resume adapter          │
+│ peer/child/timer fact        │      │ ack/done through DS only      │
+└───────────────▲──────────────┘      └───────────────┬───────────────┘
+                │                                     │ drive/resume
+                │                                     ▼
+┌───────────────┴──────────────┐      ┌───────────────────────────────┐
+│ clients / providers / peers  │      │ adapter / bridge              │
+│ prompt, approval, cancel,    │      │ coding-agents shape           │
+│ provider deliveries, sends   │      │ appends L1 observations       │
+└──────────────────────────────┘      └───────────────┬───────────────┘
+                                                      │ native protocol
+                                                      ▼
+                                      ┌───────────────────────────────┐
+                                      │ external harness              │
+                                      │ Claude/Codex/ACP/cloud/etc.   │
+                                      │ owns model loop               │
+                                      │ writes no Durable Streams     │
+                                      └───────────────────────────────┘
 
 Read models:
 ┌────────────────────────────┐        read         ┌─────────────────────┐
@@ -116,11 +115,12 @@ Read models:
 └────────────────────────────┘                     └─────────────────────┘
 ```
 
-The repeated Durable Streams boxes are the same session log, split by lane to
-avoid crossing arrows. The arrows into Durable Streams are owned integration
-boundaries. The raw agent harness speaks only its native protocol; the
-adapter/bridge records Layer 1 events. `packages/fluent-runtime` records and
-consumes Layer 2 coordination events.
+The raw agent harness speaks only its native protocol and writes no Durable
+Streams records. The adapter/bridge records Layer 1 observations. Durable
+Streams owns the durable stream and wake substrate. `packages/fluent-runtime`
+owns product ingress and post-wake product work: append accepted facts, evaluate
+Firegrid semantics, drive/resume the adapter, append Layer 2 outcomes, and
+ack/done through Durable Streams only after the durable outcome is recorded.
 
 ## Substrate Layer Architecture
 
@@ -129,6 +129,15 @@ lean on:
 `https://github.com/durable-streams/durable-streams/pull/346`.
 To avoid ambiguity with Firegrid's session-event layers, this document names the
 substrate layers `DS-L0`, `DS-L1`, and `DS-L2`.
+
+Durable Streams PR #343 is the implementation/conformance candidate for this
+substrate:
+`https://github.com/durable-streams/durable-streams/pull/343`.
+Source-checkout conformance is green against the real server implementation at
+commit `5f3bae712a82219608138a53e60a223c2a7dd43c`: upstream
+`packages/server/test/conformance.test.ts` passed `743/743` while the upstream
+Vitest config resolved `@durable-streams/server` to `packages/server/src`.
+That proves the source path, not the package path.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
@@ -150,9 +159,9 @@ Firegrid maps onto that substrate as follows.
 | Durable Streams layer | Fluent use | Firegrid-owned behavior |
 |---|---|---|
 | `DS-L0` core stream | Session log and source logs | Event schemas, session semantics, wait predicate meaning |
-| `DS-L1` named consumer | One or more stable consumers per active session or worker role | What a claimed wake does after the consumer is acquired |
-| `DS-L2/A` webhook wake | Serverless wake delivery to a fluent host endpoint | Verification, event ingestion, wait matching, redrive, ack timing |
-| `DS-L2/B` pull-wake | Worker fleet consuming a wake stream and racing to acquire | Worker process implementation and host invocation |
+| `DS-L1` named consumer | One or more stable consumers per active session or worker role | Product work to run after Durable Streams grants a claim |
+| `DS-L2/A` webhook wake | Authenticated serverless wake delivery to a fluent host endpoint | Product work after an authenticated DS wake: materialize, match, redrive, append outcome |
+| `DS-L2/B` pull-wake | Worker fleet receiving DS-granted claims from a wake stream | Product work after a claim: materialize, match, redrive, append outcome |
 
 The important split is: Durable Streams owns consumer cursors, epoch fencing,
 leases, heartbeat/ack/release, retry, and wake delivery. `packages/fluent-runtime`
@@ -160,7 +169,58 @@ owns the product action after a wake is claimed: materialize the session stream,
 match waits, redrive the harness, append Layer 2 facts, then ack only after the
 durable outcome is recorded.
 
-### What PR #346 Solves For Fluent
+### Substrate Ownership Rule
+
+If Durable Streams exposes a primitive for a concern, fluent-runtime must not
+rebuild that concern under a Firegrid name. A missing primitive in the selected
+package is a substrate dependency problem: adopt the maintained fork, wait for
+the upstream package, or explicitly mark the feature blocked. It is not
+permission to implement a parallel lease, cursor, retry, queue, or webhook
+delivery system in fluent-runtime.
+
+Firegrid may bind product semantics after the substrate primitive fires. That is
+the only allowed layer boundary:
+
+```text
+Durable Streams primitive
+  append/read/close/fork · producer fencing · consumer claim/ack/release
+  consumer cursor · lease · retry · webhook wake auth/callback/done
+      │
+      ▼
+Firegrid product step
+  decode session facts · evaluate CEL · record L2 outcome
+  drive/resume adapter · feed committed tool result · project read models
+```
+
+| Concern | Substrate owner | Firegrid-owned work | Forbidden fluent-runtime build |
+|---|---|---|---|
+| Stream storage | Durable Streams append/read/offset/close/fork | Define session/entity fact schemas and projection semantics | Alternate session log, side DurableTable as authoritative truth, terminal side table |
+| Idempotent append | Durable Streams producer fencing | Choose producer ids, epochs, and sequence policy for product facts | Local dedup table or task lock replacing producer fencing |
+| Consumer ownership | Durable Streams named consumers and epoch fencing | Decide what product action runs after a claim is granted | Worker lease table, generation table, task-owner lock |
+| Consumer cursor | Durable Streams acknowledged offsets | Read the provided offsets and materialize facts | Separate durable cursor store for subscribed streams |
+| Pull wake | Durable Streams pull-wake claim/ack/release | Post-claim materialize/evaluate/append/ack-after-durable-result | Custom pull queue, competing-claim algorithm, stale-lease scanner |
+| Webhook wake | Durable Streams webhook signing-key discovery, signature check, callback, ack/done, retry, idle transitions | HTTP endpoint body that performs the product step after authenticated wake delivery | Webhook wake signing, callback lifecycle, retry loop, done/idling state machine |
+| Provider event ingress | Provider/source adapter accepts or rejects the provider delivery; Durable Streams producer fencing dedups the append | Map accepted delivery to a queryable state-change fact and candidate wake | Treat provider delivery as a Durable Streams wake protocol or rebuild DS webhook delivery for providers |
+| Timer wake | Durable Streams or adopted substrate scheduled source, if supplied | Convert a fired schedule into a timer/state fact and redrive | Process-local sleep, timer lease table, timer retry queue; if no scheduled source exists, mark a source integration gap |
+| Child/session fork | Durable Streams fork/close/producer-boundary primitives where applicable | Define child lifecycle facts and parent wait semantics | Copy-on-write session store or child routine/reclaim table |
+| MCP/tool binding | Firegrid edge schemas and auth; fluent-runtime product services | Translate observed tool calls to L2 facts and return committed results | Durable coordination hidden inside the MCP host |
+
+Design artifacts backing this ownership split:
+
+- Durable Streams PR #343: named consumers, pull-wake, webhook wake, and
+  conformance tests for the adopted server surface.
+- Durable Streams PR #346 and `COORDINATION-PATTERNS.md`: layered consumer
+  vocabulary and coordination patterns.
+- Durable Streams protocol §4.2: stream fork and fork-boundary producer-state
+  behavior.
+- Durable Streams protocol §5.2.1: idempotent producers, producer sequence, and
+  epoch fencing.
+- Durable Streams protocol §6.5: webhook signing key discovery for Durable
+  Streams webhook wake delivery.
+- Durable Streams protocol §7.2/§7.3: pull-wake claim/ack/release and generation
+  fencing.
+
+### What The Consumer Substrate Solves For Fluent
 
 The layered consumer model removes several pieces of machinery fluent should not
 rebuild:
@@ -178,15 +238,33 @@ rebuild:
 
 The remaining Firegrid work is smaller and more specific: define the session
 event schemas, bind CEL `wait_for` predicates to state-change facts, implement
-the host's claimed-wake handler, and prove real harness resume without duplicate
-side effects.
+the host's post-claim product handler, and prove real harness resume without
+duplicate side effects.
 
-This mapping is conditional on Durable Streams shipping and us adopting the
-`DS-L1`/`DS-L2` surface with conformance coverage. Until that is true,
-fluent-runtime must not build bypass infrastructure that competes with the
-substrate: no local lease table, cursor store, pull queue, webhook retry loop, or
-task-claim lock. The correct interim state is "blocked on substrate adoption,"
-not "rebuild the substrate inside fluent-runtime."
+This mapping is no longer purely speculative: the upstream source checkout has
+passed conformance. The remaining adoption risk is dependency packaging and
+maintenance. The latest published `@durable-streams/server` package available to
+Firegrid at the time of this document does not expose the PR #343 consumer
+surface, so package-integrated Firegrid tests cannot yet run it through normal
+workspace dependency resolution.
+
+Firegrid's interim substrate source is the maintained fork branch:
+`https://github.com/gurdasnijor/durable-streams/tree/firegrid/pr343-consumer-substrate`.
+It was seeded from `5f3bae712a82219608138a53e60a223c2a7dd43c` and should be
+kept current with upstream `main` until the upstream package path is available.
+
+| Adoption state | Status | Evidence or next action |
+|---|---|---|
+| Source conformance | Green | `743/743` upstream conformance tests passed against real PR #343 server source. |
+| Published package path | Pending | The available package does not expose the consumer routes/surface needed by fluent. |
+| Firegrid fork path | Interim source | Maintain `gurdasnijor/durable-streams@firegrid/pr343-consumer-substrate` and rerun conformance after rebases. |
+| Firegrid integration witness | Pending | Prove a fluent post-claim actor uses a Durable Streams-granted claim, materializes facts, appends Layer 2 outcome, and ack/dones through the substrate after the durable result. |
+
+Until the package path or maintained fork path is integrated, fluent-runtime must
+not build bypass infrastructure that competes with the substrate: no local lease
+table, cursor store, pull queue, webhook retry loop, or task-claim lock. The
+correct interim state is "blocked on substrate adoption," not "rebuild the
+substrate inside fluent-runtime."
 
 ## RFC Delivery Shape
 
@@ -294,7 +372,7 @@ The one-log design removes cross-store reconciliation, not this intra-log lift.
 | Client / control plane | User intents, prompt/cancel/approval responses, addressed sends | Projections and current session state |
 | Fluent host | Layer 2 coordination events, durable tool results, terminal records | Session/turn state before wake handling and redrive |
 | Event ingress | Fenced external state-change facts | Pending waits through fluent-runtime sources |
-| Timer/child workers | Timer-fired, child-complete, wake-result records | Pending scheduled timers, child status, wake claims |
+| Post-wake source handlers | Timer-fired, child-complete, wake-result records after substrate delivery or claim | Product source state needed to derive those facts |
 | Projection/UI | Nothing authoritative | Layer 1 and Layer 2 logs projected into read models |
 | Firelab | Usually nothing authoritative except scenario setup | Product-observable stream facts and projections |
 
@@ -403,10 +481,13 @@ Durable Streams facts.
 
 An external producer is any actor outside the parked harness turn that appends a
 candidate wake fact. Examples include webhook ingress, approval UIs, tool
-callbacks, timer workers, child-session workers, or peer sessions.
+callbacks, timer source actors, child-session actors, or peer sessions.
 
 External producers do not decide the session outcome. They append fenced facts.
 The fluent host evaluates waits, records matches, and redrives the session.
+If an external producer runs as a worker, the Durable Streams consumer substrate
+owns delivery, lease, cursor, retry, and competing-claim behavior. Firegrid owns
+only the product handler that runs after delivery or claim.
 
 Producer fencing and wake-claim fencing are separate. External producers append
 under Durable Streams producer fencing so retries are idempotent. The fluent
@@ -427,16 +508,16 @@ the match/resolution to the same stream, then redrive from that recorded fact.
 Webhook ingress is a specialized external producer. The legacy
 `packages/runtime/src/verified-webhook-ingest` path verifies a product-owned HTTP
 request and writes a `VerifiedWebhookFactTable` row. In fluent, the equivalent
-verified fact is a session-stream state-change event; no side DurableTable is the
+accepted fact is a session-stream state-change event; no side DurableTable is the
 authoritative store.
 
 ```text
-product HTTP route / Worker / webhook subscription callback
-  owns route, raw body capture, auth token, provider secret, response policy
+product HTTP route / Worker
+  owns route, raw body capture, provider-specific acceptance policy
       │
       ▼
-source verifier
-  verify signature, decode payload, derive delivery id and event key
+source adapter
+  accept or reject delivery, decode payload, derive delivery id and event key
       │
       ▼
 fluent-runtime EventIngress
@@ -466,16 +547,21 @@ that recorded match; it does not rebuild `self` from a newer projection.
 
 Durable Streams subscription delivery supplies the transport mechanisms:
 webhook delivery/callback can deliver a wake to an HTTP endpoint, and pull-wake
-claim/ack/release with generation fencing/leases can drive worker redrive. The
-Firegrid-specific mechanism above is what the callback or claimed worker does
-with that delivery: verify if needed, append the session fact, match waits,
-redrive, then ack only after the durable result is recorded.
+claim/ack/release with generation fencing/leases can drive redrive scheduling.
+The Firegrid-specific mechanism above is what the post-wake product actor does
+with that delivery: append or derive the session fact, match waits, redrive, then
+ack only after the durable result is recorded.
+
+Durable Streams webhook wakes are authenticated at the substrate boundary.
+Webhook signing-key discovery, callback signatures, generation fencing, callback
+ack/done, retry, and idle transitions belong to Durable Streams, not
+fluent-runtime.
 
 Two webhook meanings must stay separate:
 
 - **Provider webhook**: GitHub, Stripe, Linear, or another outside product calls
-  a Firegrid-owned/product-owned HTTP route. Firegrid verifies it and appends a
-  state-change fact.
+  a Firegrid-owned/product-owned HTTP route. The source adapter applies that
+  provider's acceptance policy and appends a state-change fact.
 - **Durable Streams webhook wake**: the Durable Streams server notifies a fluent
   host endpoint that a named consumer has pending work. The host then reads the
   stream and acks/dones through the substrate callback.
@@ -488,8 +574,8 @@ The production wake path is:
 
 1. A durable wake source arrives: input append, state change, timer, child result,
    approval, or webhook.
-2. The fluent host claims or receives the wake through the Durable Streams
-   substrate.
+2. The Durable Streams substrate delivers or grants a wake claim to the fluent
+   host.
 3. `handleSession(wake)` materializes the session stream.
 4. The host reconstructs the resume/native artifact through the adapter.
 5. The host drives the external harness, not `agent.run`.
@@ -529,10 +615,12 @@ implemented. The first load-bearing proofs are:
 
 | Gap | Required proof |
 |---|---|
+| Substrate dependency path | Firegrid depends on either a published Durable Streams package or the maintained fork branch that exposes PR #343 consumer APIs, and the upstream conformance suite runs in the Firegrid dependency context. |
+| Firegrid post-claim witness | A fluent post-claim actor accepts a substrate-granted wake claim, reads from the provided offsets, materializes session facts, appends the Layer 2 outcome, and acks/dones only after that durable outcome is recorded. |
 | DS-native durable wait | `wait_for` appends intent before park, wakes through a named consumer, records the matched fact, and redrives. |
-| DS-native durable timer | A scheduled source appends or wakes through the substrate without process-local sleep. |
+| DS-native durable timer | A scheduled source appends or wakes through the substrate without process-local sleep; if the fork does not supply scheduled wake sources, the missing piece is a source integration, not a fluent lease/cursor/retry system. |
 | Real harness resume | Killing and resuming a real Claude/Codex/ACP harness does not duplicate already-observed side effects. |
-| Provider webhook ingress | A verified external delivery becomes a queryable session-stream fact and can wake a CEL predicate. |
+| Provider event ingress | An accepted external delivery becomes a queryable session-stream fact and can wake a CEL predicate; Durable Streams webhook wake authentication remains substrate-owned. |
 | MCP/tool binding | Harness tool calls are observed in Layer 1, resolved by fluent-runtime as Layer 2 facts, and returned through the adapter. |
 | Cancel/interrupt safety | Cancel during a parked wait and interrupt during an active harness turn do not corrupt the session, drop owed native responses, or duplicate side effects on subsequent redrive. |
 | Cross-harness spawn | A parent session running harness A spawns a child session running harness B; the child terminal fact wakes the parent; both adapters resume safely after kill/restart. |
