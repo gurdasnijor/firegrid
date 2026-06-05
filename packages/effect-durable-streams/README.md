@@ -111,9 +111,25 @@ Effect.runPromise(
 
 `DurableStreamClientLayer` is the bring-your-own-`HttpClient` variant.
 `jsonBatches()` exposes per-response `{ items, offset, upToDate, cursor }`
-metadata; producers add `close` / `pendingCount` / `epoch` / `nextSeq`. This
-facade is a thin delegation — the curried `DurableStream.define(...)` form
-above remains the primary surface and has identical performance.
+metadata; producers add `close` / `pendingCount` / `epoch` / `nextSeq`.
+
+### Which surface?
+
+The two are **intentional siblings**, both thin delegations over the same
+`Reader`/`Writer`/`Producer` core (identical performance) — not redundant:
+
+- **`DurableStream.define(...)` — the primary low-level / library-runtime
+  idiom.** Schema mandatory; pre-binds a **full `Endpoint`** so `headers`,
+  `params`, `onError` (auth-refresh / signed-URL renewal), `onErrorMaxRetries`,
+  and `retrySchedule` flow through every operation; `HttpClient` threads
+  through `R` (provide once at the edge). Use this inside reusable
+  services/runtime layers — it's what `fluent-runtime` and `fluent-firegrid`
+  use, because they accept a caller-supplied `Endpoint` with its policy.
+- **`DurableStreamClient` — the optional app / edge facade.** URL-keyed,
+  optional schema, batteries-included layer, `HttpClient` captured in the
+  layer. Best for scripts, examples, simple/untyped clients, and raw-stream
+  tooling. It takes a `url` + per-call headers, **not** a full `Endpoint`, so
+  for endpoints that need `onError`/`retrySchedule` policy, prefer `define`.
 
 ## When Not To Use This Package
 

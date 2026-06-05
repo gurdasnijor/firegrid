@@ -209,6 +209,15 @@ Per PO direction — "copy the better ergonomics of the library instead" + a des
 
 **Verification:** `test/conformance/client-facade.test.ts` (6 tests: raw append + `Uint8Array`, `jsonBatches` metadata, `withSchema` typed round-trip, producer `Stream.run` + accessors + `close`-then-append-fails, typed `NotFound`). Full suite **76/76**. Gates green: tsc, eslint (`--max-warnings 0`), knip, dep-cruiser, jscpd (0 clones), effect-language-service (0 errors), and `@firegrid/fluent-firegrid` (the `workspace:*` consumer) typechecks unchanged — no trap from the service-Tag addition.
 
+### Why keep `DurableStream.define` too? (surface decision — adjudicated)
+
+The facade overlaps `define`, so we explicitly asked: consolidate to one surface (delete `define`) or keep both? Decision: **keep both as intentional siblings** (Agent1 design review, 2026-06-05, source-grounded), driven by two facts:
+
+1. **`define` is not redundant.** It's a tiny `Endpoint + Schema → Bound` builder, and the load-bearing part is the **full `Endpoint`**: `headers`, `params`, `onError` (+ `onErrorMaxRetries`), and `retrySchedule` thread through the entire `Reader`/`Writer` stack. The facade's `endpointOf(url, headers)` drops everything except URL + per-call headers — materially less.
+2. **`define` has real production consumers** — `fluent-runtime/src/Store.ts` (×2), `fluent-firegrid/src/durable-journal.ts` (which accepts a caller-supplied `Endpoint`), plus `effect-durable-operators/src/DurableTable.ts`. These are library/runtime layers, not app scripts; forcing the service-Tag idiom onto them would either lose endpoint policy or force the facade to grow a second "bound endpoint" API that just re-creates `define`. Migrating them is also out of tf-q1j3's scope.
+
+Positioning (now reflected in the README): **`define` = primary low-level typed core (library/runtime idiom)**; **`DurableStreamClient` = optional app/edge facade**. Consolidation is deferred — and if ever pursued it should be **"C-lite" (a bound `client.endpoint(endpoint).withSchema(schema)` form), not deletion of `define`**: once a bound facade preserves `onError`/`retrySchedule`/`params` it is "`define` plus a captured `HttpClient`," so collapsing buys less API text, not less conceptual surface. Revisit only when real production code wants the service-Tag style **and** the facade supports a full `Endpoint`.
+
 **Facade overhead (perf evidence):** the facade delegates to the same core, so per-op cost is within noise. Median ms, same server/runtime (`test/bench/client-facade.bench.ts`, plus a tsx timing harness):
 
 | Operation | `define(...)` | facade |
