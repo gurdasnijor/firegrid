@@ -33,6 +33,20 @@ export {
 } from "./Api.ts"
 export { FluentRuntimeServerLive } from "./Server.ts"
 export {
+  FluentSources,
+  FluentSourcesLive,
+  type AlreadyFiredTurnTimer,
+  type AlreadyMatchedTurnWait,
+  type FireDueTurnTimersInput,
+  type FireDueTurnTimersResult,
+  type FiredDueTurnTimer,
+  type MatchPendingTurnWaitsInput,
+  type MatchPendingTurnWaitsResult,
+  type MatchedTurnWait,
+  type PendingTurnTimer,
+  type UnmatchedTurnWait,
+} from "./Sources.ts"
+export {
   FluentRuntimeError,
   FluentStore,
   FluentStoreLive,

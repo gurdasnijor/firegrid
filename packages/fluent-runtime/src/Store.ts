@@ -334,6 +334,19 @@ const evaluateWaitPredicate = (
       }),
   })
 
+const isAfterOffset = (
+  matchedOffset: string,
+  afterOffset: string,
+): Effect.Effect<boolean, FluentRuntimeError> =>
+  Effect.try({
+    try: () => BigInt(matchedOffset) > BigInt(afterOffset),
+    catch: (cause) =>
+      new FluentRuntimeError({
+        message: "Failed to compare wait offsets",
+        cause,
+      }),
+  })
+
 const findLastEvent = <A extends TurnEvent>(
   events: ReadonlyArray<TurnEvent>,
   predicate: (event: TurnEvent) => event is A,
@@ -715,6 +728,13 @@ export const makeFluentStore = (
         return yield* new FluentRuntimeError({
           message: `Missing durable wait registration for ${input.waitId}`,
         })
+      }
+      const candidateIsAfterRegistration = yield* isAfterOffset(
+        input.matchedOffset,
+        registered.afterOffset,
+      )
+      if (!candidateIsAfterRegistration) {
+        return { _tag: "NotMatched" as const, turn, registered }
       }
       const matched = yield* evaluateWaitPredicate(
         registered.predicate,

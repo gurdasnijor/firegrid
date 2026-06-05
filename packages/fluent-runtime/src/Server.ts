@@ -1,6 +1,7 @@
 import { FetchHttpClient, HttpApiBuilder } from "@effect/platform"
 import { Layer } from "effect"
 import { FluentRuntimeApiLive } from "./Api.ts"
+import { FluentSourcesLive } from "./Sources.ts"
 import { FluentStoreLive, type StoreConfig } from "./Store.ts"
 
 /**
@@ -32,6 +33,7 @@ import { FluentStoreLive, type StoreConfig } from "./Store.ts"
 export const FluentRuntimeServerLive = (config: StoreConfig) =>
   HttpApiBuilder.serve().pipe(
     Layer.provide(FluentRuntimeApiLive),
+    Layer.provideMerge(FluentSourcesLive),
     Layer.provideMerge(FluentStoreLive(config)),
     Layer.provide(FetchHttpClient.layer),
   )
