@@ -5,6 +5,9 @@
 The published-package path is unavailable, but the source-checkout conformance
 path is executable.
 
+The Firegrid fork branch is now rebased onto upstream `main` and green at
+`9116edc55f7a989ae2c75f872364c946a1409eeb`.
+
 Firegrid currently depends on `@durable-streams/server@0.3.7`, and npm reports
 `0.3.7` as the latest published version. That package does not expose the
 Durable Streams PR #343 `/consumers` API. This is only a package-path blocker.
@@ -122,8 +125,9 @@ Firegrid fork:
 - URL: `https://github.com/gurdasnijor/durable-streams`
 - Branch: `firegrid/pr343-consumer-substrate`
 - Seed SHA: `5f3bae712a82219608138a53e60a223c2a7dd43c`
+- Current rebased SHA: `9116edc55f7a989ae2c75f872364c946a1409eeb`
 - Upstream base checked: `https://github.com/durable-streams/durable-streams`
-  `main`
+  `main` at `82f9963a`
 
 Fork checkout commands:
 
@@ -144,14 +148,26 @@ git -C /tmp/gurdasnijor-durable-streams-firegrid-pr343 \
 Fork status:
 
 ```text
-HEAD: 5f3bae712a82219608138a53e60a223c2a7dd43c
-Ahead/behind upstream/main: 2	28
+HEAD: 9116edc55f7a989ae2c75f872364c946a1409eeb
+Ahead/behind upstream/main: 2	0
 ```
+
+The fork branch was rebased onto upstream `main`; the previous broad merge
+conflicts were resolved by preserving current upstream metadata, storage,
+reserved subscription, state, client, Caddy, and workflow changes, then layering
+the PR #343 TypeScript server consumer substrate and conformance files on top.
+The branch was pushed with `--force-with-lease` because the rebase rewrote the
+old fork head.
 
 Fork conformance command:
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm --filter @durable-streams/client build
+pnpm --filter @durable-streams/state build
+pnpm --filter @durable-streams/server-conformance-tests typecheck
+pnpm --filter @durable-streams/server-conformance-tests build
+pnpm --filter @durable-streams/server typecheck
 pnpm exec vitest run --project server \
   packages/server/test/conformance.test.ts \
   --reporter=verbose
@@ -161,8 +177,8 @@ Fork conformance result:
 
 ```text
 Test Files  1 passed (1)
-Tests       743 passed (743)
-Duration    99.73s
+Tests       725 passed (725)
+Duration    76.98s
 ```
 
 As with the direct upstream source proof, the fork's Vitest config aliases
@@ -172,87 +188,53 @@ package dependency and not a mock.
 
 ## Fork Merge Status
 
-Attempted:
+Resolved. The fork branch is now up to date with upstream `main` and carries
+two commits on top:
+
+```text
+9116edc5 feat: implement layer consumer spec & webhooks
+33a81e1d docs: introduce layered consumer spec into the protocol
+82f9963a upstream/main
+```
+
+Key resolution choices:
+
+- `PROTOCOL.md` stayed on upstream `main` to preserve the newer reserved
+  subscription protocol. PR #343's long-form protocol text remains in
+  `docs/layered-consumer-spec.md` and `docs/webhooks-rfc.md`.
+- PR #343 TypeScript server L1/L2 substrate was preserved:
+  `consumer-manager.ts`, `consumer-routes.ts`, `consumer-store.ts`,
+  `consumer-types.ts`, `pull-wake-manager.ts`, `webhook-manager.ts`,
+  `webhook-routes.ts`, `webhook-store.ts`, `webhook-telemetry.ts`, and
+  `webhook-types.ts`.
+- Upstream reserved subscription APIs stayed mounted under `__ds`; PR #343
+  `/consumers` routes and direct webhook wake paths were added alongside them.
+- The crypto module now supports both upstream Ed25519/JWKS webhook signatures
+  and PR #343 HMAC webhook-secret signatures.
+- Old PR branch CI/example/client/state/Caddy churn was dropped in favor of
+  upstream `main`; only the server/conformance substrate needed for Firegrid's
+  proof remains.
+
+Focused type validation:
 
 ```sh
-git -C /tmp/gurdasnijor-durable-streams-firegrid-pr343 \
-  merge --no-edit upstream/main
+pnpm --filter @durable-streams/client build
+pnpm --filter @durable-streams/state build
+pnpm --filter @durable-streams/server-conformance-tests typecheck
+pnpm --filter @durable-streams/server-conformance-tests build
+pnpm --filter @durable-streams/server typecheck
 ```
 
-Result: broad conflict set; merge aborted. This is not a narrow substrate-only
-merge.
-
-Conflict map:
-
-```text
-.github/workflows/ci.yml
-.github/workflows/client-tests.yml
-.gitignore
-PROTOCOL.md
-package.json
-packages/caddy-plugin/handler.go
-packages/caddy-plugin/webhook/crypto.go
-packages/caddy-plugin/webhook/manager.go
-packages/caddy-plugin/webhook/routes.go
-packages/caddy-plugin/webhook/store.go
-packages/caddy-plugin/webhook/types.go
-packages/client/src/idempotent-producer.ts
-packages/client/test/idempotent-producer.test.ts
-packages/server-conformance-tests/src/index.ts
-packages/server/src/crypto.ts
-packages/server/src/file-store.ts
-packages/server/src/index.ts
-packages/server/src/log.ts
-packages/server/src/server.ts
-packages/server/src/types.ts
-packages/state/package.json
-packages/state/src/index.ts
-packages/state/src/stream-db.ts
-pnpm-lock.yaml
-scripts/bench-reads.ts
-scripts/bench-streams.ts
-```
-
-Relevant upstream commits behind `main` include:
-
-```text
-82f9963a ci: Version Packages (#384)
-72e168d5 fix(state): mark @tanstack/db peer dependency as optional (#383)
-cdb142e2 feat(state)!: move TanStack DB surface to @durable-streams/state/db subpath (#382)
-f380bcaf fix(caddy): full conformance coverage + soft-delete, fork content-type, and live SSE close bugs (#376)
-f9aff7d3 feat(server): Stream-Fork-Sub-Offset for arbitrary-position forks (#347)
-92c08215 fix: serialize auto-claim producer batches (#371)
-5f02156b feat: add reserved subscription APIs (#361)
-df5d78ba fix(server): flatten file-backed stream storage (#360)
-346bc426 feat: add producer headers and configurable live mode for StreamDB (#353)
-```
-
-Minimal patch plan for fork maintenance:
-
-1. Resolve non-product metadata first: workflow files, `package.json`, and
-   `pnpm-lock.yaml`.
-2. Preserve PR #343's explicit L1 consumer substrate files:
-   `consumer-manager.ts`, `consumer-routes.ts`, `consumer-store.ts`,
-   `consumer-types.ts`, `pull-wake-manager.ts`, and the PR #343 conformance DSLs.
-3. Reconcile overlap with upstream `#361` reserved subscription APIs without
-   replacing PR #343 `/consumers` routes. Treat `#361` as adjacent/older
-   subscription work, not the L1 named-consumer proof API.
-4. Rebase server storage changes from upstream `#360`, `#347`, `#371`, and
-   `#376` underneath PR #343 server changes, then rerun the same 743-test
-   conformance command.
-5. Reconcile state package `@tanstack/db` movement (`#382`, `#383`) separately
-   from server consumer mechanics.
-
-Until that maintenance branch is resolved, the reproducible substrate
-dependency is the fork branch pinned to
-`5f3bae712a82219608138a53e60a223c2a7dd43c`.
+Result: all focused type/build checks passed.
+`pnpm install --frozen-lockfile` was re-run after the fork push and passed
+against the updated fork lockfile.
 
 ## Dependency Strategy
 
 Short term:
 
 - Treat `gurdasnijor/durable-streams#firegrid/pr343-consumer-substrate` at
-  `5f3bae712a82219608138a53e60a223c2a7dd43c` as Firegrid's reproducible
+  `9116edc55f7a989ae2c75f872364c946a1409eeb` as Firegrid's reproducible
   source substrate proof.
 - Keep Firegrid's in-repo package-integrated test skipped until Firegrid can
   consume that fork as a package artifact or until upstream PR #343 lands.
