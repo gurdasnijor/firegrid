@@ -125,6 +125,11 @@ Three properties keep a green verdict honest:
    the verdict flips to not-covered. A gate with no negative control is suspect.
    (Negative controls are run manually today — tamper, run, revert.)
 
+These three properties forge-proof *what* a gate observes and *on whose side*;
+they say nothing about *what caused* it. For a sim that claims a Gherkin/product
+scenario, that causal question is decisive: a green gate set proves the substrate
+ran, not that an external caller made it run. See "Acceptance vs workbench" below.
+
 Read the **instrumentation map** the oracle prints (`simulate gaps [run]`) on
 every run: an `unknown` host span is new instrumentation to classify in
 `HOST_SUBSTRATE_*`; an unfired host-substrate span you expected, or a behavior
@@ -164,6 +169,82 @@ choreography toolkit), and the `client-sdk` driver prompts a session so a
 downstream ACP agent *discovers and calls* a Firegrid-surfaced tool — verified
 from the wire/trace, written up as a prose finding. Live-adapter runs are
 env-gated (the `FIREGRID_UKV_RUN_ACP_LIVE` precedent).
+
+## Acceptance vs workbench (what a green verdict may claim)
+
+A green verdict means *the real production path ran*. It does **not**, by itself,
+say *who made it run*. That distinction decides what a sim is allowed to claim.
+
+**Acceptance sim — proves a Gherkin/product scenario.** The **driver** must
+stimulate the public/external ingress, and the production behavior must happen as
+a *causal consequence* of that external stimulus. The host may stand up, serve,
+and compose the production surface — it is the deployment of the system under test
+— but the host **must not directly drive the target behavior**. If the host calls
+the production entrypoint itself and the driver only observes the result, the sim
+has proved that the substrate works *when invoked* (package integration), not that
+an external caller can reach the behavior through the public seam. Only an
+acceptance sim may cite a `.feature` scenario as satisfied.
+
+**Workbench / package-integration sim — proves dynamics or wiring.** Host
+self-drive is legitimate here: a workbench sim (the pattern above), or an
+integration sim that exercises a production tier from the host side, proves the
+tier's internal dynamics and contract. That is real and valuable, but it **must
+not claim Gherkin scenario satisfaction**. Its finding and PR must say "package
+integration proven, not product acceptance," and the ledger entry stays `partial`
+for the external-ingress scenario until an acceptance sim exists.
+
+**Gates over host-substrate spans are necessary but not sufficient.** The
+forge-proof rules (name + side) keep a gate honest about *what fired and on whose
+side*; they say nothing about *what caused it*. An acceptance verdict additionally
+requires the gates to prove a **causal path from the external ingress to the
+production substrate behavior** — the driver's ingress is the cause, the
+host-substrate span is its effect, in the same session, in order. Until trace
+context propagates end-to-end across the Durable Streams hop (tracked as
+**`tf-hqya.1`**; see "Trace discipline" on one-trace-per-operation), that chain is
+not yet provable as a single gated parent/child path. In the interim:
+
+- the driver must still *drive* the public ingress (not merely observe a host-made
+  effect), and
+- the reviewer must verify the causal link by inspection — the driver's ingress
+  action and the host-substrate effect name the same entity/session, and no host
+  fiber drove the behavior independently — and the PR must state this is a
+  *reviewed* causal link, not yet a gated one.
+
+A gate set that passes without the driver having stimulated the ingress is a
+workbench result mislabeled as acceptance. When `tf-hqya.1` lands, fold the causal
+parent/child into a `gate` and drop the manual review step.
+
+### Cautionary example (#977, fluent control surface)
+
+PR #977 shipped a real, valuable slice: a production-shaped `FluentControlSurface`
+sending an addressed input through `FluentStore` to real Durable Streams, with
+`coverage.gates` (`send_accepted`, `send_appended_to_ds`, …) green over
+host-substrate spans. The gates were honest — the substrate really appended. But
+the **host** drove the send (the load-bearing gate read "host drove the
+production-shaped fluent control surface") while the **driver only read the entity
+stream** to observe the result (`driver_observed_entity_stream`, report-only). So
+the green verdict proved package integration over real DS — not the Gherkin "Send
+appends addressed input" scenario, which is about an *external* caller's input
+reaching the substrate. The lesson is not to distrust the gates; it is to classify
+that sim as workbench (ledger `partial`) until an acceptance sim drives the public
+ingress and the causal path (driver ingress → substrate append) is shown.
+
+### Before citing a scenario (PR checklist)
+
+A PR that claims a `.feature` scenario is satisfied must call out, in its
+evidence (mirrored by the `task-exit` PR scaffold's "Acceptance classification"
+block):
+
+- **Public/external ingress used** — the `@firegrid/client-sdk` / external
+  entrypoint the driver called.
+- **Driver action** — what the driver *stimulated* through that ingress (drove,
+  not observed).
+- **Host role** — serves/composes the production surface only; does not self-drive
+  the target behavior.
+- **Gates** — which gates fire, and the causal path they (or, in the interim, the
+  reviewer) establish from ingress to substrate.
+- **Acceptance vs workbench** — which kind this sim is, and therefore whether it
+  may move the ledger to `done` for the scenario.
 
 ## Static airgap enforcement (misuse-resistance)
 
@@ -235,7 +316,7 @@ it.
 |---|---|---|
 | **1. Spec gap** | Public surface contract is undefined or wrong | Finding + bead, owning-package issue |
 | **2. Implementation gap** | Spec is clear, implementation diverges | Finding + bead, owning-package issue |
-| **3. Sim authoring gap** | The simulation is reaching past the public surface or asserting against the wrong dimension | Fix the sim, no production work |
+| **3. Sim authoring gap** | The simulation is reaching past the public surface, asserting against the wrong dimension, or the host self-drives behavior an acceptance scenario requires the driver to stimulate (see "Acceptance vs workbench") | Fix the sim, no production work |
 | **4. Tooling gap** | The runner / viewer / OTel instrumentation isn't surfacing what you need | File against firelab itself |
 | **5. Methodology gap** | This document or the contributing notes don't tell you what to do | Update this document |
 
