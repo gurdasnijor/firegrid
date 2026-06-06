@@ -70,7 +70,7 @@ Per-spec state:
 | `agent-binding/fluent-park-interface.feature` | needs-rework | Earlier park-interface work did not settle the real transport end-of-turn proof. | Parking tool ends the native turn, later wake re-enters through the real harness path. |
 | `agent-binding/fluent-three-envelope-stream.feature` | spec-only | No accepted stream-envelope proof yet. | Intent, raw, and lifecycle envelopes appear as durable truth with projections derived later. |
 | `authoring/fluent-firegrid-public-surface.feature` | done | Public surface spec and implementation are merged; examples align with restate-sdk-gen-shaped generator affordances. | Keep parity pressure on examples and root exports as runtime binding needs evolve. |
-| `control-plane/fluent-control-surface.feature` | partial | Baseline control surface and workbench host exist. | Drive `send`/`fork`/`tag`/`schedule`/read APIs over real DS substrate instead of handrolled hosts. |
+| `control-plane/fluent-control-surface.feature` | in-flight | `tf-gfd7.1` adds the first send/read/head slice over real DS: typed control ingress appends addressed input to the entity stream; read/head derive from durable state. | Fork/tag/schedule/delete and DS wake/redrive delivery remain separate slices; control surface must stay ingress/projection only, not a central handler orchestrator. |
 | `coordination/fluent-coordination-taxonomy.feature` | spec-only | Taxonomy is captured, but not independently proven. | Product facts use State Protocol shapes and given-key addressing in vertical flows. |
 | `coordination/fluent-durable-sleep.feature` | partial | Timer facts/sources exist conceptually; local/process sleep remains the gap to close. | Timer intent before park, scheduled source materializes `TimerFired`, replay resolves from stream. |
 | `coordination/fluent-durable-wait.feature` | partial | Wait facts and CEL direction are captured; post-claim DS redrive is not complete. | Wait intent before park, CEL over event+self, DS wake, recorded match served on replay. |
@@ -173,7 +173,7 @@ sleep, durable wait, fork spawn, and post-claim redrive.
 
 | Feature file | Asserts (SDD §) | Firelab proof |
 |---|---|---|
-| `fluent-control-surface` | External `/entities/:type/:id` control — `send` · `fork` · `tag` · `schedule`(→adopted scheduled source / DS wake integration) · `get`/`head`/`delete` — as **product spelling over durable-stream primitives**. `tag` names an offset; `fork` branches a new entity from a prefix (stream *is* the state → fork = copy-a-prefix → "explore from here" / "retry under a changed tool set" / "snapshot before a risky action"). Read plane = the same projection externalised. (External control surface) | control-plane simulation over stream facts |
+| `fluent-control-surface` | External `/entities/:type/:id` control — `send` · `fork` · `tag` · `schedule`(→adopted scheduled source / DS wake integration) · `get`/`head`/`delete` — as **product spelling over durable-stream primitives**. `tag` names an offset; `fork` branches a new entity from a prefix (stream *is* the state → fork = copy-a-prefix → "explore from here" / "retry under a changed tool set" / "snapshot before a risky action"). Read plane = the same projection externalised. (External control surface) | `tf-gfd7.1`: `fluent-control-surface-send-read` proves send/read/head over real DS stream facts; remaining verbs are out of scope |
 
 ---
 

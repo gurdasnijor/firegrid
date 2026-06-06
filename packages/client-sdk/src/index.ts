@@ -3,6 +3,17 @@ export {
   type ClientOptions,
 } from "./config.ts"
 export {
+  discoverFluentControlClient,
+  makeFluentControlClient,
+  type FluentControlClient,
+  type FluentControlClientOptions,
+  type FluentControlDiscoveryOptions,
+  type FluentControlHeadResult,
+  type FluentControlReadResult,
+  type FluentControlSendInput,
+  type FluentControlSendResult,
+} from "./fluent-control.ts"
+export {
   FiregridMcpClientError,
   makeFiregridMcpClient,
   type FiregridMcpClient,

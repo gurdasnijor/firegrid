@@ -1,6 +1,10 @@
 import { FetchHttpClient } from "@effect/platform"
 import { Layer } from "effect"
 import {
+  FluentControlSurfaceLive,
+  type FluentControlSurface,
+} from "./ControlSurface.ts"
+import {
   FluentEventIngressLive,
   type FluentEventIngress,
 } from "./EventIngress.ts"
@@ -20,6 +24,7 @@ export type FluentRuntimeServices =
   | FluentStore
   | FluentSources
   | FluentEventIngress
+  | FluentControlSurface
 
 export const FluentRuntimeLive = (
   config: FluentRuntimeConfig,
@@ -33,5 +38,8 @@ export const FluentRuntimeLive = (
   const ingress = FluentEventIngressLive.pipe(
     Layer.provide(Layer.mergeAll(store, sources)),
   )
-  return Layer.mergeAll(store, sources, ingress)
+  const control = FluentControlSurfaceLive.pipe(
+    Layer.provide(store),
+  )
+  return Layer.mergeAll(store, sources, ingress, control)
 }

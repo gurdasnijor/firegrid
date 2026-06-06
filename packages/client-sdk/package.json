@@ -13,6 +13,10 @@
       "types": "./src/config.ts",
       "default": "./src/config.ts"
     },
+    "./fluent-control": {
+      "types": "./src/fluent-control.ts",
+      "default": "./src/fluent-control.ts"
+    },
     "./mcp": {
       "types": "./src/mcp.ts",
       "default": "./src/mcp.ts"

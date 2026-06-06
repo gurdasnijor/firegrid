@@ -1,4 +1,18 @@
 export {
+  FluentControlHttp,
+  FluentControlHttpError,
+  FluentControlHttpLive,
+  makeFluentControlHttp,
+} from "./ControlHttp.ts"
+export {
+  addressedInputEventName,
+  FluentControlSurface,
+  FluentControlSurfaceLive,
+  type EntityProjection,
+  type SendAddressedInputInput,
+  type SendAddressedInputResult,
+} from "./ControlSurface.ts"
+export {
   ackAfterDurableProductOutcome,
   DurableConsumerClient,
   DurableConsumerClientLive,
