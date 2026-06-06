@@ -132,6 +132,9 @@ const HOST_SUBSTRATE_NAMES: ReadonlySet<string> = new Set([
   // host-side MCP surfacing
   "firegrid.mcp.durable_streams_context.resolve",
   "firegrid.mcp.register_toolkit",
+  // ACP harness process owner: a real ACP agent process was spawned (the owner
+  // runs host-side; the driver never spawns). Carries `firegrid.acp_process.agent`.
+  "fluent-acp-process.spawn",
 ])
 
 // Dynamic-suffix host spans: `unified.tool.execute/<contextId>` etc. A gate that

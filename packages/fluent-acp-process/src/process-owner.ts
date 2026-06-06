@@ -25,6 +25,14 @@ export const spawnAcpProcess = Effect.fn("fluent-acp-process.spawn")(
   function* (input: AcpSpawnInput) {
     const resolved = yield* resolveAgent(input.agent)
 
+    // Record WHAT was spawned on the (host-substrate, forge-proof) spawn span so
+    // a coverage gate can distinguish a real keyed agent (`claude`/`codex`) from
+    // an arbitrary command override — acceptance gates on the real agent.
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.acp_process.agent": typeof input.agent === "string" ? input.agent : "custom",
+      "firegrid.acp_process.command": resolved.command,
+    })
+
     const command = Command.make(resolved.command, ...resolved.args).pipe(
       Command.workingDirectory(input.cwd),
       // A spawned ACP harness is its own session; drop the nesting marker so
