@@ -291,12 +291,31 @@ const evaluateWaitPredicate = (
       }),
   })
 
+const offsetParts = (offset: string): ReadonlyArray<bigint> =>
+  offset.split("_").map(part => BigInt(part))
+
+const compareOffsets = (
+  left: string,
+  right: string,
+): number => {
+  const leftParts = offsetParts(left)
+  const rightParts = offsetParts(right)
+  const length = Math.max(leftParts.length, rightParts.length)
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = leftParts[index] ?? 0n
+    const rightPart = rightParts[index] ?? 0n
+    if (leftPart > rightPart) return 1
+    if (leftPart < rightPart) return -1
+  }
+  return 0
+}
+
 const isAfterOffset = (
   matchedOffset: string,
   afterOffset: string,
 ): Effect.Effect<boolean, FluentRuntimeError> =>
   Effect.try({
-    try: () => BigInt(matchedOffset) > BigInt(afterOffset),
+    try: () => compareOffsets(matchedOffset, afterOffset) > 0,
     catch: (cause) =>
       new FluentRuntimeError({
         message: "Failed to compare wait offsets",
