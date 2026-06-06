@@ -56,7 +56,7 @@ export class AcpProcessError extends Data.TaggedError("AcpProcessError")<{
  */
 export interface AcpHarnessProcessOwnerService {
   readonly spawn: (
-    input: AcpSpawnInput
+    input: AcpSpawnInput,
   ) => Effect.Effect<
     AcpProcessHandle,
     AcpProcessError,

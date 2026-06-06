@@ -32,7 +32,7 @@ maybe(`spawnAcpProcess (real ${AGENT})`, () => {
                 id: 1,
                 method: "initialize",
                 params: { protocolVersion: 1, clientCapabilities: {} },
-              })
+              }),
             )
 
             const reader = handle.stream.readable.getReader()
@@ -47,9 +47,9 @@ maybe(`spawnAcpProcess (real ${AGENT})`, () => {
 
             expect(response?.result).toBeDefined()
             reader.releaseLock()
-          })
-        ).pipe(Effect.provide(NodeContext.layer))
+          }),
+        ).pipe(Effect.provide(NodeContext.layer)),
       ),
-    90_000
+    90_000,
   )
 })

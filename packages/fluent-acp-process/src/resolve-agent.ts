@@ -15,7 +15,7 @@ export interface ResolvedAgent {
  * - `codex`  -> `@zed-industries/codex-acp`
  */
 export const resolveAgent = (
-  agent: AgentSpec
+  agent: AgentSpec,
 ): Effect.Effect<ResolvedAgent, AcpProcessError> =>
   Match.value(agent).pipe(
     Match.when(Match.string, (key) =>
@@ -24,28 +24,28 @@ export const resolveAgent = (
           Effect.succeed<ResolvedAgent>({
             command: "npx",
             args: ["-y", "@zed-industries/claude-code-acp"],
-          })
+          }),
         ),
         Match.when("codex", () =>
           Effect.succeed<ResolvedAgent>({
             command: "npx",
             args: ["-y", "@zed-industries/codex-acp"],
-          })
+          }),
         ),
         Match.orElse((unknown) =>
           Effect.fail(
             new AcpProcessError({
               op: "resolve",
               message: `Unknown agent: ${unknown}`,
-            })
-          )
-        )
-      )
+            }),
+          ),
+        ),
+      ),
     ),
     Match.orElse((spec) =>
       Effect.succeed<ResolvedAgent>({
         command: spec.command,
         args: spec.args ?? [],
-      })
-    )
+      }),
+    ),
   )

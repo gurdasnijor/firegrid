@@ -1,5 +1,5 @@
 import { NodeContext } from "@effect/platform-node"
-import { Effect } from "effect"
+import { Effect, type Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { resolveAgent } from "../src/resolve-agent.ts"
 import { spawnAcpProcess } from "../src/process-owner.ts"
@@ -8,12 +8,12 @@ import { spawnAcpProcess } from "../src/process-owner.ts"
 // to any JSON-RPC request with `{ result: { ok: true } }`. UNIT aid only (F-A10)
 // — not a real ACP process and not acceptance proof for the binding.
 const FAKE_HARNESS = [
-  `process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'x',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'hi'}}}})+'\\n');`,
-  `let buf='';process.stdin.on('data',d=>{buf+=d;let i;while((i=buf.indexOf('\\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(!line.trim())continue;const m=JSON.parse(line);if(m.id!==undefined&&m.method){process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{ok:true}})+'\\n')}}});`,
+  "process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'x',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'hi'}}}})+'\\n');",
+  "let buf='';process.stdin.on('data',d=>{buf+=d;let i;while((i=buf.indexOf('\\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(!line.trim())continue;const m=JSON.parse(line);if(m.id!==undefined&&m.method){process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{ok:true}})+'\\n')}}});",
 ].join("")
 
 const runScoped = <A, E>(
-  eff: Effect.Effect<A, E, NodeContext.NodeContext | import("effect").Scope.Scope>
+  eff: Effect.Effect<A, E, NodeContext.NodeContext | Scope.Scope>,
 ): Promise<A> =>
   Effect.runPromise(Effect.scoped(eff).pipe(Effect.provide(NodeContext.layer)))
 
@@ -30,9 +30,9 @@ describe("resolveAgent", () => {
           args: ["-y", "@zed-industries/codex-acp"],
         })
         expect(yield* resolveAgent({ command: "my-acp", args: ["--x"] })).toEqual(
-          { command: "my-acp", args: ["--x"] }
+          { command: "my-acp", args: ["--x"] },
         )
-      })
+      }),
     ))
 
   it("fails with AcpProcessError on an unknown agent key", async () => {
@@ -58,7 +58,7 @@ describe("spawnAcpProcess (fake harness, unit-only)", () => {
         // Client -> agent: a request written to the stream gets a reply back.
         const writer = handle.stream.writable.getWriter()
         yield* Effect.promise(() =>
-          writer.write({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+          writer.write({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
         )
         const second = yield* Effect.promise(() => reader.read())
         const value = second.value as { id?: number; result?: { ok?: boolean } }
@@ -66,6 +66,6 @@ describe("spawnAcpProcess (fake harness, unit-only)", () => {
         expect(value.result?.ok).toBe(true)
 
         reader.releaseLock()
-      })
+      }),
     ))
 })

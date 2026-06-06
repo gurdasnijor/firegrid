@@ -30,7 +30,12 @@ export const spawnAcpProcess = Effect.fn("fluent-acp-process.spawn")(
       // A spawned ACP harness is its own session; drop the nesting marker so
       // `claude-code-acp` does not refuse to launch inside another Claude
       // Code session. `undefined` removes the key from the inherited env.
-      Command.env({ ...(input.env ?? {}), CLAUDECODE: undefined })
+      Command.env({ ...(input.env ?? {}), CLAUDECODE: undefined }),
+      // Drain harness stderr to the parent's stderr (fd2). Default "pipe" would
+      // leave proc.stderr unread; a noisy harness could fill the pipe buffer and
+      // block, stalling the stdout ACP stream. "inherit" keeps stdout ACP-only
+      // (F-A14) while diagnostics flow through the sanctioned stderr channel.
+      Command.stderr("inherit"),
     )
 
     const proc = yield* Command.start(command).pipe(
@@ -40,8 +45,8 @@ export const spawnAcpProcess = Effect.fn("fluent-acp-process.spawn")(
             op: "spawn",
             message: `failed to start ACP harness: ${resolved.command}`,
             cause,
-          })
-      )
+          }),
+      ),
     )
 
     // Client -> agent: bytes written to the acp.Stream's writable are queued and
@@ -50,7 +55,7 @@ export const spawnAcpProcess = Effect.fn("fluent-acp-process.spawn")(
     yield* Stream.fromQueue(inbox).pipe(
       Stream.run(proc.stdin),
       Effect.ignore,
-      Effect.forkScoped
+      Effect.forkScoped,
     )
 
     const writable = new WritableStream<Uint8Array>({
@@ -64,11 +69,11 @@ export const spawnAcpProcess = Effect.fn("fluent-acp-process.spawn")(
 
     const kill = Queue.shutdown(inbox).pipe(
       Effect.zipRight(proc.kill()),
-      Effect.ignore
+      Effect.ignore,
     )
 
     return { stream, kill } satisfies AcpProcessHandle
-  }
+  },
 )
 
 /**
@@ -77,10 +82,10 @@ export const spawnAcpProcess = Effect.fn("fluent-acp-process.spawn")(
  * real acceptance requires a real ACP process, F-A10).
  */
 export class AcpHarnessProcessOwner extends Context.Tag(
-  "@firegrid/fluent-acp-process/AcpHarnessProcessOwner"
+  "@firegrid/fluent-acp-process/AcpHarnessProcessOwner",
 )<AcpHarnessProcessOwner, AcpHarnessProcessOwnerService>() {
   static readonly Default: Layer.Layer<AcpHarnessProcessOwner> = Layer.succeed(
     this,
-    { spawn: spawnAcpProcess }
+    { spawn: spawnAcpProcess },
   )
 }
