@@ -70,6 +70,25 @@ const currentHostSdkSubstrateDebt = []
 module.exports = {
   forbidden: [
     {
+      name: "fluent-acp-process-tiny-import-surface",
+      severity: "error",
+      comment:
+        "fluent-acp-process is the ACP harness process owner (spawn -> acp.Stream). Per SDD_FLUENT_HARNESS_ADAPTER_CONTRACT (F-A1/F-A11/F-A12/F-A13) it must not import fluent-runtime, the legacy runtime, durable-streams substrate, host/client SDKs, or any Store/Host/EventIngress/Sources/projection internals. Allowed: @agentclientprotocol/sdk + effect (+ @effect/platform).",
+      from: { path: "^packages/fluent-acp-process/src/" },
+      to: {
+        path: [
+          "^packages/fluent-runtime/",
+          "^packages/runtime/",
+          "^packages/effect-durable-streams/",
+          "^packages/effect-durable-operators/",
+          "^packages/host-sdk/",
+          "^packages/client-sdk/",
+          "^packages/protocol/",
+          "^packages/observability/",
+        ],
+      },
+    },
+    {
       name: "no-circular",
       severity: "error",
       comment:
