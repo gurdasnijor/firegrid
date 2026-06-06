@@ -47,7 +47,7 @@ Folder tracking epics:
 
 | Folder | Bead | State | Notes |
 |---|---:|---|---|
-| `agent-binding/` | `tf-88bd` | in-flight | ACP client/conductor lanes are active; real-harness proofs remain the critical gap. |
+| `agent-binding/` | `tf-88bd` | partial | ACP client (#967) and conductor (#969) bindings are merged with firelab witnesses; the real-harness boundary proofs (native resume, park interface, approval fidelity, bridge mediation) remain the critical gap. |
 | `authoring/` | `tf-2tl5` | done | Public fluent surface baseline is merged. Keep open for follow-up parity gaps. |
 | `control-plane/` | `tf-1726` | partial | Baseline control surface exists; host must keep converging on real DS primitives. |
 | `coordination/` | `tf-4grn` | partial | Durable wait/sleep/event/fork primitives are not fully proven end to end. |
@@ -62,8 +62,8 @@ Per-spec state:
 | `agent-binding/fluent-approval-fidelity.feature` | spec-only | No accepted real approval fidelity proof yet. | Real native/ACP approval round trip preserving per-request response shape. |
 | `agent-binding/fluent-bridge-mediation.feature` | spec-only | No accepted mediation proof yet. | One-prompt-in-flight, dedupe, interrupt, and cancel semantics against a real harness. |
 | `agent-binding/fluent-client-normalization.feature` | spec-only | Prior client-normalization work was not accepted as the canonical projection path. | Raw stream replay materializes durable projections without rewriting raw history. |
-| `agent-binding/fluent-firegrid-acp-client.feature` | in-flight | `tf-w9uc` owns the fluent-runtime ACP client binding; `packages/fluent-acp-process` is merged as the process owner. | Firegrid ACP client callbacks record L1 observation and L2 commitments from a real ACP process stream. |
-| `agent-binding/fluent-firegrid-acp-conductor.feature` | in-flight | `tf-v2nv` owns the editor/Zed-facing conductor skeleton. | Firegrid implements the editor-facing ACP agent role while delegating downstream through the separate client role. |
+| `agent-binding/fluent-firegrid-acp-client.feature` | done | `tf-w9uc` (#967) merged the fluent-runtime ACP client binding (`FiregridAcpClient implements acp.Client` + `connectFiregridAcp`); process owner `packages/fluent-acp-process` merged (#966). Witness: firelab `fluent-acp-client-binding` drives the client over an ACP stream and asserts L1/L2 facts through `FluentStore` (forge-proof `fluent_runtime.store.*` gates). | Keep open: drive end-to-end against a real spawned ACP process (not an in-test stream) for full real-harness fidelity. |
+| `agent-binding/fluent-firegrid-acp-conductor.feature` | done | `tf-v2nv` (#969) merged the editor-facing conductor (`FiregridAcpConductor implements acp.Agent` + pure `connectFiregridAcpConductor`); roles stay separate (no public `acp.Client \| acp.Agent` union). Witness: firelab `fluent-acp-conductor-binding` drives a real ACP SDK editor client over `acp.Stream` into the conductor → durable session facts (verdict `production-path-covered`); see `docs/findings/tf-v2nv-conductor-binding-witness.md`. | Keep open: downstream delegation through the client role + Zed/CLI stdio packaging end-to-end. |
 | `agent-binding/fluent-harness-adapter-boundary.feature` | partial | Harness adapter contract docs/specs are merged; process owner is isolated. | L1 observation -> L2 commitment -> native result path, with park/redrive and no duplicate side effects. |
 | `agent-binding/fluent-mcp-tools-out.feature` | partial | MCP/tool edge work exists, but it must stay thin over fluent-runtime semantics. | Durable tools reachable by a real harness through an Effect Tool/Toolkit/McpServer-shaped edge. |
 | `agent-binding/fluent-native-resume.feature` | needs-rework | Earlier resume work predates the current no-duplicate-L1-side-effect contract. | Kill/restart a real harness and resume natively without replaying observed side effects. |
