@@ -187,14 +187,17 @@ importers:
         version: link:../effect-durable-operators
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: 0.21.0
-        version: 0.21.0(zod@4.4.3)
+        specifier: 0.22.0
+        version: 0.22.0(zod@4.4.3)
       '@durable-streams/server':
         specifier: github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server
         version: https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server(@tanstack/db@0.6.7(typescript@5.9.3))
       '@firegrid/client-sdk':
         specifier: workspace:*
         version: link:../client-sdk
+      '@firegrid/fluent-acp-process':
+        specifier: workspace:*
+        version: link:../fluent-acp-process
       '@firegrid/fluent-runtime':
         specifier: workspace:*
         version: link:../fluent-runtime
@@ -251,6 +254,9 @@ importers:
 
   packages/fluent-runtime:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.22.0
+        version: 0.22.0(zod@4.4.3)
       '@effect/platform':
         specifier: ^0.96.1
         version: 0.96.1(effect@3.21.2)
