@@ -251,6 +251,9 @@ importers:
 
   packages/fluent-runtime:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.22.0
+        version: 0.22.0(zod@4.4.3)
       '@effect/platform':
         specifier: ^0.96.1
         version: 0.96.1(effect@3.21.2)

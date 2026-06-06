@@ -10,6 +10,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./acp": {
+      "types": "./src/acp/index.ts",
+      "default": "./src/acp/index.ts"
     }
   },
   "files": [
@@ -27,6 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.22.0",
     "@effect/platform": "^0.96.1",
     "@marcbachmann/cel-js": "7.6.1",
     "effect": "^3.21.2",
