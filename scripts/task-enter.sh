@@ -44,6 +44,28 @@ PARENT="$(dirname "$RR")"
 WT="$PARENT/firegrid-worktrees/${BEAD}-${SLUG}"
 BR="${CLASS}/${BEAD}-${SLUG}"
 
+# Verify the bead exists in the resolved store BEFORE any side effects
+# (worktree/branch/install). Creating a worktree for a bead that isn't in the
+# store the br-owner will sync is exactly the durable-state bug this lifecycle
+# prevents — so hard-stop here, not after. Explicit escape: TASK_ALLOW_MISSING_BEAD=1.
+BEADS_DIR="$(resolve_beads_dir || true)"
+if [ -z "${BEADS_DIR:-}" ]; then
+  echo "✋ task-enter: could not resolve a beads store (BEADS_DIR unset, no repo .beads)." >&2
+  echo "   Set BEADS_DIR to your br-owner store and retry (or TASK_ALLOW_MISSING_BEAD=1 to override)." >&2
+  [ "${TASK_ALLOW_MISSING_BEAD:-}" = "1" ] || exit 1
+else
+  export BEADS_DIR
+  if ! lane_beads_status "$BEAD" "$BEADS_DIR"; then
+    if [ "${TASK_ALLOW_MISSING_BEAD:-}" = "1" ]; then
+      echo "⚠ task-enter: TASK_ALLOW_MISSING_BEAD=1 — creating a worktree for UNTRACKED bead $BEAD." >&2
+    else
+      echo "✋ task-enter: bead $BEAD not in the resolved store — refusing to create a worktree for untracked work." >&2
+      echo "   Create/import the bead in $BEADS_DIR, or set TASK_ALLOW_MISSING_BEAD=1 to override." >&2
+      exit 1
+    fi
+  fi
+fi
+
 # Fetch the fork base (strip a leading "origin/" to get the remote branch).
 BASE_REMOTE_REF="${BASE#origin/}"
 git -C "$RR" fetch -q origin "$BASE_REMOTE_REF" 2>/dev/null || true
@@ -92,19 +114,12 @@ if [ "$CREATED" = 1 ] && command -v pnpm >/dev/null 2>&1; then
   fi
 fi
 
-# Claim the bead through the SAME store task-exit will use (resolve_beads_dir),
-# not whatever the shell happens to inherit — otherwise a bead claimed here can
-# be invisible at exit. See firegrid-worktree-lifecycle.TASK_ENTER.1.
-BEADS_DIR="$(resolve_beads_dir || true)"
+# Bead was verified in $BEADS_DIR at the top (before any side effects); now that
+# the worktree exists, mark it in_progress in that SAME store.
 if [ -n "${BEADS_DIR:-}" ]; then
-  export BEADS_DIR
-  if lane_beads_status "$BEAD" "$BEADS_DIR"; then
-    BEADS_DIR="$BEADS_DIR" br update "$BEAD" --status in_progress >/dev/null 2>&1 \
-      && echo "✓ $BEAD → in_progress" \
-      || echo "⚠ bead $BEAD found but status update failed — set it manually" >&2
-  fi
-else
-  echo "⚠ could not resolve a beads store; skipping bead claim for $BEAD" >&2
+  BEADS_DIR="$BEADS_DIR" br update "$BEAD" --status in_progress >/dev/null 2>&1 \
+    && echo "✓ $BEAD → in_progress (store: $BEADS_DIR)" \
+    || echo "⚠ $BEAD status update failed — set it manually" >&2
 fi
 
 # firegrid-worktree-lifecycle.TASK_ENTER.2

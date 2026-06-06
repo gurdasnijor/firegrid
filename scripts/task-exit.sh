@@ -30,11 +30,25 @@ fi
 RR="$(git rev-parse --show-toplevel)"
 BR="$(git -C "$RR" rev-parse --abbrev-ref HEAD)"
 # Use the SAME store task-enter claimed against (inherited br-owner store if set,
-# else the repo .beads) so enter/exit never disagree. Surface which store + warn
-# if the bead is absent there (the store-confusion symptom).
+# else the repo .beads) so enter/exit never disagree — and HARD-STOP if the bead
+# is missing there. Continuing to commit/push/open a PR for a bead that isn't in
+# the store the br-owner syncs is the exact durable-state bug this lifecycle
+# prevents. Explicit escape only: TASK_ALLOW_MISSING_BEAD=1.
 BEADS_DIR="$(resolve_beads_dir || true)"
 export BEADS_DIR
-[ -n "${BEADS_DIR:-}" ] && lane_beads_status "$BEAD" "$BEADS_DIR" || true
+if [ -z "${BEADS_DIR:-}" ]; then
+  echo "✋ task-exit: could not resolve a beads store; refusing to push untracked work." >&2
+  [ "${TASK_ALLOW_MISSING_BEAD:-}" = "1" ] || exit 1
+elif ! lane_beads_status "$BEAD" "$BEADS_DIR"; then
+  if [ "${TASK_ALLOW_MISSING_BEAD:-}" = "1" ]; then
+    echo "⚠ task-exit: TASK_ALLOW_MISSING_BEAD=1 — pushing with UNTRACKED bead $BEAD." >&2
+  else
+    echo "✋ task-exit: bead $BEAD missing from $BEADS_DIR — refusing to push/PR untracked work." >&2
+    echo "   Your work is committed locally (nothing stranded remotely). Fix bead state" >&2
+    echo "   (create/import it in that store) or set TASK_ALLOW_MISSING_BEAD=1, then re-run." >&2
+    exit 1
+  fi
+fi
 
 # 1. local beads flush only (NO push of issues.jsonl from a lane)
 BEADS_DIR="$BEADS_DIR" br sync --flush-only >/dev/null 2>&1 || true
@@ -107,8 +121,16 @@ if [ "${TASK_EXIT_SKIP_PREFLIGHT:-}" = "1" ]; then
   echo "⚠ task-exit: TASK_EXIT_SKIP_PREFLIGHT=1 — SKIPPING pnpm preflight." >&2
   echo "   The push/PR is NOT locally verified; CI may fail. Use sparingly." >&2
 elif [ "${DOConly:-0}" = "1" ]; then
-  echo "▶ task-exit: docs-only diff — reduced gate (skipping pnpm preflight: no buildable/testable change)."
-  echo "✓ task-exit: docs-only reduced gate — proceeding to push."
+  # Docs-only: skip the full build/test matrix, but still run a tiny REAL gate
+  # (git diff --check catches whitespace errors + leftover conflict markers) —
+  # never declare a zero-command gate green.
+  echo "▶ task-exit: docs-only diff — reduced gate (git diff --check; full pnpm preflight skipped)."
+  if ! git -C "$RR" diff --check "$BASE_REF...HEAD"; then
+    echo "✋ task-exit: docs-only reduced gate FAILED — whitespace errors / conflict markers above." >&2
+    echo "   Fix them (or remove the offending lines), then re-run task-exit." >&2
+    exit 1
+  fi
+  echo "✓ task-exit: docs-only reduced gate (git diff --check) passed — proceeding to push."
 else
   echo "▶ task-exit: running pnpm preflight before push (≤${TASK_EXIT_PREFLIGHT_TIMEOUT:-1200}s; override: TASK_EXIT_SKIP_PREFLIGHT=1)…"
   if ! with_timeout "${TASK_EXIT_PREFLIGHT_TIMEOUT:-1200}" sh -c "cd '$RR' && pnpm preflight"; then
@@ -184,42 +206,67 @@ if ! push_lane_branch; then
   exit 1
 fi
 if command -v gh >/dev/null 2>&1; then
-  if gh pr view "$BR" >/dev/null 2>&1; then
-    echo "  PR exists for $BR"
-  else
-    # PR base = origin/main (canonical post-#765). FIREGRID_TASK_BASE overrides
-    # for the rare lane that forks off a non-main integration branch.
-    PR_BASE="${FIREGRID_TASK_BASE:-main}"; PR_BASE="${PR_BASE#origin/}"
-    # Real title + body (NOT --fill, which produces a BLANK PR when the only
-    # commit is the generic "wip(...) checkpoint"). Title = the first non-wip
-    # commit subject; body = commits + diffstat. (Phase 4 replaces the body with
-    # the firelab trace-evidence block once experiments drive the lane.)
-    PR_TITLE="$(git -C "$RR" log "$BASE_REF..HEAD" --format='%s' | grep -vi '^wip(' | head -1)"
-    # Fallback when EVERY commit is a generic wip checkpoint: do NOT title the PR
-    # "wip(...)" (the prior fallback) — derive a readable title from the bead +
-    # branch slug instead, e.g. "tf-tpr8: lane tooling friction".
-    if [ -z "$PR_TITLE" ]; then
-      _slug="${BR#*/}"            # strip class/ (sidecar|codex)
-      _slug="${_slug#"$BEAD"-}"   # strip the leading bead id
-      _slug="$(printf '%s' "$_slug" | tr '-' ' ')"
-      PR_TITLE="${BEAD:+$BEAD: }${_slug:-lane work}"
-    fi
-    PR_BODY_FILE="$(mktemp)"
-    {
-      echo "## Lane \`$BR\`"
-      [ -n "$BEAD" ] && echo "Bead: \`$BEAD\`"
-      echo
-      echo "### Commits"
-      git -C "$RR" log "$BASE_REF..HEAD" --format='- %s'
-      echo
-      echo "### Changed files"
-      echo '```'
-      git -C "$RR" diff --stat "$BASE_REF..HEAD"
-      echo '```'
-    } > "$PR_BODY_FILE"
-    gh pr create --head "$BR" --base "$PR_BASE" --title "$PR_TITLE" --body-file "$PR_BODY_FILE" --draft 2>&1 | tail -1 || echo "  ⚠ open the PR manually"
-    rm -f "$PR_BODY_FILE"
+  # PR base = origin/main (canonical post-#765). FIREGRID_TASK_BASE overrides
+  # for the rare lane that forks off a non-main integration branch.
+  PR_BASE="${FIREGRID_TASK_BASE:-main}"; PR_BASE="${PR_BASE#origin/}"
+
+  # Title: first non-wip commit subject; fallback to "<bead>: <slug>" (NEVER a
+  # raw "wip(...)" subject, which --fill would have produced).
+  PR_TITLE="$(git -C "$RR" log "$BASE_REF..HEAD" --format='%s' | grep -vi '^wip(' | head -1)"
+  if [ -z "$PR_TITLE" ]; then
+    _slug="${BR#*/}"; _slug="${_slug#"$BEAD"-}"; _slug="$(printf '%s' "$_slug" | tr '-' ' ')"
+    PR_TITLE="${BEAD:+$BEAD: }${_slug:-lane work}"
   fi
+
+  # Durable review scaffold — AUTOMATED so authors cannot silently omit the
+  # sections reviewers need. Bead comes from `br show`; specs/evidence come from
+  # lane-provided inputs (TASK_EXIT_SPECS_FILE/TASK_EXIT_SPECS,
+  # TASK_EXIT_EVIDENCE_FILE/TASK_EXIT_EVIDENCE) and render a clear placeholder
+  # when absent — we never invent specs or evidence. Changed files use three-dot
+  # (merge-base) so an out-of-date branch doesn't pollute the list with main-side
+  # churn (the "stale body lists deleted files" symptom).
+  _emit_section() {  # <file> <inline> <placeholder>
+    if [ -n "${1:-}" ] && [ -f "$1" ]; then cat "$1"
+    elif [ -n "${2:-}" ]; then printf '%s\n' "$2"
+    else printf '%s\n' "$3"; fi
+  }
+  BEAD_TEXT="$(BEADS_DIR="$BEADS_DIR" br show "$BEAD" 2>/dev/null || true)"
+  [ -n "$BEAD_TEXT" ] || BEAD_TEXT="$BEAD — not found in ${BEADS_DIR:-<unresolved>} (TASK_ALLOW_MISSING_BEAD override)"
+
+  PR_BODY_FILE="$(mktemp)"
+  {
+    echo "## Lane \`$BR\`"
+    echo
+    echo "### Bead"
+    echo '```'
+    printf '%s\n' "$BEAD_TEXT"
+    echo '```'
+    echo
+    echo "### Gherkin / specs satisfied"
+    _emit_section "${TASK_EXIT_SPECS_FILE:-}" "${TASK_EXIT_SPECS:-}" \
+      "_None provided. Set \`TASK_EXIT_SPECS_FILE\` or \`TASK_EXIT_SPECS\` to the satisfied \`.feature\` scenarios, or \"N/A — tooling-only\". Specs are not auto-claimed._"
+    echo
+    echo "### Evidence"
+    _emit_section "${TASK_EXIT_EVIDENCE_FILE:-}" "${TASK_EXIT_EVIDENCE:-}" \
+      "_None provided. Set \`TASK_EXIT_EVIDENCE_FILE\` or \`TASK_EXIT_EVIDENCE\` with commands run + results. Firelab sims: exact \`pnpm --filter firelab simulate <sim>\` command, run id/path, verdict, key gates, trace path. Evidence is not invented._"
+    echo
+    echo "### Changed files"
+    echo '```'
+    git -C "$RR" diff --stat "$BASE_REF...HEAD"
+    echo '```'
+  } > "$PR_BODY_FILE"
+
+  # Create the PR, or REFRESH an existing one's title+body (so a rerun
+  # regenerates stale metadata instead of leaving the first body forever).
+  if gh pr view "$BR" >/dev/null 2>&1; then
+    gh pr edit "$BR" --title "$PR_TITLE" --body-file "$PR_BODY_FILE" >/dev/null 2>&1 \
+      && echo "  ✓ refreshed PR title/body for $BR" \
+      || echo "  ⚠ could not refresh PR body for $BR — edit manually" >&2
+  else
+    gh pr create --head "$BR" --base "$PR_BASE" --title "$PR_TITLE" --body-file "$PR_BODY_FILE" --draft 2>&1 | tail -1 \
+      || echo "  ⚠ open the PR manually"
+  fi
+  rm -f "$PR_BODY_FILE"
 
   # CI-trigger guarantee. A task-exit DRAFT PR is the merge gate, so it
   # MUST have a CI run immediately. GitHub does not start Actions from a
