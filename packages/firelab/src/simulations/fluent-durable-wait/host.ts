@@ -7,6 +7,7 @@ import {
   FluentStore,
   type AcquiredConsumer,
   type DurableConsumerClientService,
+  type MatchPendingTurnWaitsResult,
   type StateChangeMessage,
 } from "@firegrid/fluent-runtime"
 import { Effect, Layer } from "effect"
@@ -54,6 +55,8 @@ interface PostClaimSessionActor {
     wake: SessionWake,
   ) => Effect.Effect<void, unknown>
 }
+
+type WaitOutcomeKind = "matched" | "not_matched" | "already_matched"
 
 const reviewPredicate = "event.type == 'review.posted'"
 const prPredicate =
@@ -139,7 +142,76 @@ const providerEventIngress = (
       event: change,
     }
   }).pipe(
-    Effect.withSpan("firegrid.sim.fluent_durable_wait.provider_event_ingress"),
+    Effect.tap(wake =>
+      Effect.annotateCurrentSpan({
+        "firegrid.fluent_durable_wait.delivery_id": wake.deliveryId,
+        "firegrid.fluent_durable_wait.turn_id": wake.turnId,
+        "firegrid.fluent_durable_wait.event_offset": wake.eventOffset,
+        "firegrid.fluent_durable_wait.work_offset": wake.workOffset,
+        "fluent_runtime.state_change.type": wake.event.type,
+        "fluent_runtime.state_change.key": wake.event.key,
+      }),
+    ),
+    Effect.withSpan("firegrid.sim.fluent_durable_wait.provider_event_ingress", {
+      attributes: {
+        "firegrid.fluent_durable_wait.delivery_id": input.event.deliveryId,
+        "firegrid.fluent_durable_wait.turn_id": input.event.turnId,
+        "fluent_runtime.state_change.type": input.event.type,
+        "fluent_runtime.state_change.key": input.event.key,
+      },
+    }),
+  )
+
+const recordWaitOutcomeSpan = (
+  input: {
+    readonly wake: SessionWake
+    readonly waitId: string
+    readonly outcome: WaitOutcomeKind
+  },
+) =>
+  Effect.void.pipe(
+    Effect.withSpan("firegrid.sim.fluent_durable_wait.session_authority.wait_outcome", {
+      attributes: {
+        "firegrid.fluent_durable_wait.delivery_id": input.wake.deliveryId,
+        "firegrid.fluent_durable_wait.turn_id": input.wake.turnId,
+        "firegrid.fluent_durable_wait.event_offset": input.wake.eventOffset,
+        "fluent_runtime.state_change.type": input.wake.event.type,
+        "fluent_runtime.state_change.key": input.wake.event.key,
+        "fluent_runtime.wait.id": input.waitId,
+        "fluent_runtime.wait.outcome": input.outcome,
+      },
+    }),
+  )
+
+const recordOutcomeSpans = (
+  wake: SessionWake,
+  result: MatchPendingTurnWaitsResult,
+): Effect.Effect<void> =>
+  Effect.all(
+    [
+      ...result.matched.map(wait =>
+        recordWaitOutcomeSpan({
+          wake,
+          waitId: wait.waitId,
+          outcome: "matched",
+        }),
+      ),
+      ...result.notMatched.map(wait =>
+        recordWaitOutcomeSpan({
+          wake,
+          waitId: wait.waitId,
+          outcome: "not_matched",
+        }),
+      ),
+      ...result.alreadyMatched.map(wait =>
+        recordWaitOutcomeSpan({
+          wake,
+          waitId: wait.waitId,
+          outcome: "already_matched",
+        }),
+      ),
+    ],
+    { discard: true },
   )
 
 const makePostClaimSessionActor = (
@@ -152,42 +224,88 @@ const makePostClaimSessionActor = (
 ): PostClaimSessionActor => ({
   handleSessionWake: (wake) =>
     Effect.gen(function*() {
-      const claim = yield* input.client.acquireConsumer({ consumerId, worker: workerId })
-      const sessionFacts = yield* input.store.collectSession(sessionId)
-      const result = yield* input.sources.matchPendingTurnWaits({
-        sessionId,
-        turnId: wake.turnId,
-        matchedOffset: wake.eventOffset,
-        event: wake.event,
-      })
-      yield* ackAfterDurableProductOutcome(
-        input.client,
-        {
-          consumerId,
-          token: claim.token,
-          offsets: [{ path: input.workStream, offset: wake.workOffset }],
-        },
-        appendFact(input.store, factNames.wakeOutcome, {
-          deliveryId: wake.deliveryId,
-          turnId: wake.turnId,
-          claimEpoch: claim.epoch,
-          claimOffset: claimOffset(claim, input.workStream),
-          workOffset: wake.workOffset,
-          eventOffset: wake.eventOffset,
-          eventKey: wake.event.key,
-          eventType: wake.event.type,
-          materializedSessionFacts: sessionFacts.length,
-          matched: result.matched.map(wait => wait.waitId),
-          notMatched: result.notMatched.map(wait => wait.waitId),
-          alreadyMatched: result.alreadyMatched,
+      const claim = yield* input.client.acquireConsumer({ consumerId, worker: workerId }).pipe(
+        Effect.withSpan("firegrid.sim.fluent_durable_wait.session_authority.claim_acquired", {
+          attributes: {
+            "firegrid.fluent_durable_wait.delivery_id": wake.deliveryId,
+            "firegrid.fluent_durable_wait.turn_id": wake.turnId,
+            "firegrid.fluent_durable_wait.work_offset": wake.workOffset,
+            "durable_streams.consumer.id": consumerId,
+            "durable_streams.consumer.worker": workerId,
+          },
         }),
       )
-      yield* input.client.releaseConsumer({
-        consumerId,
-        token: claim.token,
-      })
+      yield* Effect.gen(function*() {
+        const sessionFacts = yield* input.store.collectSession(sessionId)
+        const result = yield* input.sources.matchPendingTurnWaits({
+          sessionId,
+          turnId: wake.turnId,
+          matchedOffset: wake.eventOffset,
+          event: wake.event,
+        })
+        yield* recordOutcomeSpans(wake, result)
+        yield* ackAfterDurableProductOutcome(
+          input.client,
+          {
+            consumerId,
+            token: claim.token,
+            offsets: [{ path: input.workStream, offset: wake.workOffset }],
+          },
+          appendFact(input.store, factNames.wakeOutcome, {
+            deliveryId: wake.deliveryId,
+            turnId: wake.turnId,
+            claimEpoch: claim.epoch,
+            claimOffset: claimOffset(claim, input.workStream),
+            workOffset: wake.workOffset,
+            eventOffset: wake.eventOffset,
+            eventKey: wake.event.key,
+            eventType: wake.event.type,
+            materializedSessionFacts: sessionFacts.length,
+            matched: result.matched.map(wait => wait.waitId),
+            notMatched: result.notMatched.map(wait => wait.waitId),
+            alreadyMatched: result.alreadyMatched,
+          }).pipe(
+            Effect.withSpan("firegrid.sim.fluent_durable_wait.session_authority.product_outcome_append", {
+              attributes: {
+                "firegrid.fluent_durable_wait.delivery_id": wake.deliveryId,
+                "firegrid.fluent_durable_wait.turn_id": wake.turnId,
+                "firegrid.fluent_durable_wait.event_offset": wake.eventOffset,
+                "fluent_runtime.state_change.key": wake.event.key,
+              },
+            }),
+          ),
+        )
+        yield* input.client.releaseConsumer({
+          consumerId,
+          token: claim.token,
+        }).pipe(
+          Effect.withSpan("firegrid.sim.fluent_durable_wait.session_authority.release_claim", {
+            attributes: {
+              "firegrid.fluent_durable_wait.delivery_id": wake.deliveryId,
+              "firegrid.fluent_durable_wait.turn_id": wake.turnId,
+              "durable_streams.consumer.id": consumerId,
+            },
+          }),
+        )
+      }).pipe(
+        Effect.withSpan("firegrid.sim.fluent_durable_wait.session_authority.handle_wake", {
+          attributes: {
+            "firegrid.fluent_durable_wait.delivery_id": wake.deliveryId,
+            "firegrid.fluent_durable_wait.turn_id": wake.turnId,
+            "firegrid.fluent_durable_wait.event_offset": wake.eventOffset,
+            "firegrid.fluent_durable_wait.work_offset": wake.workOffset,
+            "fluent_runtime.state_change.type": wake.event.type,
+            "fluent_runtime.state_change.key": wake.event.key,
+          },
+        }),
+      )
     }).pipe(
-      Effect.withSpan("firegrid.sim.fluent_durable_wait.session_authority.handle_wake"),
+      Effect.withSpan("firegrid.sim.fluent_durable_wait.post_claim_actor.handle_session_wake", {
+        attributes: {
+          "firegrid.fluent_durable_wait.delivery_id": wake.deliveryId,
+          "firegrid.fluent_durable_wait.turn_id": wake.turnId,
+        },
+      }),
     ),
 })
 
@@ -335,6 +453,12 @@ const runDurableWait = (
       },
     })
     yield* actor.handleSessionWake(replayWake)
+    yield* appendFact(store, factNames.witnessComplete, {
+      sessionId,
+      reviewedTurnId: reviewTurnId,
+      mainTurnId,
+      completedAfterDeliveryId: replayWake.deliveryId,
+    })
   }).pipe(
     Effect.withSpan("firegrid.sim.fluent_durable_wait.host"),
   )
@@ -355,4 +479,3 @@ export const host = (
       )),
     ),
   )
-

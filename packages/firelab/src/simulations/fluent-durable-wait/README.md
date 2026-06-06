@@ -16,6 +16,9 @@ The host models the architecture README flow:
 
 Durable Streams owns wake delivery, claim contention, cursor offsets, ack, and
 release. Fluent owns only product-level wait intent and match journaling.
+The Firelab verdict is computed from coverage gates over host-side spans. The
+driver only waits for the product-visible completion fact and annotates durable
+row counts as corroboration.
 
 Covered feature scenarios:
 
@@ -34,6 +37,6 @@ Focused verification:
 pnpm --filter firelab simulate:run fluent-durable-wait --timeout-ms 120000
 ```
 
-Latest local run in this lane:
-`2026-06-06T02-16-22-251Z__fluent-durable-wait`, verdict
+Latest local run in this lane after the methodology rework:
+`2026-06-06T02-28-23-145Z__fluent-durable-wait`, verdict
 `production-path-covered`.

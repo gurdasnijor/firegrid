@@ -12,6 +12,7 @@ export const factNames = {
   turnParked: "fluent.durable_wait.turn.parked",
   liveProjectionChanged: "fluent.durable_wait.live_projection.changed",
   wakeOutcome: "fluent.durable_wait.wake.outcome",
+  witnessComplete: "fluent.durable_wait.witness.complete",
 } as const
 
 export type DurableWaitFactName =
