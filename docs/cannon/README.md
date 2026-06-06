@@ -75,27 +75,31 @@ Read in this order:
    map for the fluent workstream: fluent-firegrid vs fluent-runtime vs
    coding-agents bridge, stream read/write ownership, schema ownership, and the
    rule that the raw harness does not write Durable Streams directly.
-8. `architecture/runtime-pipeline-type-boundaries.md` — the Effect type-boundary
+8. `../sdds/SDD_FLUENT_HARNESS_ADAPTER_CONTRACT.md` — the active adapter
+   boundary contract: external harness owns the native loop; adapter records
+   Layer 1 observation and native protocol fidelity; fluent-runtime records
+   Layer 2 coordination commitments.
+9. `architecture/runtime-pipeline-type-boundaries.md` — the Effect type-boundary
    companion to the runtime constraints: codec-only sessions, typed durable
    output observation, stateful RuntimeContext subscribers, and
    workflow-shaped tool subscribers.
-9. `sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
-10. `../sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md` — the channel router that
+10. `sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md`
+11. `../sdds/SDD_FIREGRID_HOST_PLANE_CHANNEL_ROUTER.md` — the channel router that
    shipped this session (router/ACP-edge cutover).
-11. `../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md` — the Phase 0
+12. `../sdds/SDD_TARGET_TINY_FIREGRID_ARCHITECTURE_REFERENCE.md` — the Phase 0
    target host/runtime shape the migrations converge toward.
-12. `architecture/kernel-owned-write-arm.md` — the empirically grounded
+13. `architecture/kernel-owned-write-arm.md` — the empirically grounded
    write+arm ownership rule. Important: `HostKernelWorkflow` is a target role,
    not an existing implementation symbol.
-13. `sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md` — the
+14. `sdds/SDD_FIREGRID_RUNTIME_CONTEXT_INPUT_WRITE_ARM_MIGRATION.md` — the
    migration frame: the production DurableDeferred mailbox is a transitional
    bridge, not target architecture.
-14. `../sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` — the tf-7kq8
+15. `../sdds/SDD_DURABLE_OUTPUT_CURSOR_PRIMITIVE.md` — the tf-7kq8
    replay-amplification bridge, now superseded as target architecture by sparse
    workflow-owned output transition logs.
-15. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
-16. `research/workflow-body-single-suspension-rule.md`
-17. `vision/factory-vision.md`
+16. `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
+17. `research/workflow-body-single-suspension-rule.md`
+18. `vision/factory-vision.md`
 
 ## Canonical Documents
 
@@ -169,6 +173,10 @@ Read in this order:
 - `sdds/SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md` — protocol owns shared
   schemas; TypeScript SDK, CLI, MCP/tool, and future REST/gRPC/JSON-RPC
   bindings project from protocol; runtime executes.
+- `../sdds/SDD_FLUENT_HARNESS_ADAPTER_CONTRACT.md` — canonical adapter boundary:
+  the external harness owns the native model loop; the adapter records Layer 1
+  observation and preserves native protocol fidelity; fluent-runtime owns Layer
+  2 durable coordination commitments and committed tool outcomes.
 - `sdds/SDD_FIREGRID_ENGINE_NATIVE_PRIMITIVES_ESCAPE_HATCH.md` — canonical
   contingency/performance track for `streamWait`, `streamWaitAny`, reducers,
   and signal primitives.
