@@ -20,6 +20,7 @@ set -eu
 # Lane hardening: no interactive prompt may hang the (stdin-less) lane; long
 # commands are timeout-capped. (TASK_DEBUG=1 step-traces where a lane wedges.)
 . "$(dirname "$0")/_lane-common.sh"
+lane_output_advisory
 # #765 (unified-kernel cutover) is merged to main; main is canonical.
 DEFAULT_BASE="origin/main"
 BEAD="${1:?usage: task-enter.sh <bead-id> <slug> [--class codex|sidecar] [--base ref] [--resume]}"
@@ -42,6 +43,28 @@ RR="$(git rev-parse --show-toplevel)"
 PARENT="$(dirname "$RR")"
 WT="$PARENT/firegrid-worktrees/${BEAD}-${SLUG}"
 BR="${CLASS}/${BEAD}-${SLUG}"
+
+# Verify the bead exists in the resolved store BEFORE any side effects
+# (worktree/branch/install). Creating a worktree for a bead that isn't in the
+# store the br-owner will sync is exactly the durable-state bug this lifecycle
+# prevents — so hard-stop here, not after. Explicit escape: TASK_ALLOW_MISSING_BEAD=1.
+BEADS_DIR="$(resolve_beads_dir || true)"
+if [ -z "${BEADS_DIR:-}" ]; then
+  echo "✋ task-enter: could not resolve a beads store (BEADS_DIR unset, no repo .beads)." >&2
+  echo "   Set BEADS_DIR to your br-owner store and retry (or TASK_ALLOW_MISSING_BEAD=1 to override)." >&2
+  [ "${TASK_ALLOW_MISSING_BEAD:-}" = "1" ] || exit 1
+else
+  export BEADS_DIR
+  if ! lane_beads_status "$BEAD" "$BEADS_DIR"; then
+    if [ "${TASK_ALLOW_MISSING_BEAD:-}" = "1" ]; then
+      echo "⚠ task-enter: TASK_ALLOW_MISSING_BEAD=1 — creating a worktree for UNTRACKED bead $BEAD." >&2
+    else
+      echo "✋ task-enter: bead $BEAD not in the resolved store — refusing to create a worktree for untracked work." >&2
+      echo "   Create/import the bead in $BEADS_DIR, or set TASK_ALLOW_MISSING_BEAD=1 to override." >&2
+      exit 1
+    fi
+  fi
+fi
 
 # Fetch the fork base (strip a leading "origin/" to get the remote branch).
 BASE_REMOTE_REF="${BASE#origin/}"
@@ -91,10 +114,13 @@ if [ "$CREATED" = 1 ] && command -v pnpm >/dev/null 2>&1; then
   fi
 fi
 
-# Claim the bead through the canonical store inherited from the shell
-# environment. See firegrid-worktree-lifecycle.TASK_ENTER.1.
-br update "$BEAD" --status in_progress >/dev/null 2>&1 \
-  && echo "✓ $BEAD → in_progress" || echo "⚠ could not br-update $BEAD (do it manually)"
+# Bead was verified in $BEADS_DIR at the top (before any side effects); now that
+# the worktree exists, mark it in_progress in that SAME store.
+if [ -n "${BEADS_DIR:-}" ]; then
+  BEADS_DIR="$BEADS_DIR" br update "$BEAD" --status in_progress >/dev/null 2>&1 \
+    && echo "✓ $BEAD → in_progress (store: $BEADS_DIR)" \
+    || echo "⚠ $BEAD status update failed — set it manually" >&2
+fi
 
 # firegrid-worktree-lifecycle.TASK_ENTER.2
 cat <<EOF
@@ -108,3 +134,6 @@ NEXT:
   # …work, commit here (NEVER in the primary)…
   bash scripts/task-exit.sh $BEAD          # when done
 EOF
+
+# Single bounded terminal line so an agent never needs to pipe this through tail.
+echo "LANE STATUS: entered $BEAD → worktree $WT (branch $BR). cd there and work; run wrappers directly."

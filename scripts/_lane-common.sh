@@ -47,3 +47,49 @@ with_timeout() {
   fi
   return "$rc"
 }
+
+# ── agent-safe invocation advisory ───────────────────────────────────────────
+# The recurring "stuck lane" is an AGENT-SIDE wrapper, not the script: running
+# `bash scripts/task-… 2>&1 | tail -N` or backgrounding it (`&`) strands a
+# pager/subshell so a FINISHED lane looks hung, and the bounded final status is
+# hidden. These scripts already stream concise progress and print ONE terminal
+# `LANE STATUS:` line — so they must be run DIRECTLY. We can't truly block a
+# pipe (and redirect-to-file in CI is legitimate), so advise loudly when stdout
+# is not a terminal. Call once, right after sourcing.
+lane_output_advisory() {
+  if [ ! -t 1 ]; then
+    echo "ℹ lane: run this wrapper DIRECTLY — do not pipe it through tail/head or background it (&)." >&2
+    echo "  It streams concise progress and ends with a single 'LANE STATUS:' line; a pipe hides that and can look stuck." >&2
+  fi
+}
+
+# Resolve the ONE beads store a lane must use for `br`, so task-enter and
+# task-exit never disagree (the enter-claims-here / exit-flushes-there bug:
+# beads live in the inherited br-owner store, e.g. ~/…/.beads, while task-exit
+# had hard-coded the in-repo .beads). Precedence: inherited $BEADS_DIR (the
+# br-owner store the operator/cron uses) > the repo .beads next to the PRIMARY
+# checkout. Prints nothing; echoes the path.
+resolve_beads_dir() {
+  if [ -n "${BEADS_DIR:-}" ]; then
+    printf '%s' "$BEADS_DIR"
+    return 0
+  fi
+  local common
+  common="$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd)" || return 1
+  printf '%s/.beads' "$(dirname "$common")"
+}
+
+# Print one visibility line for a bead in the resolved store, and a loud warning
+# when it is absent there (the store-confusion symptom) — so an operator sees
+# WHICH store is authoritative before trusting enter/exit bead state.
+lane_beads_status() {
+  local bead="$1" store="$2"
+  if BEADS_DIR="$store" br show "$bead" >/dev/null 2>&1; then
+    echo "✓ beads store: $store (bead $bead: found)"
+    return 0
+  fi
+  echo "⚠ beads store: $store — bead $bead NOT FOUND here." >&2
+  echo "  If it lives in a different br-owner store, set BEADS_DIR to that store so" >&2
+  echo "  task-enter and task-exit agree. Check: BEADS_DIR='$store' br show $bead" >&2
+  return 1
+}
