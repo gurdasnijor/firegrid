@@ -611,6 +611,75 @@ describe("@firegrid/fluent-runtime Store", () => {
     })
   })
 
+  it("matches waits with real Durable Streams composite offsets", async () => {
+    const fakeFetch = makeMemoryDurableStreamsFetch()
+
+    const result = await runtimeWith(
+      fakeFetch,
+      Effect.gen(function* () {
+        const store = yield* FluentStore
+        yield* store.createSession({
+          sessionId: "wait-composite-session",
+          agent: "agent",
+        })
+        yield* store.startTurn({
+          sessionId: "wait-composite-session",
+          turnId: "wait-composite-turn",
+          prompt: "wait_for",
+        })
+        yield* store.registerTurnWait({
+          sessionId: "wait-composite-session",
+          turnId: "wait-composite-turn",
+          waitId: "composite-offset-wait",
+          predicate: "event.type == \"review.posted\"",
+          afterOffset: "0000000000000000_0000000000000001",
+        })
+        const stale = yield* store.matchTurnWait({
+          sessionId: "wait-composite-session",
+          turnId: "wait-composite-turn",
+          waitId: "composite-offset-wait",
+          matchedOffset: "0000000000000000_0000000000000001",
+          event: {
+            type: "review.posted",
+            key: "review/stale",
+            value: {},
+            headers: { operation: "external" },
+          },
+        })
+        const matched = yield* store.matchTurnWait({
+          sessionId: "wait-composite-session",
+          turnId: "wait-composite-turn",
+          waitId: "composite-offset-wait",
+          matchedOffset: "0000000000000000_0000000000000002",
+          event: {
+            type: "review.posted",
+            key: "review/matched",
+            value: {},
+            headers: { operation: "external" },
+          },
+        })
+        const turn = yield* store.readTurn("wait-composite-session", "wait-composite-turn")
+        return { stale, matched, turn }
+      }),
+    )
+
+    expect(result.stale._tag).toBe("NotMatched")
+    expect(result.matched._tag).toBe("Matched")
+    expect(result.turn.events.at(-1)).toEqual({
+      type: "turn.wait_matched",
+      sessionId: "wait-composite-session",
+      turnId: "wait-composite-turn",
+      waitId: "composite-offset-wait",
+      matchedOffset: "0000000000000000_0000000000000002",
+      event: {
+        type: "review.posted",
+        key: "review/matched",
+        value: {},
+        headers: { operation: "external" },
+      },
+    })
+  })
+
   it("fans one candidate event across pending CEL waits from the wait source", async () => {
     const fakeFetch = makeMemoryDurableStreamsFetch()
 
