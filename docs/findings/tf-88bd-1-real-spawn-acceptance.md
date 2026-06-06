@@ -15,8 +15,8 @@
 
 | Field | Value |
 |---|---|
-| Run id | `2026-06-06T09-46-38-096Z__fluent-acp-real-spawn-acceptance` |
-| Trace | `packages/firelab/.simulate/runs/2026-06-06T09-46-38-096Z__fluent-acp-real-spawn-acceptance/trace.jsonl` |
+| Run id | `2026-06-06T09-57-44-851Z__fluent-acp-real-spawn-acceptance` |
+| Trace | `packages/firelab/.simulate/runs/2026-06-06T09-57-44-851Z__fluent-acp-real-spawn-acceptance/trace.jsonl` |
 | Command | `pnpm --filter firelab simulate:run fluent-acp-real-spawn-acceptance` |
 | Env | `ANTHROPIC_API_KEY` (real-agent lane gate; no fake fallback) |
 | Spawned binary | `npx -y @zed-industries/claude-code-acp` (v0.16.2) |
