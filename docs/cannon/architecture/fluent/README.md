@@ -98,6 +98,24 @@ host logic that reacts to wakes.
   L2: wait intent, wait matched, child spawned, tool result, terminal record
 ```
 
+### Authored Procedures Below The Session Line
+
+`@firegrid/fluent-firegrid` durable Effect authoring is a reusable primitive
+below and alongside managed sessions. It owns named `run` replay, schema decode
+at the journal boundary, retry and compensation inside ordinary Effect
+composition, deterministic Clock/Random services, and local fiber
+concurrency/cancellation.
+
+Those semantics do not turn a managed agent session into a resident workflow
+body. Managed sessions remain host-driven around an external harness model loop:
+the harness emits protocol observations, fluent-runtime records Layer 1 and Layer
+2 facts, and wakes re-enter through the relevant harness I/O role.
+
+The spawn vocabulary follows the same split. `Effect.fork` and scoped fibers are
+local authoring tools inside an authored procedure. Durable child/session spawn
+is a fluent-runtime coordination fact that creates or addresses another session
+stream and wakes on that session's terminal fact.
+
 ### Harnesses
 
 A harness is any system that owns an agent loop: Claude ACP, Codex ACP, native

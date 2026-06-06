@@ -31,6 +31,13 @@ Feature: Fluent concurrent replay soundness
     And the side-effecting action for that replayed step runs again
     And the experiment verdict is red
 
+  Scenario: Duplicate step keys fail loudly
+    Given a handler attempts to consume the same journal key twice in one invocation
+    When the second step reaches the journal boundary
+    Then the invocation fails with an explicit duplicate-step-key error
+    And the second step does not silently reuse the first step's recorded outcome
+    And concurrent same-key steps cannot both pass the consumed-key check
+
   Scenario: Replay proof is non-vacuous
     When the concurrent replay experiment runs
     Then the trace contains a first execution epoch where side-effecting actions ran

@@ -41,8 +41,49 @@ Feature: Fluent engine substrate-free Effect core
     And the side-effecting action is not executed again
     And in-process control errors are not written as domain journal rows
 
+  Scenario: Journaled success values decode through declared schemas
+    Given a named journal step records a schema-encodable success value
+    When the handler is re-driven
+    Then the replayed payload is decoded through the declared value schema
+    And malformed or version-incompatible journal payloads fail as journal boundary errors
+    And the engine does not return replayed payloads with an unchecked unknown-to-domain cast
+
   Scenario: Positional counters are not part of the durable engine contract
     When a handler defines named journal steps
     Then the journal key for each step is supplied by the caller or tool call
     And the key does not depend on a mutable construction-time step counter
     And inserting an unrelated step does not shift existing journal keys
+
+  Scenario: Durable authoring owns deterministic effect services
+    Given a fluent-firegrid handler reads time or random values that affect later control flow
+    When the handler is executed under the durable authoring runtime
+    Then Clock and Random reads are provided through journaled Effect services
+    And raw Date, Math.random, crypto randomness, or nondeterministic step keys are lint-backed boundary violations
+    And Clock.sleep is not treated as a durable timer unless lowered through the fluent-runtime timer coordination path
+
+  Scenario: Retry lives inside the journaled run action
+    Given a named journal step performs a retryable side effect
+    When the side effect is retried
+    Then the retry schedule is inside the Effect action passed to run
+    And only the terminal success or typed failure is written to the journal
+    And replay does not retry around a recorded run result
+
+  Scenario: Compensation can be a run-backed finalizer
+    Given a handler performs multiple durable side effects
+    When a later side effect fails or the handler is interrupted
+    Then Effect finalizers or onError paths can run compensation
+    And compensation that must be replay-stable is itself recorded as a named run step
+    And finalizer-backed compensation does not introduce a separate compensation scheduler
+
+  Scenario: Effect owns local concurrency while fluent-runtime owns durable sessions
+    When a handler forks, races, or interrupts local work
+    Then the local lifetime is represented by Effect fibers, scopes, and interruption
+    And joining local work does not create or join a durable child session
+    And durable child sessions, managed agent session spawn, and cross-session wakeup remain fluent-runtime coordination facts
+
+  Scenario: Journal write path preserves concurrent step semantics
+    Given multiple named run steps append journal rows concurrently
+    When the writer strategy is selected for the invocation stream
+    Then the strategy must not impose a caller-visible positional ordering contract on named steps
+    And any producer fencing, epoch, or flush behavior is handled as a substrate write-path decision
+    And the authoring engine contract remains open for the dedicated producer/write-path hardening slice
