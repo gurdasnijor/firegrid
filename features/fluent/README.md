@@ -26,6 +26,64 @@ verdict red.
 least one feature — see the **Traceability matrix**. The only deliberate gap is
 the SDD's own D.7 surface-glue carve-out.
 
+## Execution state ledger
+
+This ledger tracks implementation/proof state. The `.feature` files remain the
+acceptance contracts; this table records where execution currently stands so
+lanes do not infer status from stale PRs or ad hoc comments.
+
+Status meanings:
+- `done` — accepted baseline is merged for the current scope.
+- `partial` — useful work is merged, but the load-bearing acceptance proof is
+  not complete.
+- `in-flight` — active lane or open PR is currently responsible for the next
+  slice.
+- `spec-only` — the acceptance contract exists, but no accepted implementation
+  proof is in place.
+- `needs-rework` — prior work exists, but it does not satisfy the current
+  architecture/spec bar.
+
+Folder tracking epics:
+
+| Folder | Bead | State | Notes |
+|---|---:|---|---|
+| `agent-binding/` | `tf-88bd` | in-flight | ACP client/conductor lanes are active; real-harness proofs remain the critical gap. |
+| `authoring/` | `tf-2tl5` | done | Public fluent surface baseline is merged. Keep open for follow-up parity gaps. |
+| `control-plane/` | `tf-1726` | partial | Baseline control surface exists; host must keep converging on real DS primitives. |
+| `coordination/` | `tf-4grn` | partial | Durable wait/sleep/event/fork primitives are not fully proven end to end. |
+| `framing/` | `tf-hqya` | partial | Specs exist; firelab/cucumber verdict surface is still being hardened. |
+| `substrate/` | `tf-3zbj` | partial | DS consumer substrate is proven at dependency level; product post-claim loop remains. |
+
+Per-spec state:
+
+| Spec | State | Evidence / owner | Next acceptance bar |
+|---|---|---|---|
+| `agent-binding/fluent-agent-adapter-contract.feature` | spec-only | Process-owner package exists in `packages/fluent-acp-process`, but this feature is broader than process lifecycle. | Real harness spawned through the adapter boundary with raw observation and no DS writes by the harness. |
+| `agent-binding/fluent-approval-fidelity.feature` | spec-only | No accepted real approval fidelity proof yet. | Real native/ACP approval round trip preserving per-request response shape. |
+| `agent-binding/fluent-bridge-mediation.feature` | spec-only | No accepted mediation proof yet. | One-prompt-in-flight, dedupe, interrupt, and cancel semantics against a real harness. |
+| `agent-binding/fluent-client-normalization.feature` | spec-only | Prior client-normalization work was not accepted as the canonical projection path. | Raw stream replay materializes durable projections without rewriting raw history. |
+| `agent-binding/fluent-firegrid-acp-client.feature` | in-flight | `tf-w9uc` owns the fluent-runtime ACP client binding; `packages/fluent-acp-process` is merged as the process owner. | Firegrid ACP client callbacks record L1 observation and L2 commitments from a real ACP process stream. |
+| `agent-binding/fluent-firegrid-acp-conductor.feature` | in-flight | `tf-v2nv` owns the editor/Zed-facing conductor skeleton. | Firegrid implements the editor-facing ACP agent role while delegating downstream through the separate client role. |
+| `agent-binding/fluent-harness-adapter-boundary.feature` | partial | Harness adapter contract docs/specs are merged; process owner is isolated. | L1 observation -> L2 commitment -> native result path, with park/redrive and no duplicate side effects. |
+| `agent-binding/fluent-mcp-tools-out.feature` | partial | MCP/tool edge work exists, but it must stay thin over fluent-runtime semantics. | Durable tools reachable by a real harness through an Effect Tool/Toolkit/McpServer-shaped edge. |
+| `agent-binding/fluent-native-resume.feature` | needs-rework | Earlier resume work predates the current no-duplicate-L1-side-effect contract. | Kill/restart a real harness and resume natively without replaying observed side effects. |
+| `agent-binding/fluent-park-interface.feature` | needs-rework | Earlier park-interface work did not settle the real transport end-of-turn proof. | Parking tool ends the native turn, later wake re-enters through the real harness path. |
+| `agent-binding/fluent-three-envelope-stream.feature` | spec-only | No accepted stream-envelope proof yet. | Intent, raw, and lifecycle envelopes appear as durable truth with projections derived later. |
+| `authoring/fluent-firegrid-public-surface.feature` | done | Public surface spec and implementation are merged; examples align with restate-sdk-gen-shaped generator affordances. | Keep parity pressure on examples and root exports as runtime binding needs evolve. |
+| `control-plane/fluent-control-surface.feature` | partial | Baseline control surface and workbench host exist. | Drive `send`/`fork`/`tag`/`schedule`/read APIs over real DS substrate instead of handrolled hosts. |
+| `coordination/fluent-coordination-taxonomy.feature` | spec-only | Taxonomy is captured, but not independently proven. | Product facts use State Protocol shapes and given-key addressing in vertical flows. |
+| `coordination/fluent-durable-sleep.feature` | partial | Timer facts/sources exist conceptually; local/process sleep remains the gap to close. | Timer intent before park, scheduled source materializes `TimerFired`, replay resolves from stream. |
+| `coordination/fluent-durable-wait.feature` | partial | Wait facts and CEL direction are captured; post-claim DS redrive is not complete. | Wait intent before park, CEL over event+self, DS wake, recorded match served on replay. |
+| `coordination/fluent-event-ingress.feature` | partial | Event ingress work exists, but provider webhook/state observability needs DS-native proof. | Fenced provider append becomes queryable/observable state and wakes eligible waits. |
+| `coordination/fluent-fork-spawn.feature` | partial | Fork/spawn direction exists; cross-harness parent/child choreography is not proven. | Parent harness A forks child harness B, child terminal fact wakes parent, both survive restart. |
+| `coordination/fluent-session-handler.feature` | needs-rework | Prior session-handler work drifted toward lab-only or legacy-runtime shapes. | `handleSession(wake)` materializes state and drives the external harness without owning the model loop. |
+| `framing/fluent-coverage-oracle.feature` | partial | Gherkin/firelab direction is settled; trace-CEL is diagnostic rather than verdict. | Product-observable `Then` assertions with mutation/vacuity checks for each major flow. |
+| `framing/fluent-execution-model.feature` | done | Architecture docs now capture choreography, handler, external-harness axes. | Keep this as the framing gate for reviews, not as a product implementation task. |
+| `substrate/fluent-concurrent-replay-soundness.feature` | needs-rework | PR #955-style low-level/mock-DS work is not acceptable as the proof. | Re-prove named-key replay using the real runtime boundary and upstream DS test server only where needed. |
+| `substrate/fluent-durable-streams-consumer-substrate.feature` | partial | Upstream/fork DS consumer substrate conformance is green and pinned. | Firegrid post-claim witness: claim -> materialize -> append L2 outcome -> ack after durable append. |
+| `substrate/fluent-engine-substrate-free.feature` | done | Substrate-free fluent engine baseline is merged. | Keep scheduler/journal internals out of the public authoring surface. |
+| `substrate/fluent-worker-redrive.feature` | partial | Earlier redrive work must be revisited atop the real DS consumer substrate. | DS grants wake; Firegrid resolves product state and acks/releases only after durable outcome. |
+
 **Conventions**
 - `product: fluent` (new dir, parallel to `firegrid`/`flamecast`/
   `durable-agent-runtime-lab`).
