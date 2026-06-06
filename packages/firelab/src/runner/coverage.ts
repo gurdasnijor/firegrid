@@ -149,6 +149,7 @@ const HOST_SUBSTRATE_PREFIXES: ReadonlyArray<string> = [
   "fluent_runtime.event_ingress.",
   "fluent_runtime.sources.",
   "fluent_runtime.store.",
+  "fluent_runtime.worker_redrive.",
   // dynamic-suffix host spans: <verb>/<sessionId|contextId>
   "unified.permission.request/",
   "unified.permission.relay/",
