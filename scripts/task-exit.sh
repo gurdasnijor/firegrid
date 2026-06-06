@@ -11,6 +11,7 @@ set -eu
 # Lane hardening: prompts can't hang the (stdin-less) lane; preflight is
 # timeout-capped. (TASK_DEBUG=1 step-traces where a lane wedges.)
 . "$(dirname "$0")/_lane-common.sh"
+lane_output_advisory
 BEAD="${1:?usage: task-exit.sh <bead-id> [--decision <url>]}"
 DECISION=""
 shift || true
@@ -28,8 +29,12 @@ fi
 
 RR="$(git rev-parse --show-toplevel)"
 BR="$(git -C "$RR" rev-parse --abbrev-ref HEAD)"
-COMMON="$(cd "$(git -C "$RR" rev-parse --git-common-dir)" && pwd)"
-BEADS_DIR="$(dirname "$COMMON")/.beads"   # the shared .beads lives by the primary
+# Use the SAME store task-enter claimed against (inherited br-owner store if set,
+# else the repo .beads) so enter/exit never disagree. Surface which store + warn
+# if the bead is absent there (the store-confusion symptom).
+BEADS_DIR="$(resolve_beads_dir || true)"
+export BEADS_DIR
+[ -n "${BEADS_DIR:-}" ] && lane_beads_status "$BEAD" "$BEADS_DIR" || true
 
 # 1. local beads flush only (NO push of issues.jsonl from a lane)
 BEADS_DIR="$BEADS_DIR" br sync --flush-only >/dev/null 2>&1 || true
@@ -70,6 +75,24 @@ if [ "${AHEAD:-1}" = "0" ]; then
   exit 1
 fi
 
+# 3a-bis. Doc-only fast path: when EVERY changed file is Markdown or under
+#     docs/, the heavy turbo build/test gate proves nothing (no buildable or
+#     testable change), so run a reduced gate instead of the full matrix.
+#     Conservative — ANY non-doc path forces the full gate; purely a function
+#     of the diff, so it cannot be set by accident.
+CHANGED_FILES="$(git -C "$RR" diff --name-only "$BASE_REF..HEAD")"
+DOConly=1
+[ -z "$CHANGED_FILES" ] && DOConly=0
+while IFS= read -r _f; do
+  [ -z "$_f" ] && continue
+  case "$_f" in
+    *.md|docs/*) ;;
+    *) DOConly=0; break ;;
+  esac
+done <<DOCSCAN
+$CHANGED_FILES
+DOCSCAN
+
 # 3b. PREFLIGHT GATE — run the full local gate set on the committed state and
 #     REFUSE to push / open a PR on failure. The DRAFT PR is the merge gate, so
 #     pushing a red branch just burns a CI round-trip and strands a failing PR;
@@ -83,6 +106,9 @@ fi
 if [ "${TASK_EXIT_SKIP_PREFLIGHT:-}" = "1" ]; then
   echo "⚠ task-exit: TASK_EXIT_SKIP_PREFLIGHT=1 — SKIPPING pnpm preflight." >&2
   echo "   The push/PR is NOT locally verified; CI may fail. Use sparingly." >&2
+elif [ "${DOConly:-0}" = "1" ]; then
+  echo "▶ task-exit: docs-only diff — reduced gate (skipping pnpm preflight: no buildable/testable change)."
+  echo "✓ task-exit: docs-only reduced gate — proceeding to push."
 else
   echo "▶ task-exit: running pnpm preflight before push (≤${TASK_EXIT_PREFLIGHT_TIMEOUT:-1200}s; override: TASK_EXIT_SKIP_PREFLIGHT=1)…"
   if ! with_timeout "${TASK_EXIT_PREFLIGHT_TIMEOUT:-1200}" sh -c "cd '$RR' && pnpm preflight"; then
@@ -169,7 +195,15 @@ if command -v gh >/dev/null 2>&1; then
     # commit subject; body = commits + diffstat. (Phase 4 replaces the body with
     # the firelab trace-evidence block once experiments drive the lane.)
     PR_TITLE="$(git -C "$RR" log "$BASE_REF..HEAD" --format='%s' | grep -vi '^wip(' | head -1)"
-    [ -n "$PR_TITLE" ] || PR_TITLE="$(git -C "$RR" log -1 --format='%s')"
+    # Fallback when EVERY commit is a generic wip checkpoint: do NOT title the PR
+    # "wip(...)" (the prior fallback) — derive a readable title from the bead +
+    # branch slug instead, e.g. "tf-tpr8: lane tooling friction".
+    if [ -z "$PR_TITLE" ]; then
+      _slug="${BR#*/}"            # strip class/ (sidecar|codex)
+      _slug="${_slug#"$BEAD"-}"   # strip the leading bead id
+      _slug="$(printf '%s' "$_slug" | tr '-' ' ')"
+      PR_TITLE="${BEAD:+$BEAD: }${_slug:-lane work}"
+    fi
     PR_BODY_FILE="$(mktemp)"
     {
       echo "## Lane \`$BR\`"
@@ -227,3 +261,10 @@ DONE on $BR (pushed). Lifecycle remainder:
       bash scripts/task-reap.sh $BR        # just this one
     (reap NEVER discards dirty/unmerged work; it surfaces it instead.)
 EOF
+
+# Single bounded terminal line — an agent reads THIS instead of piping to tail.
+PR_URL=""
+if command -v gh >/dev/null 2>&1; then
+  PR_URL="$(gh pr view "$BR" --json url -q .url 2>/dev/null || true)"
+fi
+echo "LANE STATUS: $BEAD pushed on $BR${PR_URL:+ — PR $PR_URL}. Run wrappers directly (no | tail, no &)."

@@ -20,6 +20,7 @@ set -eu
 # Lane hardening: no interactive prompt may hang the (stdin-less) lane; long
 # commands are timeout-capped. (TASK_DEBUG=1 step-traces where a lane wedges.)
 . "$(dirname "$0")/_lane-common.sh"
+lane_output_advisory
 # #765 (unified-kernel cutover) is merged to main; main is canonical.
 DEFAULT_BASE="origin/main"
 BEAD="${1:?usage: task-enter.sh <bead-id> <slug> [--class codex|sidecar] [--base ref] [--resume]}"
@@ -91,10 +92,20 @@ if [ "$CREATED" = 1 ] && command -v pnpm >/dev/null 2>&1; then
   fi
 fi
 
-# Claim the bead through the canonical store inherited from the shell
-# environment. See firegrid-worktree-lifecycle.TASK_ENTER.1.
-br update "$BEAD" --status in_progress >/dev/null 2>&1 \
-  && echo "✓ $BEAD → in_progress" || echo "⚠ could not br-update $BEAD (do it manually)"
+# Claim the bead through the SAME store task-exit will use (resolve_beads_dir),
+# not whatever the shell happens to inherit — otherwise a bead claimed here can
+# be invisible at exit. See firegrid-worktree-lifecycle.TASK_ENTER.1.
+BEADS_DIR="$(resolve_beads_dir || true)"
+if [ -n "${BEADS_DIR:-}" ]; then
+  export BEADS_DIR
+  if lane_beads_status "$BEAD" "$BEADS_DIR"; then
+    BEADS_DIR="$BEADS_DIR" br update "$BEAD" --status in_progress >/dev/null 2>&1 \
+      && echo "✓ $BEAD → in_progress" \
+      || echo "⚠ bead $BEAD found but status update failed — set it manually" >&2
+  fi
+else
+  echo "⚠ could not resolve a beads store; skipping bead claim for $BEAD" >&2
+fi
 
 # firegrid-worktree-lifecycle.TASK_ENTER.2
 cat <<EOF
@@ -108,3 +119,6 @@ NEXT:
   # …work, commit here (NEVER in the primary)…
   bash scripts/task-exit.sh $BEAD          # when done
 EOF
+
+# Single bounded terminal line so an agent never needs to pipe this through tail.
+echo "LANE STATUS: entered $BEAD → worktree $WT (branch $BR). cd there and work; run wrappers directly."
