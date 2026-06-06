@@ -11,6 +11,10 @@ verdict red.
 - **Authoring package.** `@firegrid/fluent-firegrid` exposes the public DSL:
   definitions plus free primitives. It does not host a runtime or expose the
   external control plane.
+- **Below-line authored procedures.** `run`, retry, compensation, local
+  concurrency, local cancellation, and deterministic Clock/Random semantics are
+  durable Effect authoring concerns for reusable workflows. They are not the
+  managed-agent session architecture.
 - **Half 1 — Non-invasive agent binding.** The bridge over the agent's *own*
   harness. **🔴 real-agent only**: every Half-1 acceptance experiment MUST drive a
   real spawn-target (real native/ACP agent). A fake adapter/recorder/fake-codec is
@@ -25,6 +29,28 @@ verdict red.
 **Coverage guarantee.** Every section of `fluent-firegrid-sdd.md` maps to at
 least one feature — see the **Traceability matrix**. The only deliberate gap is
 the SDD's own D.7 surface-glue carve-out.
+
+## Design boundary: below-line authoring versus managed sessions
+
+The `tf-2tl5.1` design-alignment specs take the useful durable-Effect pieces from
+the fluent-firegrid proposal and scope them below the managed-agent line:
+
+- `@firegrid/fluent-firegrid` authoring owns named `run` replay, value/error
+  schemas at the journal boundary, retry inside `run`, compensation through
+  Effect finalizers, deterministic Clock/Random services, and local
+  fiber/scoped cancellation semantics.
+- `packages/fluent-runtime` owns session authority for managed agents: stream
+  facts, wake/redrive, wait/timer/child/session coordination, and harness I/O
+  re-entry around the external model loop.
+- Managed agent sessions are not long-lived workflow bodies. They are host-driven
+  harness coordination around external Claude/Codex/native/cloud loops.
+- Durable child/session spawn is not `Effect.fork`; local fibers are an authoring
+  primitive, while durable spawn is a fluent-runtime coordination fact and wake
+  relationship.
+
+Write-path risk remains intentionally open for `tf-3zbj.1`: the authoring specs
+allow a future correction to producer/fencing strategy, but this slice does not
+implement or bless a new write path.
 
 ## Execution state ledger
 
@@ -48,7 +74,7 @@ Folder tracking epics:
 | Folder | Bead | State | Notes |
 |---|---:|---|---|
 | `agent-binding/` | `tf-88bd` | partial | ACP client (#967) and conductor (#969) bindings are merged with firelab witnesses; the real-harness boundary proofs (native resume, park interface, approval fidelity, bridge mediation) remain the critical gap. |
-| `authoring/` | `tf-2tl5` | done | Public fluent surface baseline is merged. Keep open for follow-up parity gaps. |
+| `authoring/` | `tf-2tl5` | partial | Public fluent surface baseline is merged; follow-up specs pin schema decode, retry/compensation, determinism, and duplicate-key behavior for below-line authored procedures without changing managed-agent session architecture. |
 | `control-plane/` | `tf-1726` | partial | Baseline control surface exists; host must keep converging on real DS primitives. |
 | `coordination/` | `tf-4grn` | partial | Durable wait/sleep/event/fork primitives are not fully proven end to end. |
 | `framing/` | `tf-hqya` | partial | Specs exist; firelab/cucumber verdict surface is still being hardened. |
@@ -69,7 +95,7 @@ Per-spec state:
 | `agent-binding/fluent-native-resume.feature` | needs-rework | Earlier resume work predates the current no-duplicate-L1-side-effect contract. | `tf-88bd.6`: kill/restart a real harness and resume natively without replaying observed side effects. |
 | `agent-binding/fluent-park-interface.feature` | needs-rework | Earlier park-interface work did not settle the real transport end-of-turn proof. | Parking tool ends the native turn, later wake re-enters through the real harness path. |
 | `agent-binding/fluent-three-envelope-stream.feature` | spec-only | No accepted stream-envelope proof yet. | Intent, raw, and lifecycle envelopes appear as durable truth with projections derived later. |
-| `authoring/fluent-firegrid-public-surface.feature` | done | Public surface spec and implementation are merged; examples align with restate-sdk-gen-shaped generator affordances. | Keep parity pressure on examples and root exports as runtime binding needs evolve. |
+| `authoring/fluent-firegrid-public-surface.feature` | partial | Public surface spec and implementation are merged; `tf-2tl5.1` adds below-line authoring contracts for replay schemas, retry/compensation, and local Effect composition. | Prove value/error schema decode and duplicate-key failure without broadening fluent-firegrid into a session host. |
 | `control-plane/fluent-control-surface.feature` | partial | Baseline control surface and workbench host exist. | Drive `send`/`fork`/`tag`/`schedule`/read APIs over real DS substrate instead of handrolled hosts. |
 | `coordination/fluent-coordination-taxonomy.feature` | spec-only | Taxonomy is captured, but not independently proven. | Product facts use State Protocol shapes and given-key addressing in vertical flows. |
 | `coordination/fluent-durable-sleep.feature` | partial | Timer facts/sources exist conceptually; local/process sleep remains the gap to close. | Timer intent before park, scheduled source materializes `TimerFired`, replay resolves from stream. |
@@ -79,9 +105,9 @@ Per-spec state:
 | `coordination/fluent-session-handler.feature` | needs-rework | Prior session-handler work drifted toward lab-only or legacy-runtime shapes. | `handleSession(wake)` materializes state and drives the external harness without owning the model loop. |
 | `framing/fluent-coverage-oracle.feature` | partial | Gherkin/firelab direction is settled; trace-CEL is diagnostic rather than verdict. | Product-observable `Then` assertions with mutation/vacuity checks for each major flow. |
 | `framing/fluent-execution-model.feature` | done | Architecture docs now capture choreography, handler, external-harness axes. | Keep this as the framing gate for reviews, not as a product implementation task. |
-| `substrate/fluent-concurrent-replay-soundness.feature` | needs-rework | PR #955-style low-level/mock-DS work is not acceptable as the proof. | Re-prove named-key replay using the real runtime boundary and upstream DS test server only where needed. |
+| `substrate/fluent-concurrent-replay-soundness.feature` | needs-rework | PR #955-style low-level/mock-DS work is not acceptable as the proof; `tf-2tl5.1` adds the duplicate-key loud-failure contract. | Re-prove named-key replay and duplicate-key failure using the real runtime boundary and upstream DS test server only where needed. |
 | `substrate/fluent-durable-streams-consumer-substrate.feature` | partial | Upstream/fork DS consumer substrate conformance is green and pinned. | Firegrid post-claim witness: claim -> materialize -> append L2 outcome -> ack after durable append. |
-| `substrate/fluent-engine-substrate-free.feature` | done | Substrate-free fluent engine baseline is merged. | Keep scheduler/journal internals out of the public authoring surface. |
+| `substrate/fluent-engine-substrate-free.feature` | partial | Substrate-free fluent engine baseline is merged; `tf-2tl5.1` adds authoring-runtime contracts for schema decode, deterministic Effect services, retry, compensation, and local fibers. | Keep scheduler/journal internals out of the public authoring surface and keep durable child/session spawn in fluent-runtime coordination. |
 | `substrate/fluent-worker-redrive.feature` | partial | Earlier redrive work must be revisited atop the real DS consumer substrate. | DS grants wake; Firegrid resolves product state and acks/releases only after durable outcome. |
 
 **Conventions**

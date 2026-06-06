@@ -31,6 +31,13 @@ Feature: Fluent Firegrid public authoring surface
     And replay resolves the step from the journal by that name
     And the side-effecting action is not re-executed for an already journaled name
 
+  Scenario: run declares replay schemas at the journal boundary
+    When an author calls run for a step that records a success value or typed failure
+    Then the public authoring surface accepts an explicit value schema for replayed successes
+    And it accepts an explicit error schema for replayed typed failures
+    And replay decodes recorded journal payloads through those schemas before returning them to the handler
+    And replay does not recover values or errors by casting an unknown payload to the handler type
+
   Scenario: Missing step names fail at the authoring boundary
     When an author calls run with an anonymous action and no explicit name
     Then fluent-firegrid rejects the step before executing the action
@@ -41,6 +48,13 @@ Feature: Fluent Firegrid public authoring surface
     Then all, race, select, and spawn are Effect-shaped helpers
     And fluent-firegrid does not expose a bespoke Future scheduler as the public model
     And durable child-session spawn remains a fluent-runtime coordination feature
+    And managed agent session spawn remains a fluent-runtime coordination feature around external harness loops
+
+  Scenario: retry and compensation are authored inside Effect
+    When an author needs retryable or compensating durable work
+    Then retry policies are applied inside the run action whose terminal result is journaled
+    And retrying around an already journaled run is rejected by examples and tests as the wrong replay model
+    And compensation is expressed with Effect finalizers or onError paths whose compensating side effects may themselves be run-backed steps
 
   Scenario: Handler-edge execution is explicit and lower-level
     Given a runtime has selected a journal stream and producer identity
