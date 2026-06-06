@@ -1,6 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { Command } from "@effect/platform"
-import { Context, Effect, Layer, Queue, Stream } from "effect"
+import { Context, Effect, Layer, Queue, Runtime, Stream } from "effect"
 import { resolveAgent } from "./resolve-agent.ts"
 import {
   AcpProcessError,
@@ -24,14 +24,29 @@ import {
 export const spawnAcpProcess = Effect.fn("fluent-acp-process.spawn")(
   function* (input: AcpSpawnInput) {
     const resolved = yield* resolveAgent(input.agent)
+    const runtime = yield* Effect.runtime<never>()
+    const runPromise = Runtime.runPromise(runtime)
+    const agent = typeof input.agent === "string" ? input.agent : "custom"
 
     // Record WHAT was spawned on the (host-substrate, forge-proof) spawn span so
     // a coverage gate can distinguish a real keyed agent (`claude`/`codex`) from
     // an arbitrary command override — acceptance gates on the real agent.
     yield* Effect.annotateCurrentSpan({
-      "firegrid.acp_process.agent": typeof input.agent === "string" ? input.agent : "custom",
+      "firegrid.acp_process.agent": agent,
       "firegrid.acp_process.command": resolved.command,
     })
+
+    const byteSpan = (name: string, chunk: Uint8Array) =>
+      Effect.void.pipe(
+        Effect.withSpan(name, {
+          kind: "producer",
+          attributes: {
+            "firegrid.acp_process.agent": agent,
+            "firegrid.acp_process.command": resolved.command,
+            "firegrid.acp_process.bytes": chunk.byteLength,
+          },
+        }),
+      )
 
     const command = Command.make(resolved.command, ...resolved.args).pipe(
       Command.workingDirectory(input.cwd),
@@ -61,18 +76,27 @@ export const spawnAcpProcess = Effect.fn("fluent-acp-process.spawn")(
     // drained into the process stdin sink by a scoped fiber.
     const inbox = yield* Queue.unbounded<Uint8Array>()
     yield* Stream.fromQueue(inbox).pipe(
+      Stream.tap((chunk) => byteSpan("fluent-acp-process.stdin_bytes", chunk)),
       Stream.run(proc.stdin),
       Effect.ignore,
       Effect.forkScoped,
     )
 
     const writable = new WritableStream<Uint8Array>({
-      write: (chunk) => {
-        Queue.unsafeOffer(inbox, chunk)
+      async write(chunk) {
+        await runPromise(Queue.offer(inbox, chunk))
+      },
+      async close() {
+        await runPromise(Queue.shutdown(inbox))
+      },
+      async abort() {
+        await runPromise(Queue.shutdown(inbox))
       },
     })
     // Agent -> client: stdout bytes are parsed as ACP frames by the SDK.
-    const readable = Stream.toReadableStream(proc.stdout)
+    const readable = Stream.toReadableStreamRuntime(runtime)(
+      proc.stdout.pipe(Stream.tap((chunk) => byteSpan("fluent-acp-process.stdout_bytes", chunk))),
+    ) as ReadableStream<Uint8Array>
     const stream = acp.ndJsonStream(writable, readable)
 
     const kill = Queue.shutdown(inbox).pipe(

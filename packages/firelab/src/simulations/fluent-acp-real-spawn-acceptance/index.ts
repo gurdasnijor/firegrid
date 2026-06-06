@@ -12,10 +12,12 @@ export default defineSimulation({
     // The verdict is computed from forge-proof host-substrate spans — the driver
     // draws no verdict. Load-bearing proof:
     //  1. a REAL keyed agent (claude) was spawned by the process owner;
-    //  2. the agent's ACP callbacks were persisted as durable fluent-runtime
-    //     facts over real Durable Streams.
-    // A fake/arbitrary command fails gate 1 (agent != "claude"); a no-callback
-    // run fails gate 2; both spans fire host-side (firegrid.side != "driver").
+    //  2. the process owner observed stdout bytes from that agent;
+    //  3. FiregridAcpClient observed the ACP session_update callback;
+    //  4. the callback was persisted as the acp.session_update L1 fact over
+    //     real Durable Streams.
+    // A fake/arbitrary command fails gate 1 (agent != "claude"); a silent agent
+    // fails gates 2/3; a loose append cannot satisfy gate 4.
     gates: [
       {
         id: "fluent_acp_real_spawn.real_agent_spawned",
@@ -24,9 +26,22 @@ export default defineSimulation({
           "spans.exists(s, named(s, \"fluent-acp-process.spawn\") && attr(s, \"firegrid.acp_process.agent\") == \"claude\")",
       },
       {
+        id: "fluent_acp_real_spawn.agent_stdout_observed",
+        description: "the process owner observed ACP stdout bytes from the real agent",
+        claim:
+          "spans.exists(s, named(s, \"fluent-acp-process.stdout_bytes\") && attr(s, \"firegrid.acp_process.agent\") == \"claude\")",
+      },
+      {
+        id: "fluent_acp_real_spawn.session_update_callback",
+        description: "FiregridAcpClient observed an ACP agent_message_chunk session_update callback",
+        claim:
+          "spans.exists(s, named(s, \"fluent_runtime.acp.session_update\") && attr(s, \"sessionUpdate\") == \"agent_message_chunk\")",
+      },
+      {
         id: "fluent_acp_real_spawn.l1_append",
-        description: "the real agent's ACP callbacks were persisted as L1 facts via FluentStore",
-        claim: "spans.exists(s, named(s, \"fluent_runtime.store.session.append_event\"))",
+        description: "the real agent's ACP session_update callback was persisted as the L1 fact via FluentStore",
+        claim:
+          "spans.exists(s, named(s, \"fluent_runtime.store.session.append_event\") && attr(s, \"firegrid.session.event.name\") == \"acp.session_update\")",
       },
       {
         id: "fluent_acp_real_spawn.durable_write",

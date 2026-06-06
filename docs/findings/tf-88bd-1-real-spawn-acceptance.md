@@ -15,8 +15,8 @@
 
 | Field | Value |
 |---|---|
-| Run id | `2026-06-06T02-32-51-003Z__fluent-acp-real-spawn-acceptance` |
-| Trace | `packages/firelab/.simulate/runs/2026-06-06T02-32-51-003Z__fluent-acp-real-spawn-acceptance/trace.jsonl` |
+| Run id | `2026-06-06T09-46-38-096Z__fluent-acp-real-spawn-acceptance` |
+| Trace | `packages/firelab/.simulate/runs/2026-06-06T09-46-38-096Z__fluent-acp-real-spawn-acceptance/trace.jsonl` |
 | Command | `pnpm --filter firelab simulate:run fluent-acp-real-spawn-acceptance` |
 | Env | `ANTHROPIC_API_KEY` (real-agent lane gate; no fake fallback) |
 | Spawned binary | `npx -y @zed-industries/claude-code-acp` (v0.16.2) |
@@ -24,23 +24,25 @@
 | Outcome | `DriverCompleted` |
 | Verdict | **`production-path-covered`** |
 
-Instrumentation observed: `fluent-acp-process.spawn` ×1 (`firegrid.acp_process.agent="claude"`), `fluent_runtime.store.session.create` ×1, **`fluent_runtime.store.session.append_event` ×3** (the real agent's 3 `session/update` callbacks persisted as L1 facts), `firegrid.durable_streams.http.request` ×5, `firegrid.sim.fluent_acp_real_spawn.host.run` ×1.
+Instrumentation observed: `fluent-acp-process.spawn` ×1 (`firegrid.acp_process.agent="claude"`), `fluent-acp-process.stdin_bytes` ×3, `fluent-acp-process.stdout_bytes` ×6, `fluent_runtime.acp.session_update` ×3 (`sessionUpdate="agent_message_chunk"`), `fluent_runtime.store.session.create` ×1, **`fluent_runtime.store.session.append_event` ×3** (`firegrid.session.event.name="acp.session_update"`), `firegrid.durable_streams.http.request` ×5, `firegrid.sim.fluent_acp_real_spawn.host.run` ×1.
 
 ## Computed verdict — gates (forge-proof host-substrate spans; driver draws no verdict)
 
 | Gate | Claim | Result |
 |---|---|---|
 | `real_agent_spawned` | `spawn` span exists with `attr(firegrid.acp_process.agent)=="claude"` | ✓ |
-| `l1_append` | `fluent_runtime.store.session.append_event` exists | ✓ (×3) |
+| `agent_stdout_observed` | `fluent-acp-process.stdout_bytes` span exists with `attr(firegrid.acp_process.agent)=="claude"` | ✓ (×6) |
+| `session_update_callback` | `fluent_runtime.acp.session_update` exists with `attr(sessionUpdate)=="agent_message_chunk"` | ✓ (×3) |
+| `l1_append` | `fluent_runtime.store.session.append_event` exists with `attr(firegrid.session.event.name)=="acp.session_update"` | ✓ (×3) |
 | `durable_write` | `firegrid.durable_streams.http.request` exists | ✓ |
 
 Per the firelab methodology, the **driver does not draw the verdict**: it waits on the public observable marker (the agent's `agent_message_chunk` L1 fact appearing on the durable session stream) to keep the run alive through the real turn, annotates what it saw, and returns. The gates judge from forge-proof spans (`firegrid.side != "driver"`).
 
-**Production-boundary instrumentation added** (per the steer — proof lives at the production boundary, not in driver `expect()` blocks): `@firegrid/fluent-acp-process`'s `spawn` span now annotates `firegrid.acp_process.agent` / `.command`, so a gate can require the **real** keyed agent.
+**Production-boundary instrumentation added in this PR** (per the steer — proof lives at the production boundary, not in driver `expect()` blocks): `@firegrid/fluent-acp-process`'s `spawn` span annotates `firegrid.acp_process.agent` / `.command`, its process stream boundary emits `fluent-acp-process.stdin_bytes` / `fluent-acp-process.stdout_bytes` byte-count spans without writing diagnostics to stdout, and `@firegrid/fluent-runtime/acp` emits `fluent_runtime.acp.session_update` with `sessionUpdate` when present. The gates consume those spans directly.
 
 ## Negative control (verified)
 
-The gate keys on `firegrid.acp_process.agent == "claude"`. The fixture sim spawns `{ command: "pnpm", … }` (an override → `agent="custom"`), so the fixture's spawn **fails** this gate. A fake/arbitrary command cannot satisfy `real_agent_spawned`; a no-callback turn fails `l1_append`. (Run the fixture against this gate to confirm: not-covered.)
+The gate keys on `firegrid.acp_process.agent == "claude"`. The fixture sim spawns `{ command: "pnpm", … }` (an override → `agent="custom"`), so the fixture's spawn **fails** this gate. A fake/arbitrary command cannot satisfy `real_agent_spawned`; a silent/no-callback turn fails `agent_stdout_observed` or `session_update_callback`; a generic store write that is not `acp.session_update` fails `l1_append`. (Run the fixture against this gate to confirm: not-covered.)
 
 ## Gherkin scenarios this covers (real spawned target)
 
