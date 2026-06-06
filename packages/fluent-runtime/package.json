@@ -14,6 +14,10 @@
     "./acp": {
       "types": "./src/acp/index.ts",
       "default": "./src/acp/index.ts"
+    },
+    "./acp-conductor": {
+      "types": "./src/acp-conductor/index.ts",
+      "default": "./src/acp-conductor/index.ts"
     }
   },
   "files": [
