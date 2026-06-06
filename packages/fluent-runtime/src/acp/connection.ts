@@ -1,5 +1,5 @@
 import * as acp from "@agentclientprotocol/sdk"
-import { Effect } from "effect"
+import { Effect, Runtime } from "effect"
 import {
   FiregridAcpClient,
   FluentAcpClientError,
@@ -21,8 +21,12 @@ export interface FiregridAcpConnection {
 export const connectFiregridAcp = (
   input: ConnectFiregridAcpInput,
 ): Effect.Effect<FiregridAcpConnection, never> =>
-  Effect.sync(() => {
-    const client = new FiregridAcpClient({ runtime: input.runtime })
+  Effect.gen(function*() {
+    const effectRuntime = yield* Effect.runtime<never>()
+    const client = new FiregridAcpClient({
+      runtime: input.runtime,
+      runEffect: Runtime.runPromise(effectRuntime),
+    })
     const connection = new acp.ClientSideConnection(() => client, input.stream)
 
     return {
@@ -36,8 +40,7 @@ export const connectFiregridAcp = (
             op: "close",
             message: "failed to close ACP writable stream",
             cause,
-          }),
+        }),
       }).pipe(Effect.catchAll(() => Effect.void)),
     }
   })
-

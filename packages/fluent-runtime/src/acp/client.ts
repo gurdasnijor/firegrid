@@ -44,23 +44,30 @@ export interface FluentAcpRuntimePortService {
   ) => Effect.Effect<Record<string, unknown>, FluentAcpClientError>
 }
 
+type FiregridAcpEffectRunner = <A>(
+  effect: Effect.Effect<A, FluentAcpClientError>,
+) => Promise<A>
+
 export class FluentAcpRuntimePort extends Context.Tag(
   "@firegrid/fluent-runtime/acp/client/FluentAcpRuntimePort",
 )<FluentAcpRuntimePort, FluentAcpRuntimePortService>() {}
 
 export interface FiregridAcpClientOptions {
   readonly runtime: FluentAcpRuntimePortService
+  readonly runEffect?: FiregridAcpEffectRunner
 }
 
 export class FiregridAcpClient implements acp.Client {
   readonly #runtime: FluentAcpRuntimePortService
+  readonly #runEffect: FiregridAcpEffectRunner
 
   constructor(options: FiregridAcpClientOptions) {
     this.#runtime = options.runtime
+    this.#runEffect = options.runEffect ?? Effect.runPromise
   }
 
   sessionUpdate(params: acp.SessionNotification): Promise<void> {
-    return Effect.runPromise(
+    return this.#runEffect(
       this.#runtime.recordLayer1Observation({
         sessionId: params.sessionId,
         kind: "acp.session_update",
@@ -72,7 +79,7 @@ export class FiregridAcpClient implements acp.Client {
   requestPermission(
     params: acp.RequestPermissionRequest,
   ): Promise<acp.RequestPermissionResponse> {
-    return Effect.runPromise(
+    return this.#runEffect(
       this.#runtime.recordLayer1Observation({
         sessionId: params.sessionId,
         kind: "acp.request_permission",
@@ -93,7 +100,7 @@ export class FiregridAcpClient implements acp.Client {
     params: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const sessionId = sessionIdFromExtParams(params)
-    return Effect.runPromise(
+    return this.#runEffect(
       this.#runtime.recordLayer1Observation({
         sessionId,
         kind: "acp.ext_method",
