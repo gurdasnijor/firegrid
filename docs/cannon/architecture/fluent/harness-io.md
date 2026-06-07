@@ -45,6 +45,12 @@ session authority. It may be a process owner, transport, projection, or native
 protocol adapter, but it does not decide wait matches, timer fires, child
 lifecycle, or committed tool results.
 
+The Durable Streams mechanics behind those decisions are specified in
+[`substrate-protocol.md`](substrate-protocol.md). This document covers the
+protocol edges that feed that substrate: which component observes harness
+traffic, which component records Layer 1 facts, and which component returns
+committed Layer 2 results to the harness.
+
 ## Role Matrix
 
 | Harness class | Firegrid role | External role | Firegrid component | Raw harness writes Durable Streams? |
@@ -251,3 +257,12 @@ adapter/conductor.
 
 This is the hardest integration risk and must be proven with real harnesses, not
 fake recorders.
+
+## Read Next
+
+- [`README.md`](README.md): the provider/role model for Durable Streams, Effect,
+  fluent-firegrid, fluent-runtime, and harnesses.
+- [`execution-models.md`](execution-models.md): why managed sessions resume by
+  reconstruction while authored procedures resume by replay.
+- [`substrate-protocol.md`](substrate-protocol.md): the concrete Durable Streams
+  operation sequences for waits, timers, child sessions, attach, fork, and TTL.
