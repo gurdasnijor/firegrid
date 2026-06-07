@@ -16,7 +16,9 @@ Feature: Fluent three-envelope stream
   Scenario: Agent output is recorded raw
     Given a real harness emits a native protocol message
     When the bridge observes the message
-    Then the stream records an agent envelope with the raw payload
+    Then the bridge records the agent envelope as a Layer 1 observation
+    And the raw harness writes no Durable Streams records directly
+    And the stream records an agent envelope with the raw payload
     And the raw payload is preserved before any normalized projection is written
 
   Scenario: Bridge lifecycle is explicit

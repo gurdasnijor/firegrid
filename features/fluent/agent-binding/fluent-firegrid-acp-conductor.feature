@@ -1,9 +1,13 @@
 @fluent @agent-binding @acp @zed @real-agent
 Feature: Fluent Firegrid ACP conductor
   Firegrid can be launched by Zed or another ACP editor as an external ACP
-  agent. In that topology, Firegrid presents as an ACP Agent/conductor to the
-  editor, binds ACP sessions to fluent-runtime, and may delegate to downstream
-  ACP agents through the separate Firegrid ACP client path.
+  agent. The conductor is the editor-facing harness I/O role; the client is the
+  downstream-harness harness I/O role. Both are edges around the same
+  fluent-runtime session authority. In that topology, Firegrid presents as an ACP
+  Agent/conductor to the editor, binds ACP sessions to fluent-runtime, and may
+  delegate to downstream ACP agents through the separate Firegrid ACP client path.
+  # Canon: docs/cannon/architecture/fluent/harness-io.md "One Rule",
+  # "Zed / Editor ACP Conductor" (no public acp.Client | acp.Agent union).
 
   Background:
     Given Zed or another editor is the ACP client

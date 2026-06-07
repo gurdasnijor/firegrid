@@ -1,7 +1,10 @@
 @fluent @agent-binding @real-agent
 Feature: Fluent agent adapter contract
-  A fluent session binds to the agent's own native or ACP harness. Firegrid only
-  adapts I/O and durable tools; it does not own the reasoning loop.
+  A fluent session binds to the agent's own native or ACP harness through a
+  Firegrid harness I/O role. Firegrid only adapts I/O and durable tools; it does
+  not own the reasoning loop, and the raw harness writes no durable facts itself.
+  # Canon: docs/cannon/architecture/fluent/harness-io.md "One Rule";
+  # fluent-architecture.md invariant F-S1.
 
   Background:
     Given a durable stream session
@@ -11,6 +14,7 @@ Feature: Fluent agent adapter contract
     When the bridge starts the session
     Then the adapter spawns the agent's native or ACP harness
     And the bridge records raw harness output before deriving projections
+    And the raw harness process writes no Durable Streams facts directly
     And the session has no Firegrid-owned model invocation
 
   Scenario: Native turn completion controls prompt sequencing

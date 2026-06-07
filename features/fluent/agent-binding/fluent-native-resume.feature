@@ -1,7 +1,11 @@
 @fluent @agent-binding @real-agent @resume
 Feature: Fluent native resume
-  Resume reconstructs the harness's native resume artifact from durable history
-  and resumes natively across process and sandbox boundaries.
+  Managed agent sessions resume by reconstruction, not by replay. Resume
+  reconstructs the harness's native resume artifact from durable history and
+  resumes natively across process and sandbox boundaries; the non-deterministic
+  model loop is never re-run as the durable mechanism.
+  # Canon: docs/cannon/architecture/fluent/execution-models.md "Model B: Managed
+  # Sessions Resume By Reconstruction"; fluent-architecture.md invariant F-S6.
 
   Background:
     Given a durable stream with prior raw harness history
@@ -36,4 +40,18 @@ Feature: Fluent native resume
     Given the stream does not contain enough history to reconstruct resume state
     When local sandbox files are missing
     Then the bridge cannot claim native resume succeeded
+
+  Scenario: Resume suppresses every already-observed Layer 1 side effect
+    Given the durable history contains already-observed Layer 1 side effects
+    And the side effects include harness-native shell, file, or test effects Firegrid did not mediate
+    When the bridge reconstructs the native resume artifact and resumes natively
+    Then no already-observed Layer 1 side effect is executed a second time
+    And each Firegrid-mediated tool call is served from its recorded Layer 2 result rather than re-run
+    And suppression covers harness-native side effects, not only Firegrid-mediated tools
+
+  Scenario: Fake recorder resume proof is rejected at the acceptance layer
+    Given a fake recorder or fake codec replays resume without a real harness
+    When the native-resume experiment runs
+    Then the experiment is rejected as unit-only evidence
+    And it is not accepted as end-to-end proof that native resume suppresses observed side effects
 

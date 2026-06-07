@@ -1,8 +1,11 @@
 @fluent @agent-binding @acp @real-agent
 Feature: Fluent Firegrid ACP client
-  Firegrid presents itself as the ACP client for ACP harnesses. ACP process
+  Firegrid presents itself as the ACP client for ACP harnesses: the
+  downstream-harness harness I/O role around the external model loop. ACP process
   packages supply the agent process and stream; Firegrid owns ACP client
   callbacks, Layer 1 observation, durable tool dispatch, and Layer 2 commitment.
+  # Canon: docs/cannon/architecture/fluent/harness-io.md "One Rule",
+  # "ACP Downstream Harness"; fluent-architecture.md invariant F-S1.
 
   Background:
     Given a real ACP agent process

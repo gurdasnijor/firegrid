@@ -2,6 +2,11 @@
 Feature: Fluent client normalization
   Client read models are pure projections over immutable raw agent events. Codec
   and projection changes can evolve without rewriting the durable raw stream.
+  This is the projection layer below the real-agent acceptance line: replaying a
+  captured raw stream through a codec is valid here, but it is never end-to-end
+  acceptance proof for agent binding — that bar requires a real harness.
+  # Canon: features/fluent/README.md Half 1 "real-agent only"; a fake codec is
+  # invalid except for unit tests below the firelab acceptance layer.
 
   Background:
     Given a durable stream containing raw agent envelopes
