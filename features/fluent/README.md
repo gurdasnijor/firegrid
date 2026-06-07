@@ -10,7 +10,7 @@ verdict red.
 **Structure: authoring package + two halves + shared substrate** (matches the SDD).
 - **Authoring package.** `@firegrid/fluent-firegrid` exposes the public DSL:
   definitions plus free primitives. It does not host a runtime or expose the
-  external control plane.
+  host control surface.
 - **Below-line authored procedures.** `run`, retry, compensation, local
   concurrency, local cancellation, and deterministic Clock/Random semantics are
   durable Effect authoring concerns for reusable workflows. They are not the
@@ -127,11 +127,11 @@ Per-spec state:
 
 Reference surface: `repos/sdk-typescript/packages/libs/restate-sdk-gen/src/index.ts`
 and its tutorial examples. The fluent package mirrors the authoring affordances
-that matter while keeping runtime/control-plane concerns out of this layer.
+that matter while keeping runtime/host-control concerns out of this layer.
 
 | Feature file | Asserts (source / SDD §) | Proof |
 |---|---|---|
-| `fluent-firegrid-public-surface` | Public package surface = definitions (`service`/`object`/`workflow`) + generator handlers + free primitives (`run`/`all`/`race`/`select`/`spawn`) + descriptor/interface helpers + typed client derivation + explicit handler-edge execution (`execute`/`invoke`). Definitions must carry enough public metadata for `fluent-runtime` to bind the control plane (`send`/`fork`/`tag`/`schedule`/`read`/`head`/`delete`) without importing internals. `run` names journal steps; local composition is Effect-shaped; no public bespoke Future scheduler; scheduler/awaitable/journal implementation details are not root public API. | package API tests + tutorial examples + `fluent-control-surface` binding |
+| `fluent-firegrid-public-surface` | Public package surface = definitions (`service`/`object`/`workflow`) + generator handlers + free primitives (`run`/`all`/`race`/`select`/`spawn`) + descriptor/interface helpers + typed client derivation + explicit handler-edge execution (`execute`/`invoke`). Definitions must carry enough public metadata for `fluent-runtime` to bind the host control surface (`send`/`fork`/`tag`/`schedule`/`read`/`head`/`delete`) without importing internals. `run` names journal steps; local composition is Effect-shaped; no public bespoke Future scheduler; scheduler/awaitable/journal implementation details are not root public API. | package API tests + tutorial examples + `fluent-control-surface` binding |
 
 ---
 
@@ -204,11 +204,11 @@ sleep, durable wait, fork spawn, and post-claim redrive.
 
 ---
 
-## External control plane
+## Host control surface
 
 | Feature file | Asserts (SDD §) | Firelab proof |
 |---|---|---|
-| `fluent-control-surface` | External `/entities/:type/:id` control — `send` · `fork` · `tag` · `schedule`(→adopted scheduled source / DS wake integration) · `get`/`head`/`delete` — as **product spelling over durable-stream primitives**. `tag` names an offset; `fork` branches a new entity from a prefix (stream *is* the state → fork = copy-a-prefix → "explore from here" / "retry under a changed tool set" / "snapshot before a risky action"). Read plane = the same projection externalised. (External control surface) | control-plane simulation over stream facts |
+| `fluent-control-surface` | Host-exposed `/entities/:type/:id` control — `send` · `fork` · `tag` · `schedule`(→adopted scheduled source / DS wake integration) · `get`/`head`/`delete` — as **product spelling over durable-stream primitives**. `tag` names an offset; `fork` branches a new entity from a prefix (stream *is* the state → fork = copy-a-prefix → "explore from here" / "retry under a changed tool set" / "snapshot before a risky action"). Read plane = the same projection externalised. (host control surface) | host-control simulation over stream facts |
 
 ---
 
@@ -265,7 +265,7 @@ empirically.
 | Part 2 — three families | `fluent-durable-sleep`+`fluent-durable-wait` (park/wake); upstream DS conformance is an assumption, not a Firegrid feature |
 | Part 3 — DS §7.2/§7.3 = wake subsystem | substrate conformance→`fluent-durable-streams-consumer-substrate`; product redrive→`fluent-worker-redrive`; sleep→`fluent-durable-sleep`; two-fencing is covered by DS conformance and asserted only through product use |
 | Coordination and ingress | `fluent-coordination-taxonomy`, `fluent-event-ingress` |
-| External control surface (fork/tag/schedule) | `fluent-control-surface` |
+| Host control surface (fork/tag/schedule) | `fluent-control-surface` |
 | Build order tiers 1–11 | Half 2 (1–6) · Shared substrate (7–9) · Half 1 (10) · Below-line (11) |
 | Appendix A — named-keys soundness | `fluent-concurrent-replay-soundness` |
 | Appendix B — wake substrate | `fluent-worker-redrive` + `fluent-durable-sleep` |

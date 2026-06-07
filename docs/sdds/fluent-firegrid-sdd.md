@@ -627,9 +627,9 @@ behind every wake source.**
 
 ---
 
-## External control surface: addressing, fork, tag
+## Host control surface: addressing, fork, tag
 
-Sessions and children are specified, but there is no external control plane — how
+Sessions and children are specified, but there is no host control surface — how
 an operator, a UI, or a peer service addresses an entity from outside a handler.
 Lift the entity-addressing surface (the shape, not the wire format):
 
@@ -641,14 +641,14 @@ Lift the entity-addressing surface (the shape, not the wire format):
 /entities/:type/:id/schedule   register a timed wake (→ wake-registry)
 ```
 
-Two capabilities the product control plane should expose cleanly:
+Two capabilities the product host control surface should expose cleanly:
 
 - **`tag`** — name a point (offset) in an entity's stream; an address for "this
   state," usable as a fork point or replay anchor.
 - **`fork`** — branch a new entity whose initial stream is a prefix of an existing
   one, up to a tag/offset; it then diverges under its own handler. Durable
   Streams already has the substrate fork semantics; Firegrid still needs the
-  product/control-plane spelling around it. Because the stream *is* the state,
+  product/host-control spelling around it. Because the stream *is* the state,
   forking is copying a prefix. This gives "explore from this point," "retry a
   turn under a changed tool set," and "snapshot before a risky action" — none of
   which the continuation model offered.
@@ -1772,7 +1772,7 @@ verified here (GitHub's pinned trees block automated fetch):
   split — the timer-source architecture in build step 8), cron, `/schedules/:id`.
 - `agents-server/routing/entities-router.ts` — the `/_electric/entities/...` RPC
   surface, `POST /fork` (`fork_pointer`), `/tags/:key` (build steps for the
-  external control surface).
+  host control surface).
 - `agents-runtime/tool-providers.ts` — MCP tool loading (a declarative `mcp.json`
   loader was *not* located; treat as unconfirmed).
 

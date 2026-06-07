@@ -368,7 +368,7 @@ not inherit producer state, so each branch reboots its producer epoch. Keyed
 replay tolerates this because journal identity is by step key, not producer
 sequence.
 
-Tags are named offsets. They are control-plane/read-model facts that let a
+Tags are named offsets. They are host-control/read-model facts that let a
 client or harness say "fork from here" without exposing raw offsets as the only
 user-level handle.
 
@@ -384,9 +384,12 @@ PUT {root}/inv/42
 Reads and writes keep active streams warm; abandoned streams expire without a
 sweeper. Audit-retained sessions use longer TTL or `Stream-Expires-At`.
 
-## 10. Control Plane Mapping
+## 10. Host Control Surface Mapping
 
-The external control plane is Durable Streams product spelling.
+The host control surface is Firegrid product spelling over Durable Streams
+primitives. It is exposed by `packages/fluent-runtime` or by a thin API/MCP/HTTP
+process that delegates to `packages/fluent-runtime`; it is not exposed by
+`packages/fluent-firegrid`.
 
 | Operation | Protocol mapping |
 |---|---|
@@ -398,8 +401,8 @@ The external control plane is Durable Streams product spelling.
 | `schedule` | timer intent plus append-at-T source |
 | `delete` | stream close/delete according to substrate rules |
 
-The control plane must not synchronously call handlers. It appends or reads
-durable facts. Delivery happens through the wake/redrive path.
+The host control surface must not synchronously call handlers. It appends or
+reads durable facts. Delivery happens through the wake/redrive path.
 
 ## What Fluent Builds
 
@@ -420,7 +423,7 @@ Fluent builds only:
 - the app-side timer append source;
 - the post-claim redrive function;
 - harness I/O adapters and native resume/replay-suppression;
-- projections and control-plane spelling.
+- projections and host-control spelling.
 
 If a proposed implementation adds a Firegrid lease table, cursor store,
 subscription retry loop, Durable Streams subscription-webhook signature

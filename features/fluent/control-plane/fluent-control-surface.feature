@@ -1,7 +1,9 @@
 @fluent @control-plane
 Feature: Fluent control surface
-  The external control plane is product spelling over durable stream primitives:
-  send, fork, tag, schedule, read, head, and delete.
+  The Firegrid host control surface is product spelling over durable stream
+  primitives: send, fork, tag, schedule, read, head, and delete. It is exposed by
+  fluent-runtime or by a thin API/MCP/HTTP host that delegates to fluent-runtime,
+  not by fluent-firegrid.
 
   Background:
     Given a fluent entity backed by a durable stream

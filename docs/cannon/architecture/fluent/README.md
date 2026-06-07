@@ -21,6 +21,18 @@ durable coordination layer that uses Durable Streams' append, read, close, fork,
 producer fencing, named consumers, pull-wake, webhook wake, lease, ack, retry,
 and TTL primitives directly.
 
+The package boundary is strict:
+
+- **`packages/fluent-firegrid` is an SDK, not a host.** Product authors use it
+  to define durable Effect bodies and typed metadata. It has no Durable Streams
+  clients, no listeners, no workers, no ACP/MCP server, and no HTTP routes.
+- **`packages/fluent-runtime` is the host.** It supplies the `Journal`, owns
+  Durable Streams substrate clients, binds authored definitions to ingress, runs
+  wake/redrive, owns session facts, and exposes Firegrid host ingress surfaces.
+- **Harness I/O roles are runtime edges.** They adapt ACP/native/cloud/model
+  protocols into `fluent-runtime`; the raw harness still owns the model loop and
+  never writes Durable Streams facts.
+
 ## Two Models, One Core
 
 The fluent architecture has two execution models over one Durable Streams
@@ -65,14 +77,14 @@ Durable Streams               Durable Streams                    Effect
 
           ┌─────────────────────────────────────────────────────────────┐
           │ packages/fluent-firegrid                                    │
-          │ process-free authoring: run, keyed replay, durable          │
-          │ primitives, combinators, descriptors, typed definitions      │
+          │ process-free SDK: run, keyed replay, durable primitives,    │
+          │ combinators, descriptors, typed definitions. No host I/O.    │
           └──────────────────────────┬──────────────────────────────────┘
                                      │ Journal service
           ┌──────────────────────────▼──────────────────────────────────┐
           │ packages/fluent-runtime                                     │
-          │ host/session authority: DS-backed Journal, wake redrive,     │
-          │ waits, timers, child/session semantics, control/MCP surface  │
+          │ host/session authority: DS-backed Journal, host ingress,     │
+          │ wake redrive, waits, timers, child/session semantics         │
           └───────────────┬───────────────────────────────┬─────────────┘
                           │ append/read/claim/ack          │ drive/resume
                           ▼                                ▼
@@ -88,8 +100,8 @@ The package split follows the role split:
 
 | Layer | Owns | Must not own |
 |---|---|---|
-| `fluent-firegrid` | Authoring surface, `run`, keyed replay, durable primitive definitions, local Effect composition | Durable Streams clients, leases, worker pools, HTTP/MCP hosts |
-| `fluent-runtime` | DS-backed journal, session facts, wait/timer/child/tool semantics, wake redrive, control/MCP surfaces | Raw model loop, DS lease/cursor implementation, provider webhook retry |
+| `fluent-firegrid` | Authoring SDK: `run`, keyed replay, durable primitive definitions, descriptors, typed definitions, local Effect composition | Durable Streams clients, leases, worker pools, HTTP/MCP hosts, host-control routes |
+| `fluent-runtime` | Host/session authority: DS-backed journal, host ingress, session facts, wait/timer/child/tool semantics, wake redrive, ACP/MCP bindings | Raw model loop, DS lease/cursor implementation, provider webhook retry |
 | Durable Streams | Storage, offsets, closure, fork, TTL, producer fencing, consumer cursor, claim/ack/release, retry, subscription-webhook wake/signing | Firegrid product semantics, CEL predicates, harness protocol fidelity |
 | Harness I/O | Protocol fidelity, Layer 1 recording, native resume artifacts, replay suppression | Wait matching, timer firing, child lifecycle, committed tool-result authority |
 | Raw harness | Reasoning/model loop and native side effects | Durable Streams writes, Firegrid coordination decisions |
@@ -247,16 +259,26 @@ Authoring invariants:
 7. **Durable child/session work is not local `fork`.** A local fiber is an
    in-process computation. A durable child is a stream/session coordination fact.
 
-`fluent-firegrid` may expose service/object/workflow metadata and typed
-definition helpers so `fluent-runtime` can bind external ingress later. It does
-not open listeners, hold leases, operate worker pools, or directly expose the
-external control plane.
+`fluent-firegrid` may expose service/object/workflow metadata, descriptors, and
+typed client definitions. Those are inert definition data until a host binds
+them. `fluent-runtime` is the component that turns definitions into executable
+ingress, supplies the `Journal`, and appends durable outcomes.
+
+In particular:
+
+| Concern | `fluent-firegrid` | `fluent-runtime` |
+|---|---|---|
+| Authored handler body | Defines the Effect body and durable primitive calls | Invokes/replays the body and supplies `Journal` |
+| Durable Streams access | None | Owns substrate clients and producer/consumer use |
+| External ingress | Describes addressable definitions and typed clients | Exposes host ingress and binds definitions to routes/tools/adapters |
+| Control operations | Provides typed client shapes at most | Implements authorized `send`/`fork`/`tag`/`schedule`/`read`/`head`/`delete` semantics |
+| MCP/ACP edges | No server/client process ownership | Hosts thin MCP/tool bindings and ACP client/conductor roles |
 
 ## `fluent-runtime`: Durable Host And Session Authority
 
 `fluent-runtime` is the processful side. It provides a DS-backed `Journal`,
-drives authored handlers when appropriate, owns session facts, and operates
-post-wake product semantics.
+drives authored handlers when appropriate, owns session facts, exposes Firegrid
+host ingress, and operates post-wake product semantics.
 
 The runtime's durable operations are **state x coordination**:
 
@@ -327,7 +349,7 @@ coordination primitives:
 - `spawn` / `invoke`: create or address a child stream/session, subscribe to its
   terminal append-and-close, and resolve the parent from the recorded child exit.
 - `execute`: run an external activity and commit the result as a durable fact.
-- `send`, `tag`, `fork`, `schedule`, `read`, `head`, `delete`: external control
+- `send`, `tag`, `fork`, `schedule`, `read`, `head`, `delete`: host-control
   spelling over Durable Streams primitives, not direct handler calls.
 
 The tool call itself is Layer 1 evidence. Firegrid's durable interpretation is
@@ -338,10 +360,16 @@ runs as a child invocation on its own stream. The managed session records the
 tool call, child spawn, and terminal tool result; it does not inline a replayable
 Effect body into the reconstruction-model session stream.
 
-## Control Plane
+## Host Control Surface
 
-The external control plane is product spelling over Durable Streams. It should
-not become a central scheduler.
+The "control plane" means the **Firegrid host control surface exposed by
+`packages/fluent-runtime`**, or by a thin HTTP/MCP/API process that delegates to
+`packages/fluent-runtime`. It is not exposed by `packages/fluent-firegrid`.
+
+Its job is product spelling over Durable Streams-backed facts. It accepts
+authorized client or operator intent, appends or reads durable facts through the
+runtime, and lets delivery happen by wake/redrive. It should not become a central
+scheduler and must not synchronously call handlers.
 
 | Control operation | Substrate meaning |
 |---|---|
@@ -351,6 +379,20 @@ not become a central scheduler.
 | `fork` | create a stream fork from a tagged/pinned offset |
 | `schedule` | record a future append / wake source |
 | `delete` | close/delete according to substrate terminal rules |
+
+The implementation shape is:
+
+```text
+client/operator/API/MCP request
+  -> Firegrid host ingress
+  -> fluent-runtime control service
+  -> Durable Streams append/read/fork/close or scheduled source
+  -> wake/redrive if the operation creates pending work
+```
+
+Definition metadata from `fluent-firegrid` can tell the host what entities,
+methods, inputs, and typed clients exist. It does not implement the control
+surface itself.
 
 The causal path for acceptance tests is client ingress -> host ingress ->
 runtime/store -> Durable Streams. A host self-call can be a package integration
@@ -405,7 +447,7 @@ README carries only the summary:
 2. Prove post-claim redrive: claim -> materialize -> append L2 -> ack.
 3. Implement DS-native durable wait with CEL and recorded matches.
 4. Implement durable sleep through timer intent + append-at-T source + wake.
-5. Stand up the thin control-plane ingress/projection host with client-to-host
+5. Stand up the thin host-control ingress/projection host with client-to-host
    trace propagation.
 6. Bind real ACP/native harnesses and prove no duplicate side effects on resume.
 7. Expose durable tools through a thin Effect `Tool` / `Toolkit` / `McpServer`

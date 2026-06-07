@@ -2,21 +2,21 @@
 Feature: Fluent Firegrid public authoring surface
   @firegrid/fluent-firegrid exposes the user-facing authoring DSL for fluent
   workflows. It mirrors the useful restate-sdk-gen affordances while keeping
-  runtime hosting, entity addressing, and external control-plane concerns in
+  runtime hosting, entity addressing, and host-control concerns in
   @firegrid/fluent-runtime.
 
   Scenario: Definitions are the public package entrypoint
     When an author defines a service, object, or workflow
     Then the definition names the target and its handlers
-    And the definition does not start a host, open an HTTP listener, or connect to a control plane
+    And the definition does not start a host, open an HTTP listener, or connect to a host control surface
     And the definition can be handed to a runtime binding later
 
-  Scenario: Definitions carry enough metadata for the control plane
+  Scenario: Definitions carry enough metadata for the host control surface
     Given fluent-runtime binds a fluent-firegrid definition
     When the runtime exposes send, fork, tag, schedule, read, head, or delete for that entity
     Then it can derive the entity kind, entity name, handler names, and handler input and output contracts from the definition
     And it can route addressed input to the selected handler without importing fluent-firegrid internals
-    And missing runtime-control metadata is treated as a public-surface gap
+    And missing host-control metadata is treated as a public-surface gap
 
   Scenario: Generator handlers compose with free primitives
     Given a service handler is written as a generator function
@@ -61,7 +61,7 @@ Feature: Fluent Firegrid public authoring surface
     When the runtime invokes a fluent-firegrid handler
     Then it supplies the journal execution context at the handler edge
     And execute or invoke drives the authored body against that journal
-    And this binding does not replace the fluent-runtime control surface
+    And this binding does not replace the fluent-runtime host control surface
     And fluent-runtime does not need a scheduler, awaitable, or journal implementation export to perform the invocation
 
   Scenario: Descriptor helpers are public type-level API
@@ -82,7 +82,7 @@ Feature: Fluent Firegrid public authoring surface
     Then scheduler internals, awaitable internals, and journal implementation details are absent from the primary authoring surface
     And any test-only or runtime-integration seam is clearly separated from the root public API
 
-  Scenario: Runtime and control-plane APIs stay out of fluent-firegrid
+  Scenario: Runtime and host-control APIs stay out of fluent-firegrid
     When an external client sends, forks, tags, schedules, reads, heads, or deletes an entity
     Then that operation belongs to fluent-runtime
     And fluent-firegrid only supplies the authored handler logic that runtime execution may drive

@@ -449,7 +449,7 @@ without duplicated Layer 1 side effects.
 | Native/cloud harness adapters | Native protocol fidelity, native resume, replay suppression for harness-native side effects | Firegrid coordination semantics such as wait matching, timer firing, child lifecycle ownership |
 | External harness | The model loop and native protocol behavior | Direct Durable Streams writes, durable coordination, redrive decisions |
 | Durable Streams | Append-only log, stream closure, fork, producer fencing, subscriptions/wake delivery substrate | Product semantics, schema projection decisions, wait predicate meaning |
-| Client/control plane | Authorized user intent, prompt, approval, cancel, send, fork/tag/schedule requests | Bypassing fluent-runtime coordination or directly mutating coordination state |
+| Client / host control surface | Authorized user intent, prompt, approval, cancel, send, fork/tag/schedule requests through fluent-runtime ingress | Bypassing fluent-runtime coordination or directly mutating coordination state |
 | Firelab / acceptance | Product-observable verification over streams and projections | Production implementation behavior |
 
 ## Durable Stream Layers
@@ -487,7 +487,7 @@ The one-log design removes cross-store reconciliation, not this intra-log lift.
 | Firegrid ACP client / conductor | Layer 1 ACP observations, role/process lifecycle records, Layer 2 outcomes through fluent-runtime | Session stream for redrive and resume context |
 | ACP process owner | Nothing | Nothing; it owns process stdio only |
 | Native/cloud harness adapter | Layer 1 native observations through fluent-runtime | Existing history for native resume |
-| Client / control plane | User intents, prompt/cancel/approval responses, addressed sends | Projections and current session state |
+| Client / host control surface | User intents, prompt/cancel/approval responses, addressed sends through fluent-runtime ingress | Projections and current session state |
 | Fluent host | Layer 2 coordination events, durable tool results, terminal records | Session/turn state before wake handling and redrive |
 | Event ingress | Fenced external state-change facts | Pending waits through fluent-runtime sources |
 | Post-wake source handlers | Timer-fired, child-complete, wake-result records after substrate delivery or claim | Product source state needed to derive those facts |
