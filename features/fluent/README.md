@@ -1,16 +1,18 @@
 # `features/fluent/` — proposed feature set
 
-**Purpose.** Turn `docs/sdds/fluent-firegrid-sdd.md` (the canonical design
-handoff) into **falsifiable Gherkin acceptance requirements** (`*.feature`) that
-we empirically settle with firelab experiments. Each feature is a cluster of
-product-observable scenarios; the corresponding firelab experiment should live
-with its driver and coverage witness, and any mutation harness must flip the
-verdict red.
+**Purpose.** Track the fluent Gherkin acceptance surface and execution ledger.
+The architecture source of truth is the canon doc set:
+`docs/cannon/architecture/fluent/README.md`,
+`docs/cannon/architecture/fluent/execution-models.md`,
+`docs/cannon/architecture/fluent/substrate-protocol.md`, and
+`docs/cannon/architecture/fluent-architecture.md`. These feature files translate
+that canon into falsifiable acceptance requirements.
 
-**Structure: authoring package + two halves + shared substrate** (matches the SDD).
+**Structure: two execution models over one Durable Streams coordination core.**
 - **Authoring package.** `@firegrid/fluent-firegrid` exposes the public DSL:
-  definitions plus free primitives. It does not host a runtime or expose the
-  external control plane.
+  definitions, descriptors, typed clients, `run`, keyed replay, and durable
+  primitive definitions. It is Effect-native authoring, not an Operation/Future
+  runtime, and it does not host processes or expose the external control plane.
 - **Below-line authored procedures.** `run`, retry, compensation, local
   concurrency, local cancellation, and deterministic Clock/Random semantics are
   durable Effect authoring concerns for reusable workflows. They are not the
@@ -25,10 +27,14 @@ verdict red.
 - **Shared substrate.** Durable Streams owns stream storage, producer fencing,
   named consumers, claim/ack/release, cursors, leases, retry, and webhook wake
   delivery. Fluent owns only the product step after those primitives fire.
+- **Control plane.** External `send`/`fork`/`tag`/`schedule`/`read`/`head`/
+  `delete` are product spelling over Durable Streams primitives through
+  fluent-runtime host ingress. Acceptance must prove client ingress -> host ->
+  runtime/store -> Durable Streams, not host self-calls.
 
-**Coverage guarantee.** Every section of `fluent-firegrid-sdd.md` maps to at
-least one feature — see the **Traceability matrix**. The only deliberate gap is
-the SDD's own D.7 surface-glue carve-out.
+This README is an overview and ledger. It does not own the numbered safety
+invariants; those live in
+`docs/cannon/architecture/fluent-architecture.md#safety-invariants`.
 
 ## Design boundary: below-line authoring versus managed sessions
 
@@ -74,10 +80,10 @@ Folder tracking epics:
 | Folder | Bead | State | Notes |
 |---|---:|---|---|
 | `agent-binding/` | `tf-88bd` | partial | ACP client (#967) and conductor (#969) bindings are merged with firelab witnesses; the real-harness boundary proofs (native resume, park interface, approval fidelity, bridge mediation) remain the critical gap. |
-| `authoring/` | `tf-2tl5` | partial | Public fluent surface baseline is merged; follow-up specs pin schema decode, retry/compensation, determinism, and duplicate-key behavior for below-line authored procedures without changing managed-agent session architecture. |
-| `control-plane/` | `tf-1726` | partial | Baseline control surface exists; host must keep converging on real DS primitives. |
+| `authoring/` | `tf-2tl5` | partial | Public fluent surface baseline is merged; specs now align to Effect-native authoring over `run` and typed descriptors, not an Operation/Future runtime. |
+| `control-plane/` | `tf-1726` | partial | Baseline control surface exists; acceptance must prove external client ingress through fluent-runtime to runtime/store and Durable Streams, not host self-calls. |
 | `coordination/` | `tf-4grn` | partial | Durable wait/sleep/event/fork primitives are not fully proven end to end. |
-| `framing/` | `tf-hqya` | partial | Specs exist; firelab/cucumber verdict surface is still being hardened. |
+| `framing/` | `tf-hqya` | partial | Specs align to the canon replay-vs-reconstruction split; firelab/cucumber verdict surface is still being hardened. |
 | `substrate/` | `tf-3zbj` | partial | DS consumer substrate is proven at dependency level; product post-claim loop remains. |
 
 Per-spec state:
@@ -95,8 +101,8 @@ Per-spec state:
 | `agent-binding/fluent-native-resume.feature` | needs-rework | Earlier resume work predates the current no-duplicate-L1-side-effect contract. | `tf-88bd.6`: kill/restart a real harness and resume natively without replaying observed side effects. |
 | `agent-binding/fluent-park-interface.feature` | needs-rework | Earlier park-interface work did not settle the real transport end-of-turn proof. | Parking tool ends the native turn, later wake re-enters through the real harness path. |
 | `agent-binding/fluent-three-envelope-stream.feature` | spec-only | No accepted stream-envelope proof yet. | Intent, raw, and lifecycle envelopes appear as durable truth with projections derived later. |
-| `authoring/fluent-firegrid-public-surface.feature` | partial | Public surface spec and implementation are merged; `tf-2tl5.1` adds below-line authoring contracts for replay schemas, retry/compensation, and local Effect composition. | Prove value/error schema decode and duplicate-key failure without broadening fluent-firegrid into a session host. |
-| `control-plane/fluent-control-surface.feature` | partial | Baseline control surface and workbench host exist. | Drive `send`/`fork`/`tag`/`schedule`/read APIs over real DS substrate instead of handrolled hosts. |
+| `authoring/fluent-firegrid-public-surface.feature` | partial | Public surface spec and implementation are merged; `tf-s4z3` aligns wording to Effect-native authoring, typed descriptors, and absence of Operation/Future runtime ownership. | Prove value/error schema decode and duplicate-key failure without broadening fluent-firegrid into a session host. |
+| `control-plane/fluent-control-surface.feature` | partial | Baseline control surface and workbench host exist; `tf-s4z3` adds the required client ingress -> host -> runtime/store -> Durable Streams acceptance path. | Drive `send`/`fork`/`tag`/`schedule`/read APIs over real DS substrate through the external host surface. |
 | `coordination/fluent-coordination-taxonomy.feature` | spec-only | Taxonomy is captured, but not independently proven. | Product facts use State Protocol shapes and given-key addressing in vertical flows. |
 | `coordination/fluent-durable-sleep.feature` | partial | Timer facts/sources exist conceptually; local/process sleep remains the gap to close. | Timer intent before park, scheduled source materializes `TimerFired`, replay resolves from stream. |
 | `coordination/fluent-durable-wait.feature` | partial | Wait facts and CEL direction are captured; post-claim DS redrive is not complete. | Wait intent before park, CEL over event+self, DS wake, recorded match served on replay. |
@@ -104,7 +110,7 @@ Per-spec state:
 | `coordination/fluent-fork-spawn.feature` | partial | Fork/spawn direction exists; cross-harness parent/child choreography is not proven. | Parent harness A forks child harness B, child terminal fact wakes parent, both survive restart. |
 | `coordination/fluent-session-handler.feature` | needs-rework | Prior session-handler work drifted toward lab-only or legacy-runtime shapes. | `handleSession(wake)` materializes state and drives the external harness without owning the model loop. |
 | `framing/fluent-coverage-oracle.feature` | partial | Gherkin/firelab direction is settled; trace-CEL is diagnostic rather than verdict. | Product-observable `Then` assertions with mutation/vacuity checks for each major flow. |
-| `framing/fluent-execution-model.feature` | done | Architecture docs now capture choreography, handler, external-harness axes. | Keep this as the framing gate for reviews, not as a product implementation task. |
+| `framing/fluent-execution-model.feature` | partial | `tf-s4z3` aligns this spec to canon's two execution models: authored procedures resume by replay; managed sessions resume by reconstruction. | Use this as the review gate for execution-model drift, including authored tool bodies as child invocations. |
 | `substrate/fluent-concurrent-replay-soundness.feature` | needs-rework | PR #955-style low-level/mock-DS work is not acceptable as the proof; `tf-2tl5.1` adds the duplicate-key loud-failure contract. | Re-prove named-key replay and duplicate-key failure using the real runtime boundary and upstream DS test server only where needed. |
 | `substrate/fluent-durable-streams-consumer-substrate.feature` | partial | Upstream/fork DS consumer substrate conformance is green and pinned. | Firegrid post-claim witness: claim -> materialize -> append L2 outcome -> ack after durable append. |
 | `substrate/fluent-engine-substrate-free.feature` | partial | Substrate-free fluent engine baseline is merged; `tf-2tl5.1` adds authoring-runtime contracts for schema decode, deterministic Effect services, retry, compensation, and local fibers. | Keep scheduler/journal internals out of the public authoring surface and keep durable child/session spawn in fluent-runtime coordination. |
@@ -125,13 +131,15 @@ Per-spec state:
 
 ## Authoring package — `@firegrid/fluent-firegrid`
 
-Reference surface: `repos/sdk-typescript/packages/libs/restate-sdk-gen/src/index.ts`
-and its tutorial examples. The fluent package mirrors the authoring affordances
-that matter while keeping runtime/control-plane concerns out of this layer.
+Canon reference:
+`docs/cannon/architecture/fluent/README.md#fluent-firegrid-durable-effect-authoring`.
+The fluent package is an Effect-native authoring library. It keeps
+runtime/control-plane concerns out of this layer and does not expose a bespoke
+Operation/Future runtime.
 
-| Feature file | Asserts (source / SDD §) | Proof |
+| Feature file | Asserts (canon hook) | Proof |
 |---|---|---|
-| `fluent-firegrid-public-surface` | Public package surface = definitions (`service`/`object`/`workflow`) + generator handlers + free primitives (`run`/`all`/`race`/`select`/`spawn`) + descriptor/interface helpers + typed client derivation + explicit handler-edge execution (`execute`/`invoke`). Definitions must carry enough public metadata for `fluent-runtime` to bind the control plane (`send`/`fork`/`tag`/`schedule`/`read`/`head`/`delete`) without importing internals. `run` names journal steps; local composition is Effect-shaped; no public bespoke Future scheduler; scheduler/awaitable/journal implementation details are not root public API. | package API tests + tutorial examples + `fluent-control-surface` binding |
+| `fluent-firegrid-public-surface` | Public package surface = definitions (`service`/`object`/`workflow`) + Effect handlers + `run` + durable primitive definitions + descriptor/interface helpers + typed client derivation + explicit handler-edge execution. Definitions carry enough metadata for `fluent-runtime` to bind control-plane ingress without importing internals. `run` names journal steps; local composition is Effect-shaped; no public Operation/Future runtime, worker loop, scheduler, awaitable, or journal implementation export. | package API tests + tutorial examples + `fluent-control-surface` binding |
 
 ---
 
@@ -141,7 +149,7 @@ Reference implementation, source-verified line-by-line:
 `repos/durable-streams/packages/coding-agents/`. Each feature is split out so a
 red spec localizes which part of the bridge failed.
 
-| Feature file | Asserts (source) | Firelab proof |
+| Feature file | Asserts (canon hook) | Firelab proof |
 |---|---|---|
 | `fluent-firegrid-acp-client` | For ACP harnesses, Firegrid exports and owns the ACP `Client` implementation and ACP `ClientSideConnection` wiring. The process owner only supplies the ACP stream and lifecycle. `sessionUpdate`/permission/tool callbacks become Firegrid-owned L1 observation and L2 commitment; ACP adapter packages import only the fluent-runtime ACP subpath. Agent DB/queryable row schemas are projection-owned, not adapter-core state. (`SDD_FLUENT_HARNESS_ADAPTER_CONTRACT`) | 🔴 real ACP process + FiregridAcpClient proof: process stream → ACP client callbacks → stream L1/L2 outcomes; import-boundary check |
 | `fluent-firegrid-acp-conductor` | For Zed/editor-launched ACP flows, Firegrid exports and owns `FiregridAcpConductor implements acp.Agent`. Zed is the ACP client; Firegrid is the editor-facing ACP agent/conductor; downstream delegation uses the separate `FiregridAcpClient` role. ACP stdio stdout is protocol-only. Firepixel's conductor spike is prior art for explicit roles, `AgentSideConnection` outer editor wiring, `ClientSideConnection` downstream wiring, and ordered routing, not a product dependency. (`SDD_FLUENT_HARNESS_ADAPTER_CONTRACT`, Zed ACP stdio proposal) | 🔴 Zed-style ACP stdio proof: editor initialize/session/prompt/cancel over SDK; stdout ACP-only; optional downstream delegation keeps roles separate |
@@ -159,7 +167,7 @@ red spec localizes which part of the bridge failed.
 
 ## Half 2 — Durable coordination surface
 
-| Feature file | Asserts (SDD §) | Firelab CoverageSpec |
+| Feature file | Asserts (canon hook) | Firelab CoverageSpec |
 |---|---|---|
 | `fluent-durable-wait` | `wait_for`/`wait_any` append `WaitIntent` **before** park; CEL predicate evaluated **during the drive** over `event` + recorded `self`; **`afterOffset` catch-up prevents lost wakeup**; the timeout race is **fenced once** (at-most-once winner). Given-key principle: key by `toolCallId` / `(toolCallId, slotIndex)`. Journal the predicate + matched event + `self` snapshot/reference so replay resolves from the journal, never re-evaluates a moving world or a newer session projection. (Appendix D.3/D.4) | `durableWaitCoverage` + `raceCoverage` |
 | `fluent-durable-sleep` | `sleep`/`wait_until` append timer intent (`TimerScheduled`) **before** park; **no `Clock.sleep`/local timer**; the **timer source materializes `TimerFired`** (unforgeable `timer.fire`); replay resolves from the journal. The one genuinely net-new piece (O5). `sleep`+`wait_for` = one family, two sources. (Part 3 sleep; Appendix D.2) | `durableSleepCoverage` |
@@ -172,7 +180,7 @@ red spec localizes which part of the bridge failed.
 
 ## Shared substrate (under both halves)
 
-| Feature file | Asserts (SDD §) | Firelab CoverageSpec |
+| Feature file | Asserts (canon hook) | Firelab CoverageSpec |
 |---|---|---|
 | `fluent-engine-substrate-free` | Collapse the DSL onto Effect with **named (not positional) journal keys** → `run` returns a plain `Effect`; `Future`/`Scheduler.drive`/`Awaitable`/`operation.ts`/`current.ts` all **delete**; concurrency + spawn become free. **Durability enters via provided `Journal`/`FencedWriter` Effect.Services at the handler edge; the engine core (the `Effect.gen` bodies) stays substrate-free** — it does not import the old runtime or the durable substrate directly. What-becomes-free: retry/saga/in-process-cancel/serde. (Part 1; Summary) | `replayCoverage` + airgap assertion |
 | `fluent-durable-streams-consumer-substrate` | Adopt Durable Streams named consumers, pull-wake, webhook wake, and idempotent-producer coordination as the wake/redrive substrate. Gate the adopted package with upstream conformance suites: L1 named consumers (register/acquire/ack/release/stale epoch/cursors), L2/B pull-wake (wake stream, claimed event, persisted cursors, lease-expiry re-wake, competing claims), and L2/A webhook wake (signed delivery, callback, ack/done/retry/idle). Durable Streams owns claim/lease/cursor/retry/webhook-wake mechanics. Fluent-runtime only runs the post-claim product step and must not rebuild lease tables, cursor stores, pull queues, webhook retry loops, or task-claim locks. Coordination patterns use producer-fenced first-writer-wins claims and explicit epoch override for recovery. | upstream Durable Streams conformance + Firegrid post-claim integration witness |
@@ -189,7 +197,7 @@ sleep, durable wait, fork spawn, and post-claim redrive.
 
 ## Below the choreography line (optional; authored procedures only — the agent path depends on NONE of it)
 
-| Feature file | Asserts (SDD §) | Firelab CoverageSpec |
+| Feature file | Asserts (canon hook) | Firelab CoverageSpec |
 |---|---|---|
 | `fluent-concurrent-replay-soundness` | **Named-key concurrent-replay soundness under `Effect.all(concurrency:"unbounded")`** (Appendix A's TFIND: *named journal keys are sound under concurrent replay*); the **mutation proves positional/runtime-counter keys desync** on replay (mis-key → `served=="executed"` / tripwire fires → RED). The race landmine, two facets: (a) **winner-record journaled — NOT a choice** (bounded-`wait_for` safety depends on it); (b) **loser-fate** (let-finish-and-journal *vs* interrupt) — pick per combinator. (Appendix A; Part 1 race landmine; Appendix C Spec 1/5) | `replayCoverage` + `raceCoverage` |
 
@@ -197,17 +205,17 @@ sleep, durable wait, fork spawn, and post-claim redrive.
 
 ## External control plane
 
-| Feature file | Asserts (SDD §) | Firelab proof |
+| Feature file | Asserts (canon hook) | Firelab proof |
 |---|---|---|
-| `fluent-control-surface` | External `/entities/:type/:id` control — `send` · `fork` · `tag` · `schedule`(→adopted scheduled source / DS wake integration) · `get`/`head`/`delete` — as **product spelling over durable-stream primitives**. `tag` names an offset; `fork` branches a new entity from a prefix (stream *is* the state → fork = copy-a-prefix → "explore from here" / "retry under a changed tool set" / "snapshot before a risky action"). Read plane = the same projection externalised. (External control surface) | control-plane simulation over stream facts |
+| `fluent-control-surface` | External `/entities/:type/:id` control — `send` · `fork` · `tag` · `schedule` · `read`/`head` · `delete` — as product spelling over Durable Streams append/read/fork/tag/schedule/delete through fluent-runtime. Acceptance must prove external client ingress reaches the host, the host calls runtime/store product services, and Durable Streams records or serves the state. Host-only self-calls do not satisfy the feature. | control-plane simulation over client ingress -> host -> runtime/store -> Durable Streams |
 
 ---
 
 ## Framing & harness (required context, not buildable agent features)
 
-| Item | Covers (SDD §) | Status |
+| Item | Covers (canon hook) | Status |
 |---|---|---|
-| `fluent-execution-model` | The three axes — **choreography · handler · external-harness**; "you cannot replay the model" → durable unit = the committed tool-call-and-result; "sessions never call each other" → **address ≠ call**; the three differentiators (non-invasive binding · forge-proof firelab · deterministic-replay rigor). (System shape; Execution model) | the framing every feature inherits |
+| `fluent-execution-model` | Canon execution split: authored procedures resume by replay; managed sessions resume by reconstruction over one Durable Streams coordination core. Durable authored tool bodies called by managed sessions run as child invocations on their own streams. | the framing every feature inherits |
 | `fluent-coverage-oracle` | Stand up the **firelab runner over fluent-firegrid** (`firelab` is the home — the runner is the driver + Control + infra seam). Verdicts are product-observable: stream contents, projections, resumed output, approval shapes, and durable outcomes. Diagnostic spans may explain failures but cannot replace `Then` assertions. Any substrate evidence must be emitted by Durable Streams or the host, never forged by the driver. Each spec = witness + a **mutation harness that must flip red** + a **vacuity check**. (Appendix C) | harness · partly green-now (oracle exists in `firelab`; the fluent runner is net-new) |
 
 ---
@@ -243,31 +251,14 @@ empirically.
 
 ---
 
-## Traceability matrix — every review section → feature (line ranges advisory)
+## Canon cross-reference
 
-| `fluent-firegrid-sdd.md` section | Feature |
+This section is a routing map only. The canon docs own the architecture text.
+
+| Canon source | Feature coverage |
 |---|---|
-| TL;DR four takeaways | all groups (1→execution-model/binding, 2→below-line, 3→Half 1, 4→shared substrate) |
-| System shape | `fluent-execution-model`, `fluent-session-handler` |
-| Execution model: axes / can't-replay / keys / races / differentiators | `fluent-execution-model`; keys→`fluent-durable-wait`+`fluent-concurrent-replay-soundness`; races→`fluent-fork-spawn` |
-| Background | `fluent-engine-substrate-free` |
-| Public authoring surface | `fluent-firegrid-public-surface` |
-| Part 1 — collapse DSL onto Effect | `fluent-engine-substrate-free` (+ race landmine→`fluent-concurrent-replay-soundness`) |
-| Part 2 — three families | `fluent-durable-sleep`+`fluent-durable-wait` (park/wake); upstream DS conformance is an assumption, not a Firegrid feature |
-| Part 3 — DS §7.2/§7.3 = wake subsystem | substrate conformance→`fluent-durable-streams-consumer-substrate`; product redrive→`fluent-worker-redrive`; sleep→`fluent-durable-sleep`; two-fencing is covered by DS conformance and asserted only through product use |
-| Coordination and ingress | `fluent-coordination-taxonomy`, `fluent-event-ingress` |
-| External control surface (fork/tag/schedule) | `fluent-control-surface` |
-| Build order tiers 1–11 | Half 2 (1–6) · Shared substrate (7–9) · Half 1 (10) · Below-line (11) |
-| Appendix A — named-keys soundness | `fluent-concurrent-replay-soundness` |
-| Appendix B — wake substrate | `fluent-worker-redrive` + `fluent-durable-sleep` |
-| Appendix C — coverage specs + HOST_SUBSTRATE | `fluent-coverage-oracle` (+ each spec → its Half-2/shared feature) |
-| Appendix D — agent surface / `durable.wait` / CEL / cross-session / race-defused / glue | `fluent-durable-wait` (D.1/D.3/D.4/D.6), `fluent-fork-spawn` (D.5); D.7 glue = carve-out below |
-| Appendix E — handler / two layers / adapter contract / durable tools / park / resume | `fluent-session-handler`, `fluent-client-normalization`, `fluent-agent-adapter-contract`, `fluent-three-envelope-stream`, `fluent-bridge-mediation`, `fluent-native-resume`, `fluent-park-interface` |
-| SDD_FLUENT_HARNESS_ADAPTER_CONTRACT — ACP client/conductor boundary / L1-L2 handoff / native resume safety | `fluent-firegrid-acp-client`, `fluent-firegrid-acp-conductor`, `fluent-harness-adapter-boundary`, `fluent-agent-adapter-contract`, `fluent-native-resume`, `fluent-park-interface`, `fluent-mcp-tools-out` |
-| Still open | Group O (O1–O5) + `fluent-coverage-oracle` (the firelab runner) |
-| Sources & provenance | provenance; O4 = the regressed Electric items |
-
-> **Surface-glue carve-out (D.7):** approval gates, middleware, dashboards, the ACP
-> adapter, budget/policy, context injection are "one primitive + one combinator"
-> the README itself files *above* the substrate — intentionally **not** gated as
-> features. The only review content with no feature, by design.
+| `fluent/README.md` two models and package roles | `fluent-execution-model`, `fluent-firegrid-public-surface`, `fluent-session-handler`, agent-binding features |
+| `fluent/execution-models.md` replay vs reconstruction | `fluent-execution-model`; authored replay details also land in `fluent-engine-substrate-free` and `fluent-concurrent-replay-soundness` |
+| `fluent/substrate-protocol.md` DS operation mappings | `fluent-durable-streams-consumer-substrate`, `fluent-worker-redrive`, `fluent-durable-wait`, `fluent-durable-sleep`, `fluent-fork-spawn`, `fluent-control-surface` |
+| `fluent/harness-io.md` harness role map | ACP client/conductor, native/cloud, bridge mediation, resume, approval, park, and MCP tool-out features |
+| `fluent-architecture.md` numbered F-S invariants | This README links and routes only; invariant wording and numbering stay in canon |
