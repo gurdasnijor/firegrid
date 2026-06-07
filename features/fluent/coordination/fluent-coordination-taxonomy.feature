@@ -1,7 +1,9 @@
 @fluent @coordination @taxonomy
 Feature: Fluent coordination taxonomy
   Fluent coordination facts are durable state-protocol changes keyed by explicit
-  ids. Addressing work is not the same as calling another session.
+  ids. Addressing work is not the same as calling another session. Authored
+  procedures and managed sessions share one Durable Streams coordination core,
+  but continue by replay or reconstruction respectively.
 
   Background:
     Given the fluent coordination core is available
@@ -22,6 +24,14 @@ Feature: Fluent coordination taxonomy
     Then each source appends a durable change
     And Durable Streams delivers or grants subscribed work
     And Firegrid records post-wake eligibility or outcome as a durable change
+
+  Scenario: Post-claim facts are product semantics, not substrate mechanics
+    Given Durable Streams grants a claim for subscribed fluent work
+    When Firegrid handles the claim
+    Then Durable Streams owns the claim, lease, cursor, retry, and wake delivery mechanics
+    And Firegrid materializes stream facts from the provided offsets
+    And Firegrid appends a Layer 2 coordination fact before acking or doning the wake
+    And Firegrid does not create a parallel lease, cursor, pull queue, webhook retry loop, or task-claim lock
 
   Scenario: Tags name durable offsets
     When a client tags a session state as "before-risky-action"

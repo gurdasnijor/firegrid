@@ -2,7 +2,9 @@
 Feature: Fluent durable sleep
   sleep and wait_until park durably by recording timer intent before suspension.
   A timer source materializes time as a durable append, and normal wake delivery
-  redrives the session.
+  redrives the session. Durable Streams owns wake claim, lease, cursor, retry,
+  and delivery; Firegrid owns timer intent, fired-time product facts, and the
+  post-claim resolution.
 
   Background:
     Given a fluent session with a durable journal
@@ -17,7 +19,7 @@ Feature: Fluent durable sleep
   Scenario: Timer source materializes the wake
     Given a TimerScheduled record exists for time "T"
     When time "T" arrives
-    Then the timer source appends a TimerFired record
+    Then the append-at-T timer source appends a TimerFired record
     And Durable Streams delivers or grants work for the subscribed session
     And the TimerFired append is distinguishable from a driver-forged observation
 
@@ -25,8 +27,10 @@ Feature: Fluent durable sleep
     Given the handler parked on a TimerScheduled record
     And the process exits before time "T"
     When Durable Streams grants a wake claim after TimerFired is appended
-    Then the post-wake product actor re-drives the handler from the journal
-    And the sleep resolves from TimerFired
+    Then the post-claim product actor materializes the session facts from the provided offsets
+    And Firegrid appends one Layer 2 timer_fired or sleep resolution fact
+    And Firegrid acks or dones the wake only after that resolution is durable
+    And the sleep resolves from the recorded TimerFired resolution
     And no process-local timer state is required
 
   Scenario: Replaying an already fired sleep does not reschedule
@@ -39,8 +43,16 @@ Feature: Fluent durable sleep
   Scenario: wait_until uses the same durable mechanism
     When the handler calls wait_until for an absolute timestamp
     Then it records timer intent before parking
-    And it resumes only after a durable timer-fired event
+    And the append-at-T source materializes time as a durable TimerFired event
+    And it resumes only after Firegrid records the Layer 2 timer resolution
     And it does not fabricate firedAt from a local client or worker clock
+
+  Scenario: Timer source does not own session resume
+    Given a TimerScheduled record exists for session "s1"
+    When the append-at-T source appends TimerFired for session "s1"
+    Then the timer source does not call the session handler directly
+    And Durable Streams wake delivery decides which post-claim actor may work
+    And Firegrid performs materialize, resolution append, and ack after the wake is claimed
 
   Scenario: Process-local sleep mutation fails the proof
     Given durable sleep is replaced by a process-local sleep mutation
