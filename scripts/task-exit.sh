@@ -89,61 +89,35 @@ if [ "${AHEAD:-1}" = "0" ]; then
   exit 1
 fi
 
-# 3a-bis. Doc-only fast path: when EVERY changed file is Markdown or under
-#     docs/, the heavy turbo build/test gate proves nothing (no buildable or
-#     testable change), so run a reduced gate instead of the full matrix.
-#     Conservative — ANY non-doc path forces the full gate; purely a function
-#     of the diff, so it cannot be set by accident.
-CHANGED_FILES="$(git -C "$RR" diff --name-only "$BASE_REF..HEAD")"
-DOConly=1
-[ -z "$CHANGED_FILES" ] && DOConly=0
-while IFS= read -r _f; do
-  [ -z "$_f" ] && continue
-  case "$_f" in
-    *.md|docs/*) ;;
-    *) DOConly=0; break ;;
-  esac
-done <<DOCSCAN
-$CHANGED_FILES
-DOCSCAN
+# 3b. EXIT GATE — keep task-exit lightweight. It must catch obvious patch
+#     corruption before push, but it must not unconditionally run the heavy
+#     build/test matrix. Lanes are still prompted to run the canonical gate
+#     themselves before asking for merge:
+#         pnpm preflight
+#     Explicit opt-in remains available for lanes that want task-exit to run it:
+#         TASK_EXIT_RUN_PREFLIGHT=1 bash scripts/task-exit.sh <bead-id>
+echo "▶ task-exit: lightweight exit gate (git diff --check)."
+if ! git -C "$RR" diff --check "$BASE_REF...HEAD"; then
+  echo "✋ task-exit: lightweight gate FAILED — whitespace errors / conflict markers above." >&2
+  echo "   Fix them (or remove the offending lines), then re-run task-exit." >&2
+  exit 1
+fi
+echo "✓ task-exit: lightweight gate passed."
 
-# 3b. PREFLIGHT GATE — run the full local gate set on the committed state and
-#     REFUSE to push / open a PR on failure. The DRAFT PR is the merge gate, so
-#     pushing a red branch just burns a CI round-trip and strands a failing PR;
-#     fail loud LOCALLY instead. This is the discipline made structural: lanes
-#     were skipping `pnpm preflight` by hand, so every open PR failed the same
-#     checks. `pnpm preflight` runs all gates in parallel (weighted semaphore),
-#     so it stays fast. Runs against HEAD (the just-committed work). Escape only
-#     with explicit intent (prints a loud warning):
-#         TASK_EXIT_SKIP_PREFLIGHT=1 bash scripts/task-exit.sh <bead-id>
-#     — for the rare case of knowingly pushing WIP (cannot be set by accident).
-if [ "${TASK_EXIT_SKIP_PREFLIGHT:-}" = "1" ]; then
-  echo "⚠ task-exit: TASK_EXIT_SKIP_PREFLIGHT=1 — SKIPPING pnpm preflight." >&2
-  echo "   The push/PR is NOT locally verified; CI may fail. Use sparingly." >&2
-elif [ "${DOConly:-0}" = "1" ]; then
-  # Docs-only: skip the full build/test matrix, but still run a tiny REAL gate
-  # (git diff --check catches whitespace errors + leftover conflict markers) —
-  # never declare a zero-command gate green.
-  echo "▶ task-exit: docs-only diff — reduced gate (git diff --check; full pnpm preflight skipped)."
-  if ! git -C "$RR" diff --check "$BASE_REF...HEAD"; then
-    echo "✋ task-exit: docs-only reduced gate FAILED — whitespace errors / conflict markers above." >&2
-    echo "   Fix them (or remove the offending lines), then re-run task-exit." >&2
-    exit 1
-  fi
-  echo "✓ task-exit: docs-only reduced gate (git diff --check) passed — proceeding to push."
-else
-  echo "▶ task-exit: running pnpm preflight before push (≤${TASK_EXIT_PREFLIGHT_TIMEOUT:-1200}s; override: TASK_EXIT_SKIP_PREFLIGHT=1)…"
+if [ "${TASK_EXIT_RUN_PREFLIGHT:-}" = "1" ]; then
+  echo "▶ task-exit: TASK_EXIT_RUN_PREFLIGHT=1 — running pnpm preflight before push (≤${TASK_EXIT_PREFLIGHT_TIMEOUT:-1200}s)…"
   if ! with_timeout "${TASK_EXIT_PREFLIGHT_TIMEOUT:-1200}" sh -c "cd '$RR' && pnpm preflight"; then
     echo "" >&2
     echo "✋ task-exit: pnpm preflight FAILED or TIMED OUT — REFUSING to push $BR or open a PR." >&2
-    echo "   Your work is committed locally on $BR but NOT pushed (nothing stranded" >&2
-    echo "   remotely). Fix the failing gate(s) above, then re-run task-exit." >&2
-    echo "   (A timeout means a gate hung — most often the live coverage:gate sim; re-run" >&2
-    echo "    \`pnpm --filter firelab coverage:gate\` in $RR to see it, or raise" >&2
-    echo "    TASK_EXIT_PREFLIGHT_TIMEOUT. Override entirely with TASK_EXIT_SKIP_PREFLIGHT=1.)" >&2
+    echo "   Your work is committed locally on $BR but NOT pushed. Fix the failing" >&2
+    echo "   gate(s) above, then re-run task-exit, or omit TASK_EXIT_RUN_PREFLIGHT" >&2
+    echo "   to use the lightweight default." >&2
     exit 1
   fi
   echo "✓ task-exit: pnpm preflight green — proceeding to push."
+else
+  echo "⚠ task-exit: pnpm preflight was NOT run automatically." >&2
+  echo "   Prompt for lane: run \`pnpm preflight\` before requesting merge/signoff." >&2
 fi
 
 # 4. push the branch — FAIL LOUD. A swallowed push = stranded work, the
