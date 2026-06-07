@@ -5,7 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@durable-streams/server': github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server
   '@firegrid/durable-streams-ui>@tanstack/react-db': 0.1.85
 
 pnpmfileChecksum: sha256-AFEq42OO1KQV38FDUYm3Vz1xj5QbDNl+YBY9o3o+sdE=
@@ -14,9 +13,6 @@ importers:
 
   .:
     devDependencies:
-      '@durable-streams/server':
-        specifier: github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server
-        version: https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server(@tanstack/db@0.6.7(typescript@5.9.3))
       '@effect/eslint-plugin':
         specifier: ^0.3.2
         version: 0.3.2
@@ -76,6 +72,45 @@ importers:
         specifier: ^3.2.0
         version: 3.2.4(@types/node@22.19.17)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
 
+  packages/durable-streams/packages/client:
+    dependencies:
+      '@microsoft/fetch-event-source':
+        specifier: ^2.0.1
+        version: 2.0.1
+      fastq:
+        specifier: ^1.19.1
+        version: 1.20.1
+
+  packages/durable-streams/packages/server:
+    dependencies:
+      '@durable-streams/client':
+        specifier: 0.2.6
+        version: 0.2.6
+      '@durable-streams/state':
+        specifier: 0.3.1
+        version: 0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))
+      '@neophi/sieve-cache':
+        specifier: ^1.0.0
+        version: 1.5.0
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
+      lmdb:
+        specifier: ^3.3.0
+        version: 3.5.4
+
+  packages/durable-streams/packages/state:
+    dependencies:
+      '@durable-streams/client':
+        specifier: workspace:*
+        version: link:../client
+      '@standard-schema/spec':
+        specifier: ^1.0.0
+        version: 1.1.0
+      '@tanstack/db':
+        specifier: '>=0.6.0 <1.0.0'
+        version: 0.6.7(typescript@5.9.3)
+
   packages/effect-durable-operators:
     dependencies:
       effect-durable-streams:
@@ -84,7 +119,10 @@ importers:
     devDependencies:
       '@durable-streams/client':
         specifier: ^0.2.3
-        version: 0.2.3
+        version: 0.2.6
+      '@durable-streams/server':
+        specifier: workspace:*
+        version: link:../durable-streams/packages/server
       '@durable-streams/state':
         specifier: ^0.2.5
         version: 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
@@ -124,7 +162,10 @@ importers:
     devDependencies:
       '@durable-streams/client':
         specifier: ^0.2.3
-        version: 0.2.3
+        version: 0.2.6
+      '@durable-streams/server':
+        specifier: workspace:*
+        version: link:../durable-streams/packages/server
       '@effect/platform':
         specifier: ^0.96.1
         version: 0.96.1(effect@3.21.2)
@@ -190,8 +231,8 @@ importers:
         specifier: 0.22.0
         version: 0.22.0(zod@4.4.3)
       '@durable-streams/server':
-        specifier: github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server
-        version: https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server(@tanstack/db@0.6.7(typescript@5.9.3))
+        specifier: workspace:*
+        version: link:../durable-streams/packages/server
       '@firegrid/client-sdk':
         specifier: workspace:*
         version: link:../client-sdk
@@ -346,8 +387,8 @@ importers:
         specifier: 0.21.0
         version: 0.21.0(zod@4.4.3)
       '@durable-streams/server':
-        specifier: github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server
-        version: https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server(@tanstack/db@0.6.7(typescript@5.9.3))
+        specifier: workspace:*
+        version: link:../durable-streams/packages/server
       '@effect/ai':
         specifier: ^0.35.0
         version: 0.35.0(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
@@ -638,11 +679,6 @@ packages:
     resolution: {integrity: sha512-uHKKbWpsKLhFMeGjG0PgM6LXE3oEIi7FHKlJZkmYGxcqd4Yjjd/QEvnQnDzteRP4Av1uJVM8qjTL7kfKsgeS/w==}
     engines: {node: '>=18.0.0'}
     hasBin: true
-
-  '@durable-streams/server@https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server':
-    resolution: {path: /packages/server, tarball: https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb}
-    version: 0.3.7
-    engines: {node: '>=18.0.0'}
 
   '@durable-streams/state@0.2.5':
     resolution: {integrity: sha512-9vVe2Ww+FxVuNs79f5geS7KZ6kvFXOROC+gCZmIXVugb5Fpah/B/IBl+kTm0gL/4MpjIuAcZtu3JK4rG9TuEeA==}
@@ -4048,16 +4084,6 @@ snapshots:
     dependencies:
       '@microsoft/fetch-event-source': 2.0.1
       fastq: 1.20.1
-
-  '@durable-streams/server@https://codeload.github.com/gurdasnijor/durable-streams/tar.gz/4a5efcf35d67bf16697b2f965860cffdebde1dcb#path:/packages/server(@tanstack/db@0.6.7(typescript@5.9.3))':
-    dependencies:
-      '@durable-streams/client': 0.2.6
-      '@durable-streams/state': 0.3.1(@tanstack/db@0.6.7(typescript@5.9.3))
-      '@neophi/sieve-cache': 1.5.0
-      '@opentelemetry/api': 1.9.1
-      lmdb: 3.5.4
-    transitivePeerDependencies:
-      - '@tanstack/db'
 
   '@durable-streams/state@0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))':
     dependencies:

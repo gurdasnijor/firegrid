@@ -1240,6 +1240,7 @@ export default tseslint.config(
       "apps/**/next-env.d.ts",
       ".worktrees/**",
       "repos/**",
+      "packages/durable-streams/**",
     ],
   },
   js.configs.recommended,

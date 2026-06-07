@@ -40,7 +40,6 @@
     "verify": "pnpm run preflight"
   },
   "devDependencies": {
-    "@durable-streams/server": "0.3.7",
     "@effect/eslint-plugin": "^0.3.2",
     "@effect/language-service": "^0.86.2",
     "@eslint/js": "^10.0.1",
@@ -57,7 +56,6 @@
   },
   "pnpm": {
     "overrides": {
-      "@durable-streams/server": "github:gurdasnijor/durable-streams#4a5efcf35d67bf16697b2f965860cffdebde1dcb&path:/packages/server",
       "@firegrid/durable-streams-ui>@tanstack/react-db": "0.1.85"
     }
   }

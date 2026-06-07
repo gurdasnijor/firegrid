@@ -669,6 +669,9 @@ module.exports = {
   options: {
     tsConfig: { fileName: "tsconfig.eslint.json" },
     doNotFollow: { path: "node_modules" },
+    // packages/durable-streams is an in-tree git subtree of our durable-streams
+    // fork (read-only source + a prebuilt runtime trio); not firegrid source.
+    exclude: { path: "^packages/durable-streams/" },
     includeOnly: "^packages/.*/src",
     enhancedResolveOptions: { exportsFields: ["exports"] },
   },

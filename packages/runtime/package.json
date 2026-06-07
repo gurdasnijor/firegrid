@@ -59,7 +59,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.21.0",
-    "@durable-streams/server": "^0.3.1",
+    "@durable-streams/server": "workspace:*",
     "@effect/ai": "^0.35.0",
     "@effect/cli": "0.75.1",
     "@effect/experimental": "0.60.0",

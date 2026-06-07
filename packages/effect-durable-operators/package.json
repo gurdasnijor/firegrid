@@ -50,6 +50,7 @@
   },
   "devDependencies": {
     "@durable-streams/client": "^0.2.3",
+    "@durable-streams/server": "workspace:*",
     "@durable-streams/state": "^0.2.5",
     "@effect/platform": "^0.96.1",
     "@tanstack/db": "^0.5.33",

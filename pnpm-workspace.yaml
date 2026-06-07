@@ -1,4 +1,11 @@
 packages:
   - packages/*
+  # durable-streams fork lives in-tree as a git subtree (packages/durable-streams).
+  # Its monorepo root is not a workspace package, and only the runtime trio
+  # (server/client/state) are members — the rest is read-only source we don't build.
+  - "!packages/durable-streams"
+  - packages/durable-streams/packages/server
+  - packages/durable-streams/packages/client
+  - packages/durable-streams/packages/state
   # Local dev tooling: vendored durable-streams stream-inspector UI (reads :4437).
   - tools/durable-streams-ui

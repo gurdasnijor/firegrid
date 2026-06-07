@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "0.22.0",
-    "@durable-streams/server": "0.3.7",
+    "@durable-streams/server": "workspace:*",
     "@firegrid/client-sdk": "workspace:*",
     "@firegrid/fluent-acp-process": "workspace:*",
     "@firegrid/fluent-runtime": "workspace:*",

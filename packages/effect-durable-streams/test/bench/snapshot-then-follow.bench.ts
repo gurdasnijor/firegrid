@@ -52,7 +52,7 @@ describe(`snapshot ${N} items + open live`, () => {
     if (items.length !== N) {
       throw new Error(`expected ${N}, got ${items.length}`)
     }
-    void head.offset
+    void head
   })
 
   bench("effect-durable-streams", async () => {
