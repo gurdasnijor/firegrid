@@ -1,7 +1,8 @@
 @fluent @control-plane
 Feature: Fluent control surface
-  The external control plane is product spelling over durable stream primitives:
-  send, fork, tag, schedule, read, head, and delete.
+  The external host control surface is product spelling over host and durable
+  stream primitives: send, fork, tag, schedule, read, head, and delete. It does
+  not expose raw substrate endpoints.
 
   Background:
     Given a fluent entity backed by a durable stream

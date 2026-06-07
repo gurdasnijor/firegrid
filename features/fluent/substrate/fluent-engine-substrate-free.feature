@@ -2,8 +2,8 @@
 Feature: Fluent engine substrate-free Effect core
   Fluent collapses the Restate-shaped Operation/Future DSL onto Effect. The
   durable execution core is an Effect program that receives journal services at
-  the handler edge; it is not a second scheduler and it does not import the old
-  runtime.
+  the handler edge; it is not a second scheduler, a Durable Streams client, or
+  a deployment process.
 
   Background:
     Given a fluent session stream
@@ -26,7 +26,8 @@ Feature: Fluent engine substrate-free Effect core
     Then it provides the session stream identity
     And it provides a fenced writer scoped to that session stream
     And it provides a Journal service built from that fenced writer
-    And the Effect body does not import durable-streams or the legacy runtime directly
+    And the Effect body does not import Durable Streams or a deployment package directly
+    And any implementation package that imports Durable Streams is outside the authoring engine
 
   Scenario: Effect composition replaces Future combinators
     When a handler starts two named journaled steps concurrently
@@ -56,10 +57,10 @@ Feature: Fluent engine substrate-free Effect core
 
   Scenario: Durable authoring owns deterministic effect services
     Given a fluent-firegrid handler reads time or random values that affect later control flow
-    When the handler is executed under the durable authoring runtime
+    When the handler is executed under the durable authoring environment
     Then Clock and Random reads are provided through journaled Effect services
     And raw Date, Math.random, crypto randomness, or nondeterministic step keys are lint-backed boundary violations
-    And Clock.sleep is not treated as a durable timer unless lowered through the fluent-runtime timer coordination path
+    And Clock.sleep is not treated as a durable timer unless lowered through a named Durable Streams substrate timer contract
 
   Scenario: Retry lives inside the journaled run action
     Given a named journal step performs a retryable side effect
@@ -75,19 +76,19 @@ Feature: Fluent engine substrate-free Effect core
     And compensation that must be replay-stable is itself recorded as a named run step
     And finalizer-backed compensation does not introduce a separate compensation scheduler
 
-  Scenario: Effect owns local concurrency while fluent-runtime owns durable sessions
+  Scenario: Effect owns local concurrency while durable sessions stay outside the authoring core
     When a handler forks, races, or interrupts local work
     Then the local lifetime is represented by Effect fibers, scopes, and interruption
     And joining local work does not create or join a durable child session
-    And durable child sessions, managed agent session spawn, and cross-session wakeup remain fluent-runtime coordination facts
+    And durable child sessions, external harness-loop spawn, and cross-session wakeup remain outside fluent-firegrid until their Durable Streams substrate contracts are specified
 
   Scenario: Durable tool bodies run on child streams
-    Given a managed session invokes a durable tool whose implementation is an authored procedure
-    When fluent-runtime accepts the tool invocation
-    Then the managed-session stream records the tool call and child invocation facts
+    Given an external durable parent invokes a durable tool whose implementation is an authored procedure
+    When an external runner accepts the tool invocation
+    Then the parent stream records the tool call and child invocation facts
     And the authored tool body runs with its own Journal service on a child stream
-    And the managed-session stream receives only the committed child terminal or tool result fact
-    And the fluent engine does not inline the child authored procedure into the managed-session handler
+    And the parent stream receives only the committed child terminal or tool result fact
+    And the fluent engine does not inline the child authored procedure into the parent handler
 
   Scenario: Journal write path preserves concurrent step semantics
     Given multiple named run steps append journal rows concurrently
@@ -95,3 +96,10 @@ Feature: Fluent engine substrate-free Effect core
     Then the strategy must not impose a caller-visible positional ordering contract on named steps
     And any producer fencing, epoch, or flush behavior is handled as a substrate write-path decision
     And the authoring engine contract remains open for the dedicated producer/write-path hardening slice
+
+  Scenario: Missing substrate features block deployment binding rather than expanding the engine
+    Given an authored primitive needs durable wait, durable sleep, scheduled trigger, or cross-session wakeup
+    When Durable Streams does not yet expose the required substrate contract
+    Then fluent-firegrid records the primitive as a deferred authoring capability
+    And no deployment binding may implement a parallel substrate inside the authoring package
+    And the missing contract is specified at the Durable Streams or substrate-adapter layer first

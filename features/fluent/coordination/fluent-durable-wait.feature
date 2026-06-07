@@ -1,10 +1,11 @@
 @fluent @coordination @durable-wait @cel @wake
 Feature: Fluent durable wait
   wait_for and wait_any park durably by recording wait intent before suspension.
-  Candidate events are matched during the drive with CEL over event and self,
-  and replay resolves from recorded matches rather than from a moving world.
-  Durable Streams owns wake claim, lease, cursor, retry, and delivery; Firegrid
-  owns only the post-claim product match and Layer 2 resolution fact.
+  Candidate events are matched through a named wait-matcher contract with CEL
+  over event and self, and replay resolves from recorded matches rather than
+  from a moving world. Durable Streams owns wake claim, lease, cursor, retry,
+  and delivery; generic predicate subscription is substrate or substrate-adapter
+  work; Firegrid owns only the product wait intent and Layer 2 resolution fact.
 
   Background:
     Given a fluent session with correlation data
@@ -30,7 +31,7 @@ Feature: Fluent durable wait
     When an event with type "github.issue" is appended
     Then Durable Streams delivers or grants work for the subscribed session
     And the post-claim product actor materializes candidate events from the provided offsets
-    And the CEL predicate evaluates to false
+    And the named wait-matcher contract evaluates the CEL predicate to false
     And the wait remains pending with its original intent
     And Firegrid acks or dones only after the non-match decision is durable where offsets are consumed
 
@@ -39,7 +40,7 @@ Feature: Fluent durable wait
     When an event with type "github.pr" and state "merged" is appended
     Then Durable Streams grants a wake claim to a post-claim product actor
     And the actor materializes session facts and candidate events from the provided offsets
-    And the CEL predicate evaluates to true with bindings event and recorded self
+    And the named wait-matcher contract evaluates the CEL predicate to true with bindings event and recorded self
     And Firegrid appends a Layer 2 wait_matched fact containing that event
     And Firegrid acks or dones the wake only after wait_matched is durable
 

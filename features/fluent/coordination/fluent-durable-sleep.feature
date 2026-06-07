@@ -1,14 +1,15 @@
 @fluent @coordination @durable-sleep @wake
 Feature: Fluent durable sleep
   sleep and wait_until park durably by recording timer intent before suspension.
-  A timer source materializes time as a durable append, and normal wake delivery
-  redrives the session. Durable Streams owns wake claim, lease, cursor, retry,
-  and delivery; Firegrid owns timer intent, fired-time product facts, and the
-  post-claim resolution.
+  A substrate scheduled-append source materializes time as a durable append, and
+  normal wake delivery redrives the session. Durable Streams owns wake claim,
+  lease, cursor, retry, and delivery; scheduled wake is substrate or
+  substrate-adapter work; Firegrid owns timer intent, fired-time product facts,
+  and the post-claim resolution.
 
   Background:
     Given a fluent session with a durable journal
-    And a timer source integrated with Durable Streams wake delivery
+    And a scheduled-append source integrated with Durable Streams wake delivery
 
   Scenario: Timer intent is recorded before the handler parks
     When the handler calls sleep until time "T"
@@ -16,10 +17,10 @@ Feature: Fluent durable sleep
     And the record contains the sleep key and target time "T"
     And the handler does not rely on a process-local sleep to remember the timer
 
-  Scenario: Timer source materializes the wake
+  Scenario: Scheduled append materializes the wake
     Given a TimerScheduled record exists for time "T"
     When time "T" arrives
-    Then the append-at-T timer source appends a TimerFired record
+    Then the append-at-T scheduled source appends a TimerFired record
     And Durable Streams delivers or grants work for the subscribed session
     And the TimerFired append is distinguishable from a driver-forged observation
 
@@ -47,10 +48,10 @@ Feature: Fluent durable sleep
     And it resumes only after Firegrid records the Layer 2 timer resolution
     And it does not fabricate firedAt from a local client or worker clock
 
-  Scenario: Timer source does not own session resume
+  Scenario: Scheduled source does not own session resume
     Given a TimerScheduled record exists for session "s1"
     When the append-at-T source appends TimerFired for session "s1"
-    Then the timer source does not call the session handler directly
+    Then the scheduled source does not call the session handler directly
     And Durable Streams wake delivery decides which post-claim actor may work
     And Firegrid performs materialize, resolution append, and ack after the wake is claimed
 
