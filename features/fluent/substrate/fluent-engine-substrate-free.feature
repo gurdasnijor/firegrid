@@ -81,6 +81,14 @@ Feature: Fluent engine substrate-free Effect core
     And joining local work does not create or join a durable child session
     And durable child sessions, managed agent session spawn, and cross-session wakeup remain fluent-runtime coordination facts
 
+  Scenario: Durable tool bodies run on child streams
+    Given a managed session invokes a durable tool whose implementation is an authored procedure
+    When fluent-runtime accepts the tool invocation
+    Then the managed-session stream records the tool call and child invocation facts
+    And the authored tool body runs with its own Journal service on a child stream
+    And the managed-session stream receives only the committed child terminal or tool result fact
+    And the fluent engine does not inline the child authored procedure into the managed-session handler
+
   Scenario: Journal write path preserves concurrent step semantics
     Given multiple named run steps append journal rows concurrently
     When the writer strategy is selected for the invocation stream

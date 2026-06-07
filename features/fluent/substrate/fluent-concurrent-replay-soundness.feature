@@ -2,11 +2,12 @@
 Feature: Fluent concurrent replay soundness
   Named journal keys are sound under concurrent Effect replay. This ratifies the
   Part 1 decision that durable steps are name-addressed rather than
-  execution-order-addressed.
+  execution-order-addressed. The proof applies to authored procedures; managed
+  agent sessions continue by reconstruction and must not replay a model loop.
 
   Background:
     Given a fluent journal with no prior step rows
-    And a handler that records observable side-effect counts
+    And an authored procedure handler that records observable side-effect counts
 
   Scenario: Concurrent named steps replay from the journal
     Given the handler issues named steps "a", "b", and "c" under unbounded Effect concurrency
@@ -15,6 +16,13 @@ Feature: Fluent concurrent replay soundness
     Then each replayed step is served from its journaled row
     And none of the side-effecting actions runs during replay
     And the replay result equals the first execution result
+
+  Scenario: Managed sessions do not use Effect-body replay
+    Given a managed agent session has Layer 1 harness observations
+    When the session is redriven after a wake
+    Then Firegrid reconstructs native harness state from durable stream facts
+    And Firegrid does not replay the managed agent model loop as a fluent Effect body
+    And already-observed Layer 1 side effects are suppressed rather than re-executed
 
   Scenario: Completion order does not determine journal identity
     Given step "slow" completes after step "fast"

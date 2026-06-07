@@ -3,6 +3,8 @@ Feature: Fluent durable wait
   wait_for and wait_any park durably by recording wait intent before suspension.
   Candidate events are matched during the drive with CEL over event and self,
   and replay resolves from recorded matches rather than from a moving world.
+  Durable Streams owns wake claim, lease, cursor, retry, and delivery; Firegrid
+  owns only the post-claim product match and Layer 2 resolution fact.
 
   Background:
     Given a fluent session with correlation data
@@ -12,6 +14,7 @@ Feature: Fluent durable wait
     When the handler calls wait_for with predicate "event.type == 'review.posted'"
     Then a WaitIntent record is appended before the handler parks
     And the record contains the predicate
+    And the record contains the self binding snapshot or recorded reference
     And the record contains the afterOffset used for catch-up scanning
 
   Scenario: Catch-up scan prevents lost wakeups
@@ -26,16 +29,19 @@ Feature: Fluent durable wait
     Given the handler waits for "event.type == 'github.pr'"
     When an event with type "github.issue" is appended
     Then Durable Streams delivers or grants work for the subscribed session
-    And the post-wake product actor re-drives the handler
+    And the post-claim product actor materializes candidate events from the provided offsets
     And the CEL predicate evaluates to false
     And the wait remains pending with its original intent
+    And Firegrid acks or dones only after the non-match decision is durable where offsets are consumed
 
   Scenario: Matching wake resolves from CEL predicate
     Given the handler waits for "event.type == 'github.pr' && event.value.state == 'merged'"
     When an event with type "github.pr" and state "merged" is appended
-    Then the CEL predicate evaluates to true with bindings event and self
-    And the wait resolves with that event
-    And the matched event is journaled
+    Then Durable Streams grants a wake claim to a post-claim product actor
+    And the actor materializes session facts and candidate events from the provided offsets
+    And the CEL predicate evaluates to true with bindings event and recorded self
+    And Firegrid appends a Layer 2 wait_matched fact containing that event
+    And Firegrid acks or dones the wake only after wait_matched is durable
 
   Scenario: Match shorthand desugars to event self equality
     Given the handler calls wait_for with match path "value.issueId"
@@ -58,6 +64,17 @@ Feature: Fluent durable wait
     When the handler is re-driven
     Then the wait resolves from journaled event "e1"
     And the predicate is not re-evaluated to choose "e2"
+
+  Scenario Outline: Execution model determines continuation after match
+    Given a wait has resolved by appending one Layer 2 wait_matched fact
+    When the waiting unit is a <model>
+    Then the continuation is <continuation>
+    And neither continuation re-evaluates the live world for the resolved wait
+
+    Examples:
+      | model              | continuation                                                                                |
+      | authored procedure | replaying the Effect body and serving the recorded match from the journal                   |
+      | managed session    | reconstructing native harness state and feeding the committed result through harness I/O    |
 
   Scenario: Bounded wait records exactly one winner
     Given a wait_for is bounded by a timeout
