@@ -129,6 +129,58 @@ normally have to rebuild:
 Fluent's job is to join those two providers without losing either side's
 strengths.
 
+## Deployment Topology
+
+The target fluent deployment is runtime-fronted. External apps, editors,
+providers, peers, and harnesses call Firegrid-owned ingress surfaces. They do
+not write Firegrid coordination streams directly.
+
+```text
+external app / UI / editor / provider / peer
+      │
+      │ Firegrid API · ACP · MCP · webhook · source adapter
+      ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ packages/fluent-runtime                                              │
+│ Firegrid host/session authority                                      │
+│ - terminates product ingress and adapter callbacks                   │
+│ - owns Durable Streams substrate clients for Firegrid coordination    │
+│ - supplies Journal to authored Effect bodies                         │
+│ - resumes managed harness sessions through Harness I/O roles          │
+└───────────────┬───────────────────────────────────────┬──────────────┘
+                │ DS append/read/claim/ack              │ native protocol
+                ▼                                       ▼
+┌──────────────────────────────┐        ┌──────────────────────────────┐
+│ Durable Streams substrate     │        │ authored body or raw harness │
+│ log, wake, lease, fencing      │        │ no Durable Streams writes     │
+└──────────────────────────────┘        └──────────────────────────────┘
+```
+
+This is proxy-shaped in the durable-execution sense: a durable broker/runtime is
+in front of handlers and harnesses for invocation, journaling, wake, retry, and
+fencing. The split is narrower than a monolithic workflow engine:
+
+- Durable Streams is the durable broker and substrate system of record.
+- `packages/fluent-runtime` is the Firegrid semantics host in front of that
+  broker.
+- `packages/fluent-firegrid` is the authoring SDK over `Journal`; it does not
+  import Durable Streams or own listeners, workers, leases, or cursors.
+- Raw harnesses and process owners speak native protocols only; they do not
+  import Durable Streams or write session facts directly.
+
+An embedded or in-process host is allowed for local development, tests, or a
+single-process deployment, but it is still running `packages/fluent-runtime` as
+the host. The package ownership and Durable-Streams-client-free contracts for
+authored code, clients, process owners, and raw harnesses do not change.
+
+`@durable-streams/proxy` is a separate transport edge for resumable upstream
+HTTP streams, such as AI token streams or SSE feeds. Fluent may use it inside a
+LanguageModel, native, or cloud adapter, but it does not own waits, timers,
+children, replay, redrive, tool results, or session authority.
+
+See [`architecture.md`](architecture.md#deployment-topology) for the full system
+contracts and proxy-based durable execution comparison.
+
 ## Concepts Mapped To The Substrate
 
 | Concept | Fluent spelling | Durable Streams / Effect mechanism |
@@ -330,7 +382,7 @@ tool. Firegrid makes each tool durable, observable, and recoverable.
 ## Safety Rules
 
 The numbered safety invariants live in
-[`../fluent-architecture.md`](../fluent-architecture.md#safety-invariants). This
+[`architecture.md`](architecture.md#safety-invariants). This
 README carries only the summary:
 
 - raw harnesses do not write Durable Streams facts;
@@ -365,6 +417,8 @@ README carries only the summary:
 
 ## Read Next
 
+- [`architecture.md`](architecture.md): canonical high-level package,
+  deployment, process, stream ownership, and safety contract.
 - [`execution-models.md`](execution-models.md): replay vs reconstruction over
   the shared Durable Streams coordination core.
 - [`substrate-protocol.md`](substrate-protocol.md): concrete Durable Streams

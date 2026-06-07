@@ -145,7 +145,7 @@ Canon for this group: `docs/cannon/architecture/fluent/harness-io.md` (the ACP
 client/conductor harness I/O roles; raw harness writes no Durable Streams facts),
 `docs/cannon/architecture/fluent/execution-models.md` (managed sessions resume by
 reconstruction, not replay; authored-procedure durable tools run as child
-invocations), and `docs/cannon/architecture/fluent-architecture.md` invariants
+invocations), and `docs/cannon/architecture/fluent/architecture.md` invariants
 **F-S1** (raw harness writes no DS facts), **F-S6** (resume suppresses every
 already-observed Layer 1 side effect), and **F-S12** (authored-procedure tool runs
 as a child invocation on its own stream).

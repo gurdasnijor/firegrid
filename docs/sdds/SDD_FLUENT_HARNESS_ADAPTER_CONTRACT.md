@@ -32,7 +32,7 @@ Non-ACP harnesses may still need a native lowering adapter, but ACP is the
 narrow first-class path.
 
 This document refines, but does not replace,
-`docs/cannon/architecture/fluent-architecture.md`.
+`docs/cannon/architecture/fluent/architecture.md`.
 
 ## Actors And Ownership
 

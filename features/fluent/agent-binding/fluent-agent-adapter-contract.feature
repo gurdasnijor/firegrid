@@ -4,7 +4,7 @@ Feature: Fluent agent adapter contract
   Firegrid harness I/O role. Firegrid only adapts I/O and durable tools; it does
   not own the reasoning loop, and the raw harness writes no durable facts itself.
   # Canon: docs/cannon/architecture/fluent/harness-io.md "One Rule";
-  # fluent-architecture.md invariant F-S1.
+  # docs/cannon/architecture/fluent/architecture.md invariant F-S1.
 
   Background:
     Given a durable stream session

@@ -71,10 +71,10 @@ Read in this order:
    externally resolved waits, typed source observations, and strict bridge
    exceptions. This document has priority when older workflow-engine-centered
    cannon would otherwise justify adding replay/cursor/mailbox surface area.
-7. `architecture/fluent-architecture.md` — the canonical high-level boundary
-   map for the fluent workstream: fluent-firegrid vs fluent-runtime vs
-   coding-agents bridge, stream read/write ownership, schema ownership, and the
-   rule that the raw harness does not write Durable Streams directly.
+7. `architecture/fluent/architecture.md` — the canonical high-level boundary
+   map for the fluent workstream: deployment topology, fluent-firegrid vs
+   fluent-runtime, stream read/write ownership, schema ownership, and the rule
+   that authored code and raw harnesses do not write Durable Streams directly.
 8. `../sdds/SDD_FLUENT_HARNESS_ADAPTER_CONTRACT.md` — the active adapter
    boundary contract: external harness owns the native loop; adapter records
    Layer 1 observation and native protocol fidelity; fluent-runtime records
@@ -129,10 +129,10 @@ Read in this order:
   constraint check against C1-C7. This doc has priority over older
   engine-centered cannon when the conflict is whether to add another
   replay/cursor/mailbox/operation-wrapper primitive.
-- `architecture/fluent-architecture.md` — canonical fluent boundary map:
-  package/process/schema ownership, Durable Streams read/write ownership, and
-  the distinction between raw harness, adapter/bridge, fluent host, and
-  projection/read-model layers.
+- `architecture/fluent/architecture.md` — canonical fluent boundary map:
+  deployment topology, package/process/schema ownership, Durable Streams
+  read/write ownership, and the distinction between raw harness, adapter/bridge,
+  fluent host, and projection/read-model layers.
 - `architecture/runtime-pipeline-type-boundaries.md` — companion to
   `runtime-design-constraints.md`: maps the canonical pipeline to concrete
   Effect type boundaries (`AgentByteStream`, `AgentSession`, typed output
