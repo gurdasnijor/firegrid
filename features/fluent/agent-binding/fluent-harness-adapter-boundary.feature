@@ -5,7 +5,7 @@ Feature: Fluent harness adapter boundary
   owner supplies the ACP stream; Firegrid owns Layer 1 observation, durable tool
   dispatch, and Layer 2 commitment.
   # Canon: docs/cannon/architecture/fluent/harness-io.md "One Rule",
-  # "Resume And Side-Effect Safety"; fluent-architecture.md invariants
+  # "Resume And Side-Effect Safety"; docs/cannon/architecture/fluent/architecture.md invariants
   # F-S1 (raw harness writes no Durable Streams), F-S6 (no duplicate observed
   # Layer 1 side effect), F-S12 (authored-procedure tool runs as a child invocation).
 

@@ -5,7 +5,7 @@ Feature: Fluent native resume
   resumes natively across process and sandbox boundaries; the non-deterministic
   model loop is never re-run as the durable mechanism.
   # Canon: docs/cannon/architecture/fluent/execution-models.md "Model B: Managed
-  # Sessions Resume By Reconstruction"; fluent-architecture.md invariant F-S6.
+  # Sessions Resume By Reconstruction"; docs/cannon/architecture/fluent/architecture.md invariant F-S6.
 
   Background:
     Given a durable stream with prior raw harness history

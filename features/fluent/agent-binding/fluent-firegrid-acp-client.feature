@@ -5,7 +5,7 @@ Feature: Fluent Firegrid ACP client
   packages supply the agent process and stream; Firegrid owns ACP client
   callbacks, Layer 1 observation, durable tool dispatch, and Layer 2 commitment.
   # Canon: docs/cannon/architecture/fluent/harness-io.md "One Rule",
-  # "ACP Downstream Harness"; fluent-architecture.md invariant F-S1.
+  # "ACP Downstream Harness"; docs/cannon/architecture/fluent/architecture.md invariant F-S1.
 
   Background:
     Given a real ACP agent process

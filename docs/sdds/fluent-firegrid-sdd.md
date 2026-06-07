@@ -14,7 +14,7 @@ Read the canon docs first:
   reconstruction contract.
 - `docs/cannon/architecture/fluent/substrate-protocol.md` for the Durable
   Streams wire sequences.
-- `docs/cannon/architecture/fluent-architecture.md` for package, process,
+- `docs/cannon/architecture/fluent/architecture.md` for package, process,
   stream, schema, invariant, and gap ownership.
 
 This SDD is the execution-detail companion. It keeps the implementation sketches,
@@ -96,7 +96,7 @@ fluent host durable tools / ingress / timer workers / child workers
 ```
 
 **Reading the diagram.** Package, process, stream, and schema ownership are
-canonicalized in `docs/cannon/architecture/fluent-architecture.md`. This SDD
+canonicalized in `docs/cannon/architecture/fluent/architecture.md`. This SDD
 uses the compact execution view above: a wake re-enters the fluent host, the host
 materializes the durable log, and the adapter drives the external harness without
 making Firegrid own the model loop.
