@@ -6,9 +6,20 @@ decision that reframes both: fluent-firegrid runs agents **choreography-first,
 handler-shaped, over the agent's own harness**. The reader is assumed to have the
 `fluent-firegrid` source and the restate-sdk-gen source it was ported from.
 
-Read `docs/cannon/architecture/fluent-architecture.md` first for package,
-process, stream, and schema ownership. This SDD is the execution-detail
-companion to that architecture reference.
+Read the canon docs first:
+
+- `docs/cannon/architecture/fluent/README.md` for the doc-set index and the
+  two-model / one-core framing.
+- `docs/cannon/architecture/fluent/execution-models.md` for the replay vs
+  reconstruction contract.
+- `docs/cannon/architecture/fluent/substrate-protocol.md` for the Durable
+  Streams wire sequences.
+- `docs/cannon/architecture/fluent-architecture.md` for package, process,
+  stream, schema, invariant, and gap ownership.
+
+This SDD is the execution-detail companion. It keeps the implementation sketches,
+review rationale, and historical appendices. Where this document repeats system
+shape or Durable Streams wire mechanics, the canon docs above are authoritative.
 
 ---
 
@@ -40,6 +51,22 @@ companion to that architecture reference.
    every wake source (timer, webhook/event match, child result, observed change).
    Everything else event-driven (work, cancel, webhook ingest, children) rides
    the subscription machinery you already have.
+
+### Scope After Canon Realignment
+
+The architecture now has two execution models over one coordination core:
+
+- **Authored procedures** resume by replay: the Effect body re-runs and keyed
+  journal hits carry it past already-recorded steps.
+- **Managed sessions** resume by reconstruction: the host rebuilds native
+  harness state and suppresses already-observed Layer 1 side effects.
+
+This SDD's Effect-specific code sketches apply to the authored-procedure arm and
+to the shared host loop. They are not permission to model a managed agent session
+as a long-lived replayable workflow body. A durable tool implemented as an
+authored procedure composes with a managed session as a child invocation on its
+own stream; the session stream records only the Layer 1 tool call and Layer 2
+child/tool result.
 
 ---
 
@@ -446,6 +473,12 @@ new infrastructure.
 
 ## Part 3 — Durable Streams §7.2/§7.3 already *is* the wake subsystem
 
+Canonical Durable Streams operation sequences live in
+`docs/cannon/architecture/fluent/substrate-protocol.md`. This part keeps the
+implementation rationale and host-loop sketch: what Firegrid still writes inside
+the claim→ack window, and why the timer gap is a scheduled-append source rather
+than a second delivery path.
+
 This is the most important correction to the Part 2 framing. On a DS server
 version that implements pull-wake (§7.2) + generation fencing (§7.3), the
 wake / lease / fencing / cursor subsystem is **the server's**. The distributed
@@ -813,12 +846,15 @@ tool calls.
 
 # Appendix B — Firegrid wake substrate: timer source + pull-wake re-driver
 
-> **Scope.** The worker loop is **shared substrate** (model-agnostic): it
-> claims → materialises → drives `handleSession(wake)` (Appendix E) → acks, under
-> the §7.3 lease. The `Suspended`-on-the-error-channel mechanic below is the
-> *below-line / owned* shape of a park; on the **agent path** a park is the durable
-> tool ending the harness's turn (Appendix E, mechanism (b)). The timer source is
-> the wake-registry.
+> **Scope.** The canonical protocol contract is
+> `docs/cannon/architecture/fluent/substrate-protocol.md`. This appendix is an
+> Effect implementation sketch for the host loop. The worker loop is **shared
+> substrate** (model-agnostic): it claims → materialises → drives
+> `handleSession(wake)` (Appendix E) → acks, under the §7.3 lease. The
+> `Suspended`-on-the-error-channel mechanic below is the *below-line / owned*
+> shape of a park; on the **agent path** a park is the durable tool ending the
+> harness's turn (Appendix E, mechanism (b)). The timer source is the
+> wake-registry.
 
 Orchestration and span emission only; the Durable Streams HTTP surface
 (§7.2/§7.3) and the timer source sit behind Tags. The spans emitted here are
