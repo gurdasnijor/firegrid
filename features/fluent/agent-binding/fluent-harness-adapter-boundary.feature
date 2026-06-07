@@ -1,8 +1,13 @@
 @fluent @agent-binding @adapter-boundary @real-agent
 Feature: Fluent harness adapter boundary
-  For ACP harnesses, Firegrid presents as the ACP client. The process owner
-  supplies the ACP stream; Firegrid owns Layer 1 observation, durable tool
+  The Firegrid ACP client and conductor are harness I/O roles around the external
+  model loop. For ACP harnesses, Firegrid presents as the ACP client. The process
+  owner supplies the ACP stream; Firegrid owns Layer 1 observation, durable tool
   dispatch, and Layer 2 commitment.
+  # Canon: docs/cannon/architecture/fluent/harness-io.md "One Rule",
+  # "Resume And Side-Effect Safety"; fluent-architecture.md invariants
+  # F-S1 (raw harness writes no Durable Streams), F-S6 (no duplicate observed
+  # Layer 1 side effect), F-S12 (authored-procedure tool runs as a child invocation).
 
   Background:
     Given a durable stream session
@@ -37,11 +42,22 @@ Feature: Fluent harness adapter boundary
     And the process owner resumes or re-enters the native harness
     And the recorded committed result is delivered through the native tool-result path
 
+  Scenario: Authored-procedure durable tools run as a child invocation on their own stream
+    Given a Firegrid durable tool whose implementation is a multi-step authored procedure
+    When the harness invokes that durable tool
+    Then Firegrid records the tool call as a Layer 1 observation on the managed-session stream
+    And the authored procedure runs as a child invocation on its own child stream
+    And the authored procedure body does not run inline on the managed-session stream
+    And the managed-session stream records the child or tool resolution as a Layer 2 fact
+    And the committed result is returned through the harness native tool-result path
+
   Scenario: Resume does not duplicate observed Layer 1 side effects
     Given the stream contains an observed native side effect from the harness
+    And the observed side effects include harness-native effects Firegrid did not mediate
     When the bridge restarts and resumes the session
     Then Firegrid uses native resume or explicit replay suppression for the observed side effect
-    And the side effect is not executed a second time
+    And no already-observed Layer 1 side effect is executed a second time
+    And suppression covers harness-native shell, file, and test effects, not only Firegrid-mediated tools
     And any Firegrid-mediated tool call is paired with its recorded Layer 2 result
 
   Scenario: Cancel and interrupt preserve both native fidelity and durable evidence

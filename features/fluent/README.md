@@ -90,9 +90,9 @@ Per-spec state:
 | `agent-binding/fluent-client-normalization.feature` | spec-only | Prior client-normalization work was not accepted as the canonical projection path. | Raw stream replay materializes durable projections without rewriting raw history. |
 | `agent-binding/fluent-firegrid-acp-client.feature` | partial | `tf-w9uc` (#967) merged the fluent-runtime ACP client binding (`FiregridAcpClient implements acp.Client` + `connectFiregridAcp`); process owner `packages/fluent-acp-process` merged (#966). Witness: firelab `fluent-acp-client-binding` drives the client over an ACP stream and asserts L1/L2 facts through `FluentStore` (forge-proof `fluent_runtime.store.*` gates), but the spawned target is still a fixture ACP process. | `tf-88bd.1` real spawned Claude/Codex ACP process through the process owner; `tf-88bd.4` cancel/interrupt; `tf-88bd.5` callback-surface coverage; `tf-88bd.7` import guards. |
 | `agent-binding/fluent-firegrid-acp-conductor.feature` | partial | `tf-v2nv` (#969) merged the editor-facing conductor (`FiregridAcpConductor implements acp.Agent` + pure `connectFiregridAcpConductor`); roles stay separate (no public `acp.Client \| acp.Agent` union). Witness: firelab `fluent-acp-conductor-binding` drives an ACP SDK editor client over `acp.Stream` into the conductor → durable session facts (verdict `production-path-covered`); see `docs/findings/tf-v2nv-conductor-binding-witness.md`. It does not yet prove stdio, downstream delegation, or real prompt execution. | `tf-88bd.2` Zed/CLI stdio packaging with stdout protocol discipline; `tf-88bd.3` downstream delegation and real prompt-driving; `tf-88bd.8` SDD signature reconciliation. |
-| `agent-binding/fluent-harness-adapter-boundary.feature` | partial | Harness adapter contract docs/specs are merged; process owner is isolated. | L1 observation -> L2 commitment -> native result path, with park/redrive and no duplicate side effects (`tf-88bd.6`). |
+| `agent-binding/fluent-harness-adapter-boundary.feature` | partial | Harness adapter contract docs/specs are merged; process owner is isolated. | L1 observation -> L2 commitment -> native result path, with park/redrive, authored-procedure durable tools running as child invocations (F-S12), and no duplicate already-observed Layer 1 side effects (`tf-88bd.6`). |
 | `agent-binding/fluent-mcp-tools-out.feature` | partial | MCP/tool edge work exists, but it must stay thin over fluent-runtime semantics. | Durable tools reachable by a real harness through an Effect Tool/Toolkit/McpServer-shaped edge. |
-| `agent-binding/fluent-native-resume.feature` | needs-rework | Earlier resume work predates the current no-duplicate-L1-side-effect contract. | `tf-88bd.6`: kill/restart a real harness and resume natively without replaying observed side effects. |
+| `agent-binding/fluent-native-resume.feature` | needs-rework | Earlier resume work predates the current no-duplicate-L1-side-effect contract. | `tf-88bd.6`: kill/restart a real harness and resume by reconstruction, suppressing every already-observed Layer 1 side effect (F-S6), including harness-native effects Firegrid did not mediate. |
 | `agent-binding/fluent-park-interface.feature` | needs-rework | Earlier park-interface work did not settle the real transport end-of-turn proof. | Parking tool ends the native turn, later wake re-enters through the real harness path. |
 | `agent-binding/fluent-three-envelope-stream.feature` | spec-only | No accepted stream-envelope proof yet. | Intent, raw, and lifecycle envelopes appear as durable truth with projections derived later. |
 | `authoring/fluent-firegrid-public-surface.feature` | partial | Public surface spec and implementation are merged; `tf-2tl5.1` adds below-line authoring contracts for replay schemas, retry/compensation, and local Effect composition. | Prove value/error schema decode and duplicate-key failure without broadening fluent-firegrid into a session host. |
@@ -140,6 +140,15 @@ that matter while keeping runtime/control-plane concerns out of this layer.
 Reference implementation, source-verified line-by-line:
 `repos/durable-streams/packages/coding-agents/`. Each feature is split out so a
 red spec localizes which part of the bridge failed.
+
+Canon for this group: `docs/cannon/architecture/fluent/harness-io.md` (the ACP
+client/conductor harness I/O roles; raw harness writes no Durable Streams facts),
+`docs/cannon/architecture/fluent/execution-models.md` (managed sessions resume by
+reconstruction, not replay; authored-procedure durable tools run as child
+invocations), and `docs/cannon/architecture/fluent-architecture.md` invariants
+**F-S1** (raw harness writes no DS facts), **F-S6** (resume suppresses every
+already-observed Layer 1 side effect), and **F-S12** (authored-procedure tool runs
+as a child invocation on its own stream).
 
 | Feature file | Asserts (source) | Firelab proof |
 |---|---|---|
