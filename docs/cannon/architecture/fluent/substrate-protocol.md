@@ -12,8 +12,14 @@ closure, fork, producer fencing, named consumers, pull-wake, claim/ack/release,
 and TTL.
 
 `packages/fluent-firegrid` defines the authoring primitives over a `Journal`.
-`packages/fluent-runtime` provides that journal and operates the wake/redrive
-loop. Durable Streams owns the transport guarantees.
+The Firegrid host provides that journal and binds authored definitions to
+product ingress and harness adapters. Durable Streams owns the transport and
+substrate coordination guarantees.
+
+This document is not permission to rebuild missing Durable Streams behavior in
+the host. If a step below requires generic scheduled wake, predicate
+subscription, claim, ack, lease, cursor, or retry behavior that Durable Streams
+does not yet expose, the missing substrate contract must be specified first.
 
 This document is the wire-level mapping for the shared coordination core. It is
 used by both fluent execution models:
@@ -86,8 +92,8 @@ first drive:
 
 wake drive:
   Durable Streams grants claim
-  -> runtime reads events past acked_offset
-  -> predicate matches
+  -> host or substrate matcher reads events past acked_offset
+  -> predicate matches under the named wait contract
   -> append StepSucceeded("review", matched event)
   -> re-run handler
   -> awaitEvent("review") reads journal hit and returns
@@ -106,13 +112,13 @@ model loop. The parked unit is a native harness turn or durable tool exchange.
 first turn:
   harness emits tool_call(wait_for)
   -> Firegrid records Layer 1 tool-call evidence
-  -> runtime appends WaitIntent / parked Layer 2 fact
+  -> host appends WaitIntent / parked Layer 2 fact
   -> harness turn ends or pauses
 
 wake drive:
   Durable Streams grants claim
-  -> runtime reads events past acked_offset
-  -> predicate matches
+  -> host or substrate matcher reads events past acked_offset
+  -> predicate matches under the named wait contract
   -> append wait_matched Layer 2 resolution
   -> harness I/O reconstructs native resume artifact
   -> adapter/conductor feeds committed tool result back to the harness
@@ -225,13 +231,22 @@ must use these substrate fences rather than adding a parallel task-claim table.
 
 ## 3. Durable Wait
 
-Durable wait is the suspend/resume loop with a predicate.
+Durable wait is the suspend/resume loop with a predicate. There are two
+separable concerns:
+
+- Firegrid owns the product wait intent and the recorded resolution fact.
+- Durable Streams should own any generic predicate subscription or post-cursor
+  matching contract that can be described without Firegrid product nouns.
+
+Until that substrate contract exists, a host implementation may only use a
+clearly named stopgap matcher. It must not become the durable wait substrate.
 
 1. Append `WaitIntent` / parked state before the harness turn ends.
 2. Register a pull-wake subscription on the signal stream.
 3. Catch up after subscription creation.
 4. On wake claim, read events past `acked_offset`.
-5. Evaluate CEL over each candidate event plus recorded `self`.
+5. Evaluate the named predicate contract over each candidate event plus recorded
+   `self`.
 6. If no event matches, ack consumed non-matching offsets and remain subscribed.
 7. If an event matches, append a recorded match / resolution.
 8. Continue the execution model:
@@ -241,11 +256,12 @@ Durable wait is the suspend/resume loop with a predicate.
 In both cases, the recorded match is served and the runtime does not re-evaluate
 a moving world after the result is committed.
 
-The wait CEL environment is runtime data, not the trace oracle environment:
+The wait CEL environment is product wait data, not the trace oracle
+environment:
 
 | Surface | Evaluated by | Binds |
 |---|---|---|
-| Wait predicate CEL | fluent-runtime during wake redrive | `event`, `self` |
+| Wait predicate CEL | named wait matcher contract | `event`, `self` |
 | Firelab coverage CEL | firelab oracle after a run | `spans` |
 
 `self` is the waiting session's recorded correlation data. It must be recorded
@@ -258,7 +274,8 @@ recorded first wins replay.
 ## 4. Durable Timer And Cron
 
 Subscriptions wake on append, not on wall time. A durable timer therefore needs
-one app-side clock edge: append at T.
+a scheduled append contract. That contract belongs at the Durable Streams
+substrate or substrate-adapter layer, not inside `fluent-firegrid`.
 
 ```text
 POST {root}/inv/42
@@ -271,15 +288,15 @@ PUT {root}/__ds/subscriptions/timer:42
     "wake_stream": "wake/pool"
   }
 
-# At T, the timer source appends:
+# At T, the scheduled source appends:
 
 POST {root}/timers/42
   [{ "fire": "<T>" }]
 ```
 
 Everything after the append-at-T is the normal wake claim/redrive path. The
-timer source does not need to know who is waiting or how to resume the session.
-That information lives in the invocation/session journal.
+scheduled append source does not need to know who is waiting or how to resume
+the session. That information lives in the invocation/session journal.
 
 At scale, timers can be bucketed:
 
@@ -287,8 +304,9 @@ At scale, timers can be bucketed:
 timers/2026-06-07T12:35
 ```
 
-One scheduled append wakes a bucket, and the runtime resolves due timers whose
-journaled `fireAt` is now eligible.
+One scheduled append wakes a bucket, and a claimed host worker records the
+Firegrid timer resolution facts whose journaled `fireAt` is now eligible. The
+generic scheduling of that wake is not a host responsibility.
 
 ## 5. Durable Child / Invoke
 
@@ -384,9 +402,10 @@ PUT {root}/inv/42
 Reads and writes keep active streams warm; abandoned streams expire without a
 sweeper. Audit-retained sessions use longer TTL or `Stream-Expires-At`.
 
-## 10. Control Plane Mapping
+## 10. Host Control Mapping
 
-The external control plane is Durable Streams product spelling.
+The external control surface is Firegrid product spelling over host and
+substrate operations.
 
 | Operation | Protocol mapping |
 |---|---|
@@ -398,8 +417,8 @@ The external control plane is Durable Streams product spelling.
 | `schedule` | timer intent plus append-at-T source |
 | `delete` | stream close/delete according to substrate rules |
 
-The control plane must not synchronously call handlers. It appends or reads
-durable facts. Delivery happens through the wake/redrive path.
+The host control surface must not synchronously call handlers. It appends or
+reads durable facts. Delivery happens through the wake/redrive path.
 
 ## What Fluent Builds
 
@@ -413,14 +432,22 @@ Durable Streams gives:
 - claim/ack/release, leases, retry, stale-generation fencing;
 - signed subscription-webhook delivery.
 
-Fluent builds only:
+Fluent layers build only:
 
 - product facts and schemas;
-- predicates, including CEL wait predicates;
-- the app-side timer append source;
-- the post-claim redrive function;
+- product wait vocabulary and recorded resolution facts;
+- host admission, product ingress, and harness I/O adapters;
+- the post-claim product function that appends Firegrid outcomes after a
+  substrate-granted claim;
 - harness I/O adapters and native resume/replay-suppression;
 - projections and control-plane spelling.
+
+Durable Streams or a substrate adapter should own:
+
+- generic scheduled wake / append-at-T;
+- generic predicate subscription or post-cursor matching, if the predicate
+  language is substrate-level;
+- all claim, ack, release, lease, retry, and cursor movement mechanics.
 
 If a proposed implementation adds a Firegrid lease table, cursor store,
 subscription retry loop, Durable Streams subscription-webhook signature

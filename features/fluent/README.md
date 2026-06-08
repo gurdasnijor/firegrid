@@ -10,7 +10,7 @@ verdict red.
 **Structure: authoring package + two halves + shared substrate** (matches the SDD).
 - **Authoring package.** `@firegrid/fluent-firegrid` exposes the public DSL:
   definitions plus free primitives. It does not host a runtime or expose the
-  external control plane.
+  external host control surface.
 - **Below-line authored procedures.** `run`, retry, compensation, local
   concurrency, local cancellation, and deterministic Clock/Random semantics are
   durable Effect authoring concerns for reusable workflows. They are not the
@@ -39,14 +39,15 @@ the fluent-firegrid proposal and scope them below the managed-agent line:
   schemas at the journal boundary, retry inside `run`, compensation through
   Effect finalizers, deterministic Clock/Random services, and local
   fiber/scoped cancellation semantics.
-- `packages/fluent-runtime` owns session authority for managed agents: stream
-  facts, wake/redrive, wait/timer/child/session coordination, and harness I/O
-  re-entry around the external model loop.
+- The Firegrid host owns session authority for managed agents: stream facts,
+  product ingress, post-claim outcome recording, and harness I/O re-entry around
+  the external model loop. The current implementation package is
+  `packages/fluent-runtime`.
 - Managed agent sessions are not long-lived workflow bodies. They are host-driven
   harness coordination around external Claude/Codex/native/cloud loops.
-- Durable child/session spawn is not `Effect.fork`; local fibers are an authoring
-  primitive, while durable spawn is a fluent-runtime coordination fact and wake
-  relationship.
+- Durable child/session spawn is not `Effect.fork`; local fibers are an
+  authoring primitive, while durable spawn is a host-recorded coordination fact
+  and substrate wake relationship.
 
 Write-path risk remains intentionally open for `tf-3zbj.1`: the authoring specs
 allow a future correction to producer/fencing strategy, but this slice does not
@@ -131,7 +132,7 @@ that matter while keeping runtime/control-plane concerns out of this layer.
 
 | Feature file | Asserts (source / SDD §) | Proof |
 |---|---|---|
-| `fluent-firegrid-public-surface` | Public package surface = definitions (`service`/`object`/`workflow`) + generator handlers + free primitives (`run`/`all`/`race`/`select`/`spawn`) + descriptor/interface helpers + typed client derivation + explicit handler-edge execution (`execute`/`invoke`). Definitions must carry enough public metadata for `fluent-runtime` to bind the control plane (`send`/`fork`/`tag`/`schedule`/`read`/`head`/`delete`) without importing internals. `run` names journal steps; local composition is Effect-shaped; no public bespoke Future scheduler; scheduler/awaitable/journal implementation details are not root public API. | package API tests + tutorial examples + `fluent-control-surface` binding |
+| `fluent-firegrid-public-surface` | Public package surface = definitions (`service`/`object`/`workflow`) + generator handlers + free primitives (`run`/`all`/`race`/`select`/`spawn`) + descriptor/interface helpers + typed client derivation + explicit handler-edge execution (`execute`/`invoke`). Definitions must carry enough public metadata for a Firegrid host to bind product ingress without importing internals. Host/control APIs and substrate mechanics stay outside the authoring package. `run` names journal steps; local composition is Effect-shaped; no public bespoke Future scheduler; scheduler/awaitable/journal implementation details are not root public API. | package API tests + tutorial examples + `fluent-control-surface` binding |
 
 ---
 
@@ -170,8 +171,8 @@ as a child invocation on its own stream).
 
 | Feature file | Asserts (SDD §) | Firelab CoverageSpec |
 |---|---|---|
-| `fluent-durable-wait` | `wait_for`/`wait_any` append `WaitIntent` **before** park; CEL predicate evaluated **during the post-claim drive** over `event` + recorded `self`; **`afterOffset` catch-up prevents lost wakeup**; the timeout race is **fenced once** (at-most-once winner). Given-key principle: key by `toolCallId` / `(toolCallId, slotIndex)`. Journal the predicate + matched event + `self` snapshot/reference so replay/redrive resolves from the journal, never re-evaluates a moving world or a newer session projection. Firegrid appends L2 `wait_matched` before ack/done. (Appendix D.3/D.4) | `durableWaitCoverage` + `raceCoverage` |
-| `fluent-durable-sleep` | `sleep`/`wait_until` append timer intent (`TimerScheduled`) **before** park; **no `Clock.sleep`/local timer**; the append-at-T timer source materializes `TimerFired`; post-claim Firegrid appends the L2 timer resolution before ack/done; replay resolves from the journal. The one genuinely net-new piece (O5). `sleep`+`wait_for` = one family, two sources. (Part 3 sleep; Appendix D.2) | `durableSleepCoverage` |
+| `fluent-durable-wait` | `wait_for`/`wait_any` append `WaitIntent` **before** park; the named wait-matcher contract evaluates over `event` + recorded `self`; **`afterOffset` catch-up prevents lost wakeup**; the timeout race is **fenced once** (at-most-once winner). Given-key principle: key by `toolCallId` / `(toolCallId, slotIndex)`. Journal the predicate + matched event + `self` snapshot/reference so replay/redrive resolves from the journal, never re-evaluates a moving world or a newer session projection. Firegrid appends L2 `wait_matched` before ack/done. Generic predicate subscription is substrate/substrate-adapter work, not fluent-firegrid. (Appendix D.3/D.4) | `durableWaitCoverage` + `raceCoverage` |
+| `fluent-durable-sleep` | `sleep`/`wait_until` append timer intent (`TimerScheduled`) **before** park; **no `Clock.sleep`/local timer**; a substrate scheduled-append source materializes `TimerFired`; post-claim Firegrid appends the L2 timer resolution before ack/done; replay resolves from the journal. The net-new piece is the substrate scheduled source contract. `sleep`+`wait_for` = one family, two sources. (Part 3 sleep; Appendix D.2) | `durableSleepCoverage` |
 | `fluent-fork-spawn` | `spawn`/`spawn_all` create a child session via **stream fork / child stream**; **producer state resets** on the child; the parent waits on the child's **terminal event / closure** (the cross-session join — the parent cannot inline-join a child fiber). Durable tool implementations with authored primitives run as child authored-procedure streams. Composite proof: parent harness A can spawn child harness B, the child terminal fact wakes the parent, and both adapters resume safely after kill/restart. `raceCoverage` facet b = the child-cancel-vs-leave policy (O2). (Substrate Commitments; Appendix D.5) | `crossSessionCoverage` (+ `raceCoverage` b) |
 | `fluent-coordination-taxonomy` | `runs`/`toolCalls`/`inbox`/`childStatus`/`wakes`/`tags`/`errors` as State-Protocol change-messages, keyed by given ids. **Addressing is not calling** (`send`/`spawn` address an event; delivery is through Durable Streams; recipient decides on its wake). Authored procedures and managed sessions share one DS core; candidate wake facts are product facts; DS delivers/grants work; Firegrid records post-wake eligibility/outcome. (Build order 1; Coordination/ingress) | underpins `durableWait`/`crossSession` |
 | `fluent-session-handler` | `handleSession(wake)` + `driveHarness` re-invoke the **external** harness with a resume context (never `agent.run`): materialise committed stream → build resume context → evaluate product semantics → append one L2 outcome → ack/done after durable append → drive after DS delivery or claim. The harness-resumability dependency is "the one piece of real engineering." (System shape; Build order 2; Appendix E.1/E.5) | product-observable redrive + resume witness |
@@ -183,8 +184,8 @@ as a child invocation on its own stream).
 
 | Feature file | Asserts (SDD §) | Firelab CoverageSpec |
 |---|---|---|
-| `fluent-engine-substrate-free` | Collapse the DSL onto Effect with **named (not positional) journal keys** → `run` returns a plain `Effect`; `Future`/`Scheduler.drive`/`Awaitable`/`operation.ts`/`current.ts` all **delete**; local concurrency + local fiber spawn become free. **Durability enters via provided `Journal`/`FencedWriter` Effect.Services at the handler edge; the engine core (the `Effect.gen` bodies) stays substrate-free** — it does not import the old runtime or the durable substrate directly. Durable child/tool invocation is a fluent-runtime coordination fact on its own stream, not inline engine replay. What-becomes-free: retry/saga/in-process-cancel/serde. (Part 1; Summary) | `replayCoverage` + airgap assertion |
-| `fluent-durable-streams-consumer-substrate` | Adopt Durable Streams named consumers, pull-wake, webhook wake, and idempotent-producer coordination as the wake/redrive substrate for both execution models. Treat the adopted package's upstream conformance suites as imported prerequisites: L1 named consumers (register/acquire/ack/release/stale epoch/cursors), L2/B pull-wake (wake stream, claimed event, persisted cursors, lease-expiry re-wake, competing claims), and L2/A webhook wake (signed delivery, callback, ack/done/retry/idle). Durable Streams owns claim/lease/cursor/retry/webhook-wake mechanics. Fluent-runtime only runs the post-claim product step and must not rebuild lease tables, cursor stores, pull queues, webhook retry loops, or task-claim locks. Coordination patterns use producer-fenced first-writer-wins claims and explicit epoch override for recovery. | upstream Durable Streams conformance prerequisite + Firegrid post-claim integration witness |
+| `fluent-engine-substrate-free` | Collapse the DSL onto Effect with **named (not positional) journal keys** → `run` returns a plain `Effect`; `Future`/`Scheduler.drive`/`Awaitable`/`operation.ts`/`current.ts` all **delete**; local concurrency + local fiber spawn become free. **Durability enters via provided `Journal`/`FencedWriter` Effect.Services at the handler edge; the engine core (the `Effect.gen` bodies) stays substrate-free** — it does not import a host or durable substrate directly. Durable child/tool invocation is a host coordination fact on its own stream, not inline engine replay. What-becomes-free: retry/saga/in-process-cancel/serde. (Part 1; Summary) | `replayCoverage` + airgap assertion |
+| `fluent-durable-streams-consumer-substrate` | Adopt Durable Streams named consumers, pull-wake, webhook wake, and idempotent-producer coordination as the wake/redrive substrate for both execution models. Treat the adopted package's upstream conformance suites as imported prerequisites: L1 named consumers (register/acquire/ack/release/stale epoch/cursors), L2/B pull-wake (wake stream, claimed event, persisted cursors, lease-expiry re-wake, competing claims), and L2/A webhook wake (signed delivery, callback, ack/done/retry/idle). Durable Streams owns claim/lease/cursor/retry/webhook-wake mechanics. The Firegrid host only runs the post-claim product step and must not rebuild lease tables, cursor stores, pull queues, webhook retry loops, scheduled-wake engines, generic predicate subscriptions, or task-claim locks. Coordination patterns use producer-fenced first-writer-wins claims and explicit epoch override for recovery. | upstream Durable Streams conformance prerequisite + Firegrid post-claim integration witness |
 | `fluent-worker-redrive` | Durable Streams **grants the claim/lease**; fluent materialises session/source facts from provided offsets, appends one L2 product outcome, continues by authored replay or managed-session reconstruction, and **acks/dones through** the server's §7.2/§7.3 machinery after the durable product outcome is recorded. Fluent does NOT rebuild the lease; stale-generation ack, competing claim, cursor persistence, retry, and `next_wake:true` are DS conformance concerns. `acked_offset` is a delivery cursor, not a replay position (replay reads the journal every claim). (Part 3; Appendix B) | product-observable post-claim redrive witness |
 
 **Upstream substrate assumption.** Durable Streams stream closure, append-after-close
@@ -204,7 +205,7 @@ sleep, durable wait, fork spawn, and post-claim redrive.
 
 ---
 
-## External control plane
+## External Host Control Surface
 
 | Feature file | Asserts (SDD §) | Firelab proof |
 |---|---|---|
@@ -229,7 +230,7 @@ sleep, durable wait, fork spawn, and post-claim redrive.
 | O2 | **Child-race loser policy** — cancel vs leave+absorb (`raceCoverage` facet b). Winner-record (a) is not a choice. | PO call. Default: leave+absorb; cancel as opt-in. |
 | O3 | **Claude wire protocol: ACP vs native.** | Fully informed (fidelity delta source-verified); recommend native. PO call. Answered by `fluent-approval-fidelity`. |
 | O4 | **Confirm Electric internals.** | **Regressed** — `repos/electric` no longer on disk → un-re-verifiable locally. NOT load-bearing (decision rests on `coding-agents`, which is vendored). |
-| O5 | **Net-new timer source impl** — DO alarm / timer-wheel that materialises T as an append. | The only genuinely-unsolved infra. Confirmed net-new vs the Restate SDK (`sleep`→`ctx.sleep`, a server feature) **and** `coding-agents` (no scheduler). |
+| O5 | **Net-new scheduled append substrate contract** — DO alarm / timer-wheel / Durable Streams scheduled wake that materialises T as an append. | The missing infrastructure belongs below the Firegrid host. Confirmed net-new vs the Restate SDK (`sleep`→`ctx.sleep`, a server feature) **and** `coding-agents` (no scheduler). |
 
 ---
 
