@@ -72,7 +72,14 @@ export class FiregridAcpClient implements acp.Client {
         sessionId: params.sessionId,
         kind: "acp.session_update",
         payload: params,
-      }),
+      }).pipe(
+        Effect.withSpan("fluent_runtime.acp.session_update", {
+          attributes: {
+            "firegrid.session.id": params.sessionId,
+            ...sessionUpdateAttributes(params),
+          },
+        }),
+      ),
     )
   }
 
@@ -91,6 +98,11 @@ export class FiregridAcpClient implements acp.Client {
             request: params,
           }),
         ),
+        Effect.withSpan("fluent_runtime.acp.request_permission", {
+          attributes: {
+            "firegrid.session.id": params.sessionId,
+          },
+        }),
       ),
     )
   }
@@ -113,9 +125,27 @@ export class FiregridAcpClient implements acp.Client {
             params,
           }),
         ),
+        Effect.withSpan("fluent_runtime.acp.ext_method", {
+          attributes: {
+            "firegrid.session.id": sessionId,
+            "firegrid.acp.ext_method": method,
+          },
+        }),
       ),
     )
   }
+}
+
+const sessionUpdateAttributes = (
+  params: acp.SessionNotification,
+): Record<string, string> => {
+  const update = params.update
+  return typeof update === "object" &&
+      update !== null &&
+      "sessionUpdate" in update &&
+      typeof update.sessionUpdate === "string"
+    ? { sessionUpdate: update.sessionUpdate }
+    : {}
 }
 
 const sessionIdFromExtParams = (params: Record<string, unknown>): SessionId => {
