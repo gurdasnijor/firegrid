@@ -224,6 +224,15 @@ if command -v gh >/dev/null 2>&1; then
     _emit_section "${TASK_EXIT_EVIDENCE_FILE:-}" "${TASK_EXIT_EVIDENCE:-}" \
       "_None provided. Set \`TASK_EXIT_EVIDENCE_FILE\` or \`TASK_EXIT_EVIDENCE\` with commands run + results. Firelab sims: exact \`pnpm --filter firelab simulate <sim>\` command, run id/path, verdict, key gates, trace path. Evidence is not invented._"
     echo
+    echo "### Acceptance classification"
+    echo "<!-- Required for any PR citing a Gherkin/product scenario."
+    echo "     See packages/firelab/docs/methodology.md \"Acceptance vs workbench\". -->"
+    echo "- [ ] **Kind:** acceptance (driver drives public ingress) · OR · workbench/package-integration (does NOT claim Gherkin satisfaction)"
+    echo "- [ ] **Public/external ingress used:** <which \`@firegrid/client-sdk\` / external entrypoint the driver called>"
+    echo "- [ ] **Driver action:** <what the driver stimulated through that ingress — drove, not observed>"
+    echo "- [ ] **Host role:** serves/composes the production surface only; does NOT self-drive the target behavior"
+    echo "- [ ] **Gates → causal path:** external ingress → production substrate behavior (not just that substrate spans fired)"
+    echo
     echo "### Changed files"
     echo '```'
     git -C "$RR" diff --stat "$BASE_REF...HEAD"
